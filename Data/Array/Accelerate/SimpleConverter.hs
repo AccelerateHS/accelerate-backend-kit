@@ -120,7 +120,7 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
           return$ S.Let v sty a1 a2
 
     Avar idx -> 
-      do var <- envLookup (deBruijnToInt idx)
+      do var <- envLookup (idxToInt idx)
          return$ S.Vr var
 
     ------------------------------------------------------------
@@ -255,7 +255,7 @@ convertExp e =
     
     -- Here is where we get to peek at the type of a variable:
     Var idx -> 
-      do var <- envLookup (deBruijnToInt idx)
+      do var <- envLookup (idxToInt idx)
          return$ S.EVr var
     PrimApp p arg -> convertPrimApp p arg
 
