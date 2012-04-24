@@ -1,4 +1,4 @@
-{-# LANGUAGE BangPatterns, GADTs, ScopedTypeVariables, CPP #-}
+{-# LANGUAGE BangPatterns, GADTs, ScopedTypeVariables, CPP, PatternGuards #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 -- {-# ANN module "HLint: ignore Eta reduce" #-}
 
