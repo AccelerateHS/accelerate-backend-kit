@@ -52,7 +52,7 @@ import qualified Data.Vector as V
 
 -- | Convert the sophisticate Accelerate-internal AST representation
 --   into something very simple for external consumption.
-convert :: Arrays a => Sugar.Acc a -> S.AExp
+convert :: Sugar.Arrays a => Sugar.Acc a -> S.AExp
 convert = runEnvM . convertAcc . Sugar.convertAcc
 
 --------------------------------------------------------------------------------
@@ -88,9 +88,9 @@ envLookup i = do (env,_) <- get
 --                  then return (S.var "DUMMY")
                   else error$ "Environment did not contain an element "++show i++" : "++show env
 
-getAccType :: forall aenv ans . Arrays ans => OpenAcc aenv ans -> S.Type
+getAccType :: forall aenv ans . Sugar.Arrays ans => OpenAcc aenv ans -> S.Type
 getAccType acc = convertArrayType ty 
-  where (ty :: ArraysR ans) = arrays
+  where (ty :: Sugar.ArraysR ans) = (error"FIXME") -- Sugar.arrays
 
 getAccTypePre acc = getAccType (OpenAcc acc)
 
@@ -130,7 +130,11 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
 
     -- This is real live runtime array data:
     -- TEMP FIXME -- need to finish the Use case:
-    Use arr -> return$ S.Use (show arr)
+    Use (arrrepr :: Sugar.ArrRepr a) -> -- error "FIXME"
+      let 
+          actualArr = Sugar.toArr arrrepr :: a
+          repOf     = Sugar.arrays actualArr
+      in return$ S.Use$ show$ convertArrayType repOf
 
     Generate sh f -> S.Generate (getAccTypePre eacc)
                                 <$> convertExp sh
@@ -149,18 +153,21 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
 
     Apply _afun _acc -> error "This case is impossible"
 
-    Alet2 acc1 acc2 -> 
-       do a1     <- convertAcc acc1
-          (v2,(v1,a2)) <- withExtendedEnv "a"$ 
-                                 withExtendedEnv "a"$                    
-                          convertAcc acc2
-          case getAccType acc2 of 
-            S.TTuple [ty1,ty2] -> return$ S.LetPair (v1,v2) (ty1,ty2) a1 a2
-            t -> error$ "Type error, expected pair on RHS of Let2, found: "++ show t
+    Atuple (atup :: Atuple (OpenAcc aenv) b ) -> 
+      let loop :: Atuple (OpenAcc aenv') a' -> EnvM [S.AExp] 
+          loop NilAtup = return [] 
+          loop (SnocAtup t a) = do fst <- convertAcc a 
+                                   rst <- loop t
+                                   return (fst : rst)
+      in do ls <- loop atup
+            return$ S.ArrayTuple (reverse ls)
 
+    Aprj ind exp -> 
+      let len :: TupleIdx tr a -> Int 
+          len ZeroTupIdx     = 0
+          len (SuccTupIdx x) = 1 + len x
+      in S.TupleRefFromRight (len ind) <$> convertAcc exp 
 
-    PairArrays acc1 acc2 -> S.PairArrays <$> convertAcc acc1 
-                                         <*> convertAcc acc2
     Unit e        -> S.Unit <$> convertExp e 
 
     Map     f acc       -> S.Map     <$> convertFun f 
@@ -381,18 +388,18 @@ convertType ty =
            TypeCUChar _ -> S.TCUChar 
 
 
-convertArrayType :: forall arrs . ArraysR arrs -> S.Type
+convertArrayType :: forall arrs . Sugar.ArraysR arrs -> S.Type
 convertArrayType ty = 
   case ty of 
-   ArraysRunit  -> S.TTuple []
+   Sugar.ArraysRunit  -> S.TTuple []
    -- Again, here we reify information from types (phantom type
    -- parameters) into a concrete data-representation:
-   ArraysRarray | (_::ArraysR (Array sh e)) <- ty -> 
+   Sugar.ArraysRarray | (_ :: Sugar.ArraysR (Array sh e)) <- ty -> 
      let ety = Sugar.eltType ((error"This shouldn't happen (3)")::e) 
      in S.TArray (convertType ety)
    -- Left to right!
-   ArraysRpair t0 t1 -> S.TTuple [convertArrayType t0,
-                                  convertArrayType t1]
+   Sugar.ArraysRpair t0 t1 -> S.TTuple [convertArrayType t0,
+                                        convertArrayType t1]
 
 --------------------------------------------------------------------------------
 -- Convert constants    

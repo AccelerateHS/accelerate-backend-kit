@@ -27,9 +27,7 @@ import Pretty (text) -- ghc api
 
 --------------------------------------------------------------------------------
 
--- A simple representation of variables
--- Honestly though, since we're trying to convert from de Brujin
--- indicies to this... it might just as well use the indicies. 
+-- A simple representation of variables:
 var :: String -> Var
 ----------------------------------------
 -- stringtable-atom package:
@@ -51,6 +49,7 @@ instance Read Symbol where
 -- constructor is exported.
 ----------------------------------------
 
+  
 --------------------------------------------------------------------------------
 -- Accelerate Types
 --------------------------------------------------------------------------------
@@ -93,12 +92,11 @@ isFloatType ty =
 data AExp = 
     Vr Var -- Array variable bound by a Let.
   | Unit Exp -- Turn an element into a singleton array
-  | Let  Var Type AExp AExp    -- Let Var Type RHS Body
     -- Let is used for common subexpression elimination
-  | LetPair (Var, Var) (Type,Type) AExp AExp 
-    -- This binds an array expression returning a PAIR.
-    -- Let (Var1, Var2) (Type1, Type2) (PairArrays Array1 Array2) Body
-  | PairArrays AExp AExp       -- PairArrays Array1 Array2
+  | Let  Var Type AExp AExp    -- Let Var Type RHS Body
+  | ArrayTuple [AExp]          -- Tuple of arrays.
+  | TupleRefFromRight Int AExp 
+    
   | Apply AFun AExp            -- Function $ Argument
   | Cond Exp AExp AExp         -- Array level if statements
   | Use      String -- A REAL ARRAY GOES HERE! -- TEMP - FIXME
