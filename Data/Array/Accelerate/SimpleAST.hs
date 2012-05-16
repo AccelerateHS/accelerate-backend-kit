@@ -70,7 +70,7 @@ data AccArray =
     ArrayUnit 
   | ArrayPayload 
   | ArrayPair (AccArray) (AccArray)
- deriving Show
+ deriving (Show, Read, Eq, Generic)
 
 --------------------------------------------------------------------------------
 -- Accelerate Types
@@ -121,7 +121,7 @@ data AExp =
     
   | Apply AFun AExp            -- Function $ Argument
   | Cond Exp AExp AExp         -- Array level if statements
-  | Use  Type String -- A REAL ARRAY GOES HERE! -- TEMP - FIXME
+  | Use  Type AccArray         -- A real live ARRAY goes here!
   | Generate Type Exp Fun
     -- Generate Function Array, very similar to map
   | Replicate String Exp AExp  -- TEMP - fix first field
@@ -254,6 +254,7 @@ data OtherPrim = Ord | Chr | BoolToInt | FromIntegral
 --------------------------------------------------------------------------------
 -- Boilerplate for generic pretty printing:
 
+instance Out AccArray
 instance Out Type
 instance Out Fun
 instance Out Exp
