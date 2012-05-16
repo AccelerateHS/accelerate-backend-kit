@@ -1,4 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
+
+-- TEMP:
+{-# LANGUAGE ScopedTypeVariables, FlexibleInstances, FlexibleContexts #-}
 module Data.Array.Accelerate.SimpleAST  
    ( 
      -- * The types making up Accelerate ASTs:
@@ -28,10 +31,14 @@ import Foreign.C.Types
 import Text.PrettyPrint.GenericPretty
 import Pretty (text) -- ghc api
 
+import Data.ByteString.Char8 (ByteString, unpack)
+
 import qualified Data.Array.Accelerate.Array.Sugar as Sugar
+import Data.Array.Accelerate.Array.Data (ArrayData)
+
+import Data.Array.Unboxed (IArray, UArray, array)
 
 --------------------------------------------------------------------------------
-
 -- A simple representation of variables:
 var :: String -> Var
 ----------------------------------------
@@ -59,18 +66,35 @@ instance Read Symbol where
 -- Accelerate Array Data
 --------------------------------------------------------------------------------
 
+-- | This is our Haskell representation of raw, contiguous data.
+-- Subject to change in the future depending on what internal
+-- representation the Accelerate front-end uses.
+type RawData e = UArray Int e
+
 -- | This is array data on the Haskell heap.  It needs to handle
 --   different forms of data.
--- data AccArray sh e = 
---     ArrayUnit 
---   | ArrayPayload (Sugar.Array sh e)
---   | ArrayPair (AccArray sh e) (AccArray sh e)
-  
 data AccArray = 
     ArrayUnit 
-  | ArrayPayload 
   | ArrayPair (AccArray) (AccArray)
- deriving (Show, Read, Eq, Generic)
+
+  -- TODO: UArray doesn't offer cast like IOArray.  It would be nice
+  -- to make all arrays canonicalized to a data buffer of Word8's:
+  | ArrayPayloadInt    (RawData Int)
+  | ArrayPayloadInt8   (RawData Int8)
+  | ArrayPayloadInt16  (RawData Int16)
+  | ArrayPayloadInt32  (RawData Int32)   
+  | ArrayPayloadInt64  (RawData Int64)
+  | ArrayPayloadWord   (RawData Word)
+  | ArrayPayloadWord8  (RawData Word8)
+  | ArrayPayloadWord16 (RawData Word16)
+  | ArrayPayloadWord32 (RawData Word32)   
+  | ArrayPayloadWord64 (RawData Word64)
+  | ArrayPayloadFloat  (RawData Float)
+  | ArrayPayloadDouble (RawData Double)
+  | ArrayPayloadChar   (RawData Char)
+  | ArrayPayloadBool   (RawData Word8) -- Word8's represent bools.
+
+ deriving (Show, Read, Eq)
 
 --------------------------------------------------------------------------------
 -- Accelerate Types
@@ -122,8 +146,7 @@ data AExp =
   | Apply AFun AExp            -- Function $ Argument
   | Cond Exp AExp AExp         -- Array level if statements
   | Use  Type AccArray         -- A real live ARRAY goes here!
-  | Generate Type Exp Fun
-    -- Generate Function Array, very similar to map
+  | Generate Type Exp Fun      -- Generate Function Array, very similar to map
   | Replicate String Exp AExp  -- TEMP - fix first field
   | Index     String AExp Exp  -- TEMP - fix first field 
                                -- Index sliceIndex Array SliceDims
@@ -254,7 +277,6 @@ data OtherPrim = Ord | Chr | BoolToInt | FromIntegral
 --------------------------------------------------------------------------------
 -- Boilerplate for generic pretty printing:
 
-instance Out AccArray
 instance Out Type
 instance Out Fun
 instance Out Exp
@@ -293,3 +315,16 @@ instance Out CULLong where docPrec _ = text . show; doc = docPrec 0
 instance Out CChar   where docPrec _ = text . show; doc = docPrec 0 
 instance Out CSChar  where docPrec _ = text . show; doc = docPrec 0
 instance Out CUChar  where docPrec _ = text . show; doc = docPrec 0 
+
+-- TODO: Get proper pretty printing going here:
+instance Out AccArray where docPrec _ = text . show; doc = docPrec 0
+
+-- Why is this one not included in the array package?:
+instance (Read elt, IArray UArray elt) => Read (UArray Int elt) where
+    readsPrec p = readParen (p > 9)
+           (\r -> [(array b as :: UArray Int elt, u) | 
+                   ("array",s) <- lex r,
+                   (b,t)       <- reads s,
+                   (as :: [(Int,elt)],u) <- reads t ])
+
+test = read "array (1,5) [(1,200),(2,201),(3,202),(4,203),(5,204)]" :: UArray Int Int

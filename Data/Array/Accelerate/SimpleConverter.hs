@@ -139,7 +139,6 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
                                 <*> convertFun f
 
     -- This is real live runtime array data:
-    -- TEMP FIXME -- need to finish the Use case:
     Use (arrrepr :: Sugar.ArrRepr a) -> 
          return$ S.Use ty val
       where 
@@ -152,7 +151,6 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
          cvt Sugar.ArraysRunit         ()       = S.ArrayUnit
          cvt (Sugar.ArraysRpair r1 r2) (a1, a2) = S.ArrayPair (cvt r1 a1) (cvt r2 a2)
          cvt x@Sugar.ArraysRarray  arr | (_ :: Sugar.ArraysR (Array sh elt)) <- x =
-           -- In the RHS of this case we have extra type evidence: (a' ~ Array sh elt)
            convertArrayValue arr
 
          -- Takes an Array representation and its reified type:
@@ -167,28 +165,28 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
          convertArrayValue :: (Sugar.Elt e) => Array dim e -> S.AccArray         
          convertArrayValue (Array _sh adata) = useR arrayElt adata
            where 
-             -- This type signature forces the array data to be the
+             -- This [mandatory] type signature forces the array data to be the
              -- same type as the ArrayElt Representation (elt ~ elt):
              useR :: ArrayEltR elt -> ArrayData elt -> S.AccArray
-             useR ArrayEltRunit             _  = S.ArrayUnit
              useR (ArrayEltRpair aeR1 aeR2) ad = 
                S.ArrayPair (useR aeR1 (fstArrayData ad)) 
                            (useR aeR2 (sndArrayData ad))
-             useR ArrayEltRint  _x = S.ArrayUnit
-             useR ArrayEltRint8 _x = S.ArrayUnit
-             useR ArrayEltRint16 _x = S.ArrayUnit
-             useR ArrayEltRint32 _x = S.ArrayUnit
-             useR ArrayEltRint64 _x = S.ArrayUnit
-             useR ArrayEltRword  _x = S.ArrayUnit
-             useR ArrayEltRword8 _x = S.ArrayUnit
-             useR ArrayEltRword16 _x = S.ArrayUnit
-             useR ArrayEltRword32 _x = S.ArrayUnit
-             useR ArrayEltRword64 _x = S.ArrayUnit
-             useR ArrayEltRfloat  _x = S.ArrayUnit
-             useR ArrayEltRdouble _x = S.ArrayUnit
-             useR ArrayEltRbool   _x = S.ArrayUnit
-             useR ArrayEltRchar   _x = S.ArrayUnit
-    
+             useR ArrayEltRunit             _  = S.ArrayUnit             
+             useR ArrayEltRint   (AD_Int   x) = S.ArrayPayloadInt   x
+             useR ArrayEltRint8  (AD_Int8  x) = S.ArrayPayloadInt8  x
+             useR ArrayEltRint16 (AD_Int16 x) = S.ArrayPayloadInt16 x
+             useR ArrayEltRint32 (AD_Int32 x) = S.ArrayPayloadInt32 x
+             useR ArrayEltRint64 (AD_Int64 x) = S.ArrayPayloadInt64 x
+             useR ArrayEltRword   (AD_Word   x) = S.ArrayPayloadWord   x
+             useR ArrayEltRword8  (AD_Word8  x) = S.ArrayPayloadWord8  x
+             useR ArrayEltRword16 (AD_Word16 x) = S.ArrayPayloadWord16 x
+             useR ArrayEltRword32 (AD_Word32 x) = S.ArrayPayloadWord32 x
+             useR ArrayEltRword64 (AD_Word64 x) = S.ArrayPayloadWord64 x             
+             useR ArrayEltRfloat  (AD_Float  x) = S.ArrayPayloadFloat  x
+             useR ArrayEltRdouble (AD_Double x) = S.ArrayPayloadDouble x
+             useR ArrayEltRbool   (AD_Bool   x) = S.ArrayPayloadBool   x
+             useR ArrayEltRchar   (AD_Char   x) = S.ArrayPayloadChar   x             
+
     -- End Array creation prims.
     ------------------------------------------------------------
 
