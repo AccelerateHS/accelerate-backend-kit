@@ -11,7 +11,7 @@ module Data.Array.Accelerate.SimpleAST
      Boundary(..),
      
      -- * Runtime Array data representation.
-     AccArray(..),
+     AccArray(..), SliceType(..), SliceComponent(..),
      
      -- * Helper routines and predicates:
      var, isIntType, isFloatType
@@ -122,6 +122,23 @@ isFloatType ty =
   }
  where t = True
 
+-- | Slices of arrays.  These have a length matching the
+-- dimensionality of the slice.  
+-- 
+-- The resulting lists read right-to-left, in the OPPOSITE
+-- order that one would write `(Z :. 3 :. 4 :. All)` in the source code;
+-- i.e. that particular example would translate to `[All, Fixed, Fixed]`.
+--
+type SliceType      = [SliceComponent]
+data SliceComponent = Fixed | All
+  deriving (Eq,Show,Read,Generic)
+
+-- TEMP / OLD:
+-- The read left-to-right, in the same
+-- order that one would write `(Z :. 3 :. 4 :. All)` in the source code.
+-- That particular example would translate to `[Fixed, Fixed, All]`.
+
+
 --------------------------------------------------------------------------------
 -- Accelerate Array-level Expressions
 --------------------------------------------------------------------------------
@@ -135,28 +152,28 @@ data AExp =
   | ArrayTuple [AExp]          -- Tuple of arrays.
   | TupleRefFromRight Int AExp 
     
-  | Apply AFun AExp            -- Function $ Argument
-  | Cond Exp AExp AExp         -- Array level if statements
-  | Use  Type AccArray         -- A real live ARRAY goes here!
-  | Generate Type Exp Fun      -- Generate Function Array, very similar to map
-  | Replicate String Exp AExp  -- TEMP - fix first field
-  | Index     String AExp Exp  -- TEMP - fix first field 
-                               -- Index sliceIndex Array SliceDims
-  | Map      Fun AExp          -- Map Function Array
-  | ZipWith  Fun AExp AExp     -- ZipWith Function Array1 Array2
-  | Fold     Fun Exp AExp      -- Fold Function Default Array
-  | Fold1    Fun AExp          -- Fold1 Function Array
-  | FoldSeg  Fun Exp AExp AExp -- FoldSeg Function Default Array 'Segment Descriptor'
-  | Fold1Seg Fun     AExp AExp -- FoldSeg Function         Array 'Segment Descriptor'
-  | Scanl    Fun Exp AExp      -- Scanl  Function InitialValue LinearArray
-  | Scanl'   Fun Exp AExp      -- Scanl' Function InitialValue LinearArray
-  | Scanl1   Fun     AExp      -- Scanl  Function              LinearArray
-  | Scanr    Fun Exp AExp      -- Scanr  Function InitialValue LinearArray
-  | Scanr'   Fun Exp AExp      -- Scanr' Function InitialValue LinearArray
-  | Scanr1   Fun     AExp      -- Scanr  Function              LinearArray
-  | Permute  Fun AExp Fun AExp -- Permute CombineFun DefaultArr PermFun SourceArray
-  | Backpermute Exp Fun AExp   -- Backpermute ResultDimension   PermFun SourceArray
-  | Reshape     Exp     AExp   -- Reshape Shape Array
+  | Apply AFun AExp              -- Function $ Argument
+  | Cond Exp AExp AExp           -- Array level if statements
+  | Use  Type AccArray           -- A real live ARRAY goes here!
+  | Generate Type Exp Fun        -- Generate Function Array, very similar to map
+  | Replicate SliceType Exp AExp -- Replicate array across one or more dimensions.
+  | Index     SliceType AExp Exp -- Index a sub-array (slice).
+                                 -- Index sliceIndex Array SliceDims
+  | Map      Fun AExp            -- Map Function Array
+  | ZipWith  Fun AExp AExp       -- ZipWith Function Array1 Array2
+  | Fold     Fun Exp AExp        -- Fold Function Default Array
+  | Fold1    Fun AExp            -- Fold1 Function Array
+  | FoldSeg  Fun Exp AExp AExp   -- FoldSeg Function Default Array 'Segment Descriptor'
+  | Fold1Seg Fun     AExp AExp   -- FoldSeg Function         Array 'Segment Descriptor'
+  | Scanl    Fun Exp AExp        -- Scanl  Function InitialValue LinearArray
+  | Scanl'   Fun Exp AExp        -- Scanl' Function InitialValue LinearArray
+  | Scanl1   Fun     AExp        -- Scanl  Function              LinearArray
+  | Scanr    Fun Exp AExp        -- Scanr  Function InitialValue LinearArray
+  | Scanr'   Fun Exp AExp        -- Scanr' Function InitialValue LinearArray
+  | Scanr1   Fun     AExp        -- Scanr  Function              LinearArray
+  | Permute  Fun AExp Fun AExp   -- Permute CombineFun DefaultArr PermFun SourceArray
+  | Backpermute Exp Fun AExp     -- Backpermute ResultDimension   PermFun SourceArray
+  | Reshape     Exp     AExp     -- Reshape Shape Array
   | Stencil  Fun Boundary AExp
   | Stencil2 Fun Boundary AExp Boundary AExp -- Two source arrays/boundaries
  deriving (Read,Show,Eq,Generic)
@@ -284,6 +301,7 @@ instance Out ScalarPrim
 instance Out BoolPrim
 instance Out OtherPrim
 instance Out Boundary
+instance Out SliceComponent
 
 instance Out Symbol where docPrec _ = text . show; doc = docPrec 0 
 instance Out Int8   where docPrec _ = text . show; doc = docPrec 0 

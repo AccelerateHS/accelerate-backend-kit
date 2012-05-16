@@ -27,7 +27,7 @@ import Data.Array.Accelerate.Array.Data
 import Data.Array.Accelerate.Array.Representation  hiding (sliceIndex)
 import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Tuple
-import Data.Array.Accelerate.Analysis.Shape (accDim)
+-- import Data.Array.Accelerate.Analysis.Shape (accDim)
 import qualified Data.Array.Accelerate.Smart       as Sug
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import qualified Data.Array.Accelerate.SimpleAST as S
@@ -72,12 +72,12 @@ envLookup :: Int -> EnvM S.Var
 envLookup i = do (env,_) <- get
                  if length env > i
                   then return (env !! i)
---                  then return (S.var "DUMMY")
                   else error$ "Environment did not contain an element "++show i++" : "++show env
 
 getAccType :: forall aenv ans . Sug.Arrays ans => OpenAcc aenv ans -> S.Type
-getAccType _ = convertArrayType ty 
-  where (ty :: Sug.ArraysR ans) = (error"FIXME") -- Sug.arrays
+getAccType _ = convertArrayType ty2 
+  where 
+      ty2 = Sug.arrays (undefined :: ans) :: Sug.ArraysR (Sug.ArrRepr ans)
 
 getAccTypePre :: Sug.Arrays ans => PreOpenAcc OpenAcc aenv ans -> S.Type
 getAccTypePre acc = getAccType (OpenAcc acc)
@@ -96,7 +96,11 @@ getExpType _ = convertType ty
 convertAcc :: OpenAcc aenv a -> EnvM S.AExp
 convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc 
  where 
--- convertPreOpenAcc :: forall aenv a . Delayable a => 
+ cvtSlice :: SliceIndex slix sl co dim -> S.SliceType
+ cvtSlice (SliceNil)            = []
+ cvtSlice (SliceAll   sliceIdx) = S.All   : cvtSlice sliceIdx 
+ cvtSlice (SliceFixed sliceIdx) = S.Fixed : cvtSlice sliceIdx 
+
  convertPreOpenAcc :: forall aenv a . 
                       PreOpenAcc OpenAcc aenv a -> EnvM S.AExp
  convertPreOpenAcc eacc = 
@@ -236,19 +240,11 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
                                <*> convertAcc acc
 
     Replicate sliceIndex slix a ->       
-      let 
-          dimSl  = accDim a
-          extend :: SliceIndex slix sl co dim -> Int -> [Int]
-          extend (SliceNil)            n = []
-          extend (SliceAll   sliceIdx) n = dimSl : extend sliceIdx (n+1)
-          extend (SliceFixed sliceIdx) n = extend sliceIdx (n+1)
-      in S.Replicate (show sliceIndex)
-                 --  (show $ extend sliceIndex 0) 
-                 <$> convertExp slix 
-                 <*> convertAcc a
+      S.Replicate (cvtSlice sliceIndex) <$> convertExp slix 
+                                        <*> convertAcc a
     Index sliceIndex acc slix -> 
-      S.Index (show sliceIndex) <$> convertAcc acc
-                                <*> convertExp slix
+      S.Index (cvtSlice sliceIndex)     <$> convertAcc acc
+                                        <*> convertExp slix
     Reshape e acc -> S.Reshape <$> convertExp e <*> convertAcc acc
     Permute fn dft pfn acc -> S.Permute <$> convertFun fn 
                                         <*> convertAcc dft
@@ -264,6 +260,7 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
       S.Stencil2 <$> convertFun sten 
                  <*> return (convertBoundary bndy1) <*> convertAcc acc1
                  <*> return (convertBoundary bndy2) <*> convertAcc acc2
+
 
 
 --------------------------------------------------------------------------------

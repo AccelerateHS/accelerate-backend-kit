@@ -40,6 +40,11 @@ p2 = let xs = replicate (constant (Z :. (4::Int))) (unit 4)
      in map (+ 10) xs
 t2 = convert p2
 
+p2b :: Acc (Array DIM2 Int32)
+p2b = let arr = generate (constant (Z :. (5::Int))) (\_ -> 33)
+          xs = replicate (constant$ Z :. (4::Int) :. All) arr -- (unit 9)
+      in xs -- map (+ 10) xs
+t2b = convert p2b
 
 p3 :: Acc (Array DIM3 Int32)
 p3 = let arr = generate  (constant (Z :. (5::Int))) (\_ -> 33)
@@ -103,9 +108,9 @@ t7 = convert p7
 --------------------------------------------------------------------------------
 
 main = defaultMain tests
-tests = [ testCase "use/fromList" (print$ doc t0)
+tests = [ testCase "use/fromList"  (print$ doc t0)
 	, testCase "fold/zipwith"  (print$ doc t1)
-	, testCase "map/replicate"  (print$ doc t2)
+	, testCase "map/replicate" (print$ doc t2)
 	, testCase "generate/replicate" (print$ doc t3)
 	, testCase "index scalar"  (print$ doc t4)
 	, testCase "lift/index"    (print$ doc t5)
