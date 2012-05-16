@@ -1,6 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
-
--- TEMP:
+-- TEMP: for UArray Read instance:
 {-# LANGUAGE ScopedTypeVariables, FlexibleInstances, FlexibleContexts #-}
 module Data.Array.Accelerate.SimpleAST  
    ( 
@@ -25,8 +24,6 @@ import Data.Array.Unboxed as U (IArray, UArray, array)
 import Foreign.C.Types 
 import Pretty (text) -- ghc api
 import Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
-
-
 --------------------------------------------------------------------------------
 -- Prelude: Pick a simple representation of variables (interned symbols)
 --------------------------------------------------------------------------------
@@ -164,6 +161,7 @@ data AExp =
   | Stencil2 Fun Boundary AExp Boundary AExp -- Two source arrays/boundaries
  deriving (Read,Show,Eq,Generic)
 
+-- | Array-level functions.
 data AFun = ALam [(Var,Type)] AExp
  deriving (Read,Show,Eq,Generic)
 
@@ -212,7 +210,7 @@ data Exp =
  deriving (Read,Show,Eq,Generic)
 
 
--- | Constants embedded within Accelerate programs.
+-- | Constants embedded within Accelerate programs (i.e. in the AST).
 data Const = I Int  | I8 Int8  | I16 Int16  | I32 Int32  | I64 Int64
            | W Word | W8 Word8 | W16 Word16 | W32 Word32 | W64 Word64
            | F Float | D Double | C Char | B Bool
@@ -230,7 +228,7 @@ data Const = I Int  | I8 Int8  | I16 Int16  | I32 Int32  | I64 Int64
 -- Accelerate Primitive Operations
 --------------------------------------------------------------------------------
 
--- | A type that includes all primitives supported by Accelerate.
+-- | A datatype that includes all primitives supported by Accelerate.
 data Prim = NP NumPrim
           | IP IntPrim
           | FP FloatPrim
