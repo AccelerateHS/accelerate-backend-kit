@@ -20,36 +20,19 @@ module Data.Array.Accelerate.SimpleConverter
 -- standard libraries
 import Control.Monad
 import Control.Applicative ((<$>),(<*>))
--- import Control.Monad.ST                            (ST)
-import Data.Bits
-import Data.Char                                   (chr, ord)
 import Prelude                                     hiding (sum)
-import Debug.Trace
-import Data.Typeable (typeOf)
-
-import Control.Monad.State.Strict
+import Control.Monad.State.Strict (State, evalState, get, put)
 
 -- friends
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Array.Data
 import Data.Array.Accelerate.Array.Representation  hiding (sliceIndex)
-import Data.Array.Accelerate.Array.Sugar (
-  Z(..), (:.)(..), Array(..), Scalar, Vector, Segments)
--- import Data.Array.Accelerate.Array.Delayed
 import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Tuple
-
 import Data.Array.Accelerate.Analysis.Shape (accDim)
-
-import qualified Data.Array as Arr
-import qualified Data.Array.Accelerate.Smart       as Sugar
-import qualified Data.Array.Accelerate.Array.Sugar as Sugar
+import qualified Data.Array.Accelerate.Smart       as Sug
+import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import qualified Data.Array.Accelerate.SimpleAST as S
-
-import qualified Data.Array.Accelerate.Tuple as T
-import qualified Data.Vector as V
-
-import Data.Array.Unboxed (UArray)
 
 --------------------------------------------------------------------------------
 -- Exposed entrypoints for this module:
@@ -57,8 +40,8 @@ import Data.Array.Unboxed (UArray)
 
 -- | Convert the sophisticate Accelerate-internal AST representation
 --   into something very simple for external consumption.
-convert :: Sugar.Arrays a => Sugar.Acc a -> S.AExp
-convert = runEnvM . convertAcc . Sugar.convertAcc
+convert :: Sug.Arrays a => Sug.Acc a -> S.AExp
+convert = runEnvM . convertAcc . Sug.convertAcc
 
 --------------------------------------------------------------------------------
 -- Environments
@@ -70,6 +53,7 @@ type EnvM = State (SimpleEnv, Counter)
 type SimpleEnv = [S.Var]
 type Counter = Int
 
+runEnvM :: Num t => State ([a1], t) a -> a
 runEnvM m = evalState m ([], 0)
 
 -- Evaluate a sub-branch in an extended environment.
@@ -93,15 +77,16 @@ envLookup i = do (env,_) <- get
 --                  then return (S.var "DUMMY")
                   else error$ "Environment did not contain an element "++show i++" : "++show env
 
-getAccType :: forall aenv ans . Sugar.Arrays ans => OpenAcc aenv ans -> S.Type
-getAccType acc = convertArrayType ty 
-  where (ty :: Sugar.ArraysR ans) = (error"FIXME") -- Sugar.arrays
+getAccType :: forall aenv ans . Sug.Arrays ans => OpenAcc aenv ans -> S.Type
+getAccType _ = convertArrayType ty 
+  where (ty :: Sug.ArraysR ans) = (error"FIXME") -- Sug.arrays
 
+getAccTypePre :: Sug.Arrays ans => PreOpenAcc OpenAcc aenv ans -> S.Type
 getAccTypePre acc = getAccType (OpenAcc acc)
 
-getExpType :: forall env aenv ans . Sugar.Elt ans => OpenExp env aenv ans -> S.Type
-getExpType e = convertType ty 
-  where  ty  = Sugar.eltType ((error"This shouldn't happen (0)")::ans) 
+getExpType :: forall env aenv ans . Sug.Elt ans => OpenExp env aenv ans -> S.Type
+getExpType _ = convertType ty 
+  where  ty  = Sug.eltType ((error"This shouldn't happen (0)")::ans) 
 
 
 --------------------------------------------------------------------------------
@@ -139,31 +124,31 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
                                 <*> convertFun f
 
     -- This is real live runtime array data:
-    Use (arrrepr :: Sugar.ArrRepr a) -> 
+    Use (arrrepr :: Sug.ArrRepr a) -> 
          return$ S.Use ty val
       where 
          val       = cvt2 repOf actualArr    :: S.AccArray
          ty        = convertArrayType repOf
-         repOf     = Sugar.arrays actualArr  :: Sugar.ArraysR (Sugar.ArrRepr a)
-         actualArr = Sugar.toArr  arrrepr    :: a   
+         repOf     = Sug.arrays actualArr  :: Sug.ArraysR (Sug.ArrRepr a)
+         actualArr = Sug.toArr  arrrepr    :: a   
 
-         cvt :: Sugar.ArraysR a' -> a' -> S.AccArray 
-         cvt Sugar.ArraysRunit         ()       = S.ArrayUnit
-         cvt (Sugar.ArraysRpair r1 r2) (a1, a2) = S.ArrayPair (cvt r1 a1) (cvt r2 a2)
-         cvt x@Sugar.ArraysRarray  arr | (_ :: Sugar.ArraysR (Array sh elt)) <- x =
+         cvt :: Sug.ArraysR a' -> a' -> S.AccArray 
+         cvt Sug.ArraysRunit         ()       = S.ArrayUnit
+         cvt (Sug.ArraysRpair r1 r2) (a1, a2) = S.ArrayPair (cvt r1 a1) (cvt r2 a2)
+         cvt x@Sug.ArraysRarray  arr | (_ :: Sug.ArraysR (Sug.Array sh elt)) <- x =
            convertArrayValue arr
 
          -- Takes an Array representation and its reified type:
-         cvt2 :: (Sugar.Arrays a') => Sugar.ArraysR (Sugar.ArrRepr a') -> a' -> S.AccArray          
+         cvt2 :: (Sug.Arrays a') => Sug.ArraysR (Sug.ArrRepr a') -> a' -> S.AccArray          
          cvt2 tyReified arr = 
-           case (tyReified, Sugar.fromArr arr) of 
-             (Sugar.ArraysRunit, ()) -> S.ArrayUnit
-             (Sugar.ArraysRpair r1 r2, (a1, a2)) ->  S.ArrayPair (cvt r1 a1) (cvt r2 a2)
-             (x@Sugar.ArraysRarray, arr2) | (_ :: Sugar.ArraysR (Array sh elt)) <- x ->               
+           case (tyReified, Sug.fromArr arr) of 
+             (Sug.ArraysRunit, ()) -> S.ArrayUnit
+             (Sug.ArraysRpair r1 r2, (a1, a2)) ->  S.ArrayPair (cvt r1 a1) (cvt r2 a2)
+             (x@Sug.ArraysRarray, arr2) | (_ :: Sug.ArraysR (Sug.Array sh elt)) <- x ->               
                convertArrayValue arr2
 
-         convertArrayValue :: (Sugar.Elt e) => Array dim e -> S.AccArray         
-         convertArrayValue (Array _sh adata) = useR arrayElt adata
+         convertArrayValue :: (Sug.Elt e) => Sug.Array dim e -> S.AccArray         
+         convertArrayValue (Sug.Array _sh adata) = useR arrayElt adata
            where 
              -- This [mandatory] type signature forces the array data to be the
              -- same type as the ArrayElt Representation (elt ~ elt):
@@ -204,17 +189,17 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
     Atuple (atup :: Atuple (OpenAcc aenv) b ) -> 
       let loop :: Atuple (OpenAcc aenv') a' -> EnvM [S.AExp] 
           loop NilAtup = return [] 
-          loop (SnocAtup t a) = do fst <- convertAcc a 
-                                   rst <- loop t
-                                   return (fst : rst)
+          loop (SnocAtup t a) = do first <- convertAcc a
+                                   rest  <- loop t
+                                   return (first : rest)
       in do ls <- loop atup
             return$ S.ArrayTuple (reverse ls)
 
-    Aprj ind exp -> 
+    Aprj ind expr -> 
       let len :: TupleIdx tr a -> Int 
           len ZeroTupIdx     = 0
           len (SuccTupIdx x) = 1 + len x
-      in S.TupleRefFromRight (len ind) <$> convertAcc exp 
+      in S.TupleRefFromRight (len ind) <$> convertAcc expr
 
     Unit e        -> S.Unit <$> convertExp e 
 
@@ -253,7 +238,8 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
                                <*> convertAcc acc
 
     Replicate sliceIndex slix a ->       
-      let dimSl  = accDim a
+      let 
+          dimSl  = accDim a
           extend :: SliceIndex slix sl co dim -> Int -> [Int]
           extend (SliceNil)            n = []
           extend (SliceAll   sliceIdx) n = dimSl : extend sliceIdx (n+1)
@@ -317,15 +303,15 @@ convertExp e =
     Tuple tup -> convertTuple tup
 
     Const c   -> return$ S.EConst$ 
-                 convertConst (Sugar.eltType (undefined::ans)) c
+                 convertConst (Sug.eltType (undefined::ans)) c
 
     -- NOTE: The incoming AST indexes tuples FROM THE RIGHT:
-    Prj idx e -> 
+    Prj idx ex -> 
                  -- If I could get access to the IsTuple dict I could do something here:
                  -- The problem is the type function EltRepr....
                  let n = convertTupleIdx idx in 
 --                 S.EPrj n m <$> convertExp e
-                 S.ETupProjectFromRight n <$> convertExp e
+                 S.ETupProjectFromRight n <$> convertExp ex
 
     -- This would seem to force indices to be LISTS at runtime??
     IndexNil       -> return$ S.EIndex []
@@ -350,9 +336,9 @@ convertExp e =
                              _               -> S.EIndexTailDynamic eix'
     IndexAny       -> return S.EIndexAny
 
-    Cond c t e  -> S.ECond <$> convertExp c 
+    Cond c t ex -> S.ECond <$> convertExp c 
                            <*> convertExp t
-                           <*> convertExp e
+                           <*> convertExp ex
     PrimConst c -> return$ S.EConst $ 
                    case c of 
                     PrimMinBound _ -> S.MinBound
@@ -401,8 +387,8 @@ convertType ty =
         oth         -> S.TTuple [ty0', oth]
     SingleTuple scalar -> 
      case scalar of 
-       NumScalarType (IntegralNumType ty) -> 
-         case ty of 
+       NumScalarType (IntegralNumType typ) -> 
+         case typ of 
            TypeInt   _  -> S.TInt
            TypeInt8  _  -> S.TInt8 
            TypeInt16 _  -> S.TInt16  
@@ -421,14 +407,14 @@ convertType ty =
            TypeCUInt   _ -> S.TCUInt
            TypeCULong  _ -> S.TCULong
            TypeCULLong _ -> S.TCULLong
-       NumScalarType (FloatingNumType ty) -> 
-         case ty of 
+       NumScalarType (FloatingNumType typ) -> 
+         case typ of 
            TypeFloat _   -> S.TFloat 
            TypeDouble _  -> S.TDouble 
            TypeCFloat _  -> S.TCFloat 
            TypeCDouble _ -> S.TCDouble 
-       NonNumScalarType ty -> 
-         case ty of 
+       NonNumScalarType typ -> 
+         case typ of 
            TypeBool _   -> S.TBool 
            TypeChar _   -> S.TChar 
            TypeCChar _  -> S.TCChar 
@@ -436,24 +422,24 @@ convertType ty =
            TypeCUChar _ -> S.TCUChar 
 
 
-convertArrayType :: forall arrs . Sugar.ArraysR arrs -> S.Type
+convertArrayType :: forall arrs . Sug.ArraysR arrs -> S.Type
 convertArrayType ty = 
   case ty of 
-   Sugar.ArraysRunit  -> S.TTuple []
+   Sug.ArraysRunit  -> S.TTuple []
    -- Again, here we reify information from types (phantom type
    -- parameters) into a concrete data-representation:
-   Sugar.ArraysRarray | (_ :: Sugar.ArraysR (Array sh e)) <- ty -> 
-     let ety = Sugar.eltType ((error"This shouldn't happen (3)")::e) 
+   Sug.ArraysRarray | (_ :: Sug.ArraysR (Sug.Array sh e)) <- ty -> 
+     let ety = Sug.eltType ((error"This shouldn't happen (3)")::e) 
      in S.TArray (convertType ety)
    -- Left to right!
-   Sugar.ArraysRpair t0 t1 -> S.TTuple [convertArrayType t0,
+   Sug.ArraysRpair t0 t1 -> S.TTuple [convertArrayType t0,
                                         convertArrayType t1]
 
 --------------------------------------------------------------------------------
 -- Convert constants    
 -------------------------------------------------------------------------------
 
--- convertConst :: Sugar.Elt t => Sugar.EltRepr t -> S.Const
+-- convertConst :: Sug.Elt t => Sug.EltRepr t -> S.Const
 convertConst :: TupleType a -> a -> S.Const
 convertConst ty c = 
   case ty of 
@@ -468,8 +454,8 @@ convertConst ty c =
 --                           oth -> error$ "mal constructed tuple on RHS of PairTuple: "++ show oth
     SingleTuple scalar -> 
       case scalar of 
-        NumScalarType (IntegralNumType ty) -> 
-          case ty of 
+        NumScalarType (IntegralNumType typ) -> 
+          case typ of 
             TypeInt   _  -> S.I  c
             TypeInt8  _  -> S.I8  c
             TypeInt16 _  -> S.I16 c
@@ -488,14 +474,14 @@ convertConst ty c =
             TypeCUInt   _ -> S.CUI  c
             TypeCULong  _ -> S.CUL  c
             TypeCULLong _ -> S.CULL c
-        NumScalarType (FloatingNumType ty) -> 
-          case ty of 
+        NumScalarType (FloatingNumType typ) -> 
+          case typ of 
             TypeFloat _   -> S.F c    
             TypeDouble _  -> S.D c 
             TypeCFloat _  -> S.CF c    
             TypeCDouble _ -> S.CD c 
-        NonNumScalarType ty -> 
-          case ty of 
+        NonNumScalarType typ -> 
+          case typ of 
             TypeBool _   -> S.B c
             TypeChar _   -> S.C c
             TypeCChar _  -> S.CC c
@@ -506,23 +492,18 @@ convertConst ty c =
 -- Convert Accelerate Primitive Applications: 
 --------------------------------------------------------------------------------
 
-convertPrimApp :: (Sugar.Elt a, Sugar.Elt b)
+convertPrimApp :: (Sug.Elt a, Sug.Elt b)
                => PrimFun (a -> b) -> PreOpenExp OpenAcc env aenv a
                -> EnvM S.Exp
 convertPrimApp p arg = 
   do args' <- convertTupleExp arg
      return$ S.EPrimApp (op p) args'
  where 
-   op p = 
-    case p of 
-      PrimAdd ty -> S.NP S.Add
-      PrimMul ty -> S.NP S.Mul
-      _ -> error$ "primapp not handled yet: "++show (PrimApp p arg)
-
-numty nt = 
-  case nt of 
-    IntegralNumType ty -> undefined
-    FloatingNumType ty -> undefined
+   op pr = 
+    case pr of 
+      PrimAdd _ty -> S.NP S.Add
+      PrimMul _ty -> S.NP S.Mul
+      _ -> error$ "primapp not handled yet: "++show (PrimApp pr arg)
 
 --------------------------------------------------------------------------------
 -- Convert Accelerate Functions
@@ -543,7 +524,7 @@ convertFun =  loop []
    loop acc orig@(Lam f2) | (_:: OpenFun env aenv (arg -> res)) <- orig 
                           = do 
                                let (_:: OpenFun (env, arg) aenv res) = f2 
-                                   ety = Sugar.eltType ((error"This shouldn't happen (4)") :: arg)
+                                   ety = Sug.eltType ((error"This shouldn't happen (4)") :: arg)
                                    sty = convertType ety
                                (_,x) <- withExtendedEnv "v" $ do
                                           v <- envLookup 0

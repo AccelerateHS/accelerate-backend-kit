@@ -19,37 +19,32 @@ module Data.Array.Accelerate.SimpleAST
     )   
  where
 
--- Interned symbols:
-----------------------------------------
+import Data.Int
+import Data.Word
+import Data.Array.Unboxed as U (IArray, UArray, array)
+import Foreign.C.Types 
+import Pretty (text) -- ghc api
+import Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
+
+
+--------------------------------------------------------------------------------
+-- Prelude: Pick a simple representation of variables (interned symbols)
+--------------------------------------------------------------------------------
+-- Several modules offer this, with varying problems:
 -- import StringTable.Atom
 -- import Data.Atom.Simple
 import Data.Symbol
-----------------------------------------
-import Data.Int
-import Data.Word
-import Foreign.C.Types
-import Text.PrettyPrint.GenericPretty
-import Pretty (text) -- ghc api
-
-import Data.ByteString.Char8 (ByteString, unpack)
-
-import qualified Data.Array.Accelerate.Array.Sugar as Sugar
-import Data.Array.Accelerate.Array.Data (ArrayData)
-
-import Data.Array.Unboxed (IArray, UArray, array)
-
---------------------------------------------------------------------------------
--- A simple representation of variables:
+----------------------------
 var :: String -> Var
-----------------------------------------
+----------------------------
 -- stringtable-atom package:
 -- var = toAtom
 -- type Var = Atom
-----------------------------------------
+----------------------------
 -- simple-atom package:
 -- var = intern
 -- type Var = Symbol
-----------------------------------------
+----------------------------
 -- 'symbol' package:
 var = intern
 type Var = Symbol 
@@ -59,11 +54,11 @@ instance Read Symbol where
 -- read = intern
 -- NOTE - this package would seem to be unsafe because the Symbol type
 -- constructor is exported.
-----------------------------------------
-
+--------------------------------------------------------------------------------
+  
   
 -------------------------------------------------------------------------------
--- Accelerate Array Data
+-- Accelerate Runtime Array Data
 --------------------------------------------------------------------------------
 
 -- | This is our Haskell representation of raw, contiguous data.
@@ -320,11 +315,12 @@ instance Out CUChar  where docPrec _ = text . show; doc = docPrec 0
 instance Out AccArray where docPrec _ = text . show; doc = docPrec 0
 
 -- Why is this one not included in the array package?:
-instance (Read elt, IArray UArray elt) => Read (UArray Int elt) where
+instance (Read elt, U.IArray UArray elt) => Read (U.UArray Int elt) where
     readsPrec p = readParen (p > 9)
-           (\r -> [(array b as :: UArray Int elt, u) | 
+           (\r -> [(U.array b as :: U.UArray Int elt, u) | 
                    ("array",s) <- lex r,
                    (b,t)       <- reads s,
                    (as :: [(Int,elt)],u) <- reads t ])
 
-test = read "array (1,5) [(1,200),(2,201),(3,202),(4,203),(5,204)]" :: UArray Int Int
+test :: UArray Int Int
+test = read "array (1,5) [(1,200),(2,201),(3,202),(4,203),(5,204)]" :: U.UArray Int Int
