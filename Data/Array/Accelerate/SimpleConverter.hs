@@ -124,6 +124,10 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
     Generate sh f -> S.Generate (getAccTypePre eacc)
                                 <$> convertExp sh
                                 <*> convertFun f
+      where
+        _ = retrieveDim sh
+        retrieveDim :: Sug.Shape t => PreExp OpenAcc aenv t -> Int
+        retrieveDim (x::PreExp OpenAcc aenv t) = Sug.dim (undefined::t)
 
     -- This is real live runtime array data:
     Use (arrrepr :: Sug.ArrRepr a) -> 
@@ -136,7 +140,7 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
 
          cvt :: Sug.ArraysR a' -> a' -> S.AccArray 
          cvt Sug.ArraysRunit         ()       = S.ArrayUnit
-         cvt (Sug.ArraysRpair r1 r2) (a1, a2) = S.ArrayPair (cvt r1 a1) (cvt r2 a2)
+         cvt (Sug.ArraysRpair r1 r2) (a1, a2) = mkPair (cvt r1 a1) (cvt r2 a2)
          cvt x@Sug.ArraysRarray  arr | (_ :: Sug.ArraysR (Sug.Array sh elt)) <- x =
            convertArrayValue arr
 
@@ -145,9 +149,13 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
          cvt2 tyReified arr = 
            case (tyReified, Sug.fromArr arr) of 
              (Sug.ArraysRunit, ()) -> S.ArrayUnit
-             (Sug.ArraysRpair r1 r2, (a1, a2)) ->  S.ArrayPair (cvt r1 a1) (cvt r2 a2)
+             (Sug.ArraysRpair r1 r2, (a1, a2)) ->  mkPair (cvt r1 a1) (cvt r2 a2)
              (x@Sug.ArraysRarray, arr2) | (_ :: Sug.ArraysR (Sug.Array sh elt)) <- x ->               
                convertArrayValue arr2
+
+         -- On thin ice!  Validate the invariants here:
+         mkPair S.ArrayUnit b = b
+         mkPair a b = S.ArrayPair a b                               
 
          convertArrayValue :: (Sug.Elt e) => Sug.Array dim e -> S.AccArray         
          convertArrayValue (Sug.Array _sh adata) = useR arrayElt adata
@@ -156,8 +164,8 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
              -- same type as the ArrayElt Representation (elt ~ elt):
              useR :: ArrayEltR elt -> ArrayData elt -> S.AccArray
              useR (ArrayEltRpair aeR1 aeR2) ad = 
-               S.ArrayPair (useR aeR1 (fstArrayData ad)) 
-                           (useR aeR2 (sndArrayData ad))
+               mkPair (useR aeR1 (fstArrayData ad)) 
+                      (useR aeR2 (sndArrayData ad))
              useR ArrayEltRunit             _  = S.ArrayUnit             
              useR ArrayEltRint   (AD_Int   x) = S.ArrayPayloadInt   x
              useR ArrayEltRint8  (AD_Int8  x) = S.ArrayPayloadInt8  x
@@ -417,18 +425,30 @@ convertType ty =
            TypeCUChar _ -> S.TCUChar 
 
 
+-- | Convert a reified representation of an Accelerate (front-end)
+--   array type into the simple representation.  By convention this
+--   ignores the extra unit type at the end ((),arr).  
+--           
+--   That is, an array of ints will come out as just an array of ints
+--   with no extra fuss.
 convertArrayType :: forall arrs . Sug.ArraysR arrs -> S.Type
 convertArrayType ty = 
-  case ty of 
-   Sug.ArraysRunit  -> S.TTuple []
-   -- Again, here we reify information from types (phantom type
-   -- parameters) into a concrete data-representation:
-   Sug.ArraysRarray | (_ :: Sug.ArraysR (Sug.Array sh e)) <- ty -> 
-     let ety = Sug.eltType ((error"This shouldn't happen (3)")::e) 
-     in S.TArray (convertType ety)
-   -- Left to right!
-   Sug.ArraysRpair t0 t1 -> S.TTuple [convertArrayType t0,
-                                        convertArrayType t1]
+    case loop ty of 
+      S.TTuple [S.TTuple [], realty] -> realty
+      t -> error$ "SimpleConverter: made invalid assumuptions about array types from Acc frontend: "++show t
+  where 
+    loop :: forall arrs . Sug.ArraysR arrs -> S.Type
+    loop ty = 
+      case ty of 
+       Sug.ArraysRunit  -> S.TTuple []
+       -- Again, here we reify information from types (phantom type
+       -- parameters) into a concrete data-representation:
+       Sug.ArraysRarray | (_ :: Sug.ArraysR (Sug.Array sh e)) <- ty -> 
+          let ety = Sug.eltType ((error"This shouldn't happen (3)")::e) in
+--          S.TArray (Sug.dim (error"dimOnly"::sh)) (convertType ety)
+          S.TArray (Sug.dim (Sug.ignore :: sh)) (convertType ety)          
+                                                 
+       Sug.ArraysRpair t0 t1 -> S.TTuple [loop t0, loop t1]
 
 --------------------------------------------------------------------------------
 -- Convert constants    

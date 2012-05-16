@@ -94,7 +94,7 @@ data AccArray =
 
 -- | Accelerate types.
 data Type = TTuple [Type]
-          | TArray Type
+          | TArray Dims Type
           | TInt  | TInt8  | TInt16  | TInt32  | TInt64
           | TWord | TWord8 | TWord16 | TWord32 | TWord64
           | TFloat | TDouble | TChar | TBool
@@ -104,6 +104,8 @@ data Type = TTuple [Type]
           | TCUShort | TCUInt  | TCULong | TCULLong
           | TCChar   | TCSChar | TCUChar 
  deriving (Read,Show,Eq,Generic)
+
+type Dims = Int
 
 isIntType ty =
   case ty of {

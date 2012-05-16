@@ -27,6 +27,7 @@ p0 = use $ fromList (Z :. (10::Int)) [1..10::Int64]
 t0 :: S.AExp
 t0 = convert p0
 
+-- | Sharing recovery will create a Let here:
 p1 :: Acc (Scalar Float)
 p1 = let xs = generate (constant (Z :. (10::Int))) (\ (i) -> 3.3 )
          ys = xs
@@ -36,7 +37,7 @@ t1 = convert p1
 
 
 p2 :: Acc (Vector Int32)
-p2 = let xs = replicate (constant (Z :. (4::Int))) (unit 4)
+p2 = let xs = replicate (constant (Z :. (4::Int))) (unit 40)
      in map (+ 10) xs
 t2 = convert p2
 
@@ -60,6 +61,14 @@ p4 = let arr = generate (constant (Z :. (5::Int))) (\_ -> 33) in
 t4 = convert p4         
 
 
+p4b :: Acc (Scalar Int64)
+p4b = let arr = generate (constant (Z :. (3::Int) :. (3::Int))) (\_ -> 33) 
+              :: Acc (Array DIM2 Int64)
+      in
+     unit $ arr ! (index2 1 2)
+t4b = convert p4b
+
+
 -- This one generates EIndex:
 p5 :: Acc (Scalar (((Z :. All) :. Int) :. All))
 p5 = unit$ lift $ Z :. All :. (2::Int) :. All
@@ -70,7 +79,7 @@ p6 :: Acc (Vector Float)
 p6 = map go (use xs)
   where
     xs :: Vector (Float, Float)
-    xs = fromList sh [(1,1),(2,2)]
+    xs = fromList sh [(1,10),(2,20)]
     sh = Z :. (2::Int)
     go x = let (a,b) = unlift x   in a*b
 t6 = convert p6
