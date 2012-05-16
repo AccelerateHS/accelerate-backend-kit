@@ -1,12 +1,15 @@
 {-# LANGUAGE DeriveGeneric #-}
 module Data.Array.Accelerate.SimpleAST  
-   (     
+   ( 
      -- * The types making up Accelerate ASTs:
      AExp(..), AFun(..), 
      Exp(..), Fun(..), Var,
      Type(..), Const(..),
      Prim(..), NumPrim(..), FloatPrim(..), ScalarPrim(..), BoolPrim(..), OtherPrim(..),
      Boundary(..),
+     
+     -- * Runtime Array data representation.
+     AccArray(..),
      
      -- * Helper routines and predicates:
      var, isIntType, isFloatType
@@ -24,6 +27,8 @@ import Data.Word
 import Foreign.C.Types
 import Text.PrettyPrint.GenericPretty
 import Pretty (text) -- ghc api
+
+import qualified Data.Array.Accelerate.Array.Sugar as Sugar
 
 --------------------------------------------------------------------------------
 
@@ -50,6 +55,23 @@ instance Read Symbol where
 ----------------------------------------
 
   
+-------------------------------------------------------------------------------
+-- Accelerate Array Data
+--------------------------------------------------------------------------------
+
+-- | This is array data on the Haskell heap.  It needs to handle
+--   different forms of data.
+-- data AccArray sh e = 
+--     ArrayUnit 
+--   | ArrayPayload (Sugar.Array sh e)
+--   | ArrayPair (AccArray sh e) (AccArray sh e)
+  
+data AccArray = 
+    ArrayUnit 
+  | ArrayPayload 
+  | ArrayPair (AccArray) (AccArray)
+ deriving Show
+
 --------------------------------------------------------------------------------
 -- Accelerate Types
 --------------------------------------------------------------------------------
@@ -99,7 +121,7 @@ data AExp =
     
   | Apply AFun AExp            -- Function $ Argument
   | Cond Exp AExp AExp         -- Array level if statements
-  | Use      String -- A REAL ARRAY GOES HERE! -- TEMP - FIXME
+  | Use  Type String -- A REAL ARRAY GOES HERE! -- TEMP - FIXME
   | Generate Type Exp Fun
     -- Generate Function Array, very similar to map
   | Replicate String Exp AExp  -- TEMP - fix first field

@@ -1,4 +1,7 @@
 {-# LANGUAGE BangPatterns, GADTs, ScopedTypeVariables, CPP, PatternGuards #-}
+{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE TypeFamilies        #-}
+
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 -- {-# ANN module "HLint: ignore Eta reduce" #-}
 
@@ -45,6 +48,8 @@ import qualified Data.Array.Accelerate.SimpleAST as S
 
 import qualified Data.Array.Accelerate.Tuple as T
 import qualified Data.Vector as V
+
+import Data.Array.Unboxed (UArray)
 
 --------------------------------------------------------------------------------
 -- Exposed entrypoints for this module:
@@ -103,6 +108,7 @@ getExpType e = convertType ty
 -- Convert Accelerate Array-level Expressions
 --------------------------------------------------------------------------------
 
+        
 -- convertAcc :: Delayable a => OpenAcc aenv a -> EnvM S.AExp
 convertAcc :: OpenAcc aenv a -> EnvM S.AExp
 convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc 
@@ -130,11 +136,77 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
 
     -- This is real live runtime array data:
     -- TEMP FIXME -- need to finish the Use case:
-    Use (arrrepr :: Sugar.ArrRepr a) -> -- error "FIXME"
-      let 
-          actualArr = Sugar.toArr arrrepr :: a
-          repOf     = Sugar.arrays actualArr
-      in return$ S.Use$ show$ convertArrayType repOf
+    Use (arrrepr :: Sugar.ArrRepr a) -> 
+         return$ S.Use ty $ show ("hi")
+      where 
+                 
+         _val      = cvt needed actualArr    :: S.AccArray        
+--         val       = cvt2 (repOf :: Sugar.ArraysR (Sugar.ArrRepr a)) (arrrepr :: Sugar.ArrRepr a)
+         val       = cvt2 repOf actualArr
+         ty        = convertArrayType repOf
+         needed    = undefined               :: Sugar.ArraysR a
+         repOf     = Sugar.arrays actualArr  :: Sugar.ArraysR (Sugar.ArrRepr a)
+         actualArr = Sugar.toArr  arrrepr    :: a   
+
+         -- I'm not clear what we would use this for:
+         _         = Sugar.arrays' actualArr :: Sugar.ArraysR (Sugar.ArrRepr' a)
+
+         cvt :: Sugar.ArraysR a' -> a' -> S.AccArray 
+         cvt Sugar.ArraysRunit     ()       = S.ArrayUnit
+         cvt x@Sugar.ArraysRarray  arr | (_ :: Sugar.ArraysR (Array sh elt)) <- x =
+           -- In the RHS of this case we have extra type evidence: (a' ~ Array sh elt)
+           let Sugar.Array eltRep arrDat = arr
+               _ = eltRep :: Sugar.EltRepr sh
+               _ = arrDat :: GArrayData (UArray Int) (Sugar.EltRepr elt)
+           in  
+           convertArrayValue arr
+         cvt (Sugar.ArraysRpair r1 r2) (a1, a2) = S.ArrayPair (cvt r1 a1) (cvt r2 a2)
+
+         -- Takes an Array representation and its reified type:
+--         cvt2 :: forall a' . Sugar.ArraysR (Sugar.ArrRepr a') -> (Sugar.ArrRepr a') -> S.AccArray 
+--         cvt2 Sugar.ArraysRunit     ()       = S.ArrayUnit         
+
+         cvt2 :: forall a' . (Sugar.Arrays a') => Sugar.ArraysR (Sugar.ArrRepr a') -> a' -> S.AccArray 
+         cvt2 tyReified arr = 
+           case (tyReified, Sugar.fromArr arr) of 
+             (Sugar.ArraysRunit, ()) -> S.ArrayUnit
+--             (Sugar.ArraysRpair r1 r2, (a1, a2)) -> S.ArrayPair (cvt2 r1 a1) (cvt2 r2 a2)
+         -- cvt2 x@Sugar.ArraysRarray  arr | (_ :: Sugar.ArraysR (Array sh elt)) <- x =
+         --   -- In the RHS of this case we have extra type evidence: (a' ~ Array sh elt)
+         --   let Sugar.Array eltRep arrDat = arr
+         --       _ = eltRep :: Sugar.EltRepr sh
+         --       _ = arrDat :: GArrayData (UArray Int) (Sugar.EltRepr elt)
+         --   in  
+         --   convertArrayValue arr
+         -- cvt 
+
+
+         convertArrayValue :: (Sugar.Elt e) => Array dim e -> S.AccArray         
+         convertArrayValue (Array sh adata) = useR arrayElt adata
+           where 
+             -- This type signature forces the array data to be the
+             -- same type as the ArrayElt Representation (elt ~ elt):
+             useR :: ArrayEltR elt -> ArrayData elt -> S.AccArray
+             useR ArrayEltRunit             _  = S.ArrayUnit
+             useR (ArrayEltRpair aeR1 aeR2) ad = 
+               S.ArrayPair (useR aeR1 (fstArrayData ad)) 
+                           (useR aeR2 (sndArrayData ad))
+             useR ArrayEltRint  x = S.ArrayUnit
+             useR ArrayEltRint8 x = S.ArrayUnit
+             useR ArrayEltRint16 x = S.ArrayUnit
+             useR ArrayEltRint32 x = S.ArrayUnit
+             useR ArrayEltRint64 x = S.ArrayUnit
+             useR ArrayEltRword  x = S.ArrayUnit
+             useR ArrayEltRword8 x = S.ArrayUnit
+             useR ArrayEltRword16 x = S.ArrayUnit
+             useR ArrayEltRword32 x = S.ArrayUnit
+             useR ArrayEltRword64 x = S.ArrayUnit
+             useR ArrayEltRfloat  x = S.ArrayUnit
+             useR ArrayEltRdouble x = S.ArrayUnit
+             useR ArrayEltRbool   x = S.ArrayUnit
+             useR ArrayEltRchar   x = S.ArrayUnit
+
+
 
     Generate sh f -> S.Generate (getAccTypePre eacc)
                                 <$> convertExp sh
