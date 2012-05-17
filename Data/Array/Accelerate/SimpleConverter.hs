@@ -11,7 +11,8 @@
 
 
 module Data.Array.Accelerate.SimpleConverter 
-       ( convert
+       ( 
+         convertToSimpleAST
        )
        where
 
@@ -32,14 +33,18 @@ import qualified Data.Array.Accelerate.Smart       as Sug
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import qualified Data.Array.Accelerate.SimpleAST as S
 
+import Debug.Trace(trace)
+
+tracePrint s x = trace (s ++ show x) x
+
 --------------------------------------------------------------------------------
 -- Exposed entrypoints for this module:
 --------------------------------------------------------------------------------
 
 -- | Convert the sophisticate Accelerate-internal AST representation
 --   into something very simple for external consumption.
-convert :: Sug.Arrays a => Sug.Acc a -> S.AExp
-convert = runEnvM . convertAcc . Sug.convertAcc
+convertToSimpleAST :: Sug.Arrays a => Sug.Acc a -> S.AExp
+convertToSimpleAST = runEnvM . convertAcc . Sug.convertAcc
 
 --------------------------------------------------------------------------------
 -- Environments
@@ -359,6 +364,7 @@ convertExp e =
 convertTuple :: Tuple (PreOpenExp OpenAcc env aenv) t' -> EnvM S.Exp
 convertTuple NilTup = return$ S.ETuple []
 convertTuple (SnocTup tup e) = 
+    trace "TUPLING..."$
     do e' <- convertExp e
        tup' <- convertTuple tup
        case tup' of 
@@ -457,6 +463,7 @@ convertArrayType ty =
 -- convertConst :: Sug.Elt t => Sug.EltRepr t -> S.Const
 convertConst :: TupleType a -> a -> S.Const
 convertConst ty c = 
+  tracePrint "Converting tuple const: " $
   case ty of 
     UnitTuple -> S.Tup []
     PairTuple ty1 ty0 -> let (c1,c0) = c 

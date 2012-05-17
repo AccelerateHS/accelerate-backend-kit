@@ -2,7 +2,7 @@
 
 module Main where
 
-import Data.Array.Accelerate.SimpleConverter (convert)
+import Data.Array.Accelerate.SimpleConverter (convertToSimpleAST)
 import qualified Data.Array.Accelerate.SimpleAST as S
 -- import qualified Data.Array.Accelerate.Smart       as Sugar
 -- import qualified Data.Array.Accelerate.Array.Sugar as Sugar
@@ -25,7 +25,7 @@ import Prelude hiding (zipWith,replicate,map)
 
 p0 = use $ fromList (Z :. (10::Int)) [1..10::Int64]
 t0 :: S.AExp
-t0 = convert p0
+t0 = convertToSimpleAST p0
 
 -- | Sharing recovery will create a Let here:
 p1 :: Acc (Scalar Float)
@@ -33,32 +33,32 @@ p1 = let xs = generate (constant (Z :. (10::Int))) (\ (i) -> 3.3 )
          ys = xs
      in  fold (+) 0 (zipWith (*) xs ys)
 t1 :: S.AExp
-t1 = convert p1
+t1 = convertToSimpleAST p1
 
 
 p2 :: Acc (Vector Int32)
 p2 = let xs = replicate (constant (Z :. (4::Int))) (unit 40)
      in map (+ 10) xs
-t2 = convert p2
+t2 = convertToSimpleAST p2
 
 p2b :: Acc (Array DIM2 Int32)
 p2b = let arr = generate (constant (Z :. (5::Int))) (\_ -> 33)
           xs = replicate (constant$ Z :. (4::Int) :. All) arr -- (unit 9)
       in xs -- map (+ 10) xs
-t2b = convert p2b
+t2b = convertToSimpleAST p2b
 
 p3 :: Acc (Array DIM3 Int32)
 p3 = let arr = generate  (constant (Z :. (5::Int))) (\_ -> 33)
          xs  = replicate (constant$ Z :. (2::Int) :. All :. (3::Int)) arr
      in xs 
-t3 = convert p3
+t3 = convertToSimpleAST p3
 
 -- Test 4, a program that creates an IndexScalar:
 p4 :: Acc (Scalar Int64)
 p4 = let arr = generate (constant (Z :. (5::Int))) (\_ -> 33) in
      unit $ arr ! (index1 2)
         -- (Lang.constant (Z :. (3::Int)))  
-t4 = convert p4         
+t4 = convertToSimpleAST p4         
 
 
 p4b :: Acc (Scalar Int64)
@@ -66,13 +66,13 @@ p4b = let arr = generate (constant (Z :. (3::Int) :. (3::Int))) (\_ -> 33)
               :: Acc (Array DIM2 Int64)
       in
      unit $ arr ! (index2 1 2)
-t4b = convert p4b
+t4b = convertToSimpleAST p4b
 
 
 -- This one generates EIndex:
 p5 :: Acc (Scalar (((Z :. All) :. Int) :. All))
 p5 = unit$ lift $ Z :. All :. (2::Int) :. All
-t5 = convert p5
+t5 = convertToSimpleAST p5
 
 -- This one generates ETupProjectFromRight:
 p6 :: Acc (Vector Float)
@@ -82,7 +82,7 @@ p6 = map go (use xs)
     xs = fromList sh [(1,10),(2,20)]
     sh = Z :. (2::Int)
     go x = let (a,b) = unlift x   in a*b
-t6 = convert p6
+t6 = convertToSimpleAST p6
 
 
 transposeAcc :: Array DIM2 Float -> Acc (Array DIM2 Float)
@@ -96,7 +96,7 @@ transposeAcc mat =
 -- This one uses dynamic index head/tail (but not cons):
 p7 :: Acc (Array DIM2 Float)
 p7 = transposeAcc (fromList (Z :. (2::Int) :. (2::Int)) [1..4])
-t7 = convert p7
+t7 = convertToSimpleAST p7
 -- Evaluating "doc t7" prints:
 -- Let a0
 --     (TArray TFloat)

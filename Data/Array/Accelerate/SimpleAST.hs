@@ -1,14 +1,15 @@
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveGeneric, CPP #-}
 -- TEMP: for UArray Read instance:
 {-# LANGUAGE ScopedTypeVariables, FlexibleInstances, FlexibleContexts #-}
 module Data.Array.Accelerate.SimpleAST  
    ( 
      -- * The types making up Accelerate ASTs:
      AExp(..), AFun(..), 
-     Exp(..), Fun(..), Var,
+     Exp(..), Fun(..), 
      Type(..), Const(..),
      Prim(..), NumPrim(..), FloatPrim(..), ScalarPrim(..), BoolPrim(..), OtherPrim(..),
      Boundary(..),
+     Var,
      
      -- * Runtime Array data representation.
      AccArray(..), SliceType(..), SliceComponent(..),
@@ -28,29 +29,33 @@ import Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
 -- Prelude: Pick a simple representation of variables (interned symbols)
 --------------------------------------------------------------------------------
 -- Several modules offer this, with varying problems:
--- import StringTable.Atom
--- import Data.Atom.Simple
+----------------------------
+#define USE_STRINGTABLE
+#ifdef USE_STRINGTABLE
+-- 'stringtable-atom' package:
+import StringTable.Atom
+var = toAtom
+type Var = Atom
+----------------------------
+#elif defined(USE_SIMPLEATOM)
+-- 'simple-atom' package:
+import Data.Atom.Simple
+var = intern
+type Var = Symbol
+----------------------------
+#elif defined(USE_SYMBOL)
+-- 'symbol' package
 import Data.Symbol
-----------------------------
-var :: String -> Var
-----------------------------
--- stringtable-atom package:
--- var = toAtom
--- type Var = Atom
-----------------------------
--- simple-atom package:
--- var = intern
--- type Var = Symbol
-----------------------------
--- 'symbol' package:
 var = intern
 type Var = Symbol 
 instance Show Symbol where 
  show = unintern
 instance Read Symbol where 
--- read = intern
 -- NOTE - this package would seem to be unsafe because the Symbol type
 -- constructor is exported.
+#endif
+  
+var :: String -> Var
 --------------------------------------------------------------------------------
   
   
@@ -88,6 +93,16 @@ data AccArray =
 
  deriving (Show, Read, Eq)
 
+-------------------------------------------------------------------------------
+-- Shape representation:
+--------------------------------------------------------------------------------
+
+-- Shapes are represented at runtime by tuples of integers.  For example:
+--   1D shape: (I 5)
+--   2D shape: Tup [I 2, I 3]
+--   3D shape: Tup [I 2, I 3, I 4]
+-- etc.
+
 --------------------------------------------------------------------------------
 -- Accelerate Types
 --------------------------------------------------------------------------------
@@ -95,8 +110,8 @@ data AccArray =
 -- | Accelerate types.
 data Type = TTuple [Type]
           | TArray Dims Type
-          | TInt  | TInt8  | TInt16  | TInt32  | TInt64
-          | TWord | TWord8 | TWord16 | TWord32 | TWord64
+          | TInt   | TInt8  | TInt16  | TInt32  | TInt64
+          | TWord  | TWord8 | TWord16 | TWord32 | TWord64
           | TFloat | TDouble | TChar | TBool
           -- C types (rather annoying):
           | TCFloat  | TCDouble 
@@ -221,8 +236,8 @@ data Exp =
    -- Project a single scalar from an array
    -- the array expression can not contain any free scalar variables
   | EIndexScalar AExp Exp 
-   -- Array shape
-   -- the array expression can not contain any free scalar variables
+   -- Get the shape of an Array:
+   -- The array expression can not contain any free scalar variables
   | EShape AExp
    -- Number of elements of a shape
   | EShapeSize Exp 
@@ -305,7 +320,7 @@ instance Out OtherPrim
 instance Out Boundary
 instance Out SliceComponent
 
-instance Out Symbol where docPrec _ = text . show; doc = docPrec 0 
+instance Out Var    where docPrec _ = text . show; doc = docPrec 0 
 instance Out Int8   where docPrec _ = text . show; doc = docPrec 0 
 instance Out Int16  where docPrec _ = text . show; doc = docPrec 0
 instance Out Int32  where docPrec _ = text . show; doc = docPrec 0 
