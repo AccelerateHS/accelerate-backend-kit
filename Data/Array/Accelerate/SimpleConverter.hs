@@ -135,57 +135,72 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
         retrieveDim (x::PreExp OpenAcc aenv t) = Sug.dim (undefined::t)
 
     -- This is real live runtime array data:
-    Use (arrrepr :: Sug.ArrRepr a) -> 
+    -- orig@(Use (arrrepr :: Sug.ArrRepr a))  | (_ :: PreOpenAcc OpenAcc aenv a) <- orig ->
+    Use (arrrepr :: Sug.ArrRepr a) ->    
          return$ S.Use ty val
       where 
-         val       = cvt2 repOf actualArr    :: S.AccArray
+         val = S.AccArray shp payloads
+         (Just shp, payloads)  = cvt2 repOf actualArr  
          ty        = convertArrayType repOf
          repOf     = Sug.arrays actualArr  :: Sug.ArraysR (Sug.ArrRepr a)
          actualArr = Sug.toArr  arrrepr    :: a   
 
-         cvt :: Sug.ArraysR a' -> a' -> S.AccArray 
-         cvt Sug.ArraysRunit         ()       = S.ArrayUnit
-         cvt (Sug.ArraysRpair r1 r2) (a1, a2) = mkPair (cvt r1 a1) (cvt r2 a2)
+         cvt :: Sug.ArraysR a' -> a' -> (Maybe [Int], [S.ArrayPayload])
+         cvt Sug.ArraysRunit         ()       = (Nothing,[])
+         cvt (Sug.ArraysRpair r1 r2) (a1, a2) = cvt r1 a1 `combine` cvt r2 a2
          cvt x@Sug.ArraysRarray  arr | (_ :: Sug.ArraysR (Sug.Array sh elt)) <- x =
-           convertArrayValue arr
+           
+           -- FIXME -- how do we get the real shape data out?
+           let shp = Sug.shapeToList (Sug.ignore :: sh) in
+           (Just shp, convertArrayValue arr)
 
-         -- Takes an Array representation and its reified type:
-         cvt2 :: (Sug.Arrays a') => Sug.ArraysR (Sug.ArrRepr a') -> a' -> S.AccArray          
+         -- -- Takes an Array representation and its reified type:
+         cvt2 :: (Sug.Arrays a') => Sug.ArraysR (Sug.ArrRepr a') -> a' -> (Maybe [Int], [S.ArrayPayload])
          cvt2 tyReified arr = 
            case (tyReified, Sug.fromArr arr) of 
-             (Sug.ArraysRunit, ()) -> S.ArrayUnit
-             (Sug.ArraysRpair r1 r2, (a1, a2)) ->  mkPair (cvt r1 a1) (cvt r2 a2)
-             (x@Sug.ArraysRarray, arr2) | (_ :: Sug.ArraysR (Sug.Array sh elt)) <- x ->               
-               convertArrayValue arr2
+             (Sug.ArraysRunit, ()) -> (Nothing,[])
+             (Sug.ArraysRpair r1 r2, (a1, a2)) -> cvt r1 a1 `combine` cvt r2 a2
+             (x@Sug.ArraysRarray, arr2) | (_ :: Sug.ArraysR (Sug.Array sh elt)) <- x -> 
+               let shp = Sug.shapeToList (Sug.ignore :: sh) in
+               (Just shp, convertArrayValue arr2)
 
-         -- On thin ice!  Validate the invariants here:
-         mkPair S.ArrayUnit b = b
-         mkPair a b = S.ArrayPair a b                               
+         combine :: (Maybe [Int], [S.ArrayPayload]) -> 
+                    (Maybe [Int], [S.ArrayPayload]) -> 
+                    (Maybe [Int], [S.ArrayPayload])
+         combine (Nothing,ls1) (x,ls2) = (x,ls1++ls2)
+         combine (x,ls1) (Nothing,ls2) = (x,ls1++ls2)
+         combine (Just x,ls1) (Just y,ls2) = 
+           if x==y then (Just x,ls1++ls2)
+           else error$ "Found two different shapes within the same array: "++show(x,y)
+                
+         -- -- On thin ice!  Validate the invariants here:
+         -- mkPair S.ArrayUnit b = b
+         -- mkPair a b = S.ArrayPair a b                               
 
-         convertArrayValue :: (Sug.Elt e) => Sug.Array dim e -> S.AccArray         
+         convertArrayValue :: (Sug.Elt e) => Sug.Array dim e -> [S.ArrayPayload]
          convertArrayValue (Sug.Array _sh adata) = useR arrayElt adata
            where 
              -- This [mandatory] type signature forces the array data to be the
              -- same type as the ArrayElt Representation (elt ~ elt):
-             useR :: ArrayEltR elt -> ArrayData elt -> S.AccArray
+             useR :: ArrayEltR elt -> ArrayData elt -> [S.ArrayPayload]
              useR (ArrayEltRpair aeR1 aeR2) ad = 
-               mkPair (useR aeR1 (fstArrayData ad)) 
-                      (useR aeR2 (sndArrayData ad))
-             useR ArrayEltRunit             _  = S.ArrayUnit             
-             useR ArrayEltRint   (AD_Int   x) = S.ArrayPayloadInt   x
-             useR ArrayEltRint8  (AD_Int8  x) = S.ArrayPayloadInt8  x
-             useR ArrayEltRint16 (AD_Int16 x) = S.ArrayPayloadInt16 x
-             useR ArrayEltRint32 (AD_Int32 x) = S.ArrayPayloadInt32 x
-             useR ArrayEltRint64 (AD_Int64 x) = S.ArrayPayloadInt64 x
-             useR ArrayEltRword   (AD_Word   x) = S.ArrayPayloadWord   x
-             useR ArrayEltRword8  (AD_Word8  x) = S.ArrayPayloadWord8  x
-             useR ArrayEltRword16 (AD_Word16 x) = S.ArrayPayloadWord16 x
-             useR ArrayEltRword32 (AD_Word32 x) = S.ArrayPayloadWord32 x
-             useR ArrayEltRword64 (AD_Word64 x) = S.ArrayPayloadWord64 x             
-             useR ArrayEltRfloat  (AD_Float  x) = S.ArrayPayloadFloat  x
-             useR ArrayEltRdouble (AD_Double x) = S.ArrayPayloadDouble x
-             useR ArrayEltRbool   (AD_Bool   x) = S.ArrayPayloadBool   x
-             useR ArrayEltRchar   (AD_Char   x) = S.ArrayPayloadChar   x             
+               (useR aeR1 (fstArrayData ad)) ++ 
+               (useR aeR2 (sndArrayData ad))
+             useR ArrayEltRunit             _   = [S.ArrayPayloadUnit]
+             useR ArrayEltRint   (AD_Int   x)   = [S.ArrayPayloadInt   x]
+             useR ArrayEltRint8  (AD_Int8  x)   = [S.ArrayPayloadInt8  x]
+             useR ArrayEltRint16 (AD_Int16 x)   = [S.ArrayPayloadInt16 x]
+             useR ArrayEltRint32 (AD_Int32 x)   = [S.ArrayPayloadInt32 x]
+             useR ArrayEltRint64 (AD_Int64 x)   = [S.ArrayPayloadInt64 x]
+             useR ArrayEltRword   (AD_Word   x) = [S.ArrayPayloadWord   x]
+             useR ArrayEltRword8  (AD_Word8  x) = [S.ArrayPayloadWord8  x]
+             useR ArrayEltRword16 (AD_Word16 x) = [S.ArrayPayloadWord16 x]
+             useR ArrayEltRword32 (AD_Word32 x) = [S.ArrayPayloadWord32 x]
+             useR ArrayEltRword64 (AD_Word64 x) = [S.ArrayPayloadWord64 x]            
+             useR ArrayEltRfloat  (AD_Float  x) = [S.ArrayPayloadFloat  x]
+             useR ArrayEltRdouble (AD_Double x) = [S.ArrayPayloadDouble x]
+             useR ArrayEltRbool   (AD_Bool   x) = [S.ArrayPayloadBool   x]
+             useR ArrayEltRchar   (AD_Char   x) = [S.ArrayPayloadChar   x]            
 
     -- End Array creation prims.
     ------------------------------------------------------------
@@ -364,7 +379,7 @@ convertExp e =
 convertTuple :: Tuple (PreOpenExp OpenAcc env aenv) t' -> EnvM S.Exp
 convertTuple NilTup = return$ S.ETuple []
 convertTuple (SnocTup tup e) = 
-    trace "TUPLING..."$
+--    trace "convertTuple..."$
     do e' <- convertExp e
        tup' <- convertTuple tup
        case tup' of 
@@ -463,7 +478,7 @@ convertArrayType ty =
 -- convertConst :: Sug.Elt t => Sug.EltRepr t -> S.Const
 convertConst :: TupleType a -> a -> S.Const
 convertConst ty c = 
-  tracePrint "Converting tuple const: " $
+--  tracePrint "Converting tuple const: " $
   case ty of 
     UnitTuple -> S.Tup []
     PairTuple ty1 ty0 -> let (c1,c0) = c 

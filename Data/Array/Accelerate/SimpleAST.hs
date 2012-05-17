@@ -12,7 +12,8 @@ module Data.Array.Accelerate.SimpleAST
      Var,
      
      -- * Runtime Array data representation.
-     AccArray(..), SliceType(..), SliceComponent(..),
+     AccArray(..), ArrayPayload(..),
+     SliceType(..), SliceComponent(..),
      
      -- * Helper routines and predicates:
      var, isIntType, isFloatType
@@ -263,20 +264,23 @@ data SliceComponent = Fixed | All
 -- Accelerate Runtime Array Data
 --------------------------------------------------------------------------------
 
--- | This is our Haskell representation of raw, contiguous data.
--- Subject to change in the future depending on what internal
--- representation the Accelerate front-end uses.
-type RawData e = UArray Int e
+-- | This is a complete Accelerate array living on the Haskell heap.
+--   It needs to handle different forms of scalar data (different payloads).
+-- 
+--   Arrays of tuples are still "unzipped" in this representation
+--   (i.e. represented as tuples of arrays).  The dimensions are
+--   represented as a simple list of integers.  For example, [2,3,4]
+--   would be dimensions for a three dimensional array.
+-- 
+--   Invariant -- all payload arrays should be the same length, and:
+--   > sum (arrDim a) == length (arrPayloads a !! i)
+data AccArray = AccArray { arrDim :: [Int], arrPayloads :: [ArrayPayload] }
+ deriving (Show, Read, Eq)
 
--- | This is array data on the Haskell heap.  It needs to handle
---   different forms of data.
-data AccArray = 
-    ArrayUnit 
-  | ArrayPair (AccArray) (AccArray)
-
-  -- TODO: UArray doesn't offer cast like IOArray.  It would be nice
-  -- to make all arrays canonicalized to a data buffer of Word8's:
-  | ArrayPayloadInt    (RawData Int)
+-- | This is a single, contiguous batch of elements, representing one
+--   tuple-component of the contents of an Accelerate array.
+data ArrayPayload = 
+    ArrayPayloadInt    (RawData Int)
   | ArrayPayloadInt8   (RawData Int8)
   | ArrayPayloadInt16  (RawData Int16)
   | ArrayPayloadInt32  (RawData Int32)   
@@ -290,8 +294,17 @@ data AccArray =
   | ArrayPayloadDouble (RawData Double)
   | ArrayPayloadChar   (RawData Char)
   | ArrayPayloadBool   (RawData Word8) -- Word8's represent bools.
-
+  | ArrayPayloadUnit -- Dummy placeholder value.
+--   
+  -- TODO: UArray doesn't offer cast like IOArray.  It would be nice
+  -- to make all arrays canonicalized to a data buffer of Word8's:
  deriving (Show, Read, Eq)
+  
+-- | This is our Haskell representation of raw, contiguous data.
+-- Subject to change in the future depending on what internal
+-- representation the Accelerate front-end uses.
+type RawData e = UArray Int e
+
 
 -------------------------------------------------------------------------------
 -- Shape representation:

@@ -23,7 +23,7 @@ import Test.HUnit
 import Text.PrettyPrint.GenericPretty (doc)
 import Prelude hiding (zipWith,replicate,map)
 
-p0 = use $ fromList (Z :. (10::Int)) [1..10::Int64]
+p0 = use $ fromList (Z :. (2::Int) :. (5::Int)) [1..10::Int64]
 t0 :: S.AExp
 t0 = convertToSimpleAST p0
 
