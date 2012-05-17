@@ -57,51 +57,154 @@ instance Read Symbol where
   
 var :: String -> Var
 --------------------------------------------------------------------------------
-  
-  
--------------------------------------------------------------------------------
--- Accelerate Runtime Array Data
+    
+
+--------------------------------------------------------------------------------
+-- Accelerate Array-level Expressions
 --------------------------------------------------------------------------------
 
--- | This is our Haskell representation of raw, contiguous data.
--- Subject to change in the future depending on what internal
--- representation the Accelerate front-end uses.
-type RawData e = UArray Int e
+-- | Array-level expressions
+data AExp = 
+    Vr Var -- Array variable bound by a Let.
+  | Unit Exp -- Turn an element into a singleton array
+    -- Let is used for common subexpression elimination
+  | Let  Var Type AExp AExp    -- Let Var Type RHS Body
+  | ArrayTuple [AExp]          -- Tuple of arrays.
+  | TupleRefFromRight Int AExp 
+    
+  | Apply AFun AExp              -- Function $ Argument
+  | Cond Exp AExp AExp           -- Array level if statements
+  | Use  Type AccArray           -- A real live ARRAY goes here!
+  | Generate Type Exp Fun        -- Generate Function Array, very similar to map
+  | Replicate SliceType Exp AExp -- Replicate array across one or more dimensions.
+  | Index     SliceType AExp Exp -- Index a sub-array (slice).
+                                 -- Index sliceIndex Array SliceDims
+  | Map      Fun AExp            -- Map Function Array
+  | ZipWith  Fun AExp AExp       -- ZipWith Function Array1 Array2
+  | Fold     Fun Exp AExp        -- Fold Function Default Array
+  | Fold1    Fun AExp            -- Fold1 Function Array
+  | FoldSeg  Fun Exp AExp AExp   -- FoldSeg Function Default Array 'Segment Descriptor'
+  | Fold1Seg Fun     AExp AExp   -- FoldSeg Function         Array 'Segment Descriptor'
+  | Scanl    Fun Exp AExp        -- Scanl  Function InitialValue LinearArray
+  | Scanl'   Fun Exp AExp        -- Scanl' Function InitialValue LinearArray
+  | Scanl1   Fun     AExp        -- Scanl  Function              LinearArray
+  | Scanr    Fun Exp AExp        -- Scanr  Function InitialValue LinearArray
+  | Scanr'   Fun Exp AExp        -- Scanr' Function InitialValue LinearArray
+  | Scanr1   Fun     AExp        -- Scanr  Function              LinearArray
+  | Permute  Fun AExp Fun AExp   -- Permute CombineFun DefaultArr PermFun SourceArray
+  | Backpermute Exp Fun AExp     -- Backpermute ResultDimension   PermFun SourceArray
+  | Reshape     Exp     AExp     -- Reshape Shape Array
+  | Stencil  Fun Boundary AExp
+  | Stencil2 Fun Boundary AExp Boundary AExp -- Two source arrays/boundaries
+ deriving (Read,Show,Eq,Generic)
 
--- | This is array data on the Haskell heap.  It needs to handle
---   different forms of data.
-data AccArray = 
-    ArrayUnit 
-  | ArrayPair (AccArray) (AccArray)
+-- | Array-level functions.
+data AFun = ALam [(Var,Type)] AExp
+ deriving (Read,Show,Eq,Generic)
 
-  -- TODO: UArray doesn't offer cast like IOArray.  It would be nice
-  -- to make all arrays canonicalized to a data buffer of Word8's:
-  | ArrayPayloadInt    (RawData Int)
-  | ArrayPayloadInt8   (RawData Int8)
-  | ArrayPayloadInt16  (RawData Int16)
-  | ArrayPayloadInt32  (RawData Int32)   
-  | ArrayPayloadInt64  (RawData Int64)
-  | ArrayPayloadWord   (RawData Word)
-  | ArrayPayloadWord8  (RawData Word8)
-  | ArrayPayloadWord16 (RawData Word16)
-  | ArrayPayloadWord32 (RawData Word32)   
-  | ArrayPayloadWord64 (RawData Word64)
-  | ArrayPayloadFloat  (RawData Float)
-  | ArrayPayloadDouble (RawData Double)
-  | ArrayPayloadChar   (RawData Char)
-  | ArrayPayloadBool   (RawData Word8) -- Word8's represent bools.
-
- deriving (Show, Read, Eq)
-
--------------------------------------------------------------------------------
--- Shape representation:
+-- | Boundary condition specification for stencil operations.
+data Boundary = Clamp               -- ^clamp coordinates to the extent of the array
+              | Mirror              -- ^mirror coordinates beyond the array extent
+              | Wrap                -- ^wrap coordinates around on each dimension
+              | Constant Const      -- ^use a constant value for outlying coordinates 
+ deriving (Read,Show,Eq,Generic)
+          
+          
+--------------------------------------------------------------------------------
+-- Accelerate Scalar Expressions and Functions
 --------------------------------------------------------------------------------
 
--- Shapes are represented at runtime by tuples of integers.  For example:
---   1D shape: (I 5)
---   2D shape: Tup [I 2, I 3]
---   3D shape: Tup [I 2, I 3, I 4]
--- etc.
+-- | Scalar functions
+data Fun = Lam [(Var,Type)] Exp
+ deriving (Read,Show,Eq,Generic)
+
+-- | Scalar expressions
+data Exp = 
+    EVr Var -- Variable bound by a Let.
+  | ELet Var Type Exp Exp    -- ELet Var Type RHS Body
+  -- ELet is used for common subexpression elimination
+  | EPrimApp Prim [Exp]  -- *Any* primitive scalar function
+  | ETuple [Exp]
+  | EConst Const
+   -- [2012.04.02] I can't presently compute the length from the TupleIdx.
+   --  | EPrj Int Int Exp  -- n m e : Project the nth field of an m-length tuple.
+  | ETupProjectFromRight Int Exp  -- Project the nth field FROM THE RIGHT end of the tuple.  
+  | EIndex [Exp] -- Index into a multi-dimensional array:
+  | EIndexAny 
+   -- I'm not sure I'm follwing this -- Accelerate would seem to allow run-time CONSING of indices:
+  | EIndexConsDynamic Exp Exp
+  | EIndexHeadDynamic Exp 
+  | EIndexTailDynamic Exp 
+   -- Conditional expression (non-strict in 2nd and 3rd argument):
+  | ECond Exp Exp Exp
+   -- Project a single scalar from an array,
+   -- the array expression can not contain any free scalar variables:
+  | EIndexScalar AExp Exp 
+   -- Get the shape of an Array:
+   -- The array expression can not contain any free scalar variables
+  | EShape AExp
+   -- Number of elements of a shape
+  | EShapeSize Exp 
+ deriving (Read,Show,Eq,Generic)
+
+
+-- | Constants embedded within Accelerate programs (i.e. in the AST).
+data Const = I Int  | I8 Int8  | I16 Int16  | I32 Int32  | I64 Int64
+           | W Word | W8 Word8 | W16 Word16 | W32 Word32 | W64 Word64
+           | F Float | D Double | C Char | B Bool
+           | Tup [Const]
+            -- Special constants:
+           | MinBound | MaxBound | Pi
+            -- C types, rather annoying:
+           | CF CFloat   | CD CDouble 
+           | CS  CShort  | CI  CInt  | CL  CLong  | CLL  CLLong
+           | CUS CUShort | CUI CUInt | CUL CULong | CULL CULLong
+           | CC  CChar   | CSC CSChar | CUC CUChar 
+ deriving (Read,Show,Eq,Generic)
+
+
+--------------------------------------------------------------------------------
+-- Accelerate Primitive Operations
+--------------------------------------------------------------------------------
+
+-- | A datatype that includes all primitives supported by Accelerate.
+data Prim = NP NumPrim
+          | IP IntPrim
+          | FP FloatPrim
+          | SP ScalarPrim
+          | BP BoolPrim
+          | OP OtherPrim
+  deriving (Read,Show,Eq,Generic)
+          
+-- | Primitives that operate on /all/ numeric types.
+--   Neg/Abs/Sig are unary:
+data NumPrim = Add | Mul | Neg | Abs | Sig
+  deriving (Read,Show,Eq,Generic)
+
+-- | Primitive integral-only operations.
+-- All binops except BNot, shifts and rotates take an Int constant as second arg:
+data IntPrim = Quot | Rem | IDiv | Mod | 
+               BAnd | BOr | BXor | BNot | BShiftL | BShiftR | BRotateL | BRotateR
+  deriving (Read,Show,Eq,Generic)
+
+-- | Primitive floating point-only operations.
+data FloatPrim = 
+      -- Unary:
+      Recip | Sin | Cos | Tan | Asin | Acos | Atan | Asinh | Acosh | Atanh | ExpFloating | Sqrt | Log |
+      -- Binary:                  
+      FDiv | FPow | LogBase | Atan2 | Truncate | Round | Floor | Ceiling
+  deriving (Read,Show,Eq,Generic)
+           
+-- | Relational and equality operators
+data ScalarPrim = Lt | Gt | LtEq | GtEq | Eq | NEq | Max | Min
+  deriving (Read,Show,Eq,Generic)
+
+data BoolPrim = And | Or | Not
+  deriving (Read,Show,Eq,Generic)
+
+data OtherPrim = Ord | Chr | BoolToInt | FromIntegral
+  deriving (Read,Show,Eq,Generic)
+
 
 --------------------------------------------------------------------------------
 -- Accelerate Types
@@ -156,149 +259,50 @@ data SliceComponent = Fixed | All
 -- That particular example would translate to `[Fixed, Fixed, All]`.
 
 
---------------------------------------------------------------------------------
--- Accelerate Array-level Expressions
---------------------------------------------------------------------------------
-
--- | Array-level expressions
-data AExp = 
-    Vr Var -- Array variable bound by a Let.
-  | Unit Exp -- Turn an element into a singleton array
-    -- Let is used for common subexpression elimination
-  | Let  Var Type AExp AExp    -- Let Var Type RHS Body
-  | ArrayTuple [AExp]          -- Tuple of arrays.
-  | TupleRefFromRight Int AExp 
-    
-  | Apply AFun AExp              -- Function $ Argument
-  | Cond Exp AExp AExp           -- Array level if statements
-  | Use  Type AccArray           -- A real live ARRAY goes here!
-  | Generate Type Exp Fun        -- Generate Function Array, very similar to map
-  | Replicate SliceType Exp AExp -- Replicate array across one or more dimensions.
-  | Index     SliceType AExp Exp -- Index a sub-array (slice).
-                                 -- Index sliceIndex Array SliceDims
-  | Map      Fun AExp            -- Map Function Array
-  | ZipWith  Fun AExp AExp       -- ZipWith Function Array1 Array2
-  | Fold     Fun Exp AExp        -- Fold Function Default Array
-  | Fold1    Fun AExp            -- Fold1 Function Array
-  | FoldSeg  Fun Exp AExp AExp   -- FoldSeg Function Default Array 'Segment Descriptor'
-  | Fold1Seg Fun     AExp AExp   -- FoldSeg Function         Array 'Segment Descriptor'
-  | Scanl    Fun Exp AExp        -- Scanl  Function InitialValue LinearArray
-  | Scanl'   Fun Exp AExp        -- Scanl' Function InitialValue LinearArray
-  | Scanl1   Fun     AExp        -- Scanl  Function              LinearArray
-  | Scanr    Fun Exp AExp        -- Scanr  Function InitialValue LinearArray
-  | Scanr'   Fun Exp AExp        -- Scanr' Function InitialValue LinearArray
-  | Scanr1   Fun     AExp        -- Scanr  Function              LinearArray
-  | Permute  Fun AExp Fun AExp   -- Permute CombineFun DefaultArr PermFun SourceArray
-  | Backpermute Exp Fun AExp     -- Backpermute ResultDimension   PermFun SourceArray
-  | Reshape     Exp     AExp     -- Reshape Shape Array
-  | Stencil  Fun Boundary AExp
-  | Stencil2 Fun Boundary AExp Boundary AExp -- Two source arrays/boundaries
- deriving (Read,Show,Eq,Generic)
-
--- | Array-level functions.
-data AFun = ALam [(Var,Type)] AExp
- deriving (Read,Show,Eq,Generic)
-
--- | Boundary condition specification for stencil operations.
-data Boundary = Clamp               -- ^clamp coordinates to the extent of the array
-              | Mirror              -- ^mirror coordinates beyond the array extent
-              | Wrap                -- ^wrap coordinates around on each dimension
-              | Constant Const      -- ^use a constant value for outlying coordinates 
- deriving (Read,Show,Eq,Generic)
-          
---------------------------------------------------------------------------------
--- Accelerate Scalar Expressions and Functions
+-------------------------------------------------------------------------------
+-- Accelerate Runtime Array Data
 --------------------------------------------------------------------------------
 
--- | Scalar functions
-data Fun = Lam [(Var,Type)] Exp
- deriving (Read,Show,Eq,Generic)
+-- | This is our Haskell representation of raw, contiguous data.
+-- Subject to change in the future depending on what internal
+-- representation the Accelerate front-end uses.
+type RawData e = UArray Int e
 
--- | Scalar expressions
-data Exp = 
-    EVr Var -- Variable bound by a Let.
-  | ELet Var Type Exp Exp    -- ELet Var Type RHS Body
-  -- ELet is used for common subexpression elimination
-  | EPrimApp Prim [Exp]  -- *Any* primitive scalar function
-  | ETuple [Exp]
-  | EConst Const
-   -- [2012.04.02] I can't presently compute the length from the TupleIdx.
-   --  | EPrj Int Int Exp  -- n m e : Project the nth field of an m-length tuple.
-  | ETupProjectFromRight Int Exp  -- Project the nth field FROM THE RIGHT end of the tuple.  
-  | EIndex [Exp] -- Index into a multi-dimensional array:
-  | EIndexAny 
-   -- I'm not sure I'm follwing this -- Accelerate would seem to allow run-time CONSING of indices:
-  | EIndexConsDynamic Exp Exp
-  | EIndexHeadDynamic Exp 
-  | EIndexTailDynamic Exp 
-   -- Conditional expression (non-strict in 2nd and 3rd argument):
-  | ECond Exp Exp Exp
-   -- Project a single scalar from an array
-   -- the array expression can not contain any free scalar variables
-  | EIndexScalar AExp Exp 
-   -- Get the shape of an Array:
-   -- The array expression can not contain any free scalar variables
-  | EShape AExp
-   -- Number of elements of a shape
-  | EShapeSize Exp 
- deriving (Read,Show,Eq,Generic)
+-- | This is array data on the Haskell heap.  It needs to handle
+--   different forms of data.
+data AccArray = 
+    ArrayUnit 
+  | ArrayPair (AccArray) (AccArray)
 
+  -- TODO: UArray doesn't offer cast like IOArray.  It would be nice
+  -- to make all arrays canonicalized to a data buffer of Word8's:
+  | ArrayPayloadInt    (RawData Int)
+  | ArrayPayloadInt8   (RawData Int8)
+  | ArrayPayloadInt16  (RawData Int16)
+  | ArrayPayloadInt32  (RawData Int32)   
+  | ArrayPayloadInt64  (RawData Int64)
+  | ArrayPayloadWord   (RawData Word)
+  | ArrayPayloadWord8  (RawData Word8)
+  | ArrayPayloadWord16 (RawData Word16)
+  | ArrayPayloadWord32 (RawData Word32)   
+  | ArrayPayloadWord64 (RawData Word64)
+  | ArrayPayloadFloat  (RawData Float)
+  | ArrayPayloadDouble (RawData Double)
+  | ArrayPayloadChar   (RawData Char)
+  | ArrayPayloadBool   (RawData Word8) -- Word8's represent bools.
 
--- | Constants embedded within Accelerate programs (i.e. in the AST).
-data Const = I Int  | I8 Int8  | I16 Int16  | I32 Int32  | I64 Int64
-           | W Word | W8 Word8 | W16 Word16 | W32 Word32 | W64 Word64
-           | F Float | D Double | C Char | B Bool
-           | Tup [Const]
-            -- Special constants:
-           | MinBound | MaxBound | Pi
-            -- C types, rather annoying:
-           | CF CFloat   | CD CDouble 
-           | CS  CShort  | CI  CInt  | CL  CLong  | CLL  CLLong
-           | CUS CUShort | CUI CUInt | CUL CULong | CULL CULLong
-           | CC  CChar   | CSC CSChar | CUC CUChar 
- deriving (Read,Show,Eq,Generic)
+ deriving (Show, Read, Eq)
 
---------------------------------------------------------------------------------
--- Accelerate Primitive Operations
+-------------------------------------------------------------------------------
+-- Shape representation:
 --------------------------------------------------------------------------------
 
--- | A datatype that includes all primitives supported by Accelerate.
-data Prim = NP NumPrim
-          | IP IntPrim
-          | FP FloatPrim
-          | SP ScalarPrim
-          | BP BoolPrim
-          | OP OtherPrim
-  deriving (Read,Show,Eq,Generic)
-          
--- | Primitives that operate on /all/ numeric types.
---   Neg/Abs/Sig are unary:
-data NumPrim = Add | Mul | Neg | Abs | Sig
-  deriving (Read,Show,Eq,Generic)
+-- Shapes are represented at runtime by tuples of integers.  For example:
+--   1D shape: (I 5)
+--   2D shape: Tup [I 2, I 3]
+--   3D shape: Tup [I 2, I 3, I 4]
+-- etc.
 
--- | Primitive integral-only operations.
--- All binops except BNot, shifts and rotates take an Int constant as second arg:
-data IntPrim = Quot | Rem | IDiv | Mod | 
-               BAnd | BOr | BXor | BNot | BShiftL | BShiftR | BRotateL | BRotateR
-  deriving (Read,Show,Eq,Generic)
-
--- | Primitive floating point-only operations.
-data FloatPrim = 
-      -- Unary:
-      Recip | Sin | Cos | Tan | Asin | Acos | Atan | Asinh | Acosh | Atanh | ExpFloating | Sqrt | Log |
-      -- Binary:                  
-      FDiv | FPow | LogBase | Atan2 | Truncate | Round | Floor | Ceiling
-  deriving (Read,Show,Eq,Generic)
-           
--- | Relational and equality operators
-data ScalarPrim = Lt | Gt | LtEq | GtEq | Eq | NEq | Max | Min
-  deriving (Read,Show,Eq,Generic)
-
-data BoolPrim = And | Or | Not
-  deriving (Read,Show,Eq,Generic)
-
-data OtherPrim = Ord | Chr | BoolToInt | FromIntegral
-  deriving (Read,Show,Eq,Generic)
 
 
 --------------------------------------------------------------------------------
