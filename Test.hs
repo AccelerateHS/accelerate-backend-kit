@@ -3,7 +3,8 @@
 module Main where
 
 import Data.Array.Accelerate.SimpleConverter (convertToSimpleAST)
-import qualified Data.Array.Accelerate.SimpleAST as S
+import qualified Data.Array.Accelerate.SimpleAST    as S
+import qualified Data.Array.Accelerate.SimpleInterp as I
 -- import qualified Data.Array.Accelerate.Smart       as Sugar
 -- import qualified Data.Array.Accelerate.Array.Sugar as Sugar
 
@@ -26,6 +27,7 @@ import Prelude hiding (zipWith,replicate,map)
 p0 = use $ fromList (Z :. (2::Int) :. (5::Int)) [1..10::Int64]
 t0 :: S.AExp
 t0 = convertToSimpleAST p0
+r0 = I.run p0
 
 -- | Sharing recovery will create a Let here:
 p1 :: Acc (Scalar Float)

@@ -23,8 +23,8 @@ import Prelude                                     hiding (sum)
 import Control.Monad.State.Strict (State, evalState, get, put)
 
 -- friends
-import Data.Array.Accelerate.Type
-import Data.Array.Accelerate.Array.Data
+import Data.Array.Accelerate.Type                  
+import Data.Array.Accelerate.Array.Data            
 import Data.Array.Accelerate.Array.Representation  hiding (sliceIndex)
 import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Tuple
@@ -33,9 +33,10 @@ import qualified Data.Array.Accelerate.Smart       as Sug
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import qualified Data.Array.Accelerate.SimpleAST as S
 
-import Debug.Trace(trace)
+import qualified Data.List as L
 
-tracePrint s x = trace (s ++ show x) x
+-- import Debug.Trace(trace)
+-- tracePrint s x = trace (s ++ show x) x
 
 --------------------------------------------------------------------------------
 -- Exposed entrypoints for this module:
@@ -129,56 +130,42 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
     Generate sh f -> S.Generate (getAccTypePre eacc)
                                 <$> convertExp sh
                                 <*> convertFun f
-      where
-        _ = retrieveDim sh
-        retrieveDim :: Sug.Shape t => PreExp OpenAcc aenv t -> Int
-        retrieveDim (x::PreExp OpenAcc aenv t) = Sug.dim (undefined::t)
 
     -- This is real live runtime array data:
     -- orig@(Use (arrrepr :: Sug.ArrRepr a))  | (_ :: PreOpenAcc OpenAcc aenv a) <- orig ->
     Use (arrrepr :: Sug.ArrRepr a) ->    
-         return$ S.Use ty val
+         return$ S.Use ty (S.AccArray shp payloads)
       where 
-         val = S.AccArray shp payloads
-         (Just shp, payloads)  = cvt2 repOf actualArr  
+         shp = case L.group shps of
+                 [] -> []
+                 [(hd : _gr1)] -> hd
+                 ls -> error$"Use: corrupt Accelerate array -- arrays components did not have identical shape:"
+                       ++ show (concat ls)
+         (shps, payloads)  = cvt2 repOf actualArr
+                  
          ty        = convertArrayType repOf
          repOf     = Sug.arrays actualArr  :: Sug.ArraysR (Sug.ArrRepr a)
          actualArr = Sug.toArr  arrrepr    :: a   
 
-         cvt :: Sug.ArraysR a' -> a' -> (Maybe [Int], [S.ArrayPayload])
-         cvt Sug.ArraysRunit         ()       = (Nothing,[])
+         cvt :: Sug.ArraysR a' -> a' -> ([[Int]],[S.ArrayPayload])
+         cvt Sug.ArraysRunit         ()       = ([],[])
          cvt (Sug.ArraysRpair r1 r2) (a1, a2) = cvt r1 a1 `combine` cvt r2 a2
-         cvt x@Sug.ArraysRarray  arr | (_ :: Sug.ArraysR (Sug.Array sh elt)) <- x =
-           
-           -- FIXME -- how do we get the real shape data out?
-           let shp = Sug.shapeToList (Sug.ignore :: sh) in
-           (Just shp, convertArrayValue arr)
+         cvt Sug.ArraysRarray  arr            = convertArrayValue arr
 
          -- -- Takes an Array representation and its reified type:
-         cvt2 :: (Sug.Arrays a') => Sug.ArraysR (Sug.ArrRepr a') -> a' -> (Maybe [Int], [S.ArrayPayload])
+         cvt2 :: (Sug.Arrays a') => Sug.ArraysR (Sug.ArrRepr a') -> a' -> ([[Int]],[S.ArrayPayload])
          cvt2 tyReified arr = 
            case (tyReified, Sug.fromArr arr) of 
-             (Sug.ArraysRunit, ()) -> (Nothing,[])
+             (Sug.ArraysRunit, ()) -> ([],[])
              (Sug.ArraysRpair r1 r2, (a1, a2)) -> cvt r1 a1 `combine` cvt r2 a2
-             (x@Sug.ArraysRarray, arr2) | (_ :: Sug.ArraysR (Sug.Array sh elt)) <- x -> 
-               let shp = Sug.shapeToList (Sug.ignore :: sh) in
-               (Just shp, convertArrayValue arr2)
+             (Sug.ArraysRarray, arr2)          -> convertArrayValue arr2
 
-         combine :: (Maybe [Int], [S.ArrayPayload]) -> 
-                    (Maybe [Int], [S.ArrayPayload]) -> 
-                    (Maybe [Int], [S.ArrayPayload])
-         combine (Nothing,ls1) (x,ls2) = (x,ls1++ls2)
-         combine (x,ls1) (Nothing,ls2) = (x,ls1++ls2)
-         combine (Just x,ls1) (Just y,ls2) = 
-           if x==y then (Just x,ls1++ls2)
-           else error$ "Found two different shapes within the same array: "++show(x,y)
-                
-         -- -- On thin ice!  Validate the invariants here:
-         -- mkPair S.ArrayUnit b = b
-         -- mkPair a b = S.ArrayPair a b                               
+         combine (a,b) (x,y) = (a++x, b++y)
 
-         convertArrayValue :: (Sug.Elt e) => Sug.Array dim e -> [S.ArrayPayload]
-         convertArrayValue (Sug.Array _sh adata) = useR arrayElt adata
+         convertArrayValue :: forall dim e . (Sug.Elt e) => Sug.Array dim e -> ([[Int]],[S.ArrayPayload])
+         convertArrayValue (Sug.Array shpVal adata) = 
+              ([Sug.shapeToList (Sug.toElt shpVal :: dim)], 
+               useR arrayElt adata)
            where 
              -- This [mandatory] type signature forces the array data to be the
              -- same type as the ArrayElt Representation (elt ~ elt):

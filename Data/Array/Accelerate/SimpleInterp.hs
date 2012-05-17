@@ -7,6 +7,8 @@ module Data.Array.Accelerate.SimpleInterp
        )
        where
 
+import Data.Array.Accelerate.Smart                   (Acc)
+import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import Data.Array.Accelerate.SimpleAST
 import Data.Array.Accelerate.SimpleConverter (convertToSimpleAST)
 
@@ -15,7 +17,7 @@ import qualified Data.Map as M
 --------------------------------------------------------------------------------
 -- type Value = [AccArray]
 type Env = M.Map Var Value
-lookup = undefined
+lookup = error"lookup"
 
 data Value = TupVal [Value]
            | ArrVal AccArray
@@ -26,7 +28,8 @@ singleton (Scalar s) = ArrVal (error "finish me")
 
 -- repackResult
 
-run = undefined
+run :: Sug.Arrays a => Acc a -> a
+run acc = error (show (evalA M.empty (convertToSimpleAST acc)))
 
 
 evalA :: Env -> AExp -> AccArray
@@ -95,8 +98,8 @@ evalE env expr =
 
     EIndexScalar ae ex -> indexArray (evalA env ae) (evalE env ex)
   
-    EShape ae          -> case evalA env ae of
-                            ArrayUnit -> error "TODO: AccArray needs to carry shape!"
+    EShape ae          -> let AccArray sh _ = evalA env ae 
+                          in Scalar$ Tup $ map I sh
     
     EShapeSize exp     -> case evalE env exp of 
                             _ -> error "need more work on shapes"
