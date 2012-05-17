@@ -1,4 +1,5 @@
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module Main where
 
@@ -12,10 +13,13 @@ import Data.Int
 -- import Data.Array.Accelerate (use,Z,(:.))
 -- import qualified Data.Array.Accelerate as Acc
 import Data.Array.Accelerate
+import Data.Array.Accelerate.Interpreter
 
 import Test.Framework
 import Test.Framework.Providers.HUnit
 import Test.HUnit
+import Data.List       (intersperse)
+import Data.List.Split (splitEvery)
 
 -- TEMP:
 -- import qualified Data.Array.Accelerate.Language as Lang
@@ -23,6 +27,7 @@ import Test.HUnit
 -- import qualified Data.Array.Accelerate.Interpreter as Interp
 import Text.PrettyPrint.GenericPretty (doc)
 import Prelude hiding (zipWith,replicate,map)
+import qualified Prelude as P
 
 p0 = use $ fromList (Z :. (2::Int) :. (5::Int)) [1..10::Int64]
 t0 :: S.AExp
@@ -36,12 +41,24 @@ p1 = let xs = generate (constant (Z :. (10::Int))) (\ (i) -> 3.3 )
      in  fold (+) 0 (zipWith (*) xs ys)
 t1 :: S.AExp
 t1 = convertToSimpleAST p1
+r1 = I.run p1
 
+-- | And again with a 2D array:
+p1b :: Acc (Vector Float)
+p1b = let xs = use$ fromList (Z :. (2::Int) :. (5::Int)) [1..10::Float]
+      in  fold (+) 0 xs
+t1b :: S.AExp
+t1b = convertToSimpleAST p1
+r1b = I.run p1
+
+
+----------------------------------------
 
 p2 :: Acc (Vector Int32)
 p2 = let xs = replicate (constant (Z :. (4::Int))) (unit 40)
      in map (+ 10) xs
 t2 = convertToSimpleAST p2
+r2 = I.run p2
 
 p2b :: Acc (Array DIM2 Int32)
 p2b = let arr = generate (constant (Z :. (5::Int))) (\_ -> 33)
@@ -49,11 +66,13 @@ p2b = let arr = generate (constant (Z :. (5::Int))) (\_ -> 33)
       in xs -- map (+ 10) xs
 t2b = convertToSimpleAST p2b
 
+
 p3 :: Acc (Array DIM3 Int32)
 p3 = let arr = generate  (constant (Z :. (5::Int))) (\_ -> 33)
          xs  = replicate (constant$ Z :. (2::Int) :. All :. (3::Int)) arr
      in xs 
 t3 = convertToSimpleAST p3
+r3 = I.run p3
 
 -- Test 4, a program that creates an IndexScalar:
 p4 :: Acc (Scalar Int64)
@@ -61,7 +80,7 @@ p4 = let arr = generate (constant (Z :. (5::Int))) (\_ -> 33) in
      unit $ arr ! (index1 2)
         -- (Lang.constant (Z :. (3::Int)))  
 t4 = convertToSimpleAST p4         
-
+r4 = I.run p4
 
 p4b :: Acc (Scalar Int64)
 p4b = let arr = generate (constant (Z :. (3::Int) :. (3::Int))) (\_ -> 33) 
@@ -75,6 +94,7 @@ t4b = convertToSimpleAST p4b
 p5 :: Acc (Scalar (((Z :. All) :. Int) :. All))
 p5 = unit$ lift $ Z :. All :. (2::Int) :. All
 t5 = convertToSimpleAST p5
+r5 = I.run p5
 
 -- This one generates ETupProjectFromRight:
 p6 :: Acc (Vector Float)
@@ -85,7 +105,7 @@ p6 = map go (use xs)
     sh = Z :. (2::Int)
     go x = let (a,b) = unlift x   in a*b
 t6 = convertToSimpleAST p6
-
+r6 = I.run p6
 
 transposeAcc :: Array DIM2 Float -> Acc (Array DIM2 Float)
 transposeAcc mat =
@@ -99,6 +119,7 @@ transposeAcc mat =
 p7 :: Acc (Array DIM2 Float)
 p7 = transposeAcc (fromList (Z :. (2::Int) :. (2::Int)) [1..4])
 t7 = convertToSimpleAST p7
+r7 = I.run p7
 -- Evaluating "doc t7" prints:
 -- Let a0
 --     (TArray TFloat)
@@ -113,6 +134,38 @@ t7 = convertToSimpleAST p7
 
 -- TODO -- still need to generate an IndexCons node.
 
+--------------------------------------------------------------------------------
+
+padleft n str | length str >= n = str
+padleft n str | otherwise       = P.take (n - length str) (repeat ' ') ++ str
+
+class NiceShow a where
+  pp :: a -> String
+        
+instance Show a => NiceShow (Array DIM1 a) where
+  pp arr = 
+    capends$ concat$ 
+    intersperse " " $
+    P.map (padleft maxpad) ls 
+   where 
+         ls   = P.map show $ toList arr
+         maxpad = maximum$ P.map length ls
+
+capends x = "| "++x++" |"
+
+-- This could be much more efficient:
+instance Show a => NiceShow (Array DIM2 a) where
+  pp arr = concat $
+           intersperse "\n" $ 
+           P.map (capends . 
+                  concat . 
+                  intersperse " " . 
+                  P.map (padleft maxpad)) 
+            rowls
+   where (Z :. rows :. cols) = arrayShape arr
+         ls   = P.map show $ toList arr
+         maxpad = maximum$ P.map length ls
+         rowls = splitEvery cols ls
 
 
 
@@ -128,3 +181,5 @@ tests = [ testCase "use/fromList"  (print$ doc t0)
 	, testCase "project tuple" (print$ doc t6)
 	, testCase "index test"    (print$ doc t7)
 	]
+
+

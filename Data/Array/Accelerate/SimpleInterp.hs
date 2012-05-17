@@ -13,6 +13,9 @@ import Data.Array.Accelerate.SimpleAST
 import Data.Array.Accelerate.SimpleConverter (convertToSimpleAST)
 
 import qualified Data.Map as M
+import Debug.Trace (trace)
+
+import Data.Array.Unboxed ((!), UArray)
 
 --------------------------------------------------------------------------------
 -- type Value = [AccArray]
@@ -51,26 +54,41 @@ evalA env ae = finalArr
                             Scalar (B False) -> loop ae3
 
        Use _ty arr -> ArrVal arr
-
        Generate _ty eSz (Lam [(vr,_)] bodE) ->
        -- Indices can be arbitrary shapes:
          case evalE env eSz of 
-           _ -> error "finish"
+           Scalar (I n) -> error "finish"
+--           Scalar ()
 
          
---   | TupleRefFromRight Int AExp     
---   | Apply AFun AExp              -- Function $ Argument
+       TupleRefFromRight i ae -> error "TupleRefFromRight"
+       Apply afun ae -> error "Apply"
+       Replicate slcty ex ae -> error "Replicate"
+       Index     slcty ae ex -> error "Index"
 
+       Map      fn ae         -> error "Map"
+       ZipWith  fn ae1 ae2    -> error "ZipWith"
+       
+       -- Shave off leftmost dim in 'sh' list 
+       -- (the rightmost dim in the user's (Z :. :.) expression):
+       Fold     (Lam [(v1,_),(v2,_)] bodE) ex ae -> 
+         trace ("FOLDING, shape "++show (fst:sh')) $ 
+         ArrVal (AccArray sh' undefined)
+         where init = evalE env ex
+               AccArray (fst:sh') payload = evalA env ae -- Must be >0 dimensional.
+               arr = undefined :: UArray Int Float
+               -- The innermost dim is always contiguous in memory.
+               loop _ 0 acc = acc
+               loop offset count acc = 
+                 loop (offset+1) (count-1) $ 
+                  evalE (M.insert v1 acc $ 
+                         M.insert v2 (Scalar$ F$ arr ! offset) env) 
+                        bodE 
 
---   | Replicate SliceType Exp AExp -- Replicate array across one or more dimensions.
---   | Index     SliceType AExp Exp -- Index a sub-array (slice).
---                                  -- Index sliceIndex Array SliceDims
---   | Map      Fun AExp            -- Map Function Array
---   | ZipWith  Fun AExp AExp       -- ZipWith Function Array1 Array2
---   | Fold     Fun Exp AExp        -- Fold Function Default Array
---   | Fold1    Fun AExp            -- Fold1 Function Array
---   | FoldSeg  Fun Exp AExp AExp   -- FoldSeg Function Default Array 'Segment Descriptor'
---   | Fold1Seg Fun     AExp AExp   -- FoldSeg Function         Array 'Segment Descriptor'
+       
+       Fold1    fn ae         -> error "Foldl1"
+       FoldSeg  fn ex ae1 ae2 -> error "FoldSeg"
+       Fold1Seg fn    ae1 ae2 -> error "Fold1Seg" 
 --   | Scanl    Fun Exp AExp        -- Scanl  Function InitialValue LinearArray
 --   | Scanl'   Fun Exp AExp        -- Scanl' Function InitialValue LinearArray
 --   | Scanl1   Fun     AExp        -- Scanl  Function              LinearArray
