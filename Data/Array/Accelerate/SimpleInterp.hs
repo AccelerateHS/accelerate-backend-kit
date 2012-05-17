@@ -13,9 +13,14 @@ import Data.Array.Accelerate.SimpleAST
 import Data.Array.Accelerate.SimpleConverter (convertToSimpleAST)
 
 import qualified Data.Map as M
-import Debug.Trace (trace)
 
 import Data.Array.Unboxed ((!), UArray)
+import qualified Data.Array.Unboxed as U
+import qualified Data.Array         as A
+import qualified Data.List as L
+
+import Debug.Trace (trace)
+tracePrint s x = trace (s++show x) x
 
 --------------------------------------------------------------------------------
 -- type Value = [AccArray]
@@ -40,8 +45,8 @@ evalA env ae = finalArr
   where 
    ArrVal finalArr = loop ae 
    loop :: AExp -> Value
-   loop ae =
-     case ae of 
+   loop aexp =
+     case aexp of 
        --     Vr Var -- Array variable bound by a Let.
        Vr  v             -> env M.! v
        Let vr ty lhs bod -> ArrVal$ evalA (M.insert vr (loop lhs) env) bod
@@ -72,19 +77,37 @@ evalA env ae = finalArr
        -- Shave off leftmost dim in 'sh' list 
        -- (the rightmost dim in the user's (Z :. :.) expression):
        Fold     (Lam [(v1,_),(v2,_)] bodE) ex ae -> 
-         trace ("FOLDING, shape "++show (fst:sh')) $ 
-         ArrVal (AccArray sh' undefined)
-         where init = evalE env ex
-               AccArray (fst:sh') payload = evalA env ae -- Must be >0 dimensional.
-               arr = undefined :: UArray Int Float
-               -- The innermost dim is always contiguous in memory.
-               loop _ 0 acc = acc
-               loop offset count acc = 
-                 loop (offset+1) (count-1) $ 
-                  evalE (M.insert v1 acc $ 
-                         M.insert v2 (Scalar$ F$ arr ! offset) env) 
-                        bodE 
+         trace ("FOLDING, shape "++show (innerdim:sh') ++ " arr "++show payloads++"\n") $ 
+           case payloads of 
+             [] -> error "Empty payloads!" 
+             _  -> ArrVal (AccArray sh' payloads')
+         where initacc = evalE env ex
+               AccArray (innerdim:sh') payloads = evalA env ae -- Must be >0 dimensional.
+               
+               [len:_] = tracePrint"GROUP"$ L.group $ map payloadLength payloads
+               
+               -- Cut the total size down by whatever the length of the inner dimension is:
+               newlen = len `quot` innerdim
 
+               -- dofold :: UArray Int Float -> A.Array Int Value -- TODO: generalize type
+               -- dofold arr = A.listArray (0, newlen) $ 
+               --    [ innerloop (\i -> F (arr U.! i)) (innerdim * i) 0 initacc | i <- [0..newlen] ]
+               
+               payloads' = map (applyToPayload3 buildFolded) payloads
+               
+               buildFolded :: Int -> (Int -> Const) -> [Const]
+               buildFolded _ lookup = 
+                  [ unScalar (innerloop lookup (innerdim * i) 0 initacc) 
+                  | i <- [0..newlen] ]
+
+               -- The innermost dim is always contiguous in memory.
+               innerloop :: (Int -> Const) -> Int -> Int -> Value -> Value
+               innerloop _ _ 0 acc = acc
+               innerloop lookup offset count acc = 
+                 innerloop lookup (offset+1) (count-1) $ 
+                  evalE (M.insert v1 acc $ 
+                         M.insert v2 (Scalar$ lookup offset) env) 
+                        bodE 
        
        Fold1    fn ae         -> error "Foldl1"
        FoldSeg  fn ex ae1 ae2 -> error "FoldSeg"
@@ -100,6 +123,26 @@ evalA env ae = finalArr
 --   | Reshape     Exp     AExp     -- Reshape Shape Array
 --   | Stencil  Fun Boundary AExp
 --   | Stencil2 Fun Boundary AExp Boundary AExp -- Two source arrays/boundaries
+
+
+-- -- | Apply a generic transformation to the Array Payload irrespective of element type.
+-- applyToPayload :: (forall a . UArray Int a -> UArray Int a) -> ArrayPayload -> ArrayPayload
+-- applyToPayload fn payl = 
+--   case payl of 
+--     ArrayPayloadInt    arr -> ArrayPayloadInt    (fn arr)
+--     ArrayPayloadInt8   arr -> ArrayPayloadInt8   (fn arr)
+--     ArrayPayloadInt16  arr -> ArrayPayloadInt16  (fn arr)
+--     ArrayPayloadInt32  arr -> ArrayPayloadInt32  (fn arr) 
+--     ArrayPayloadInt64  arr -> ArrayPayloadInt64  (fn arr)
+--     ArrayPayloadWord   arr -> ArrayPayloadWord   (fn arr)
+--     ArrayPayloadWord8  arr -> ArrayPayloadWord8  (fn arr) 
+--     ArrayPayloadWord16 arr -> ArrayPayloadWord16 (fn arr)
+--     ArrayPayloadWord32 arr -> ArrayPayloadWord32 (fn arr)
+--     ArrayPayloadWord64 arr -> ArrayPayloadWord64 (fn arr)
+--     ArrayPayloadFloat  arr -> ArrayPayloadFloat  (fn arr)
+--     ArrayPayloadDouble arr -> ArrayPayloadDouble (fn arr)
+--     ArrayPayloadChar   arr -> ArrayPayloadChar   (fn arr)
+--     ArrayPayloadBool   arr -> ArrayPayloadBool   (fn arr) -- Word8's represent bools.
 
 
 evalE :: Env -> Exp -> Value
@@ -131,6 +174,8 @@ evalE env expr =
   -- | EIndexHeadDynamic Exp 
   -- | EIndexTailDynamic Exp 
         
+
+--------------------------------------------------------------------------------
 
 
 --------------------------------------------------------------------------------

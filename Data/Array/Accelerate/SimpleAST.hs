@@ -1,4 +1,6 @@
 {-# LANGUAGE DeriveGeneric, CPP #-}
+{-# LANGUAGE Rank2Types #-}
+{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 -- TEMP: for UArray Read instance:
 {-# LANGUAGE ScopedTypeVariables, FlexibleInstances, FlexibleContexts #-}
 module Data.Array.Accelerate.SimpleAST  
@@ -12,8 +14,9 @@ module Data.Array.Accelerate.SimpleAST
      Var,
      
      -- * Runtime Array data representation.
-     AccArray(..), ArrayPayload(..),
      SliceType(..), SliceComponent(..),
+     AccArray(..), ArrayPayload(..), 
+     payloadLength, applyToPayload, applyToPayload2, applyToPayload3, 
      
      -- * Helper routines and predicates:
      var, isIntType, isFloatType
@@ -22,7 +25,7 @@ module Data.Array.Accelerate.SimpleAST
 
 import Data.Int
 import Data.Word
-import Data.Array.Unboxed as U (IArray, UArray, array)
+import Data.Array.Unboxed as U
 import Foreign.C.Types 
 import Pretty (text) -- ghc api
 import Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
@@ -305,7 +308,6 @@ data ArrayPayload =
 -- representation the Accelerate front-end uses.
 type RawData e = UArray Int e
 
-
 -------------------------------------------------------------------------------
 -- Shape representation:
 --------------------------------------------------------------------------------
@@ -374,3 +376,114 @@ instance (Read elt, U.IArray UArray elt) => Read (U.UArray Int elt) where
 
 test :: UArray Int Int
 test = read "array (1,5) [(1,200),(2,201),(3,202),(4,203),(5,204)]" :: U.UArray Int Int
+
+
+-- | How many elements are in the payload?  This handles the annoying
+--   large case dispatch on element type.
+payloadLength :: ArrayPayload -> Int
+payloadLength payl =
+  case payl of 
+    ArrayPayloadUnit       -> 0
+    ArrayPayloadInt    arr -> arrLen arr
+    ArrayPayloadInt8   arr -> arrLen arr
+    ArrayPayloadInt16  arr -> arrLen arr
+    ArrayPayloadInt32  arr -> arrLen arr
+    ArrayPayloadInt64  arr -> arrLen arr
+    ArrayPayloadWord   arr -> arrLen arr
+    ArrayPayloadWord8  arr -> arrLen arr
+    ArrayPayloadWord16 arr -> arrLen arr
+    ArrayPayloadWord32 arr -> arrLen arr
+    ArrayPayloadWord64 arr -> arrLen arr
+    ArrayPayloadFloat  arr -> arrLen arr
+    ArrayPayloadDouble arr -> arrLen arr
+    ArrayPayloadChar   arr -> arrLen arr
+    ArrayPayloadBool   arr -> arrLen arr
+ where    
+   arrLen arr = let (st,en) = U.bounds arr in en - st      
+
+-- | Apply a generic transformation to the Array Payload irrespective of element type.
+applyToPayload :: (forall a . UArray Int a -> UArray Int a) -> ArrayPayload -> ArrayPayload
+applyToPayload fn payl = applyToPayload2 (\ a _ -> fn a) payl
+  -- case payl of 
+  --   ArrayPayloadInt    arr -> ArrayPayloadInt    (fn arr)
+  --   ArrayPayloadInt8   arr -> ArrayPayloadInt8   (fn arr)
+  --   ArrayPayloadInt16  arr -> ArrayPayloadInt16  (fn arr)
+  --   ArrayPayloadInt32  arr -> ArrayPayloadInt32  (fn arr) 
+  --   ArrayPayloadInt64  arr -> ArrayPayloadInt64  (fn arr)
+  --   ArrayPayloadWord   arr -> ArrayPayloadWord   (fn arr)
+  --   ArrayPayloadWord8  arr -> ArrayPayloadWord8  (fn arr) 
+  --   ArrayPayloadWord16 arr -> ArrayPayloadWord16 (fn arr)
+  --   ArrayPayloadWord32 arr -> ArrayPayloadWord32 (fn arr)
+  --   ArrayPayloadWord64 arr -> ArrayPayloadWord64 (fn arr)
+  --   ArrayPayloadFloat  arr -> ArrayPayloadFloat  (fn arr)
+  --   ArrayPayloadDouble arr -> ArrayPayloadDouble (fn arr)
+  --   ArrayPayloadChar   arr -> ArrayPayloadChar   (fn arr)
+  --   ArrayPayloadBool   arr -> ArrayPayloadBool   (fn arr) -- Word8's represent bools.
+
+-- | This is similar to `applyToPayload`, but also provides the ability for
+-- the function passed in to inspect elements in the input array in a
+-- generic fashion (as Const) type.
+applyToPayload2 :: (forall a . UArray Int a -> (Int -> Const) -> UArray Int a) -> ArrayPayload -> ArrayPayload
+applyToPayload2 fn payl = 
+  case payl of 
+    ArrayPayloadUnit       -> ArrayPayloadUnit
+    ArrayPayloadInt    arr -> ArrayPayloadInt    (fn arr (\i -> I (arr U.! i)))
+    ArrayPayloadInt8   arr -> ArrayPayloadInt8   (fn arr (\i -> I8 (arr U.! i)))
+    ArrayPayloadInt16  arr -> ArrayPayloadInt16  (fn arr (\i -> I16 (arr U.! i)))
+    ArrayPayloadInt32  arr -> ArrayPayloadInt32  (fn arr (\i -> I32 (arr U.! i))) 
+    ArrayPayloadInt64  arr -> ArrayPayloadInt64  (fn arr (\i -> I64 (arr U.! i)))
+    ArrayPayloadWord   arr -> ArrayPayloadWord   (fn arr (\i -> W (arr U.! i)))
+    ArrayPayloadWord8  arr -> ArrayPayloadWord8  (fn arr (\i -> W8 (arr U.! i))) 
+    ArrayPayloadWord16 arr -> ArrayPayloadWord16 (fn arr (\i -> W16 (arr U.! i)))
+    ArrayPayloadWord32 arr -> ArrayPayloadWord32 (fn arr (\i -> W32 (arr U.! i)))
+    ArrayPayloadWord64 arr -> ArrayPayloadWord64 (fn arr (\i -> W64 (arr U.! i)))
+    ArrayPayloadFloat  arr -> ArrayPayloadFloat  (fn arr (\i -> F (arr U.! i)))
+    ArrayPayloadDouble arr -> ArrayPayloadDouble (fn arr (\i -> D (arr U.! i)))
+    ArrayPayloadChar   arr -> ArrayPayloadChar   (fn arr (\i -> C (arr U.! i)))
+    ArrayPayloadBool   arr -> ArrayPayloadBool -- Word8's represent bools
+                              (fn arr (\i -> case arr U.! i of
+                                               0 -> B False 
+                                               _ -> B True))
+
+-- | This version allows the payload to be rebuilt as a list of Const,
+--    which must all be the same type as the input.
+applyToPayload3 :: (Int -> (Int -> Const) -> [Const]) -> ArrayPayload -> ArrayPayload
+-- TODO!! The same-type-as-input restriction could be relaxed.
+applyToPayload3 fn payl = 
+  let len = payloadLength payl in
+  case payl of 
+    ArrayPayloadUnit       -> ArrayPayloadUnit
+    ArrayPayloadInt    arr -> ArrayPayloadInt    (U.listArray (0,len) (map unI  $ fn len (\i -> I   (arr U.! i))))
+    ArrayPayloadInt8   arr -> ArrayPayloadInt8   (U.listArray (0,len) (map unI8 $ fn len (\i -> I8  (arr U.! i))))
+    ArrayPayloadInt16  arr -> ArrayPayloadInt16  (U.listArray (0,len) (map unI16$ fn len (\i -> I16 (arr U.! i))))
+    ArrayPayloadInt32  arr -> ArrayPayloadInt32  (U.listArray (0,len) (map unI32$ fn len (\i -> I32 (arr U.! i))))
+    ArrayPayloadInt64  arr -> ArrayPayloadInt64  (U.listArray (0,len) (map unI64$ fn len (\i -> I64 (arr U.! i))))
+    ArrayPayloadWord   arr -> ArrayPayloadWord   (U.listArray (0,len) (map unW  $ fn len (\i -> W   (arr U.! i))))
+    ArrayPayloadWord8  arr -> ArrayPayloadWord8  (U.listArray (0,len) (map unW8 $ fn len (\i -> W8  (arr U.! i))))
+    ArrayPayloadWord16 arr -> ArrayPayloadWord16 (U.listArray (0,len) (map unW16$ fn len (\i -> W16 (arr U.! i))))
+    ArrayPayloadWord32 arr -> ArrayPayloadWord32 (U.listArray (0,len) (map unW32$ fn len (\i -> W32 (arr U.! i))))
+    ArrayPayloadWord64 arr -> ArrayPayloadWord64 (U.listArray (0,len) (map unW64$ fn len (\i -> W64 (arr U.! i))))
+    ArrayPayloadFloat  arr -> ArrayPayloadFloat  (U.listArray (0,len) (map unF$ fn len (\i -> F (arr U.! i))))
+    ArrayPayloadDouble arr -> ArrayPayloadDouble (U.listArray (0,len) (map unD$ fn len (\i -> D (arr U.! i))))
+    ArrayPayloadChar   arr -> ArrayPayloadChar   (U.listArray (0,len) (map unC$ fn len (\i -> C (arr U.! i))))
+    ArrayPayloadBool   arr -> ArrayPayloadBool   (U.listArray (0,len) 
+                                                 (map fromBool$ fn len (\i -> toBool (arr U.! i))))
+  where 
+   unI   (I x) = x
+   unI8  (I8 x) = x
+   unI16 (I16 x) = x
+   unI32 (I32 x) = x
+   unI64 (I64 x) = x
+   unW   (W x) = x
+   unW8  (W8 x) = x
+   unW16 (W16 x) = x
+   unW32 (W32 x) = x
+   unW64 (W64 x) = x
+   unF (F x) = x
+   unD (D x) = x
+   unC (C x) = x
+   unB (B x) = x
+   toBool 0 = B False
+   toBool _ = B True
+   fromBool (B False) = 0
+   fromBool (B True)  = 1
