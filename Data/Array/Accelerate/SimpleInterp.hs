@@ -30,6 +30,7 @@ lookup = error"lookup"
 data Value = TupVal [Value]
            | ArrVal AccArray
            | Scalar { unScalar :: Const }
+  deriving Show           
 --------------------------------------------------------------------------------
 
 singleton (Scalar s) = ArrVal (error "finish me")
@@ -77,33 +78,33 @@ evalA env ae = finalArr
        -- Shave off leftmost dim in 'sh' list 
        -- (the rightmost dim in the user's (Z :. :.) expression):
        Fold     (Lam [(v1,_),(v2,_)] bodE) ex ae -> 
-         trace ("FOLDING, shape "++show (innerdim:sh') ++ " arr "++show payloads++"\n") $ 
+         trace ("FOLDING, shape "++show (innerdim:sh') ++ " lens "++ 
+                show (alllens, L.group alllens) ++" arr "++show payloads++"\n") $ 
            case payloads of 
-             [] -> error "Empty payloads!" 
+             [] -> error "Empty payloads!"
              _  -> ArrVal (AccArray sh' payloads')
          where initacc = evalE env ex
                AccArray (innerdim:sh') payloads = evalA env ae -- Must be >0 dimensional.
+               payloads' = map (applyToPayload3 buildFolded) payloads               
                
-               [len:_] = tracePrint"GROUP"$ L.group $ map payloadLength payloads
+               alllens = map payloadLength payloads
+               len = case L.group alllens of
+                      [len:_] -> len
+                      x -> error$ "Corrupt Accelerate array.  Non-homogenous payload lengths: "++show x
                
                -- Cut the total size down by whatever the length of the inner dimension is:
                newlen = len `quot` innerdim
 
-               -- dofold :: UArray Int Float -> A.Array Int Value -- TODO: generalize type
-               -- dofold arr = A.listArray (0, newlen) $ 
-               --    [ innerloop (\i -> F (arr U.! i)) (innerdim * i) 0 initacc | i <- [0..newlen] ]
-               
-               payloads' = map (applyToPayload3 buildFolded) payloads
-               
                buildFolded :: Int -> (Int -> Const) -> [Const]
-               buildFolded _ lookup = 
-                  [ unScalar (innerloop lookup (innerdim * i) 0 initacc) 
+               buildFolded _ lookup = tracePrint "\nbuildFOLDED : "$ 
+                  [ unScalar (innerloop lookup (innerdim * i) innerdim initacc)
                   | i <- [0..newlen] ]
 
                -- The innermost dim is always contiguous in memory.
                innerloop :: (Int -> Const) -> Int -> Int -> Value -> Value
                innerloop _ _ 0 acc = acc
                innerloop lookup offset count acc = 
+                 trace ("Inner looping "++show(offset,count,acc))$ 
                  innerloop lookup (offset+1) (count-1) $ 
                   evalE (M.insert v1 acc $ 
                          M.insert v2 (Scalar$ lookup offset) env) 
@@ -194,6 +195,8 @@ evalPrim p es =
         
 plus :: Const -> Const -> Const
 plus (I a) (I b) = I (a+b)
+plus (F a) (F b) = F (a+b)
+plus a b = error $ "plus: unmatched combination of values: "++show (a,b)
 
 -- Todo: special constants: minBound, maxBound, pi
 

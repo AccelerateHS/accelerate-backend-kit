@@ -35,7 +35,7 @@ import qualified Data.Array.Accelerate.SimpleAST as S
 
 import qualified Data.List as L
 
--- import Debug.Trace(trace)
+import Debug.Trace(trace)
 -- tracePrint s x = trace (s ++ show x) x
 
 --------------------------------------------------------------------------------
@@ -134,6 +134,7 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
     -- This is real live runtime array data:
     -- orig@(Use (arrrepr :: Sug.ArrRepr a))  | (_ :: PreOpenAcc OpenAcc aenv a) <- orig ->
     Use (arrrepr :: Sug.ArrRepr a) ->    
+--         trace ("GOT SHAPES "++show shps++ " payloads "++ show payloads)$
          return$ S.Use ty (S.AccArray shp payloads)
       where 
          shp = case L.group shps of
@@ -142,17 +143,20 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
                  ls -> error$"Use: corrupt Accelerate array -- arrays components did not have identical shape:"
                        ++ show (concat ls)
          (shps, payloads)  = cvt2 repOf actualArr
-                  
          ty        = convertArrayType repOf
          repOf     = Sug.arrays actualArr  :: Sug.ArraysR (Sug.ArrRepr a)
          actualArr = Sug.toArr  arrrepr    :: a   
 
+         -- cvt and cvt2 return a list of shapes together with a list of raw data payloads.
+         -- 
+         -- I'm afraid I don't understand the two-level pairing that
+         -- is going on here (ArraysRpair + ArraysEltRpair)
          cvt :: Sug.ArraysR a' -> a' -> ([[Int]],[S.ArrayPayload])
          cvt Sug.ArraysRunit         ()       = ([],[])
          cvt (Sug.ArraysRpair r1 r2) (a1, a2) = cvt r1 a1 `combine` cvt r2 a2
          cvt Sug.ArraysRarray  arr            = convertArrayValue arr
 
-         -- -- Takes an Array representation and its reified type:
+         -- Takes an Array representation and its reified type:
          cvt2 :: (Sug.Arrays a') => Sug.ArraysR (Sug.ArrRepr a') -> a' -> ([[Int]],[S.ArrayPayload])
          cvt2 tyReified arr = 
            case (tyReified, Sug.fromArr arr) of 
@@ -173,7 +177,8 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
              useR (ArrayEltRpair aeR1 aeR2) ad = 
                (useR aeR1 (fstArrayData ad)) ++ 
                (useR aeR2 (sndArrayData ad))
-             useR ArrayEltRunit             _   = [S.ArrayPayloadUnit]
+--             useR ArrayEltRunit             _   = [S.ArrayPayloadUnit]
+             useR ArrayEltRunit             _   = []
              useR ArrayEltRint   (AD_Int   x)   = [S.ArrayPayloadInt   x]
              useR ArrayEltRint8  (AD_Int8  x)   = [S.ArrayPayloadInt8  x]
              useR ArrayEltRint16 (AD_Int16 x)   = [S.ArrayPayloadInt16 x]

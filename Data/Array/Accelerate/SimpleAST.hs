@@ -23,6 +23,7 @@ module Data.Array.Accelerate.SimpleAST
     )   
  where
 
+import Debug.Trace
 import Data.Int
 import Data.Word
 import Data.Array.Unboxed as U
@@ -34,9 +35,10 @@ import Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
 --------------------------------------------------------------------------------
 -- Several modules offer this, with varying problems:
 ----------------------------
-#define USE_STRINGTABLE
+#define USE_SYMBOL
 #ifdef USE_STRINGTABLE
 -- 'stringtable-atom' package:
+-- I'm getting some segfaults here [2012.05.19];
 import StringTable.Atom
 var = toAtom
 type Var = Atom
@@ -451,24 +453,25 @@ applyToPayload3 :: (Int -> (Int -> Const) -> [Const]) -> ArrayPayload -> ArrayPa
 -- TODO!! The same-type-as-input restriction could be relaxed.
 applyToPayload3 fn payl = 
   let len = payloadLength payl in
+  tracePrint "\napplyToPayload3: CONVERTED: "$
   case payl of 
     ArrayPayloadUnit       -> ArrayPayloadUnit
-    ArrayPayloadInt    arr -> ArrayPayloadInt    (U.listArray (0,len) (map unI  $ fn len (\i -> I   (arr U.! i))))
-    ArrayPayloadInt8   arr -> ArrayPayloadInt8   (U.listArray (0,len) (map unI8 $ fn len (\i -> I8  (arr U.! i))))
-    ArrayPayloadInt16  arr -> ArrayPayloadInt16  (U.listArray (0,len) (map unI16$ fn len (\i -> I16 (arr U.! i))))
-    ArrayPayloadInt32  arr -> ArrayPayloadInt32  (U.listArray (0,len) (map unI32$ fn len (\i -> I32 (arr U.! i))))
-    ArrayPayloadInt64  arr -> ArrayPayloadInt64  (U.listArray (0,len) (map unI64$ fn len (\i -> I64 (arr U.! i))))
-    ArrayPayloadWord   arr -> ArrayPayloadWord   (U.listArray (0,len) (map unW  $ fn len (\i -> W   (arr U.! i))))
-    ArrayPayloadWord8  arr -> ArrayPayloadWord8  (U.listArray (0,len) (map unW8 $ fn len (\i -> W8  (arr U.! i))))
-    ArrayPayloadWord16 arr -> ArrayPayloadWord16 (U.listArray (0,len) (map unW16$ fn len (\i -> W16 (arr U.! i))))
-    ArrayPayloadWord32 arr -> ArrayPayloadWord32 (U.listArray (0,len) (map unW32$ fn len (\i -> W32 (arr U.! i))))
-    ArrayPayloadWord64 arr -> ArrayPayloadWord64 (U.listArray (0,len) (map unW64$ fn len (\i -> W64 (arr U.! i))))
-    ArrayPayloadFloat  arr -> ArrayPayloadFloat  (U.listArray (0,len) (map unF$ fn len (\i -> F (arr U.! i))))
-    ArrayPayloadDouble arr -> ArrayPayloadDouble (U.listArray (0,len) (map unD$ fn len (\i -> D (arr U.! i))))
-    ArrayPayloadChar   arr -> ArrayPayloadChar   (U.listArray (0,len) (map unC$ fn len (\i -> C (arr U.! i))))
-    ArrayPayloadBool   arr -> ArrayPayloadBool   (U.listArray (0,len) 
-                                                 (map fromBool$ fn len (\i -> toBool (arr U.! i))))
+    ArrayPayloadInt    arr -> ArrayPayloadInt    (fromL (map unI  $ fn len (\i -> I   (arr U.! i))))
+    ArrayPayloadInt8   arr -> ArrayPayloadInt8   (fromL (map unI8 $ fn len (\i -> I8  (arr U.! i))))
+    ArrayPayloadInt16  arr -> ArrayPayloadInt16  (fromL (map unI16$ fn len (\i -> I16 (arr U.! i))))
+    ArrayPayloadInt32  arr -> ArrayPayloadInt32  (fromL (map unI32$ fn len (\i -> I32 (arr U.! i))))
+    ArrayPayloadInt64  arr -> ArrayPayloadInt64  (fromL (map unI64$ fn len (\i -> I64 (arr U.! i))))
+    ArrayPayloadWord   arr -> ArrayPayloadWord   (fromL (map unW  $ fn len (\i -> W   (arr U.! i))))
+    ArrayPayloadWord8  arr -> ArrayPayloadWord8  (fromL (map unW8 $ fn len (\i -> W8  (arr U.! i))))
+    ArrayPayloadWord16 arr -> ArrayPayloadWord16 (fromL (map unW16$ fn len (\i -> W16 (arr U.! i))))
+    ArrayPayloadWord32 arr -> ArrayPayloadWord32 (fromL (map unW32$ fn len (\i -> W32 (arr U.! i))))
+    ArrayPayloadWord64 arr -> ArrayPayloadWord64 (fromL (map unW64$ fn len (\i -> W64 (arr U.! i))))
+    ArrayPayloadFloat  arr -> ArrayPayloadFloat  (fromL (map unF  $ fn len (\i -> F   (arr U.! i))))
+    ArrayPayloadDouble arr -> ArrayPayloadDouble (fromL (map unD  $ fn len (\i -> D   (arr U.! i))))
+    ArrayPayloadChar   arr -> ArrayPayloadChar   (fromL (map unC  $ fn len (\i -> C   (arr U.! i))))
+    ArrayPayloadBool   arr -> ArrayPayloadBool   (fromL (map fromBool$ fn len (\i -> toBool (arr U.! i))))
   where 
+   fromL l = U.listArray (0,length l - 1) l
    unI   (I x) = x
    unI8  (I8 x) = x
    unI16 (I16 x) = x
@@ -487,3 +490,6 @@ applyToPayload3 fn payl =
    toBool _ = B True
    fromBool (B False) = 0
    fromBool (B True)  = 1
+
+
+tracePrint s x = trace (s++show x) x

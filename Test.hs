@@ -48,8 +48,8 @@ p1b :: Acc (Vector Float)
 p1b = let xs = use$ fromList (Z :. (2::Int) :. (5::Int)) [1..10::Float]
       in  fold (+) 0 xs
 t1b :: S.AExp
-t1b = convertToSimpleAST p1
-r1b = I.run p1
+t1b = convertToSimpleAST p1b
+r1b = I.run p1b
 
 
 ----------------------------------------
