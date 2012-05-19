@@ -33,7 +33,7 @@ data Value = TupVal [Value]
   deriving Show           
 --------------------------------------------------------------------------------
 
-singleton (Scalar s) = ArrVal (error "finish me")
+singleton (Scalar s) = ArrVal (error "singleton - finish me")
 
 -- repackResult
 
@@ -191,38 +191,74 @@ evalPrim p [] =
       
 evalPrim p es = 
   case p of 
-    NP Add -> Scalar (foldl1 plus (map unScalar es))
-        
-plus :: Const -> Const -> Const
-#define PLUS(X) plus (X a) (X b) = X (a+b)
-PLUS(I) 
-PLUS(I8) 
-PLUS(I16) 
-PLUS(I32) 
-PLUS(I64) 
-PLUS(W) 
-PLUS(W8) 
-PLUS(W16) 
-PLUS(W32) 
-PLUS(W64) 
-PLUS(F)
-PLUS(D)
-plus a b = error $ "plus: unmatched combination of values: "++show (a,b)
-
--- Todo: special constants: minBound, maxBound, pi
-
--- data Prim = NP NumPrim
+    NP Add -> Scalar (foldl1 add (map unScalar es))
+    NP Mul -> Scalar (foldl1 mul (map unScalar es))
+    NP Neg -> Scalar (neg  $ unScalar $ head es)
+    NP Abs -> Scalar (absv $ unScalar $ head es)
+    NP Sig -> Scalar (sig  $ unScalar $ head es)
 --           | IP IntPrim
 --           | FP FloatPrim
 --           | SP ScalarPrim
 --           | BP BoolPrim
 --           | OP OtherPrim
---   deriving (Read,Show,Eq,Generic)
+
+
+add :: Const -> Const -> Const
+#define ADD(X) add (X a) (X b) = X (a+b);
+ADD(I) ADD(I8) ADD(I16) ADD(I32) ADD(I64) 
+ADD(W) ADD(W8) ADD(W16) ADD(W32) ADD(W64) 
+ADD(F) ADD(D)  ADD(CF)  ADD(CD)
+ADD(CS)  ADD(CI)  ADD(CL)  ADD(CLL) 
+ADD(CUS) ADD(CUI) ADD(CUL) ADD(CULL) 
+ADD(CC)  ADD(CUC) ADD(CSC)
+add a b = error $ "add: unsupported combination of values: "++show (a,b)
+
+mul :: Const -> Const -> Const
+#define MUL(X) mul (X a) (X b) = X (a*b); 
+MUL(I) MUL(I8) MUL(I16) MUL(I32) MUL(I64) 
+MUL(W) MUL(W8) MUL(W16) MUL(W32) MUL(W64) 
+MUL(F) MUL(D)  MUL(CF)  MUL(CD)
+MUL(CS)  MUL(CI)  MUL(CL)  MUL(CLL) 
+MUL(CUS) MUL(CUI) MUL(CUL) MUL(CULL) 
+MUL(CC)  MUL(CUC) MUL(CSC)
+mul a b = error $ "mul: unsupported combination of values: "++show(a,b)
+
+neg :: Const -> Const
+#define NEG(X) neg (X a) = X (- a);
+NEG(I) NEG(I8) NEG(I16) NEG(I32) NEG(I64) 
+NEG(W) NEG(W8) NEG(W16) NEG(W32) NEG(W64) 
+NEG(F) NEG(D)  NEG(CF)  NEG(CD)
+NEG(CS)  NEG(CI)  NEG(CL)  NEG(CLL) 
+NEG(CUS) NEG(CUI) NEG(CUL) NEG(CULL) 
+NEG(CC)  NEG(CUC) NEG(CSC)
+neg a = error $ "negate: unsupported value: "++show a
+
+absv :: Const -> Const
+#define ABS(X) absv (X a) = X (Prelude.abs a);
+ABS(I) ABS(I8) ABS(I16) ABS(I32) ABS(I64) 
+ABS(W) ABS(W8) ABS(W16) ABS(W32) ABS(W64) 
+ABS(F) ABS(D)  ABS(CF)  ABS(CD)
+ABS(CS)  ABS(CI)  ABS(CL)  ABS(CLL) 
+ABS(CUS) ABS(CUI) ABS(CUL) ABS(CULL) 
+ABS(CC)  ABS(CUC) ABS(CSC)
+absv a = error $ "abs: unsupported value: "++show a
+
+sig :: Const -> Const
+#define SIG(X) sig (X a) = X (signum a);
+SIG(I) SIG(I8) SIG(I16) SIG(I32) SIG(I64) 
+SIG(W) SIG(W8) SIG(W16) SIG(W32) SIG(W64) 
+SIG(F) SIG(D)  SIG(CF)  SIG(CD)
+SIG(CS)  SIG(CI)  SIG(CL)  SIG(CLL) 
+SIG(CUS) SIG(CUI) SIG(CUL) SIG(CULL) 
+SIG(CC)  SIG(CUC) SIG(CSC)
+sig a = error $ "sig: unsupported value: "++show a
+
+
+
+
+
           
--- -- | Primitives that operate on /all/ numeric types.
--- --   Neg/Abs/Sig are unary:
--- data NumPrim = Add | Mul | Neg | Abs | Sig
---   deriving (Read,Show,Eq,Generic)
+
 
 -- -- | Primitive integral-only operations.
 -- -- All binops except BNot, shifts and rotates take an Int constant as second arg:

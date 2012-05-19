@@ -131,8 +131,18 @@ r7 = I.run p7
 --                                EIndexHeadDynamic (EVr v1)]))
 --                  (Vr a0))
 
-
 -- TODO -- still need to generate an IndexCons node.
+
+----------------------------------------
+
+-- This shows an odd difference in staging:
+p8 :: Acc (Scalar Float)
+p8 = unit$ pi + (constant pi :: Exp Float) 
+--           pi -- (signum pi)
+--           negate (abs (signum 33))
+
+--           33
+
 
 --------------------------------------------------------------------------------
 

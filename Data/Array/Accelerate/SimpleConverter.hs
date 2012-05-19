@@ -298,16 +298,68 @@ convertExp e =
     Cond c t ex -> S.ECond <$> convertExp c 
                            <*> convertExp t
                            <*> convertExp ex
-    PrimConst c -> return$ S.EConst $ 
-                   case c of 
-                    PrimMinBound _ -> S.MinBound
-                    PrimMaxBound _ -> S.MaxBound
-                    PrimPi       _ -> S.Pi
-
+    
     IndexScalar acc eix -> S.EIndexScalar <$> convertAcc acc
                                           <*> convertExp eix
     Shape acc -> S.EShape <$> convertAcc acc
     ShapeSize  acc -> S.EShapeSize  <$> convertExp acc
+
+    -- We are committed to specific binary representations of numeric
+    -- types anyway, so we simply encode special constants here,
+    -- rather than preserving their specialness:
+    PrimConst c -> return$ S.EConst $ 
+                   case (c, getExpType e) of 
+                     (PrimPi _, S.TFloat)   -> S.F pi 
+                     (PrimPi _, S.TDouble)  -> S.D pi 
+                     (PrimPi _, S.TCFloat)  -> S.CF pi 
+                     (PrimPi _, S.TCDouble) -> S.CD pi 
+                     (PrimMinBound _, S.TInt)    -> S.I   minBound
+                     (PrimMinBound _, S.TInt8)   -> S.I8  minBound
+                     (PrimMinBound _, S.TInt16)  -> S.I16 minBound
+                     (PrimMinBound _, S.TInt32)  -> S.I32 minBound
+                     (PrimMinBound _, S.TInt64)  -> S.I64 minBound
+                     (PrimMinBound _, S.TWord)   -> S.W   minBound
+                     (PrimMinBound _, S.TWord8)  -> S.W8  minBound
+                     (PrimMinBound _, S.TWord16) -> S.W16 minBound
+                     (PrimMinBound _, S.TWord32) -> S.W32 minBound
+                     (PrimMinBound _, S.TWord64) -> S.W64 minBound
+                     (PrimMinBound _, S.TCShort) -> S.CS  minBound
+                     (PrimMinBound _, S.TCInt  ) -> S.CI  minBound
+                     (PrimMinBound _, S.TCLong ) -> S.CL  minBound
+                     (PrimMinBound _, S.TCLLong) -> S.CLL minBound
+                     (PrimMinBound _, S.TCUShort) -> S.CUS  minBound
+                     (PrimMinBound _, S.TCUInt  ) -> S.CUI  minBound
+                     (PrimMinBound _, S.TCULong ) -> S.CUL  minBound
+                     (PrimMinBound _, S.TCULLong) -> S.CULL minBound
+                     (PrimMinBound _, S.TChar  )  -> S.C     minBound
+                     (PrimMinBound _, S.TCChar )  -> S.CC    minBound
+                     (PrimMinBound _, S.TCSChar)  -> S.CSC   minBound
+                     (PrimMinBound _, S.TCUChar)  -> S.CUC   minBound
+                     (PrimMaxBound _, S.TInt)    -> S.I   maxBound
+                     (PrimMaxBound _, S.TInt8)   -> S.I8  maxBound
+                     (PrimMaxBound _, S.TInt16)  -> S.I16 maxBound
+                     (PrimMaxBound _, S.TInt32)  -> S.I32 maxBound
+                     (PrimMaxBound _, S.TInt64)  -> S.I64 maxBound
+                     (PrimMaxBound _, S.TWord)   -> S.W   maxBound
+                     (PrimMaxBound _, S.TWord8)  -> S.W8  maxBound
+                     (PrimMaxBound _, S.TWord16) -> S.W16 maxBound
+                     (PrimMaxBound _, S.TWord32) -> S.W32 maxBound
+                     (PrimMaxBound _, S.TWord64) -> S.W64 maxBound
+                     (PrimMaxBound _, S.TCShort) -> S.CS  maxBound
+                     (PrimMaxBound _, S.TCInt  ) -> S.CI  maxBound
+                     (PrimMaxBound _, S.TCLong ) -> S.CL  maxBound
+                     (PrimMaxBound _, S.TCLLong) -> S.CLL maxBound
+                     (PrimMaxBound _, S.TCUShort) -> S.CUS  maxBound
+                     (PrimMaxBound _, S.TCUInt  ) -> S.CUI  maxBound
+                     (PrimMaxBound _, S.TCULong ) -> S.CUL  maxBound
+                     (PrimMaxBound _, S.TCULLong) -> S.CULL maxBound
+                     (PrimMaxBound _, S.TChar  )  -> S.C     maxBound
+                     (PrimMaxBound _, S.TCChar )  -> S.CC    maxBound
+                     (PrimMaxBound _, S.TCSChar)  -> S.CSC   maxBound
+                     (PrimMaxBound _, S.TCUChar)  -> S.CUC   maxBound
+                     (PrimMinBound _,ty) -> error$"Internal error: no minBound for type"++show ty
+                     (PrimMaxBound _,ty) -> error$"Internal error: no maxBound for type"++show ty
+                     (PrimPi       _,ty) -> error$"Internal error: no pi constant for type"++show ty
 
 
 -- Convert a tuple expression to our simpler Tuple representation (containing a list):
