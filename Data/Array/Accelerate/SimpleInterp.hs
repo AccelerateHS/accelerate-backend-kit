@@ -1,4 +1,4 @@
-
+{-# LANGUAGE CPP #-}
 -- An example interpreter for the simplified AST.
 
 module Data.Array.Accelerate.SimpleInterp
@@ -194,8 +194,19 @@ evalPrim p es =
     NP Add -> Scalar (foldl1 plus (map unScalar es))
         
 plus :: Const -> Const -> Const
-plus (I a) (I b) = I (a+b)
-plus (F a) (F b) = F (a+b)
+#define PLUS(X) plus (X a) (X b) = X (a+b)
+PLUS(I) 
+PLUS(I8) 
+PLUS(I16) 
+PLUS(I32) 
+PLUS(I64) 
+PLUS(W) 
+PLUS(W8) 
+PLUS(W16) 
+PLUS(W32) 
+PLUS(W64) 
+PLUS(F)
+PLUS(D)
 plus a b = error $ "plus: unmatched combination of values: "++show (a,b)
 
 -- Todo: special constants: minBound, maxBound, pi
