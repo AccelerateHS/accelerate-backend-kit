@@ -19,7 +19,7 @@ module Data.Array.Accelerate.SimpleAST
      payloadLength, applyToPayload, applyToPayload2, applyToPayload3, 
      
      -- * Helper routines and predicates:
-     var, isIntType, isFloatType,
+     var, isIntType, isFloatType, primArity,
      Data.Array.Accelerate.SimpleAST.replicate
     )   
  where
@@ -35,6 +35,7 @@ import           Foreign.C.Types
 import           Pretty (text) -- ghc api
 import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
 import           System.IO.Unsafe (unsafePerformIO)
+import qualified Data.Map          as M
 --------------------------------------------------------------------------------
 -- Prelude: Pick a simple representation of variables (interned symbols)
 --------------------------------------------------------------------------------
@@ -183,18 +184,18 @@ data Prim = NP NumPrim
           | SP ScalarPrim
           | BP BoolPrim
           | OP OtherPrim
-  deriving (Read,Show,Eq,Generic)
+  deriving (Read,Show,Eq,Ord,Generic)
           
 -- | Primitives that operate on /all/ numeric types.
 --   Neg/Abs/Sig are unary:
 data NumPrim = Add | Mul | Neg | Abs | Sig
-  deriving (Read,Show,Eq,Generic)
+  deriving (Read,Show,Eq,Ord,Generic)
 
 -- | Primitive integral-only operations.
 -- All binops except BNot, shifts and rotates take an Int constant as second arg:
 data IntPrim = Quot | Rem | IDiv | Mod | 
                BAnd | BOr | BXor | BNot | BShiftL | BShiftR | BRotateL | BRotateR
-  deriving (Read,Show,Eq,Generic)
+  deriving (Read,Show,Eq,Ord,Generic)
 
 -- | Primitive floating point-only operations.
 data FloatPrim = 
@@ -202,18 +203,38 @@ data FloatPrim =
       Recip | Sin | Cos | Tan | Asin | Acos | Atan | Asinh | Acosh | Atanh | ExpFloating | Sqrt | Log |
       -- Binary:                  
       FDiv | FPow | LogBase | Atan2 | Truncate | Round | Floor | Ceiling
-  deriving (Read,Show,Eq,Generic)
+  deriving (Read,Show,Eq,Ord,Generic)
            
 -- | Relational and equality operators
 data ScalarPrim = Lt | Gt | LtEq | GtEq | Eq | NEq | Max | Min
-  deriving (Read,Show,Eq,Generic)
+  deriving (Read,Show,Eq,Ord,Generic)
 
 data BoolPrim = And | Or | Not
-  deriving (Read,Show,Eq,Generic)
+  deriving (Read,Show,Eq,Ord,Generic)
 
 data OtherPrim = Ord | Chr | BoolToInt | FromIntegral
-  deriving (Read,Show,Eq,Generic)
+  deriving (Read,Show,Eq,Ord,Generic)
 
+
+-- | This is a table of primitive arities.
+primArity :: Prim -> Int 
+-- Note: this would be safer with a normal case expression, but would be rather long:
+primArity p = mp M.! p
+ where 
+  mp = M.fromList $ 
+   zip binaries (repeat 2) ++
+   zip unaries  (repeat 1)
+  binaries = 
+    [BP And, BP Or] ++
+    [NP Add, NP Mul, IP BNot] ++
+    map IP [Quot, Rem, IDiv, Mod, BOr, BXor, BShiftL, BShiftR, BRotateL, BRotateR] ++
+    map FP [FDiv, FPow, LogBase, Atan2, Truncate, Round, Floor, Ceiling] ++
+    map SP [Lt, Gt, LtEq, GtEq, Eq, NEq, Max, Min]
+  unaries =   
+    [BP Not] ++ 
+    map OP [Ord, Chr, BoolToInt, FromIntegral] ++
+    map NP [Neg, Abs, Sig] ++ 
+    map FP [Recip, Sin, Cos, Tan, Asin, Acos, Atan, Asinh, Acosh, Atanh, ExpFloating, Sqrt, Log]
 
 --------------------------------------------------------------------------------
 -- Accelerate Types

@@ -529,9 +529,16 @@ convertPrimApp p arg =
                   S.ELet v sty e1 e2 ->
                     S.ELet v sty e1 (loop e2)
                   -- WARNING!  Need a sanity check on arity here:
-                  S.ETuple ls -> S.EPrimApp (op p) ls
-                  oth -> S.EPrimApp (op p) [oth]
-   op pr = 
+                  S.ETuple ls -> mkPapp ls
+                  oth         -> mkPapp [oth]
+                  
+   mkPapp ls = if length ls == arity
+               then S.EPrimApp newprim ls
+               else error$"SimpleConverter.convertPrimApp: wrong number of arguments to prim "
+                    ++show newprim++": "++ show ls
+   arity   = S.primArity newprim             
+   newprim = op p 
+   op pr   = 
     case pr of 
       PrimAdd _ty -> S.NP S.Add
       PrimMul _ty -> S.NP S.Mul

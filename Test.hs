@@ -186,14 +186,15 @@ instance Show a => NiceShow (Array DIM2 a) where
 --------------------------------------------------------------------------------
 
 main = defaultMain tests
-tests = [ testCase "use/fromList"  (print$ doc t0)
-	, testCase "fold/zipwith"  (print$ doc t1)
-	, testCase "map/replicate" (print$ doc t2)
+tests = [ testCase "use/fromList"   (print$ doc t0)
+	, testCase "fold/zipwith"   (print$ doc t1)
+	, testCase "map/replicate"  (print$ doc t2)
 	, testCase "generate/replicate" (print$ doc t3)
-	, testCase "index scalar"  (print$ doc t4)
-	, testCase "lift/index"    (print$ doc t5)
-	, testCase "project tuple" (print$ doc t6)
-	, testCase "index test"    (print$ doc t7)
+	, testCase "index scalar"   (print$ doc t4)
+	, testCase "lift/index"     (print$ doc t5)
+	, testCase "project tuple"  (print$ doc t6)
+	, testCase "index test"     (print$ doc t7)
+        , testCase "bunch of arith" (print$ doc t8)
 	]
 
 
