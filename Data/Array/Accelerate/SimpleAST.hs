@@ -19,17 +19,22 @@ module Data.Array.Accelerate.SimpleAST
      payloadLength, applyToPayload, applyToPayload2, applyToPayload3, 
      
      -- * Helper routines and predicates:
-     var, isIntType, isFloatType
+     var, isIntType, isFloatType,
+     Data.Array.Accelerate.SimpleAST.replicate
     )   
  where
 
-import Debug.Trace
-import Data.Int
-import Data.Word
-import Data.Array.Unboxed as U
-import Foreign.C.Types 
-import Pretty (text) -- ghc api
-import Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
+import           Debug.Trace
+import           Data.Int
+import           Data.Word
+import           Data.Array.Unboxed as U
+import qualified Data.Array.Unsafe as Un
+import qualified Data.Array.MArray as MA
+import qualified Data.Array.IO     as IA
+import           Foreign.C.Types 
+import           Pretty (text) -- ghc api
+import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
+import           System.IO.Unsafe (unsafePerformIO)
 --------------------------------------------------------------------------------
 -- Prelude: Pick a simple representation of variables (interned symbols)
 --------------------------------------------------------------------------------
@@ -255,12 +260,14 @@ isFloatType ty =
 -- order that one would write `(Z :. 3 :. 4 :. All)` in the source code;
 -- i.e. that particular example would translate to `[All, Fixed, Fixed]`.
 --
+-- The result is that the "fastest varying" dimension is on the left
+-- in this representation.
 type SliceType      = [SliceComponent]
 data SliceComponent = Fixed | All
   deriving (Eq,Show,Read,Generic)
 
 -- TEMP / OLD:
--- The read left-to-right, in the same
+-- They read left-to-right, in the same
 -- order that one would write `(Z :. 3 :. 4 :. All)` in the source code.
 -- That particular example would translate to `[Fixed, Fixed, All]`.
 
@@ -299,10 +306,13 @@ data ArrayPayload =
   | ArrayPayloadDouble (RawData Double)
   | ArrayPayloadChar   (RawData Char)
   | ArrayPayloadBool   (RawData Word8) -- Word8's represent bools.
-  | ArrayPayloadUnit -- Dummy placeholder value.
+--  | ArrayPayloadUnit -- Dummy placeholder value.
+--  
+-- TODO -- Add C-types.  But as of this date [2012.05.21], Accelerate
+-- support for these types is incomplete, so we omit them here as well.
 --   
-  -- TODO: UArray doesn't offer cast like IOArray.  It would be nice
-  -- to make all arrays canonicalized to a data buffer of Word8's:
+-- TODO: UArray doesn't offer cast like IOArray.  It would be nice
+-- to make all arrays canonicalized to a data buffer of Word8's:
  deriving (Show, Read, Eq)
   
 -- | This is our Haskell representation of raw, contiguous data.
@@ -385,7 +395,7 @@ test = read "array (1,5) [(1,200),(2,201),(3,202),(4,203),(5,204)]" :: U.UArray 
 payloadLength :: ArrayPayload -> Int
 payloadLength payl =
   case payl of 
-    ArrayPayloadUnit       -> 0
+--    ArrayPayloadUnit       -> 0
     ArrayPayloadInt    arr -> arrLen arr
     ArrayPayloadInt8   arr -> arrLen arr
     ArrayPayloadInt16  arr -> arrLen arr
@@ -428,7 +438,7 @@ applyToPayload fn payl = applyToPayload2 (\ a _ -> fn a) payl
 applyToPayload2 :: (forall a . UArray Int a -> (Int -> Const) -> UArray Int a) -> ArrayPayload -> ArrayPayload
 applyToPayload2 fn payl = 
   case payl of 
-    ArrayPayloadUnit       -> ArrayPayloadUnit
+--    ArrayPayloadUnit       -> ArrayPayloadUnit
     ArrayPayloadInt    arr -> ArrayPayloadInt    (fn arr (\i -> I (arr U.! i)))
     ArrayPayloadInt8   arr -> ArrayPayloadInt8   (fn arr (\i -> I8 (arr U.! i)))
     ArrayPayloadInt16  arr -> ArrayPayloadInt16  (fn arr (\i -> I16 (arr U.! i)))
@@ -452,10 +462,8 @@ applyToPayload2 fn payl =
 applyToPayload3 :: (Int -> (Int -> Const) -> [Const]) -> ArrayPayload -> ArrayPayload
 -- TODO!! The same-type-as-input restriction could be relaxed.
 applyToPayload3 fn payl = 
-  let len = payloadLength payl in
-  tracePrint "\napplyToPayload3: CONVERTED: "$
   case payl of 
-    ArrayPayloadUnit       -> ArrayPayloadUnit
+--    ArrayPayloadUnit       -> ArrayPayloadUnit
     ArrayPayloadInt    arr -> ArrayPayloadInt    (fromL (map unI  $ fn len (\i -> I   (arr U.! i))))
     ArrayPayloadInt8   arr -> ArrayPayloadInt8   (fromL (map unI8 $ fn len (\i -> I8  (arr U.! i))))
     ArrayPayloadInt16  arr -> ArrayPayloadInt16  (fromL (map unI16$ fn len (\i -> I16 (arr U.! i))))
@@ -471,7 +479,7 @@ applyToPayload3 fn payl =
     ArrayPayloadChar   arr -> ArrayPayloadChar   (fromL (map unC  $ fn len (\i -> C   (arr U.! i))))
     ArrayPayloadBool   arr -> ArrayPayloadBool   (fromL (map fromBool$ fn len (\i -> toBool (arr U.! i))))
   where 
-   fromL l = U.listArray (0,length l - 1) l
+   len = payloadLength payl
    unI   (I x) = x
    unI8  (I8 x) = x
    unI16 (I16 x) = x
@@ -486,10 +494,69 @@ applyToPayload3 fn payl =
    unD (D x) = x
    unC (C x) = x
    unB (B x) = x
-   toBool 0 = B False
-   toBool _ = B True
-   fromBool (B False) = 0
-   fromBool (B True)  = 1
+
+fromL l = U.listArray (0,length l - 1) l
+toBool 0 = B False
+toBool _ = B True
+fromBool (B False) = 0
+fromBool (B True)  = 1
 
 
-tracePrint s x = trace (s++show x) x
+-- | Create an array of with the given dimensions and many copies of
+--   the same element.  This deals with constructing the appropriate
+--   type of payload to match the type of constant (which is otherwise
+--   a large case statement).
+replicate :: [Int] -> Const -> AccArray 
+replicate dims const = AccArray dims (payload const)
+  where 
+    len = foldl (*) 1 dims
+    payload const = 
+     case const of 
+       I   x -> [ArrayPayloadInt   (fromL$ Prelude.replicate len x)]
+       I8  x -> [ArrayPayloadInt8  (fromL$ Prelude.replicate len x)]
+       I16 x -> [ArrayPayloadInt16 (fromL$ Prelude.replicate len x)]
+       I32 x -> [ArrayPayloadInt32 (fromL$ Prelude.replicate len x)]
+       I64 x -> [ArrayPayloadInt64 (fromL$ Prelude.replicate len x)]
+       W   x -> [ArrayPayloadWord   (fromL$ Prelude.replicate len x)]
+       W8  x -> [ArrayPayloadWord8  (fromL$ Prelude.replicate len x)]       
+       W16 x -> [ArrayPayloadWord16 (fromL$ Prelude.replicate len x)]
+       W32 x -> [ArrayPayloadWord32 (fromL$ Prelude.replicate len x)]
+       W64 x -> [ArrayPayloadWord64 (fromL$ Prelude.replicate len x)]
+       F x -> [ArrayPayloadFloat  (fromL$ Prelude.replicate len x)]
+       D x -> [ArrayPayloadDouble (fromL$ Prelude.replicate len x)]
+       C x -> [ArrayPayloadChar   (fromL$ Prelude.replicate len x)]
+       B x -> [ArrayPayloadBool   (fromL$ Prelude.replicate len (fromBool const))]
+       Tup ls -> concatMap payload ls 
+
+-- TODO -- add all C array types to the ArrayPayload type:
+--            | CF CFloat   | CD CDouble 
+--            | CS  CShort  | CI  CInt  | CL  CLong  | CLL  CLLong
+--            | CUS CUShort | CUI CUInt | CUL CULong | CULL CULLong
+--            | CC  CChar   | CSC CSChar | CUC CUChar 
+
+
+----------------------------------------------------------------------------------------------------
+
+-- Note: an alternate approach to the large sum of payload types would
+-- be to cast them all to a UArray of bytes.  There is not direct
+-- support for this in the UArray module, but we could accomplish it
+-- with something like the following:
+castUArray :: forall ix a b . (Ix ix, IArray UArray a, IArray UArray b, 
+                               IA.MArray IA.IOUArray a IO, IA.MArray IA.IOUArray b IO)
+           => UArray ix a -> UArray ix b
+castUArray uarr = unsafePerformIO $ 
+  do thawed :: IA.IOUArray ix a <- MA.unsafeThaw uarr
+     cast   :: IA.IOUArray ix b <- Un.castIOUArray thawed
+     froze  :: UArray ix b      <- MA.unsafeFreeze cast
+     return froze
+
+-- Like Data.Vector.generate, but for `UArray`s.  Unfortunately, this
+-- requires extra class constraints for `IOUArray` as well.
+uarrGenerate :: (IArray UArray a, IA.MArray IA.IOUArray a IO)
+             => Int -> (Int -> a) -> UArray Int a
+uarrGenerate len fn = unsafePerformIO $ 
+  do marr :: IA.IOUArray Int a <- MA.newArray_ (0,len)
+     let loop (-1) = MA.unsafeFreeze marr
+         loop i = do MA.writeArray marr i (fn i)
+                     loop (i-1)
+     loop (len-1)

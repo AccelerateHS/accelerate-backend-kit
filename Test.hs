@@ -137,11 +137,17 @@ r7 = I.run p7
 
 -- This shows an odd difference in staging:
 p8 :: Acc (Scalar Float)
-p8 = unit$ pi + (constant pi :: Exp Float) 
+p8 = unit$ pi + (constant pi :: Exp Float) *
 --           pi -- (signum pi)
+           33
 --           negate (abs (signum 33))
 
---           33
+t8 = convertToSimpleAST p8
+r8 = I.run p8
+
+-- Prim arguments don't need to directly be tuple expressions:
+-- unit ((+) (let x0 = pi in (x0, 3.1415927 * x0)))
+
 
 
 --------------------------------------------------------------------------------

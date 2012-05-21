@@ -634,4 +634,5 @@ packArray :: forall a . (Sug.Arrays a) => (S.Type, S.AccArray, Phantom a) -> Sug
 packArray (ty, accarray, _) = 
   undefined
 
+--------------------------------------------------------------------------------
 

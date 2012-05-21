@@ -9,7 +9,7 @@ module Data.Array.Accelerate.SimpleInterp
 
 import Data.Array.Accelerate.Smart                   (Acc)
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
-import Data.Array.Accelerate.SimpleAST
+import Data.Array.Accelerate.SimpleAST             as S
 import Data.Array.Accelerate.SimpleConverter (convertToSimpleAST)
 
 import qualified Data.Map as M
@@ -33,13 +33,8 @@ data Value = TupVal [Value]
   deriving Show           
 --------------------------------------------------------------------------------
 
-singleton (Scalar s) = ArrVal (error "singleton - finish me")
-
--- repackResult
-
 run :: Sug.Arrays a => Acc a -> a
 run acc = error (show (evalA M.empty (convertToSimpleAST acc)))
-
 
 evalA :: Env -> AExp -> AccArray
 evalA env ae = finalArr
@@ -52,7 +47,8 @@ evalA env ae = finalArr
        Vr  v             -> env M.! v
        Let vr ty lhs bod -> ArrVal$ evalA (M.insert vr (loop lhs) env) bod
 
-       Unit e -> singleton (evalE M.empty e)
+       Unit e -> case evalE M.empty e of 
+                   Scalar c -> ArrVal$ S.replicate [] c
        ArrayTuple aes -> TupVal (map loop aes)
 
        Cond e1 ae2 ae3 -> case evalE env e1 of 
