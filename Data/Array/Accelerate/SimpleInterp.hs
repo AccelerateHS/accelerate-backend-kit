@@ -1,4 +1,6 @@
 {-# LANGUAGE CPP #-}
+-- {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+
 -- An example interpreter for the simplified AST.
 
 module Data.Array.Accelerate.SimpleInterp
@@ -109,44 +111,25 @@ evalA env ae = finalArr
        Fold1    fn ae         -> error "Foldl1"
        FoldSeg  fn ex ae1 ae2 -> error "FoldSeg"
        Fold1Seg fn    ae1 ae2 -> error "Fold1Seg" 
---   | Scanl    Fun Exp AExp        -- Scanl  Function InitialValue LinearArray
---   | Scanl'   Fun Exp AExp        -- Scanl' Function InitialValue LinearArray
---   | Scanl1   Fun     AExp        -- Scanl  Function              LinearArray
---   | Scanr    Fun Exp AExp        -- Scanr  Function InitialValue LinearArray
---   | Scanr'   Fun Exp AExp        -- Scanr' Function InitialValue LinearArray
---   | Scanr1   Fun     AExp        -- Scanr  Function              LinearArray
---   | Permute  Fun AExp Fun AExp   -- Permute CombineFun DefaultArr PermFun SourceArray
---   | Backpermute Exp Fun AExp     -- Backpermute ResultDimension   PermFun SourceArray
---   | Reshape     Exp     AExp     -- Reshape Shape Array
---   | Stencil  Fun Boundary AExp
---   | Stencil2 Fun Boundary AExp Boundary AExp -- Two source arrays/boundaries
+       Scanl    fn ex ae      -> error "Scanl"
+       Scanl'   fn ex ae      -> error "Scanl'"
+       Scanl1   fn    ae      -> error "Scanl1"       
+       Scanr    fn ex ae      -> error "Scanr"
+       Scanr'   fn ex ae      -> error "Scanr'"
+       Scanr1   fn    ae      -> error "Scanr1"       
+       Permute fn1 ae1 fn2 ae2 -> error "Permute"
+       Backpermute ex fn ae     -> error "Backpermute"
+       Reshape     ex    ae     -> error "Reshape"
+       Stencil     fn  bnd ae   -> error "Stencil"
+       Stencil2 fn bnd1 ae1 bnd2 ae2 -> error "Stencil2"
 
-
--- -- | Apply a generic transformation to the Array Payload irrespective of element type.
--- applyToPayload :: (forall a . UArray Int a -> UArray Int a) -> ArrayPayload -> ArrayPayload
--- applyToPayload fn payl = 
---   case payl of 
---     ArrayPayloadInt    arr -> ArrayPayloadInt    (fn arr)
---     ArrayPayloadInt8   arr -> ArrayPayloadInt8   (fn arr)
---     ArrayPayloadInt16  arr -> ArrayPayloadInt16  (fn arr)
---     ArrayPayloadInt32  arr -> ArrayPayloadInt32  (fn arr) 
---     ArrayPayloadInt64  arr -> ArrayPayloadInt64  (fn arr)
---     ArrayPayloadWord   arr -> ArrayPayloadWord   (fn arr)
---     ArrayPayloadWord8  arr -> ArrayPayloadWord8  (fn arr) 
---     ArrayPayloadWord16 arr -> ArrayPayloadWord16 (fn arr)
---     ArrayPayloadWord32 arr -> ArrayPayloadWord32 (fn arr)
---     ArrayPayloadWord64 arr -> ArrayPayloadWord64 (fn arr)
---     ArrayPayloadFloat  arr -> ArrayPayloadFloat  (fn arr)
---     ArrayPayloadDouble arr -> ArrayPayloadDouble (fn arr)
---     ArrayPayloadChar   arr -> ArrayPayloadChar   (fn arr)
---     ArrayPayloadBool   arr -> ArrayPayloadBool   (fn arr) -- Word8's represent bools.
-
+       _ -> error$"Accelerate array expression breaks invariants: "++ show aexp
 
 evalE :: Env -> Exp -> Value
 evalE env expr = 
   case expr of 
     EVr  v             -> env M.! v
-    ELet vr ty lhs bod -> evalE (M.insert vr (evalE env lhs) env) bod
+    ELet vr _ty lhs bod -> evalE (M.insert vr (evalE env lhs) env) bod
     ETuple es          -> TupVal$ map (evalE env) es
     EConst c           -> Scalar c
 
@@ -159,17 +142,17 @@ evalE env expr =
     EShape ae          -> let AccArray sh _ = evalA env ae 
                           in Scalar$ Tup $ map I sh
     
-    EShapeSize exp     -> case evalE env exp of 
+    EShapeSize ex      -> case evalE env ex of 
                             _ -> error "need more work on shapes"
 
     EPrimApp p es      -> evalPrim p (map (evalE env) es)
 
-  -- | ETupProjectFromRight Int Exp  -- Project the nth field FROM THE RIGHT end of the tuple.  
-  -- | EIndex [Exp] -- Index into a multi-dimensional array:
-  -- | EIndexAny 
-  -- | EIndexConsDynamic Exp Exp
-  -- | EIndexHeadDynamic Exp 
-  -- | EIndexTailDynamic Exp 
+    ETupProjectFromRight ind ex -> error "ETupProjectFromRight"
+    EIndex indls       -> error "EIndex"
+    EIndexAny          -> error "EIndexAny"
+    EIndexConsDynamic e1 e2 -> error "EIndexConsDynamic"
+    EIndexHeadDynamic ex    -> error "EIndexHeadDynamic"
+    EIndexTailDynamic ex    -> error "EIndexTailDynamic"
         
 
 --------------------------------------------------------------------------------
@@ -177,7 +160,7 @@ evalE env expr =
 
 --------------------------------------------------------------------------------
 
-indexArray = undefined
+indexArray = error "implement indexArray"
 
 
 evalPrim :: Prim -> [Value] -> Value

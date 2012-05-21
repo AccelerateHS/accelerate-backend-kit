@@ -1,6 +1,6 @@
 {-# LANGUAGE DeriveGeneric, CPP #-}
 {-# LANGUAGE Rank2Types #-}
-{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+-- {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 -- TEMP: for UArray Read instance:
 {-# LANGUAGE ScopedTypeVariables, FlexibleInstances, FlexibleContexts #-}
 module Data.Array.Accelerate.SimpleAST  
@@ -545,9 +545,9 @@ castUArray :: forall ix a b . (Ix ix, IArray UArray a, IArray UArray b,
                                IA.MArray IA.IOUArray a IO, IA.MArray IA.IOUArray b IO)
            => UArray ix a -> UArray ix b
 castUArray uarr = unsafePerformIO $ 
-  do thawed :: IA.IOUArray ix a <- MA.unsafeThaw uarr
+  do thawed :: IA.IOUArray ix a <- Un.unsafeThaw uarr
      cast   :: IA.IOUArray ix b <- Un.castIOUArray thawed
-     froze  :: UArray ix b      <- MA.unsafeFreeze cast
+     froze  :: UArray ix b      <- Un.unsafeFreeze cast
      return froze
 
 -- Like Data.Vector.generate, but for `UArray`s.  Unfortunately, this
@@ -556,7 +556,7 @@ uarrGenerate :: (IArray UArray a, IA.MArray IA.IOUArray a IO)
              => Int -> (Int -> a) -> UArray Int a
 uarrGenerate len fn = unsafePerformIO $ 
   do marr :: IA.IOUArray Int a <- MA.newArray_ (0,len)
-     let loop (-1) = MA.unsafeFreeze marr
+     let loop (-1) = Un.unsafeFreeze marr
          loop i = do MA.writeArray marr i (fn i)
                      loop (i-1)
      loop (len-1)
