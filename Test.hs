@@ -138,9 +138,7 @@ r7 = I.run p7
 -- This shows an odd difference in staging:
 p8 :: Acc (Scalar Float)
 p8 = unit$ pi + (constant pi :: Exp Float) *
---           pi -- (signum pi)
-           33
---           negate (abs (signum 33))
+           negate (abs (signum pi))
 
 t8 = convertToSimpleAST p8
 r8 = I.run p8

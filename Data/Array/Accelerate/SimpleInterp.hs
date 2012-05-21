@@ -25,7 +25,8 @@ import Debug.Trace (trace)
 tracePrint s x = trace (s++show x) x
 
 --------------------------------------------------------------------------------
--- type Value = [AccArray]
+-- Values and Environments:
+
 type Env = M.Map Var Value
 lookup = error"lookup"
 
@@ -61,8 +62,8 @@ evalA env ae = finalArr
        Generate _ty eSz (Lam [(vr,_)] bodE) ->
        -- Indices can be arbitrary shapes:
          case evalE env eSz of 
-           Scalar (I n) -> error "finish"
---           Scalar ()
+           Scalar (I n)    -> error "finish me - Generate"
+           Scalar (Tup ls) -> error "finish me - Generate"
 
          
        TupleRefFromRight i ae -> error "TupleRefFromRight"
@@ -157,11 +158,10 @@ evalE env expr =
 
 --------------------------------------------------------------------------------
 
-
---------------------------------------------------------------------------------
-
 indexArray = error "implement indexArray"
 
+
+--------------------------------------------------------------------------------
 
 evalPrim :: Prim -> [Value] -> Value
 evalPrim p [] = 
@@ -234,31 +234,26 @@ sig a = error $ "sig: unsupported value: "++show a
 
 
 
-
-
-          
-
-
--- -- | Primitive integral-only operations.
--- -- All binops except BNot, shifts and rotates take an Int constant as second arg:
+        
 -- data IntPrim = Quot | Rem | IDiv | Mod | 
 --                BAnd | BOr | BXor | BNot | BShiftL | BShiftR | BRotateL | BRotateR
---   deriving (Read,Show,Eq,Generic)
 
--- -- | Primitive floating point-only operations.
+
 -- data FloatPrim = 
 --       -- Unary:
 --       Recip | Sin | Cos | Tan | Asin | Acos | Atan | Asinh | Acosh | Atanh | ExpFloating | Sqrt | Log |
 --       -- Binary:                  
 --       FDiv | FPow | LogBase | Atan2 | Truncate | Round | Floor | Ceiling
---   deriving (Read,Show,Eq,Generic)
+
            
--- -- | Relational and equality operators
+
 -- data ScalarPrim = Lt | Gt | LtEq | GtEq | Eq | NEq | Max | Min
---   deriving (Read,Show,Eq,Generic)
+
+
+
 
 -- data BoolPrim = And | Or | Not
---   deriving (Read,Show,Eq,Generic)
+
 
 -- data OtherPrim = Ord | Chr | BoolToInt | FromIntegral
---   deriving (Read,Show,Eq,Generic)
+

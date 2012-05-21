@@ -257,6 +257,10 @@ convertExp e =
     Var idx -> 
       do var <- envLookup (idxToInt idx)
          return$ S.EVr var
+    
+    -- Lift let's outside of primapps so we can get to the tuple:
+    -- This will be tricky because of changing the debruijn indicies:
+    -- PrimApp p (Let e1 e2) -> convertExp (Let e1 (PrimApp p e2))
     PrimApp p arg -> convertPrimApp p arg
 
     Tuple tup -> convertTuple tup
@@ -362,8 +366,8 @@ convertExp e =
                      (PrimPi       _,ty) -> error$"Internal error: no pi constant for type"++show ty
 
 
--- Convert a tuple expression to our simpler Tuple representation (containing a list):
--- convertTuple :: Tuple (PreOpenExp acc env aenv) t' -> S.AExp
+-- | Convert a tuple expression to our simpler Tuple representation (containing a list):
+--   ASSUMES that the target expression is in fact a tuple construct.
 convertTuple :: Tuple (PreOpenExp OpenAcc env aenv) t' -> EnvM S.Exp
 convertTuple NilTup = return$ S.ETuple []
 convertTuple (SnocTup tup e) = 
@@ -373,13 +377,6 @@ convertTuple (SnocTup tup e) =
        case tup' of 
          S.ETuple ls -> return$ S.ETuple$ ls ++ [e']
          se -> error$ "convertTuple: expected a tuple expression, received:\n  "++ show se
-
-convertTupleExp :: PreOpenExp OpenAcc t t1 t2 -> EnvM [S.Exp]
-convertTupleExp e = do
-  e' <- convertExp e
-  case e' of 
-    S.ETuple ls -> return ls
-    se -> error$ "convertTupleExp: expected a tuple expression, received:\n  "++ show se
 
 
 --------------------------------------------------------------------------------
@@ -520,14 +517,30 @@ convertConst ty c =
 convertPrimApp :: (Sug.Elt a, Sug.Elt b)
                => PrimFun (a -> b) -> PreOpenExp OpenAcc env aenv a
                -> EnvM S.Exp
+               
 convertPrimApp p arg = 
-  do args' <- convertTupleExp arg
-     return$ S.EPrimApp (op p) args'
+  do 
+     args2 <- convertExp arg
+     return (loop args2)
  where 
+   -- Push primapps inside lets:
+   loop :: S.Exp -> S.Exp
+   loop args' = case args' of 
+                  S.ELet v sty e1 e2 ->
+                    S.ELet v sty e1 (loop e2)
+                  -- WARNING!  Need a sanity check on arity here:
+                  S.ETuple ls -> S.EPrimApp (op p) ls
+                  oth -> S.EPrimApp (op p) [oth]
    op pr = 
     case pr of 
       PrimAdd _ty -> S.NP S.Add
       PrimMul _ty -> S.NP S.Mul
+      PrimSig _ty -> S.NP S.Sig
+      PrimAbs _ty -> S.NP S.Abs
+      PrimNeg _ty -> S.NP S.Neg
+      
+      PrimQuot _ty -> S.IP S.Quot
+
       _ -> error$ "primapp not handled yet: "++show (PrimApp pr arg)
 
 --------------------------------------------------------------------------------

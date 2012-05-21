@@ -9,7 +9,7 @@ module Data.Array.Accelerate.SimpleAST
      AExp(..), AFun(..), 
      Exp(..), Fun(..), 
      Type(..), Const(..),
-     Prim(..), NumPrim(..), FloatPrim(..), ScalarPrim(..), BoolPrim(..), OtherPrim(..),
+     Prim(..), NumPrim(..), IntPrim(..), FloatPrim(..), ScalarPrim(..), BoolPrim(..), OtherPrim(..),
      Boundary(..),
      Var,
      
@@ -164,8 +164,6 @@ data Const = I Int  | I8 Int8  | I16 Int16  | I32 Int32  | I64 Int64
            | W Word | W8 Word8 | W16 Word16 | W32 Word32 | W64 Word64
            | F Float | D Double | C Char | B Bool
            | Tup [Const]
-            -- Special constants:
---           | MinBound | MaxBound | Pi
             -- C types, rather annoying:
            | CF CFloat   | CD CDouble 
            | CS  CShort  | CI  CInt  | CL  CLong  | CLL  CLLong
