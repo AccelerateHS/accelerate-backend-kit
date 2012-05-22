@@ -12,7 +12,7 @@
 
 module Data.Array.Accelerate.SimpleConverter 
        ( 
-         convertToSimpleAST
+         convertToSimpleAST, tt
        )
        where
 
@@ -647,12 +647,83 @@ unpackArray arrrepr = (ty, S.AccArray shp payloads,
        useR ArrayEltRchar   (AD_Char   x) = [S.ArrayPayloadChar   x]            
 
 
--- | Inverse of previous function, repack the simplified data
+-- | Almost an inverse of the previous function -- repack the simplified data
 -- representation with the type information necessary to form a proper
 -- Accelerate array.
-packArray :: forall a . (Sug.Arrays a) => (S.Type, S.AccArray, Phantom a) -> Sug.ArrRepr a
-packArray (ty, accarray, _) = 
-  undefined
+-- packArray :: forall a . (Sug.Arrays a) => (S.Type, S.AccArray, Phantom a) -> Sug.ArrRepr a
+packArray :: forall sh e . (Sug.Elt e, Sug.Shape sh) => (S.Type, S.AccArray) -> Sug.Array sh e
+packArray (ty, S.AccArray dims payloads) = 
+  if dims == dims'
+  then Sug.Array shpVal adata
+  else error$"SimpleConverter.packArray: array does not have the expected dimensions: "++show dims++" expected "++show dims'
+ where 
+  shpVal :: Sug.EltRepr sh = Sug.fromElt (Sug.listToShape dims :: sh)
+  dims' :: [Int] = Sug.shapeToList (Sug.ignore::sh)
+  adata = 
+   case (Sug.eltType (undefined::e), head payloads) of
+    (UnitTuple,_)   -> error "finish me - UnitTuple"
+    (PairTuple _ _,_) -> error "finish me - PairTuple"
+
+    (SingleTuple (NumScalarType (FloatingNumType (TypeFloat _))),  S.ArrayPayloadFloat uarr)  -> AD_Float uarr
+    (SingleTuple (NumScalarType (FloatingNumType (TypeDouble _))), S.ArrayPayloadDouble uarr) -> AD_Double uarr
+
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt   _))), S.ArrayPayloadInt   uarr) -> AD_Int uarr
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt8  _))), S.ArrayPayloadInt8  uarr) -> AD_Int8 uarr
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt16 _))), S.ArrayPayloadInt16 uarr) -> AD_Int16 uarr
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt32 _))), S.ArrayPayloadInt32 uarr) -> AD_Int32 uarr
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt64 _))), S.ArrayPayloadInt64 uarr) -> AD_Int64 uarr
+    (SingleTuple (NumScalarType (IntegralNumType (TypeWord   _))), S.ArrayPayloadWord   uarr) -> AD_Word uarr
+    (SingleTuple (NumScalarType (IntegralNumType (TypeWord8  _))), S.ArrayPayloadWord8  uarr) -> AD_Word8 uarr
+    (SingleTuple (NumScalarType (IntegralNumType (TypeWord16 _))), S.ArrayPayloadWord16 uarr) -> AD_Word16 uarr
+    (SingleTuple (NumScalarType (IntegralNumType (TypeWord32 _))), S.ArrayPayloadWord32 uarr) -> AD_Word32 uarr
+    (SingleTuple (NumScalarType (IntegralNumType (TypeWord64 _))), S.ArrayPayloadWord64 uarr) -> AD_Word64 uarr
+
+    (SingleTuple (NonNumScalarType (TypeBool _)), S.ArrayPayloadBool uarr) -> AD_Bool uarr
+    (SingleTuple (NonNumScalarType (TypeChar _)), S.ArrayPayloadChar uarr) -> AD_Char uarr
+
+    (SingleTuple (NumScalarType (FloatingNumType (TypeCFloat _))),  _)  -> error "not supported yet: array of CFloat"
+    (SingleTuple (NumScalarType (FloatingNumType (TypeCDouble _))), _)  -> error "not supported yet: array of CDouble"
+    (SingleTuple (NumScalarType (IntegralNumType (TypeCShort   _))), _) -> error "not supported yet: array of CShort"
+    (SingleTuple (NumScalarType (IntegralNumType (TypeCUShort  _))), _) -> error "not supported yet: array of CUShort"
+    (SingleTuple (NumScalarType (IntegralNumType (TypeCInt    _))), _)  -> error "not supported yet: array of CInt"
+    (SingleTuple (NumScalarType (IntegralNumType (TypeCUInt _))), _)    -> error "not supported yet: array of CUInt"
+    (SingleTuple (NumScalarType (IntegralNumType (TypeCLong _))), _)    -> error "not supported yet: array of CLong"
+    (SingleTuple (NumScalarType (IntegralNumType (TypeCULong _))), _)   -> error "not supported yet: array of CULong"
+    (SingleTuple (NumScalarType (IntegralNumType (TypeCLLong _))), _)   -> error "not supported yet: array of CLLong"
+    (SingleTuple (NumScalarType (IntegralNumType (TypeCULLong _))), _)  -> error "not supported yet: array of CULLong"
+    (SingleTuple (NonNumScalarType (TypeCChar _)), _)  -> error "not supported yet: array of CChar"
+    (SingleTuple (NonNumScalarType (TypeCSChar _)), _) -> error "not supported yet: array of CSChar"
+    (SingleTuple (NonNumScalarType (TypeCUChar _)), _) -> error "not supported yet: array of CUChar"
+
+    -- We could have a single catch-all cases here, but blowing it up
+    -- like this allows meaningful feedback from -fwarn-incomplete-patterns:
+    (SingleTuple (NumScalarType (FloatingNumType (TypeFloat _))),  _) -> err2
+    (SingleTuple (NumScalarType (FloatingNumType (TypeDouble _))), _) -> err2
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt   _))), _) -> err2
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt8  _))), _) -> err2
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt16 _))), _) -> err2
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt32 _))), _) -> err2
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt64 _))), _) -> err2
+    (SingleTuple (NumScalarType (IntegralNumType (TypeWord   _))), _) -> err2
+    (SingleTuple (NumScalarType (IntegralNumType (TypeWord8  _))), _) -> err2
+    (SingleTuple (NumScalarType (IntegralNumType (TypeWord16 _))), _) -> err2
+    (SingleTuple (NumScalarType (IntegralNumType (TypeWord32 _))), _) -> err2
+    (SingleTuple (NumScalarType (IntegralNumType (TypeWord64 _))), _) -> err2
+    (SingleTuple (NonNumScalarType (TypeBool _)), _) -> err2
+    (SingleTuple (NonNumScalarType (TypeChar _)), _) -> err2
+
+  err2 = error "packArray: given a SimpleAST.AccArray of the wrong type."
+
+
+    
+
+
+tt = S.replicate [2] (S.F 3.3)
+
+-- data TupleType a where
+--   UnitTuple   ::                               TupleType ()
+--   SingleTuple :: ScalarType a               -> TupleType a
+--   PairTuple   :: TupleType a -> TupleType b -> TupleType (a, b)
 
 --------------------------------------------------------------------------------
 

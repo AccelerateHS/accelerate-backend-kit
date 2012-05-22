@@ -143,7 +143,9 @@ data Exp =
   | ETupProjectFromRight Int Exp  -- Project the nth field FROM THE RIGHT end of the tuple.  
   | EIndex [Exp] -- Index into a multi-dimensional array:
   | EIndexAny 
-   -- I'm not sure I'm follwing this -- Accelerate would seem to allow run-time CONSING of indices:
+  -- I'm not sure I'm following this -- 
+  -- Accelerate would seem to allow run-time CONSING of indices:
+  -- In a staged model like this shouldn't we be able to get rid of that at metaprogram eval time?  
   | EIndexConsDynamic Exp Exp
   | EIndexHeadDynamic Exp 
   | EIndexTailDynamic Exp 
