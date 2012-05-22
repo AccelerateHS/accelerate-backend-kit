@@ -18,9 +18,11 @@ module Data.Array.Accelerate.SimpleAST
      AccArray(..), ArrayPayload(..), 
      payloadLength, applyToPayload, applyToPayload2, applyToPayload3, 
      
+     -- * Functions for operating on `AccArray`s
+     Data.Array.Accelerate.SimpleAST.replicate, splitComponent, numComponents,
+ 
      -- * Helper routines and predicates:
-     var, isIntType, isFloatType, primArity,
-     Data.Array.Accelerate.SimpleAST.replicate
+     var, isIntType, isFloatType, primArity
     )   
  where
 
@@ -555,6 +557,25 @@ replicate dims const = AccArray dims (payload const)
 --            | CUS CUShort | CUI CUInt | CUL CULong | CULL CULLong
 --            | CC  CChar   | CSC CSChar | CUC CUChar 
 
+-- | An AccArray stores an array of tuples.  This function reports how
+--   many components there are in the stored tuples (one or more).
+numComponents :: AccArray -> Int
+numComponents (AccArray _ payloads) = length payloads
+
+
+-- | Split one component (the first) out of an AccArray which
+--   represents an array of tuples.  This returns two new AccArrays,
+--   the first of which is a scalar, and the second of which contains
+--   all remaining components.
+-- 
+--   If there are less than two components, this function raises a
+--   runtime error.
+splitComponent :: AccArray -> (AccArray, AccArray)
+splitComponent (AccArray sh (h1:h2:rst)) = 
+  (AccArray sh [h1], AccArray sh (h2:rst))
+splitComponent (AccArray sh ls) = error$ "splitComponent: input array has only "
+                                  ++show(length ls)++" components, needs at least two"
+  
 
 ----------------------------------------------------------------------------------------------------
 

@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP, ScopedTypeVariables #-}
 -- {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 -- An example interpreter for the simplified AST.
@@ -12,7 +12,7 @@ module Data.Array.Accelerate.SimpleInterp
 import Data.Array.Accelerate.Smart                   (Acc)
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import Data.Array.Accelerate.SimpleAST             as S
-import Data.Array.Accelerate.SimpleConverter (convertToSimpleAST)
+import Data.Array.Accelerate.SimpleConverter (convertToSimpleAST, packArray, repackAcc)
 
 import qualified Data.Map as M
 
@@ -25,6 +25,15 @@ import Debug.Trace (trace)
 tracePrint s x = trace (s++show x) x
 
 --------------------------------------------------------------------------------
+-- Exposing a standard Accelerate `run` interface.
+
+-- | Run an Accelerate computation using a simple (and very
+--   inefficient) interpreter.
+run :: forall a . Sug.Arrays a => Acc a -> a
+run acc = repackAcc acc $ 
+          evalA M.empty (convertToSimpleAST acc)
+
+--------------------------------------------------------------------------------
 -- Values and Environments:
 
 type Env = M.Map Var Value
@@ -34,10 +43,9 @@ data Value = TupVal [Value]
            | ArrVal AccArray
            | Scalar { unScalar :: Const }
   deriving Show           
+                 
 --------------------------------------------------------------------------------
-
-run :: Sug.Arrays a => Acc a -> a
-run acc = error (show (evalA M.empty (convertToSimpleAST acc)))
+-- Evaluation:
 
 evalA :: Env -> AExp -> AccArray
 evalA env ae = finalArr

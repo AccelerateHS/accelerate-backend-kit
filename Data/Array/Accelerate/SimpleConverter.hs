@@ -12,7 +12,11 @@
 
 module Data.Array.Accelerate.SimpleConverter 
        ( 
-         convertToSimpleAST, tt
+         convertToSimpleAST, 
+         unpackArray, packArray, repackAcc,
+         
+         -- TEMP:
+         tt         
        )
        where
 
@@ -651,8 +655,8 @@ unpackArray arrrepr = (ty, S.AccArray shp payloads,
 -- representation with the type information necessary to form a proper
 -- Accelerate array.
 -- packArray :: forall a . (Sug.Arrays a) => (S.Type, S.AccArray, Phantom a) -> Sug.ArrRepr a
-packArray :: forall sh e . (Sug.Elt e, Sug.Shape sh) => (S.Type, S.AccArray) -> Sug.Array sh e
-packArray (ty, S.AccArray dims payloads) = 
+packArray :: forall sh e . (Sug.Elt e, Sug.Shape sh) => S.AccArray -> Sug.Array sh e
+packArray (S.AccArray dims payloads) = 
   if dims == dims'
   then Sug.Array shpVal adata
   else error$"SimpleConverter.packArray: array does not have the expected dimensions: "++show dims++" expected "++show dims'
@@ -661,7 +665,7 @@ packArray (ty, S.AccArray dims payloads) =
   dims' :: [Int] = Sug.shapeToList (Sug.ignore::sh)
   adata = 
    case (Sug.eltType (undefined::e), head payloads) of
-    (UnitTuple,_)   -> error "finish me - UnitTuple"
+    (UnitTuple,_)     -> AD_Unit
     (PairTuple _ _,_) -> error "finish me - PairTuple"
 
     (SingleTuple (NumScalarType (FloatingNumType (TypeFloat _))),  S.ArrayPayloadFloat uarr)  -> AD_Float uarr
@@ -715,15 +719,35 @@ packArray (ty, S.AccArray dims payloads) =
   err2 = error "packArray: given a SimpleAST.AccArray of the wrong type."
 
 
-    
+-- | Repackage a result in simplified form as an properly typed result
+--   of an Acc computation, i.e. a real Accelerate array.
+repackAcc :: forall a . Sug.Arrays a 
+        => {- dummy -} Sug.Acc a -> S.AccArray -> a
+repackAcc dummy simpl = Sug.toArr converted
+  where
+   converted :: Sug.ArrRepr a = cvt rep simpl 
+   -- Pull some information out of thin air (from type domain to value domain):
+   rep :: Sug.ArraysR (Sug.ArrRepr a) = 
+     Sug.arrays (error"SimpleInterp.run: this should never be used" :: a)
 
+   cvt :: forall a' . Sug.ArraysR a' -> S.AccArray -> a'
+   cvt arrR simpl = 
+     case arrR of 
+       Sug.ArraysRunit       -> ()
+       Sug.ArraysRpair r1 r2 -> let (a1,a2) = S.splitComponent simpl in 
+                                (cvt r1 a1, cvt r2 a2)
+       Sug.ArraysRarray | (_ :: Sug.ArraysR (Sug.Array sh e)) <- arrR ->
+         (packArray simpl) :: (Sug.Array sh e)
 
-tt = S.replicate [2] (S.F 3.3)
 
 -- data TupleType a where
 --   UnitTuple   ::                               TupleType ()
 --   SingleTuple :: ScalarType a               -> TupleType a
 --   PairTuple   :: TupleType a -> TupleType b -> TupleType (a, b)
+
+
+
+tt = S.replicate [2] (S.F 3.3)
 
 --------------------------------------------------------------------------------
 
