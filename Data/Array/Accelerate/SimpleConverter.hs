@@ -589,13 +589,6 @@ convertFun =  loop []
 -- | Used only for communicating type information.
 data Phantom a = Phantom
 
-
-unpackArray' :: forall sh e . (Sug.Shape sh, Sug.Elt e) => Sug.Array sh e  -> (S.Type, S.AccArray)
-unpackArray' = 
-  undefined
-
---  arrays   :: a {- dummy -} -> ArraysR (ArrRepr  a)
-
 -- | This converts Accelerate Array data.  It has an odd return type
 --   to avoid type-family related type errors.
 unpackArray :: forall a . (Sug.Arrays a) => Sug.ArrRepr a -> (S.Type, S.AccArray, Phantom a)
@@ -673,13 +666,12 @@ packArray orig@(S.AccArray dims payloads) =
   dims' :: [Int] = Sug.shapeToList (Sug.ignore::sh)
 
   packit :: forall sh e . (Sug.Shape sh, Sug.Elt e) => Sug.Array sh e -> [S.ArrayPayload] -> (ArrayData (Sug.EltRepr e))
-  packit _ [payload] = 
-     trace ("\nPACKIT") $ 
-     loop (typeOnlyErr"packArray2" ::TupleType (Sug.EltRepr e)) payload
+  packit _ [payload] = loop eTy payload
    where 
+   eTy = Sug.eltType (typeOnlyErr"packArray2"::e) 
+
    loop :: forall e . TupleType e -> S.ArrayPayload -> (ArrayData e)
    loop tupTy payload =
-    trace ("\nLOOPING .. payload = "++ show payload) $ 
     case (tupTy, payload) of
     (UnitTuple,_)     -> AD_Unit
 
@@ -758,12 +750,8 @@ repackAcc dummy simpl = Sug.toArr converted
      case arrR of 
        Sug.ArraysRunit       -> ()
        -- We don't explicitly represent this extra capstone-unit in the AccArray:
-       Sug.ArraysRpair Sug.ArraysRunit r -> 
-                                trace ("IGNORECAP:  "++show simpl)$ 
-                                 ((), cvt r simpl)
-
+       Sug.ArraysRpair Sug.ArraysRunit r -> ((), cvt r simpl)
        Sug.ArraysRpair r1 r2 -> let (a1,a2) = S.splitComponent simpl in 
-                                trace ("ARRAYPAIR:  "++show simpl)$ 
                                 (cvt r1 a1, cvt r2 a2)
        Sug.ArraysRarray | (_ :: Sug.ArraysR (Sug.Array sh e)) <- arrR ->
          (packArray simpl) :: (Sug.Array sh e)

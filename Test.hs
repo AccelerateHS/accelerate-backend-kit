@@ -139,7 +139,7 @@ r7 = I.run p7
 -- This shows an odd difference in staging:
 p8 :: Acc (Scalar Float)
 p8 = unit$ pi + (constant pi :: Exp Float) *
-           negate (abs (signum pi))
+           negate (negate (abs (signum pi)))
 
 t8 = convertToSimpleAST p8
 r8 = I.run p8
@@ -183,12 +183,9 @@ instance Show a => NiceShow (Array DIM2 a) where
          rowls = splitEvery cols ls
 
 
--- instance 
-
-
 --------------------------------------------------------------------------------
 
--- main = defaultMain tests
+main = defaultMain tests
 tests = [ testCase "use/fromList"   (print$ doc t0)
 	, testCase "fold/zipwith"   (print$ doc t1)
 	, testCase "map/replicate"  (print$ doc t2)
@@ -201,6 +198,6 @@ tests = [ testCase "use/fromList"   (print$ doc t0)
                     
         , testGroup "run p8" (hUnitTestToTests$ Sug.toList (I.run p8) ~=? Sug.toList (run p8))
           
-	]
+        ]
 
-main = print (I.run p8)
+-- main = print (I.run p8)
