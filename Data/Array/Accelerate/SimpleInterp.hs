@@ -85,8 +85,8 @@ evalA env ae = finalArr
        -- Shave off leftmost dim in 'sh' list 
        -- (the rightmost dim in the user's (Z :. :.) expression):
        Fold     (Lam [(v1,_),(v2,_)] bodE) ex ae -> 
-         trace ("FOLDING, shape "++show (innerdim:sh') ++ " lens "++ 
-                show (alllens, L.group alllens) ++" arr "++show payloads++"\n") $ 
+         -- trace ("FOLDING, shape "++show (innerdim:sh') ++ " lens "++ 
+         --        show (alllens, L.group alllens) ++" arr "++show payloads++"\n") $ 
            case payloads of 
              [] -> error "Empty payloads!"
              _  -> ArrVal (AccArray sh' payloads')
@@ -103,7 +103,8 @@ evalA env ae = finalArr
                newlen = len `quot` innerdim
 
                buildFolded :: Int -> (Int -> Const) -> [Const]
-               buildFolded _ lookup = tracePrint "\nbuildFOLDED : "$ 
+               buildFolded _ lookup = 
+--                  tracePrint "\nbuildFOLDED : "$ 
                   [ unScalar (innerloop lookup (innerdim * i) innerdim initacc)
                   | i <- [0..newlen] ]
 
@@ -111,7 +112,7 @@ evalA env ae = finalArr
                innerloop :: (Int -> Const) -> Int -> Int -> Value -> Value
                innerloop _ _ 0 acc = acc
                innerloop lookup offset count acc = 
-                 trace ("Inner looping "++show(offset,count,acc))$ 
+--                 trace ("Inner looping "++show(offset,count,acc))$ 
                  innerloop lookup (offset+1) (count-1) $ 
                   evalE (M.insert v1 acc $ 
                          M.insert v2 (Scalar$ lookup offset) env) 

@@ -197,7 +197,8 @@ tests = [ testCase "use/fromList"   (print$ doc t0)
         , testCase "bunch of arith" (print$ doc t8)
                     
           
-        , testGroup "run p1" (hUnitTestToTests$ Sug.toList (I.run p0) ~=? Sug.toList (run p0))
+        , testGroup "run p1"  (hUnitTestToTests$ Sug.toList (I.run p0) ~=? Sug.toList (run p0))
+        , testGroup "run p1b" (hUnitTestToTests$ Sug.toList (I.run p1b) ~=? Sug.toList (run p1b))
         , testGroup "run p8" (hUnitTestToTests$ Sug.toList (I.run p8) ~=? Sug.toList (run p8))
           
         ]
