@@ -8,6 +8,7 @@ import qualified Data.Array.Accelerate.SimpleAST    as S
 import qualified Data.Array.Accelerate.SimpleInterp as I
 -- import qualified Data.Array.Accelerate.Smart       as Sugar
 -- import qualified Data.Array.Accelerate.Array.Sugar as Sugar
+import qualified Data.Array.Accelerate.Array.Sugar as Sug
 
 import Data.Int
 -- import Data.Array.Accelerate (use,Z,(:.))
@@ -17,7 +18,7 @@ import Data.Array.Accelerate.Interpreter
 
 import Test.Framework
 import Test.Framework.Providers.HUnit
-import Test.HUnit
+import Test.HUnit 
 import Data.List       (intersperse)
 import Data.List.Split (splitEvery)
 
@@ -182,10 +183,12 @@ instance Show a => NiceShow (Array DIM2 a) where
          rowls = splitEvery cols ls
 
 
+-- instance 
+
 
 --------------------------------------------------------------------------------
 
-main = defaultMain tests
+-- main = defaultMain tests
 tests = [ testCase "use/fromList"   (print$ doc t0)
 	, testCase "fold/zipwith"   (print$ doc t1)
 	, testCase "map/replicate"  (print$ doc t2)
@@ -195,6 +198,9 @@ tests = [ testCase "use/fromList"   (print$ doc t0)
 	, testCase "project tuple"  (print$ doc t6)
 	, testCase "index test"     (print$ doc t7)
         , testCase "bunch of arith" (print$ doc t8)
+                    
+        , testGroup "run p8" (hUnitTestToTests$ Sug.toList (I.run p8) ~=? Sug.toList (run p8))
+          
 	]
 
-
+main = print (I.run p8)

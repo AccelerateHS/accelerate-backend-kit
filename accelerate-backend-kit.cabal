@@ -33,12 +33,12 @@ Library
   Build-depends:
                         array           >= 0.3 && < 0.5,
                         -- base            == 4.*,
-                        -- containers      >= 0.3 && < 0.5,
                         -- directory       >= 1.0 && < 1.2,
                         -- ghc-prim        == 0.2.*,
                         mtl             == 2.0.*,
                         -- pretty          >= 1.0 && < 1.2,
                         base >= 4,
+                        containers,
                         accelerate      == 0.13.*,
                         GenericPretty   >= 1.0,
                         symbol          >= 0.1,
@@ -50,7 +50,7 @@ Test-Suite test-accelerate-backend-kit
     type:       exitcode-stdio-1.0
     main-is:    Test.hs
 --    ghc-options: -rtsopts -threaded
-    build-depends: base >= 4 
+    build-depends: base >= 4, containers
 --                 , array >= 0.3
 --                 , deepseq >= 1.2
 --                 , binary

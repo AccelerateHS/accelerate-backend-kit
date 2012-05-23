@@ -573,8 +573,9 @@ numComponents (AccArray _ payloads) = length payloads
 splitComponent :: AccArray -> (AccArray, AccArray)
 splitComponent (AccArray sh (h1:h2:rst)) = 
   (AccArray sh [h1], AccArray sh (h2:rst))
-splitComponent (AccArray sh ls) = error$ "splitComponent: input array has only "
-                                  ++show(length ls)++" components, needs at least two"
+splitComponent x@(AccArray _ ls) = 
+  error$ "splitComponent: input array has only "++show(length ls)++
+         " components, needs at least two:\n   "++ show x
   
 
 ----------------------------------------------------------------------------------------------------

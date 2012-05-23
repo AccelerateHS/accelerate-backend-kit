@@ -1,4 +1,4 @@
-{-# LANGUAGE BangPatterns, GADTs, ScopedTypeVariables, CPP  #-}
+{-# LANGUAGE BangPatterns, GADTs, ScopedTypeVariables, CPP, TupleSections  #-}
 
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 -- {-# ANN module "HLint: ignore Eta reduce" #-}
@@ -87,7 +87,7 @@ envLookup i = do (env,_) <- get
 getAccType :: forall aenv ans . Sug.Arrays ans => OpenAcc aenv ans -> S.Type
 getAccType _ = convertArrayType ty2 
   where 
-      ty2 = Sug.arrays (undefined :: ans) :: Sug.ArraysR (Sug.ArrRepr ans)
+      ty2 = Sug.arrays (typeOnlyErr "getAccType" :: ans) :: Sug.ArraysR (Sug.ArrRepr ans)
 
 getAccTypePre :: Sug.Arrays ans => PreOpenAcc OpenAcc aenv ans -> S.Type
 getAccTypePre acc = getAccType (OpenAcc acc)
@@ -96,6 +96,8 @@ getExpType :: forall env aenv ans . Sug.Elt ans => OpenExp env aenv ans -> S.Typ
 getExpType _ = convertType ty 
   where  ty  = Sug.eltType ((error"This shouldn't happen (0)")::ans) 
 
+
+typeOnlyErr msg = error$ msg++ ": This is a value that should never be evaluated.  It carries type information only."
 
 --------------------------------------------------------------------------------
 -- Convert Accelerate Array-level Expressions
@@ -244,7 +246,7 @@ convertTupleIdx tix = loop tix
   loop (SuccTupIdx idx) = 1 + loop idx
 
 convertBoundary :: Boundary a -> S.Boundary
-convertBoundary = undefined
+convertBoundary = error "convertBoundary: implement me"
 
 -- Evaluate a closed expression
 convertExp :: forall env aenv ans . OpenExp env aenv ans -> EnvM S.Exp
@@ -270,7 +272,7 @@ convertExp e =
     Tuple tup -> convertTuple tup
 
     Const c   -> return$ S.EConst$ 
-                 convertConst (Sug.eltType (undefined::ans)) c
+                 convertConst (Sug.eltType (typeOnlyErr "convertExp" ::ans)) c
 
     -- NOTE: The incoming AST indexes tuples FROM THE RIGHT:
     Prj idx ex -> 
@@ -587,6 +589,13 @@ convertFun =  loop []
 -- | Used only for communicating type information.
 data Phantom a = Phantom
 
+
+unpackArray' :: forall sh e . (Sug.Shape sh, Sug.Elt e) => Sug.Array sh e  -> (S.Type, S.AccArray)
+unpackArray' = 
+  undefined
+
+--  arrays   :: a {- dummy -} -> ArraysR (ArrRepr  a)
+
 -- | This converts Accelerate Array data.  It has an odd return type
 --   to avoid type-family related type errors.
 unpackArray :: forall a . (Sug.Arrays a) => Sug.ArrRepr a -> (S.Type, S.AccArray, Phantom a)
@@ -654,19 +663,33 @@ unpackArray arrrepr = (ty, S.AccArray shp payloads,
 -- | Almost an inverse of the previous function -- repack the simplified data
 -- representation with the type information necessary to form a proper
 -- Accelerate array.
--- packArray :: forall a . (Sug.Arrays a) => (S.Type, S.AccArray, Phantom a) -> Sug.ArrRepr a
 packArray :: forall sh e . (Sug.Elt e, Sug.Shape sh) => S.AccArray -> Sug.Array sh e
-packArray (S.AccArray dims payloads) = 
+packArray orig@(S.AccArray dims payloads) = 
   if dims == dims'
-  then Sug.Array shpVal adata
+  then Sug.Array shpVal (packit (typeOnlyErr "packArray1"::Sug.Array sh e) payloads)
   else error$"SimpleConverter.packArray: array does not have the expected dimensions: "++show dims++" expected "++show dims'
  where 
   shpVal :: Sug.EltRepr sh = Sug.fromElt (Sug.listToShape dims :: sh)
   dims' :: [Int] = Sug.shapeToList (Sug.ignore::sh)
-  adata = 
-   case (Sug.eltType (undefined::e), head payloads) of
+
+  packit :: forall sh e . (Sug.Shape sh, Sug.Elt e) => Sug.Array sh e -> [S.ArrayPayload] -> (ArrayData (Sug.EltRepr e))
+  packit _ [payload] = 
+     trace ("\nPACKIT") $ 
+     loop (typeOnlyErr"packArray2" ::TupleType (Sug.EltRepr e)) payload
+   where 
+   loop :: forall e . TupleType e -> S.ArrayPayload -> (ArrayData e)
+   loop tupTy payload =
+    trace ("\nLOOPING .. payload = "++ show payload) $ 
+    case (tupTy, payload) of
     (UnitTuple,_)     -> AD_Unit
-    (PairTuple _ _,_) -> error "finish me - PairTuple"
+
+    -- We ignore the extra unit on the end in the AccArray representation:
+    (PairTuple UnitTuple (r::TupleType b),_) ->  AD_Pair AD_Unit (loop r payload) 
+
+    (PairTuple t1 t2,_) -> let (a1,a2) = S.splitComponent orig in 
+                           error$ "packArray: PairTuple should not be encountered here! Only one payload: "++ show payload
+--                         AD_Pair (adata t1 (head payloads))
+--                                 undefined
 
     (SingleTuple (NumScalarType (FloatingNumType (TypeFloat _))),  S.ArrayPayloadFloat uarr)  -> AD_Float uarr
     (SingleTuple (NumScalarType (FloatingNumType (TypeDouble _))), S.ArrayPayloadDouble uarr) -> AD_Double uarr
@@ -734,17 +757,16 @@ repackAcc dummy simpl = Sug.toArr converted
    cvt arrR simpl = 
      case arrR of 
        Sug.ArraysRunit       -> ()
+       -- We don't explicitly represent this extra capstone-unit in the AccArray:
+       Sug.ArraysRpair Sug.ArraysRunit r -> 
+                                trace ("IGNORECAP:  "++show simpl)$ 
+                                 ((), cvt r simpl)
+
        Sug.ArraysRpair r1 r2 -> let (a1,a2) = S.splitComponent simpl in 
+                                trace ("ARRAYPAIR:  "++show simpl)$ 
                                 (cvt r1 a1, cvt r2 a2)
        Sug.ArraysRarray | (_ :: Sug.ArraysR (Sug.Array sh e)) <- arrR ->
          (packArray simpl) :: (Sug.Array sh e)
-
-
--- data TupleType a where
---   UnitTuple   ::                               TupleType ()
---   SingleTuple :: ScalarType a               -> TupleType a
---   PairTuple   :: TupleType a -> TupleType b -> TupleType (a, b)
-
 
 
 tt = S.replicate [2] (S.F 3.3)
