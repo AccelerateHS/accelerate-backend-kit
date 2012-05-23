@@ -658,7 +658,7 @@ unpackArray arrrepr = (ty, S.AccArray shp payloads,
 -- Accelerate array.
 packArray :: forall sh e . (Sug.Elt e, Sug.Shape sh) => S.AccArray -> Sug.Array sh e
 packArray orig@(S.AccArray dims payloads) = 
-  if dims == dims'
+  if length dims == length dims'
   then Sug.Array shpVal (packit (typeOnlyErr "packArray1"::Sug.Array sh e) payloads)
   else error$"SimpleConverter.packArray: array does not have the expected dimensions: "++show dims++" expected "++show dims'
  where 
@@ -678,7 +678,7 @@ packArray orig@(S.AccArray dims payloads) =
     -- We ignore the extra unit on the end in the AccArray representation:
     (PairTuple UnitTuple (r::TupleType b),_) ->  AD_Pair AD_Unit (loop r payload) 
 
-    (PairTuple t1 t2,_) -> let (a1,a2) = S.splitComponent orig in 
+    (PairTuple _t1 _t2,_) -> let (_a1,_a2) = S.splitComponent orig in 
                            error$ "packArray: PairTuple should not be encountered here! Only one payload: "++ show payload
 --                         AD_Pair (adata t1 (head payloads))
 --                                 undefined
