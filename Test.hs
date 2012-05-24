@@ -235,6 +235,7 @@ tests = [ testCase "use/fromList"   (print$ doc t0)
         , testGroup "run p0"  (runBoth p0)
         , testGroup "run p1b" (runBoth p1b)
         , testGroup "run p1c" (runBoth p1c)
+        , testGroup "run p1d" (runBoth p1d)
           
         , testGroup "run p2" (runBoth p2)
         , testGroup "run p8" (runBoth p8)

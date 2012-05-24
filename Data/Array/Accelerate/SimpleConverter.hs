@@ -666,41 +666,34 @@ packArray orig@(S.AccArray dims payloads) =
   dims' :: [Int] = Sug.shapeToList (Sug.ignore::sh)
 
   packit :: forall sh e . (Sug.Shape sh, Sug.Elt e) => Sug.Array sh e -> [S.ArrayPayload] -> (ArrayData (Sug.EltRepr e))
-  packit _ [payload] = loop eTy payload
+  packit _ pays = loop eTy pays
      where eTy = Sug.eltType (typeOnlyErr"packArray2"::e) 
-  packit _ ls = error$"packArray expected a single payload:\n "++show ls
-  -- packit _ (hd:tl) = AD_Pair (loop eTy hd) undefined
-  --    where eTy = Sug.eltType (typeOnlyErr"packArray3"::e) 
 
-  loop :: forall e . TupleType e -> S.ArrayPayload -> (ArrayData e)
-  loop tupTy payload =
-   case (tupTy, payload) of
+  loop :: forall e . TupleType e -> [S.ArrayPayload] -> (ArrayData e)
+  loop tupTy payloads =
+   case (tupTy, payloads) of
     (UnitTuple,_)     -> AD_Unit
 
-    -- We ignore the extra unit on the end in the AccArray representation:
-    (PairTuple UnitTuple (r::TupleType b),_) ->  AD_Pair AD_Unit (loop r payload) 
+    -- In SimpleAST we ignore the extra unit on the end in the AccArray representation:
+    (PairTuple UnitTuple (r::TupleType b),_) -> AD_Pair AD_Unit (loop r payloads) 
+    (PairTuple t1 t2, hd:tl)                 -> AD_Pair (loop t1 [hd]) (loop t2 tl)
 
-    (PairTuple _t1 _t2,_) -> let (_a1,_a2) = S.splitComponent orig in 
-                           error$ "packArray: PairTuple should not be encountered here! Only one payload: "++ show payload
---                         AD_Pair (adata t1 (head payloads))
---                                 undefined
+    (SingleTuple (NumScalarType (FloatingNumType (TypeFloat _))),  [S.ArrayPayloadFloat uarr])  -> AD_Float uarr
+    (SingleTuple (NumScalarType (FloatingNumType (TypeDouble _))), [S.ArrayPayloadDouble uarr]) -> AD_Double uarr
 
-    (SingleTuple (NumScalarType (FloatingNumType (TypeFloat _))),  S.ArrayPayloadFloat uarr)  -> AD_Float uarr
-    (SingleTuple (NumScalarType (FloatingNumType (TypeDouble _))), S.ArrayPayloadDouble uarr) -> AD_Double uarr
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt   _))), [S.ArrayPayloadInt   uarr]) -> AD_Int uarr
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt8  _))), [S.ArrayPayloadInt8  uarr]) -> AD_Int8 uarr
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt16 _))), [S.ArrayPayloadInt16 uarr]) -> AD_Int16 uarr
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt32 _))), [S.ArrayPayloadInt32 uarr]) -> AD_Int32 uarr
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt64 _))), [S.ArrayPayloadInt64 uarr]) -> AD_Int64 uarr
+    (SingleTuple (NumScalarType (IntegralNumType (TypeWord   _))), [S.ArrayPayloadWord   uarr]) -> AD_Word uarr
+    (SingleTuple (NumScalarType (IntegralNumType (TypeWord8  _))), [S.ArrayPayloadWord8  uarr]) -> AD_Word8 uarr
+    (SingleTuple (NumScalarType (IntegralNumType (TypeWord16 _))), [S.ArrayPayloadWord16 uarr]) -> AD_Word16 uarr
+    (SingleTuple (NumScalarType (IntegralNumType (TypeWord32 _))), [S.ArrayPayloadWord32 uarr]) -> AD_Word32 uarr
+    (SingleTuple (NumScalarType (IntegralNumType (TypeWord64 _))), [S.ArrayPayloadWord64 uarr]) -> AD_Word64 uarr
 
-    (SingleTuple (NumScalarType (IntegralNumType (TypeInt   _))), S.ArrayPayloadInt   uarr) -> AD_Int uarr
-    (SingleTuple (NumScalarType (IntegralNumType (TypeInt8  _))), S.ArrayPayloadInt8  uarr) -> AD_Int8 uarr
-    (SingleTuple (NumScalarType (IntegralNumType (TypeInt16 _))), S.ArrayPayloadInt16 uarr) -> AD_Int16 uarr
-    (SingleTuple (NumScalarType (IntegralNumType (TypeInt32 _))), S.ArrayPayloadInt32 uarr) -> AD_Int32 uarr
-    (SingleTuple (NumScalarType (IntegralNumType (TypeInt64 _))), S.ArrayPayloadInt64 uarr) -> AD_Int64 uarr
-    (SingleTuple (NumScalarType (IntegralNumType (TypeWord   _))), S.ArrayPayloadWord   uarr) -> AD_Word uarr
-    (SingleTuple (NumScalarType (IntegralNumType (TypeWord8  _))), S.ArrayPayloadWord8  uarr) -> AD_Word8 uarr
-    (SingleTuple (NumScalarType (IntegralNumType (TypeWord16 _))), S.ArrayPayloadWord16 uarr) -> AD_Word16 uarr
-    (SingleTuple (NumScalarType (IntegralNumType (TypeWord32 _))), S.ArrayPayloadWord32 uarr) -> AD_Word32 uarr
-    (SingleTuple (NumScalarType (IntegralNumType (TypeWord64 _))), S.ArrayPayloadWord64 uarr) -> AD_Word64 uarr
-
-    (SingleTuple (NonNumScalarType (TypeBool _)), S.ArrayPayloadBool uarr) -> AD_Bool uarr
-    (SingleTuple (NonNumScalarType (TypeChar _)), S.ArrayPayloadChar uarr) -> AD_Char uarr
+    (SingleTuple (NonNumScalarType (TypeBool _)), [S.ArrayPayloadBool uarr]) -> AD_Bool uarr
+    (SingleTuple (NonNumScalarType (TypeChar _)), [S.ArrayPayloadChar uarr]) -> AD_Char uarr
 
     (SingleTuple (NumScalarType (FloatingNumType (TypeCFloat _))),  _)  -> error "not supported yet: array of CFloat"
     (SingleTuple (NumScalarType (FloatingNumType (TypeCDouble _))), _)  -> error "not supported yet: array of CDouble"
