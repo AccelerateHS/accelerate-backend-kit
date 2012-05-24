@@ -42,7 +42,7 @@ lookup = error"lookup"
 
 data Value = TupVal [Value]
            | ArrVal AccArray
-           | Scalar { unScalar :: Const }
+           | ConstVal { unConstVal :: Const }
   deriving Show           
                  
 --------------------------------------------------------------------------------
@@ -68,12 +68,12 @@ evalA env ae = finalArr
        Let vr ty lhs bod -> ArrVal$ evalA (M.insert vr (loop lhs) env) bod
 
        Unit e -> case evalE M.empty e of 
-                   Scalar c -> ArrVal$ SA.replicate [] c
+                   ConstVal c -> ArrVal$ SA.replicate [] c
        ArrayTuple aes -> TupVal (map loop aes)
 
        Cond e1 ae2 ae3 -> case evalE env e1 of 
-                            Scalar (B True)  -> loop ae2 
-                            Scalar (B False) -> loop ae3
+                            ConstVal (B True)  -> loop ae2 
+                            ConstVal (B False) -> loop ae3
 
        Use _ty arr -> ArrVal arr
        Generate _ty eSz (Lam [(vr,_vty)] bodE) ->
@@ -85,8 +85,8 @@ evalA env ae = finalArr
            dims = 
              -- Indices can be arbitrary shapes:
              case evalE env eSz of 
-               Scalar (I n)    -> [n]
-               Scalar (Tup ls) -> map (\ (I i) -> i) ls
+               ConstVal (I n)    -> [n]
+               ConstVal (Tup ls) -> map (\ (I i) -> i) ls
          
        --------------------------------------------------------------------------------
        Replicate slcSig ex ae ->          
@@ -103,8 +103,8 @@ evalA env ae = finalArr
            replicateDims = length $ filter (== Fixed) slcSig
            retainDims    = length $ filter (== All)   slcSig
            dimsOut = case evalE env ex of 
-                      Scalar (I n) -> [n]
-                      TupVal ls -> map (\ (Scalar (I n)) -> n) ls
+                      ConstVal (I n) -> [n]
+                      TupVal ls -> map (\ (ConstVal (I n)) -> n) ls
                       oth -> error $ "replicate: bad first argument to replicate: "++show oth
            AccArray dimsIn payls = evalA env ae
            
@@ -137,7 +137,7 @@ evalA env ae = finalArr
          where  
            inarr = evalA env ae
            evaluator c = -- tracePrint ("In map, evaluating element "++ show c++" to ")$  
-                         unScalar $ evalE env (ELet v vty (EConst c) bod)
+                         unConstVal $ evalE env (ELet v vty (EConst c) bod)
          
        ZipWith  (Lam [(v1,vty1), (v2,vty2)] bod) ae1 ae2  ->
          if dims1 /= dims2 
@@ -153,7 +153,7 @@ evalA env ae = finalArr
                            (L.transpose$ map payloadToList pays1)
                            (L.transpose$ map payloadToList pays2)
 -- INCORRECT - we need to reassemble tuples here:
-           evaluator cls1 cls2 = map unScalar $ untuple $ evalE env 
+           evaluator cls1 cls2 = map unConstVal $ untuple $ evalE env 
                                  (ELet v1 vty1 (EConst$ tuple cls1) $  
                                   ELet v2 vty2 (EConst$ tuple cls2) bod)
 
@@ -181,7 +181,7 @@ evalA env ae = finalArr
                buildFolded :: Int -> (Int -> Const) -> [Const]
                buildFolded _ lookup = 
 --                  tracePrint "\nbuildFOLDED : "$ 
-                  [ unScalar (innerloop lookup (innerdim * i) innerdim initacc)
+                  [ unConstVal (innerloop lookup (innerdim * i) innerdim initacc)
                   | i <- [0..newlen] ]
 
                -- The innermost dim is always contiguous in memory.
@@ -191,7 +191,7 @@ evalA env ae = finalArr
 --                 trace ("Inner looping "++show(offset,count,acc))$ 
                  innerloop lookup (offset+1) (count-1) $ 
                   evalE (M.insert v1 acc $ 
-                         M.insert v2 (Scalar$ lookup offset) env) 
+                         M.insert v2 (ConstVal$ lookup offset) env) 
                         bodE 
        
        Index     slcty ae ex -> error "Index"
@@ -222,16 +222,16 @@ evalE env expr =
     EVr  v             -> env M.! v
     ELet vr _ty lhs bod -> evalE (M.insert vr (evalE env lhs) env) bod
     ETuple es          -> TupVal$ map (evalE env) es
-    EConst c           -> Scalar c
+    EConst c           -> ConstVal c
 
     ECond e1 e2 e3     -> case evalE env e1 of 
-                            Scalar (B True)  -> evalE env e2 
-                            Scalar (B False) -> evalE env e3
+                            ConstVal (B True)  -> evalE env e2 
+                            ConstVal (B False) -> evalE env e3
 
     EIndexScalar ae ex -> indexArray (evalA env ae) (evalE env ex)
   
     EShape ae          -> let AccArray sh _ = evalA env ae 
-                          in Scalar$ Tup $ map I sh
+                          in ConstVal$ Tup $ map I sh
     
     EShapeSize ex      -> case evalE env ex of 
                             _ -> error "need more work on shapes"
@@ -256,15 +256,15 @@ indexArray = error "implement indexArray"
 evalPrim :: Prim -> [Value] -> Value
 evalPrim p [] = 
   case p of 
-    NP Add -> Scalar (I 0)
+    NP Add -> ConstVal (I 0)
       
 evalPrim p es = 
   case p of 
-    NP Add -> Scalar (foldl1 add (map unScalar es))
-    NP Mul -> Scalar (foldl1 mul (map unScalar es))
-    NP Neg -> Scalar (neg  $ unScalar $ head es)
-    NP Abs -> Scalar (absv $ unScalar $ head es)
-    NP Sig -> Scalar (sig  $ unScalar $ head es)
+    NP Add -> ConstVal (foldl1 add (map unConstVal es))
+    NP Mul -> ConstVal (foldl1 mul (map unConstVal es))
+    NP Neg -> ConstVal (neg  $ unConstVal $ head es)
+    NP Abs -> ConstVal (absv $ unConstVal $ head es)
+    NP Sig -> ConstVal (sig  $ unConstVal $ head es)
 --           | IP IntPrim
 --           | FP FloatPrim
 --           | SP ScalarPrim
