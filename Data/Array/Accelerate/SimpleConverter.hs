@@ -35,7 +35,9 @@ import Data.Array.Accelerate.Tuple
 -- import Data.Array.Accelerate.Analysis.Shape (accDim)
 import qualified Data.Array.Accelerate.Smart       as Sug
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
-import qualified Data.Array.Accelerate.SimpleAST as S
+import qualified Data.Array.Accelerate.SimpleAST   as S
+import qualified Data.Array.Accelerate.SimpleArray as SA
+
 
 import qualified Data.List as L
 
@@ -746,13 +748,13 @@ repackAcc dummy simpl = Sug.toArr converted
        Sug.ArraysRunit       -> ()
        -- We don't explicitly represent this extra capstone-unit in the AccArray:
        Sug.ArraysRpair Sug.ArraysRunit r -> ((), cvt r simpl)
-       Sug.ArraysRpair r1 r2 -> let (a1,a2) = S.splitComponent simpl in 
+       Sug.ArraysRpair r1 r2 -> let (a1,a2) = SA.splitComponent simpl in 
                                 (cvt r1 a1, cvt r2 a2)
        Sug.ArraysRarray | (_ :: Sug.ArraysR (Sug.Array sh e)) <- arrR ->
          (packArray simpl) :: (Sug.Array sh e)
 
 
-tt = S.replicate [2] (S.F 3.3)
+tt = SA.replicate [2] (S.F 3.3)
 
 --------------------------------------------------------------------------------
 

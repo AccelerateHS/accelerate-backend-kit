@@ -12,6 +12,7 @@ module Data.Array.Accelerate.SimpleInterp
 import Data.Array.Accelerate.Smart                   (Acc)
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import Data.Array.Accelerate.SimpleAST             as S
+import Data.Array.Accelerate.SimpleArray           as SA
 import Data.Array.Accelerate.SimpleConverter (convertToSimpleAST, packArray, repackAcc)
 
 import qualified Data.Map as M
@@ -67,7 +68,7 @@ evalA env ae = finalArr
        Let vr ty lhs bod -> ArrVal$ evalA (M.insert vr (loop lhs) env) bod
 
        Unit e -> case evalE M.empty e of 
-                   Scalar c -> ArrVal$ S.replicate [] c
+                   Scalar c -> ArrVal$ SA.replicate [] c
        ArrayTuple aes -> TupVal (map loop aes)
 
        Cond e1 ae2 ae3 -> case evalE env e1 of 
