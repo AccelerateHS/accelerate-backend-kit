@@ -1,5 +1,6 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Main where
 
@@ -61,12 +62,34 @@ p2 = let xs = replicate (constant (Z :. (4::Int))) (unit 40)
 t2 = convertToSimpleAST p2
 r2 = I.run p2
 
-p2b :: Acc (Array DIM2 Int32)
-p2b = let arr = generate (constant (Z :. (5::Int))) (\_ -> 33)
-          xs = replicate (constant$ Z :. (4::Int) :. All) arr -- (unit 9)
-      in xs -- map (+ 10) xs
+p2b :: Acc (Array DIM2 Int)
+p2b = let arr = generate (constant (Z :. (5::Int))) unindex1
+--      in replicate (constant$ Z :. (4::Int) :. All) arr
+      in replicate (constant$ Z :. All :. (4::Int)) arr
+          -- 1st generates: Array (Z :. 4 :. 5) [0,1,2,3,4,0,1,2,3,4,0,1,2,3,4,0,1,2,3,4]
+          -- 2nd generates: Array (Z :. 5 :. 4) [0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4]
 t2b = convertToSimpleAST p2b
 
+p2c :: Acc (Array DIM3 Int)
+p2c = let arr = generate (constant (Z :. (3::Int) :. (3::Int))) 
+                         (\e -> let (r,c) = unlift$ unindex2 e in 3 * r + c)
+      in replicate (constant$ Z :. All :. (2::Int) :. All) arr
+--      in replicate (constant$ Z :. All :. All :. (2::Int)) arr  
+
+p2d :: Acc (Array DIM4 (Int,Int))
+p2d = let arr = generate (constant (Z :. (3::Int) :. (3::Int))) unindex2
+      in replicate (constant$ Z :. All :. (2::Int) :. All :. (2::Int)) arr
+
+
+p2e :: Acc (Array DIM1 Int)
+p2e = let arr = generate (constant (Z :. (5::Int))) unindex1
+      in replicate (constant$ Z :. All) arr
+
+p2f :: Acc (Array DIM0 Int)
+p2f = let  arr = unit (constant 33)
+      in replicate (constant$ Z) arr
+
+--------------------------------------------------------------------------------
 
 p3 :: Acc (Array DIM3 Int32)
 p3 = let arr = generate  (constant (Z :. (5::Int))) (\_ -> 33)
@@ -197,10 +220,15 @@ tests = [ testCase "use/fromList"   (print$ doc t0)
         , testCase "bunch of arith" (print$ doc t8)
                     
           
-        , testGroup "run p1"  (hUnitTestToTests$ Sug.toList (I.run p0) ~=? Sug.toList (run p0))
-        , testGroup "run p1b" (hUnitTestToTests$ Sug.toList (I.run p1b) ~=? Sug.toList (run p1b))
-        , testGroup "run p8" (hUnitTestToTests$ Sug.toList (I.run p8) ~=? Sug.toList (run p8))
+        , testGroup "run p0"  (runBoth p0)
+        , testGroup "run p1b" (runBoth p1b)
+        
+        , testGroup "run p2" (runBoth p2)
+        , testGroup "run p8" (runBoth p8)
+          
           
         ]
+ where
+  runBoth p = (hUnitTestToTests$ Sug.toList (I.run p) ~=? Sug.toList (run p))
 
 -- main = print (I.run p8)

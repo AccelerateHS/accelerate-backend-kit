@@ -75,11 +75,58 @@ evalA env ae = finalArr
 
          
        TupleRefFromRight i ae -> error "TupleRefFromRight"
-       Apply afun ae -> error "Apply"
-       Replicate slcty ex ae -> error "Replicate"
+       Apply afun ae          -> error "Apply"
+       Replicate slcSig ex ae ->          
+         trace ("REPLICATING "++show finalElems) $
+         if length dimsOut /= replicateDims || 
+            length dimsIn  /= retainDims
+         then error$ "replicate: replicating across "++show slcSig
+                  ++ " dimensions whereas the first argument to replicate had dimension "++show(dimsOut)
+         else ArrVal $ AccArray newDims $ 
+              map (payloadFromList . loop dimsIn slcSig dimsOut) 
+                  payloadLists
+        where
+           newDims = injectDims dimsIn slcSig dimsOut
+           replicateDims = length $ filter (== Fixed) slcSig
+           retainDims    = length $ filter (== All)   slcSig
+           dimsOut = case evalE env ex of 
+                      Scalar (I n) -> [n]
+                      TupVal ls -> map (\(Scalar (I n)) -> n) ls
+                      oth -> error $ "replicate: bad first argument to replicate: "++show oth
+           AccArray dimsIn payls = evalA env ae
+           
+           payloadLists = map payloadToList payls
+
+           -- The number of final elements is the starting elements times the degree of replication:
+           finalElems = foldl (*) 1 dimsIn * 
+                        foldl (*) 1 dimsOut
+           
+           -- Insert the new dimensions where "Any"s occur.
+           injectDims [] [] [] = []
+           injectDims (dim:l1) (All : l2)    l3       = dim : injectDims l1 l2 l3
+           injectDims l1       (Fixed : l2)  (dim:l3) = dim : injectDims l1 l2 l3
+           injectDims l1 l2 l3 = error$ "injectDims: bad input: "++ show (l1,l2,l3)
+
+--           loop [] []  = undefined
+           -- This is potentially very inefficient.  It builds up a long list
+           
+           -- Innermost dimension: the original data N times:
+           loop []       [Fixed]  [outdim]  orig  = concat $ Prelude.replicate outdim orig
+           loop [indim]  [All]    []        orig  = undefined
+           loop []  (All:slcRst) (outdim:outRst) orig = undefined
+           loop a b c _ = error$ "evalA/replicate/loop: unhandled case: "++ show a ++" "++ show b++" "++ show c
+           
        Index     slcty ae ex -> error "Index"
 
-       Map      fn ae         -> error "Map"
+       Map (Lam [(v,vty)] bod) ae -> 
+         let inarr = evalA env ae in 
+--         trace ("MAPPING: over input arr "++ show inarr) $ 
+         ArrVal$ mapArray evaluator inarr
+        where  
+--          evaluator = unScalar . evalE env . EConst
+          evaluator c = -- tracePrint ("In map, evaluating element "++ show c++" to ")$  
+                        unScalar $ evalE env (ELet v vty (EConst c) bod)
+         
        ZipWith  fn ae1 ae2    -> error "ZipWith"
        
        -- Shave off leftmost dim in 'sh' list 

@@ -17,6 +17,7 @@ module Data.Array.Accelerate.SimpleAST
      SliceType(..), SliceComponent(..),
      AccArray(..), ArrayPayload(..), 
      payloadLength, applyToPayload, applyToPayload2, applyToPayload3, 
+     mapArray, mapPayload, payloadToList, payloadFromList, 
      
      -- * Functions for operating on `AccArray`s
      Data.Array.Accelerate.SimpleAST.replicate, splitComponent, numComponents,
@@ -71,7 +72,7 @@ instance Read Symbol where
   
 var :: String -> Var
 --------------------------------------------------------------------------------
-    
+
 
 --------------------------------------------------------------------------------
 -- Accelerate Array-level Expressions
@@ -412,6 +413,9 @@ instance (Read elt, U.IArray UArray elt) => Read (U.UArray Int elt) where
 test :: UArray Int Int
 test = read "array (1,5) [(1,200),(2,201),(3,202),(4,203),(5,204)]" :: U.UArray Int Int
 
+----------------------------------------------------------------------------------------------------
+-- * Helper functions for working with Array data living on the Haskell heap:
+----------------------------------------------------------------------------------------------------
 
 -- | How many elements are in the payload?  This handles the annoying
 --   large case dispatch on element type.
@@ -433,31 +437,17 @@ payloadLength payl =
     ArrayPayloadDouble arr -> arrLen arr
     ArrayPayloadChar   arr -> arrLen arr
     ArrayPayloadBool   arr -> arrLen arr
- where    
-   arrLen arr = let (st,en) = U.bounds arr in en - st      
-
--- | Apply a generic transformation to the Array Payload irrespective of element type.
+ 
+-- | Apply a generic transformation to the Array Payload irrespective
+--   of element type.  This is useful for rearranging or removing
+--   elements of a payload without looking at the contents.
 applyToPayload :: (forall a . UArray Int a -> UArray Int a) -> ArrayPayload -> ArrayPayload
 applyToPayload fn payl = applyToPayload2 (\ a _ -> fn a) payl
-  -- case payl of 
-  --   ArrayPayloadInt    arr -> ArrayPayloadInt    (fn arr)
-  --   ArrayPayloadInt8   arr -> ArrayPayloadInt8   (fn arr)
-  --   ArrayPayloadInt16  arr -> ArrayPayloadInt16  (fn arr)
-  --   ArrayPayloadInt32  arr -> ArrayPayloadInt32  (fn arr) 
-  --   ArrayPayloadInt64  arr -> ArrayPayloadInt64  (fn arr)
-  --   ArrayPayloadWord   arr -> ArrayPayloadWord   (fn arr)
-  --   ArrayPayloadWord8  arr -> ArrayPayloadWord8  (fn arr) 
-  --   ArrayPayloadWord16 arr -> ArrayPayloadWord16 (fn arr)
-  --   ArrayPayloadWord32 arr -> ArrayPayloadWord32 (fn arr)
-  --   ArrayPayloadWord64 arr -> ArrayPayloadWord64 (fn arr)
-  --   ArrayPayloadFloat  arr -> ArrayPayloadFloat  (fn arr)
-  --   ArrayPayloadDouble arr -> ArrayPayloadDouble (fn arr)
-  --   ArrayPayloadChar   arr -> ArrayPayloadChar   (fn arr)
-  --   ArrayPayloadBool   arr -> ArrayPayloadBool   (fn arr) -- Word8's represent bools.
+
 
 -- | This is similar to `applyToPayload`, but also provides the ability for
--- the function passed in to inspect elements in the input array in a
--- generic fashion (as Const) type.
+--   the function passed in to inspect elements in the input array in a
+--   generic fashion (as Const type).
 applyToPayload2 :: (forall a . UArray Int a -> (Int -> Const) -> UArray Int a) -> ArrayPayload -> ArrayPayload
 applyToPayload2 fn payl = 
   case payl of 
@@ -481,7 +471,7 @@ applyToPayload2 fn payl =
                                                _ -> B True))
 
 -- | This version allows the payload to be rebuilt as a list of Const,
---    which must all be the same type as the input.
+--   which must all be the same type as the input.
 applyToPayload3 :: (Int -> (Int -> Const) -> [Const]) -> ArrayPayload -> ArrayPayload
 -- TODO!! The same-type-as-input restriction could be relaxed.
 applyToPayload3 fn payl = 
@@ -503,26 +493,127 @@ applyToPayload3 fn payl =
     ArrayPayloadBool   arr -> ArrayPayloadBool   (fromL (map fromBool$ fn len (\i -> toBool (arr U.! i))))
   where 
    len = payloadLength payl
-   unI   (I x) = x
-   unI8  (I8 x) = x
-   unI16 (I16 x) = x
-   unI32 (I32 x) = x
-   unI64 (I64 x) = x
-   unW   (W x) = x
-   unW8  (W8 x) = x
-   unW16 (W16 x) = x
-   unW32 (W32 x) = x
-   unW64 (W64 x) = x
-   unF (F x) = x
-   unD (D x) = x
-   unC (C x) = x
-   unB (B x) = x
 
+
+-- Various helpers:
+----------------------------------------
 fromL l = U.listArray (0,length l - 1) l
 toBool 0 = B False
 toBool _ = B True
 fromBool (B False) = 0
 fromBool (B True)  = 1
+unI   (I x) = x
+unI8  (I8 x) = x
+unI16 (I16 x) = x
+unI32 (I32 x) = x
+unI64 (I64 x) = x
+unW   (W x) = x
+unW8  (W8 x) = x
+unW16 (W16 x) = x
+unW32 (W32 x) = x
+unW64 (W64 x) = x
+unF (F x) = x
+unD (D x) = x
+unC (C x) = x
+unB (B x) = x
+-- Length of a UArray:
+arrLen arr = let (st,en) = U.bounds arr in en - st      
+
+
+-- | Apply an elementwise function to each Const inside an array.  The
+--   mapped function must consistently map the same type of input
+--   Const to the same type of output Const, or a runtime error will
+--   be generated.
+mapArray :: (Const -> Const) -> AccArray -> AccArray
+mapArray fn (AccArray sh pls) = 
+  AccArray sh (map (mapPayload fn) pls)
+
+-- | Apply an elementwise function to a single payload.  The function
+-- must consistently map the same type of input to the same type of
+-- output `Const`.
+mapPayload :: (Const -> Const) -> ArrayPayload -> ArrayPayload
+mapPayload fn payl =   
+--  tracePrint ("\nMapPayload of "++show payl++" was : ") $ 
+  case payl of        
+    ArrayPayloadInt   arr -> rebuild (fn . I  $ arr U.! 0) (fn . I  ) arr
+    ArrayPayloadInt8  arr -> rebuild (fn . I8 $ arr U.! 0) (fn . I8 ) arr
+    ArrayPayloadInt16 arr -> rebuild (fn . I16$ arr U.! 0) (fn . I16) arr
+    ArrayPayloadInt32 arr -> rebuild (fn . I32$ arr U.! 0) (fn . I32) arr
+    ArrayPayloadInt64 arr -> rebuild (fn . I64$ arr U.! 0) (fn . I64) arr
+    ArrayPayloadWord   arr -> rebuild (fn . W  $ arr U.! 0) (fn . W  ) arr
+    ArrayPayloadWord8  arr -> rebuild (fn . W8 $ arr U.! 0) (fn . W8 ) arr
+    ArrayPayloadWord16 arr -> rebuild (fn . W16$ arr U.! 0) (fn . W16) arr
+    ArrayPayloadWord32 arr -> rebuild (fn . W32$ arr U.! 0) (fn . W32) arr
+    ArrayPayloadWord64 arr -> rebuild (fn . W64$ arr U.! 0) (fn . W64) arr
+    ArrayPayloadFloat  arr -> rebuild (fn . F  $ arr U.! 0) (fn . F) arr
+    ArrayPayloadDouble arr -> rebuild (fn . D  $ arr U.! 0) (fn . D) arr
+    ArrayPayloadChar   arr -> rebuild (fn . C  $ arr U.! 0) (fn . C) arr
+    ArrayPayloadBool   arr -> rebuild (fn . W8 $ arr U.! 0) (fn . W8) arr
+    
+{-# INLINE rebuild #-}
+rebuild :: IArray UArray e' => Const -> (e' -> Const) -> UArray Int e' -> ArrayPayload
+rebuild first fn arr = 
+  case first of
+    I   _ -> ArrayPayloadInt    $ amap (unI   . fn) arr
+    I8  _ -> ArrayPayloadInt8   $ amap (unI8  . fn) arr    
+    I16 _ -> ArrayPayloadInt16  $ amap (unI16 . fn) arr    
+    I32 _ -> ArrayPayloadInt32  $ amap (unI32 . fn) arr    
+    I64 _ -> ArrayPayloadInt64  $ amap (unI64 . fn) arr    
+    W   _ -> ArrayPayloadWord   $ amap (unW   . fn) arr
+    W8  _ -> ArrayPayloadWord8  $ amap (unW8  . fn) arr    
+    W16 _ -> ArrayPayloadWord16 $ amap (unW16 . fn) arr    
+    W32 _ -> ArrayPayloadWord32 $ amap (unW32 . fn) arr    
+    W64 _ -> ArrayPayloadWord64 $ amap (unW64 . fn) arr        
+    F   _ -> ArrayPayloadFloat  $ amap (unF   . fn) arr
+    D   _ -> ArrayPayloadDouble $ amap (unD   . fn) arr
+    C   _ -> ArrayPayloadChar   $ amap (unC   . fn) arr
+    B   _ -> ArrayPayloadBool   $ amap (unW8  . fn) arr
+    c     -> error$"This constant should not be found inside an ArrayPayload: "++show c
+
+
+-- | Convert a list of `Const` scalars of the same type into a
+--   `ArrayPayload`.  Keep in mind that this is an inefficient thing
+--   to do, and in performant code you should never convert arrays to
+--   or from lists.
+payloadFromList :: [Const] -> ArrayPayload
+payloadFromList [] = error "payloadFromList: cannot convert empty list -- what are the type of its contents?"
+payloadFromList ls@(hd:_) = 
+  case hd of 
+    I   _ -> ArrayPayloadInt    $ fromL $ map unI   ls
+    I8  _ -> ArrayPayloadInt8   $ fromL $ map unI8  ls
+    I16 _ -> ArrayPayloadInt16  $ fromL $ map unI16 ls
+    I32 _ -> ArrayPayloadInt32  $ fromL $ map unI32 ls
+    I64 _ -> ArrayPayloadInt64  $ fromL $ map unI64 ls
+    W   _ -> ArrayPayloadWord   $ fromL $ map unW   ls
+    W8  _ -> ArrayPayloadWord8  $ fromL $ map unW8  ls
+    W16 _ -> ArrayPayloadWord16 $ fromL $ map unW16 ls
+    W32 _ -> ArrayPayloadWord32 $ fromL $ map unW32 ls
+    W64 _ -> ArrayPayloadWord64 $ fromL $ map unW64 ls
+    F   _ -> ArrayPayloadFloat  $ fromL $ map unF   ls
+    D   _ -> ArrayPayloadDouble $ fromL $ map unD   ls
+    C   _ -> ArrayPayloadChar   $ fromL $ map unC   ls
+    B   _ -> ArrayPayloadBool   $ fromL $ map fromBool ls
+    c     -> error$"This constant should not be found inside an ArrayPayload: "++show c
+    
+  
+-- | Unpack a payload into a list of Const.  Inefficient!
+payloadToList :: ArrayPayload -> [Const]
+payloadToList payl =   
+  case payl of        
+    ArrayPayloadInt    arr -> map I  $ elems arr
+    ArrayPayloadInt8   arr -> map I8 $ elems arr
+    ArrayPayloadInt16  arr -> map I16$ elems arr
+    ArrayPayloadInt32  arr -> map I32$ elems arr
+    ArrayPayloadInt64  arr -> map I64$ elems arr
+    ArrayPayloadWord   arr -> map W  $ elems arr
+    ArrayPayloadWord8  arr -> map W8 $ elems arr
+    ArrayPayloadWord16 arr -> map W16$ elems arr
+    ArrayPayloadWord32 arr -> map W32$ elems arr
+    ArrayPayloadWord64 arr -> map W64$ elems arr
+    ArrayPayloadFloat  arr -> map F  $ elems arr
+    ArrayPayloadDouble arr -> map D  $ elems arr
+    ArrayPayloadChar   arr -> map C  $ elems arr
+    ArrayPayloadBool   arr -> map toBool $ elems arr
 
 
 -- | Create an array of with the given dimensions and many copies of
@@ -603,3 +694,5 @@ uarrGenerate len fn = unsafePerformIO $
          loop i = do MA.writeArray marr i (fn i)
                      loop (i-1)
      loop (len-1)
+
+tracePrint s x = trace (s++show x) x    
