@@ -667,12 +667,14 @@ packArray orig@(S.AccArray dims payloads) =
 
   packit :: forall sh e . (Sug.Shape sh, Sug.Elt e) => Sug.Array sh e -> [S.ArrayPayload] -> (ArrayData (Sug.EltRepr e))
   packit _ [payload] = loop eTy payload
-   where 
-   eTy = Sug.eltType (typeOnlyErr"packArray2"::e) 
+     where eTy = Sug.eltType (typeOnlyErr"packArray2"::e) 
+  packit _ ls = error$"packArray expected a single payload:\n "++show ls
+  -- packit _ (hd:tl) = AD_Pair (loop eTy hd) undefined
+  --    where eTy = Sug.eltType (typeOnlyErr"packArray3"::e) 
 
-   loop :: forall e . TupleType e -> S.ArrayPayload -> (ArrayData e)
-   loop tupTy payload =
-    case (tupTy, payload) of
+  loop :: forall e . TupleType e -> S.ArrayPayload -> (ArrayData e)
+  loop tupTy payload =
+   case (tupTy, payload) of
     (UnitTuple,_)     -> AD_Unit
 
     -- We ignore the extra unit on the end in the AccArray representation:

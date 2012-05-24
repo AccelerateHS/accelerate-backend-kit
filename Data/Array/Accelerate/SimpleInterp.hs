@@ -51,6 +51,14 @@ evalA :: Env -> AExp -> AccArray
 evalA env ae = finalArr
   where 
    ArrVal finalArr = loop ae 
+      
+   -- Unary tuples do not exist in the language:
+   tuple [x] = x
+   tuple ls  = Tup ls
+
+   untuple (TupVal ls) = ls
+   untuple x           = [x]
+
    loop :: AExp -> Value
    loop aexp =
      case aexp of 
@@ -67,15 +75,19 @@ evalA env ae = finalArr
                             Scalar (B False) -> loop ae3
 
        Use _ty arr -> ArrVal arr
-       Generate _ty eSz (Lam [(vr,_)] bodE) ->
-       -- Indices can be arbitrary shapes:
-         case evalE env eSz of 
-           Scalar (I n)    -> error "finish me - Generate"
-           Scalar (Tup ls) -> error "finish me - Generate"
-
+       Generate _ty eSz (Lam [(vr,_vty)] bodE) ->
+         -- A tricky thing it to support elementwise functions that
+         -- produce tuples, which in turn need to be unpacked into a
+         -- multi-payload array....
+         error"GENERATE - finish me"
+         where 
+           dims = 
+             -- Indices can be arbitrary shapes:
+             case evalE env eSz of 
+               Scalar (I n)    -> [n]
+               Scalar (Tup ls) -> map (\ (I i) -> i) ls
          
-       TupleRefFromRight i ae -> error "TupleRefFromRight"
-       Apply afun ae          -> error "Apply"
+       --------------------------------------------------------------------------------
        Replicate slcSig ex ae ->          
          trace ("REPLICATING "++show finalElems) $
          if length dimsOut /= replicateDims || 
@@ -91,7 +103,7 @@ evalA env ae = finalArr
            retainDims    = length $ filter (== All)   slcSig
            dimsOut = case evalE env ex of 
                       Scalar (I n) -> [n]
-                      TupVal ls -> map (\(Scalar (I n)) -> n) ls
+                      TupVal ls -> map (\ (Scalar (I n)) -> n) ls
                       oth -> error $ "replicate: bad first argument to replicate: "++show oth
            AccArray dimsIn payls = evalA env ae
            
@@ -107,18 +119,18 @@ evalA env ae = finalArr
            injectDims l1       (Fixed : l2)  (dim:l3) = dim : injectDims l1 l2 l3
            injectDims l1 l2 l3 = error$ "injectDims: bad input: "++ show (l1,l2,l3)
 
---           loop [] []  = undefined
-           -- This is potentially very inefficient.  It builds up a long list
-           
-           -- Innermost dimension: the original data N times:
+           -- This is potentially very inefficient.  It builds up a long list.
+           -- 
+           -- First case: Innermost dimension - the original data `outdim` times:
            loop []       [Fixed]  [outdim]  orig  = concat $ Prelude.replicate outdim orig
            loop [indim]  [All]    []        orig  = undefined
            loop []  (All:slcRst) (outdim:outRst) orig = undefined
            loop a b c _ = error$ "evalA/replicate/loop: unhandled case: "++ show a ++" "++ show b++" "++ show c
            
-       Index     slcty ae ex -> error "Index"
-
+       --------------------------------------------------------------------------------
        Map (Lam [(v,vty)] bod) ae -> 
+-- TODO!!! Handle maps that change the tupling...
+         
 --         trace ("MAPPING: over input arr "++ show inarr) $ 
          ArrVal$ mapArray evaluator inarr
          where  
@@ -129,18 +141,22 @@ evalA env ae = finalArr
        ZipWith  (Lam [(v1,vty1), (v2,vty2)] bod) ae1 ae2  ->
          if dims1 /= dims2 
          then error$"zipWith: internal error, input arrays not the same dimension: "++ show dims1 ++" "++ show dims2
-         else ArrVal$ AccArray dims1 (zipWith doPayls pays1 pays2)
+-- TODO: Handle the case where the resulting array is an array of tuples:
+         else ArrVal$ AccArray dims1 final
          where 
            a1@(AccArray dims1 pays1) = evalA env ae1
            a2@(AccArray dims2 pays2) = evalA env ae2
-           doPayls pay1 pay2 = payloadFromList $ 
-                               zipWith evaluator (payloadToList pay1)
-                                                 (payloadToList pay2)
-           evaluator c1 c2 = unScalar $ evalE env 
-                             (ELet v1 vty1 (EConst c1) $  
-                              ELet v2 vty2 (EConst c2) bod)
+           final = map payloadFromList $ 
+                   L.transpose $ 
+                   zipWith evaluator 
+                           (L.transpose$ map payloadToList pays1)
+                           (L.transpose$ map payloadToList pays2)
+-- INCORRECT - we need to reassemble tuples here:
+           evaluator cls1 cls2 = map unScalar $ untuple $ evalE env 
+                                 (ELet v1 vty1 (EConst$ tuple cls1) $  
+                                  ELet v2 vty2 (EConst$ tuple cls2) bod)
 
-       
+       --------------------------------------------------------------------------------       
        -- Shave off leftmost dim in 'sh' list 
        -- (the rightmost dim in the user's (Z :. :.) expression):
        Fold     (Lam [(v1,_),(v2,_)] bodE) ex ae -> 
@@ -177,6 +193,11 @@ evalA env ae = finalArr
                          M.insert v2 (Scalar$ lookup offset) env) 
                         bodE 
        
+       Index     slcty ae ex -> error "Index"
+       TupleRefFromRight i ae -> error "TupleRefFromRight"
+       Apply afun ae          -> error "Apply"
+
+
        Fold1    fn ae         -> error "Foldl1"
        FoldSeg  fn ex ae1 ae2 -> error "FoldSeg"
        Fold1Seg fn    ae1 ae2 -> error "Fold1Seg" 

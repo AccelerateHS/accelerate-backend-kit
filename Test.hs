@@ -59,6 +59,12 @@ p1c :: Acc (Vector Word)
 p1c = let xs = use$ fromList (Z :. (5::Int)) [1..10::Word] 
       in zipWith (*) xs xs
   
+-- Zipwith yielding a tuple:
+p1d :: Acc (Vector (Word,Word))
+p1d = let xs = use$ fromList (Z :. (5::Int)) [1..10::Word] 
+      in zipWith (\ x y -> lift (x*y, x+y)) xs xs
+
+
 ----------------------------------------
 
 p2 :: Acc (Vector Int32)
@@ -178,6 +184,7 @@ r8 = I.run p8
 
 
 --------------------------------------------------------------------------------
+-- Let's print matrices nicely.
 
 padleft n str | length str >= n = str
 padleft n str | otherwise       = P.take (n - length str) (repeat ' ') ++ str
