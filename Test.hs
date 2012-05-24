@@ -54,6 +54,11 @@ t1b = convertToSimpleAST p1b
 r1b = I.run p1b
 
 
+-- This one is JUST a zipwith:
+p1c :: Acc (Vector Word)
+p1c = let xs = use$ fromList (Z :. (5::Int)) [1..10::Word] 
+      in zipWith (*) xs xs
+  
 ----------------------------------------
 
 p2 :: Acc (Vector Int32)
@@ -222,7 +227,8 @@ tests = [ testCase "use/fromList"   (print$ doc t0)
           
         , testGroup "run p0"  (runBoth p0)
         , testGroup "run p1b" (runBoth p1b)
-        
+        , testGroup "run p1c" (runBoth p1c)
+          
         , testGroup "run p2" (runBoth p2)
         , testGroup "run p8" (runBoth p8)
           

@@ -119,15 +119,27 @@ evalA env ae = finalArr
        Index     slcty ae ex -> error "Index"
 
        Map (Lam [(v,vty)] bod) ae -> 
-         let inarr = evalA env ae in 
 --         trace ("MAPPING: over input arr "++ show inarr) $ 
          ArrVal$ mapArray evaluator inarr
-        where  
---          evaluator = unScalar . evalE env . EConst
-          evaluator c = -- tracePrint ("In map, evaluating element "++ show c++" to ")$  
-                        unScalar $ evalE env (ELet v vty (EConst c) bod)
+         where  
+           inarr = evalA env ae
+           evaluator c = -- tracePrint ("In map, evaluating element "++ show c++" to ")$  
+                         unScalar $ evalE env (ELet v vty (EConst c) bod)
          
-       ZipWith  fn ae1 ae2    -> error "ZipWith"
+       ZipWith  (Lam [(v1,vty1), (v2,vty2)] bod) ae1 ae2  ->
+         if dims1 /= dims2 
+         then error$"zipWith: internal error, input arrays not the same dimension: "++ show dims1 ++" "++ show dims2
+         else ArrVal$ AccArray dims1 (zipWith doPayls pays1 pays2)
+         where 
+           a1@(AccArray dims1 pays1) = evalA env ae1
+           a2@(AccArray dims2 pays2) = evalA env ae2
+           doPayls pay1 pay2 = payloadFromList $ 
+                               zipWith evaluator (payloadToList pay1)
+                                                 (payloadToList pay2)
+           evaluator c1 c2 = unScalar $ evalE env 
+                             (ELet v1 vty1 (EConst c1) $  
+                              ELet v2 vty2 (EConst c2) bod)
+
        
        -- Shave off leftmost dim in 'sh' list 
        -- (the rightmost dim in the user's (Z :. :.) expression):
