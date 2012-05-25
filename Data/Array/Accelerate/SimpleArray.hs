@@ -155,14 +155,22 @@ arrLen arr = let (st,en) = U.bounds arr in en - st
 --   mapped function must consistently map the same type of input
 --   Const to the same type of output Const, or a runtime error will
 --   be generated.
+-- 
+--   Note, this function must coalesce tuples-of-arrays into tuples of
+--   elements before those elements can be passed to the mapped function.
 mapArray :: (Const -> Const) -> AccArray -> AccArray
-mapArray fn (AccArray sh pls) = 
-  AccArray sh (map (mapPayload fn) pls)
+mapArray fn (AccArray sh [pl]) = 
+  AccArray sh (mapPayload fn pl)
+--mapArray fn (AccArray sh pls) =  AccArray sh (map (mapPayload fn) pls)
 
 -- | Apply an elementwise function to a single payload.  The function
--- must consistently map the same type of input to the same type of
--- output `Const`.
-mapPayload :: (Const -> Const) -> ArrayPayload -> ArrayPayload
+--   must consistently map the same type of input to the same type of
+--   output `Const`.
+-- 
+--   If the output for each precossed element is a tuple, then this
+--   function will return a list of the corresponding number of
+--   `ArrayPayload's.
+mapPayload :: (Const -> Const) -> ArrayPayload -> [ArrayPayload]
 mapPayload fn payl =   
 --  tracePrint ("\nMapPayload of "++show payl++" was : ") $ 
   case payl of        
@@ -182,24 +190,28 @@ mapPayload fn payl =
     ArrayPayloadBool   arr -> rebuild (fn . W8 $ arr U.! 0) (fn . W8) arr
     
 {-# INLINE rebuild #-}
-rebuild :: IArray UArray e' => Const -> (e' -> Const) -> UArray Int e' -> ArrayPayload
+rebuild :: IArray UArray e' => Const -> (e' -> Const) -> UArray Int e' -> [ArrayPayload]
 rebuild first fn arr = 
   case first of
-    I   _ -> ArrayPayloadInt    $ amap (unI   . fn) arr
-    I8  _ -> ArrayPayloadInt8   $ amap (unI8  . fn) arr    
-    I16 _ -> ArrayPayloadInt16  $ amap (unI16 . fn) arr    
-    I32 _ -> ArrayPayloadInt32  $ amap (unI32 . fn) arr    
-    I64 _ -> ArrayPayloadInt64  $ amap (unI64 . fn) arr    
-    W   _ -> ArrayPayloadWord   $ amap (unW   . fn) arr
-    W8  _ -> ArrayPayloadWord8  $ amap (unW8  . fn) arr    
-    W16 _ -> ArrayPayloadWord16 $ amap (unW16 . fn) arr    
-    W32 _ -> ArrayPayloadWord32 $ amap (unW32 . fn) arr    
-    W64 _ -> ArrayPayloadWord64 $ amap (unW64 . fn) arr        
-    F   _ -> ArrayPayloadFloat  $ amap (unF   . fn) arr
-    D   _ -> ArrayPayloadDouble $ amap (unD   . fn) arr
-    C   _ -> ArrayPayloadChar   $ amap (unC   . fn) arr
-    B   _ -> ArrayPayloadBool   $ amap (unW8  . fn) arr
-    c     -> error$"This constant should not be found inside an ArrayPayload: "++show c
+    I   _ -> [ArrayPayloadInt    $ amap (unI   . fn) arr]
+    I8  _ -> [ArrayPayloadInt8   $ amap (unI8  . fn) arr]    
+    I16 _ -> [ArrayPayloadInt16  $ amap (unI16 . fn) arr]    
+    I32 _ -> [ArrayPayloadInt32  $ amap (unI32 . fn) arr]    
+    I64 _ -> [ArrayPayloadInt64  $ amap (unI64 . fn) arr]    
+    W   _ -> [ArrayPayloadWord   $ amap (unW   . fn) arr]
+    W8  _ -> [ArrayPayloadWord8  $ amap (unW8  . fn) arr]    
+    W16 _ -> [ArrayPayloadWord16 $ amap (unW16 . fn) arr]    
+    W32 _ -> [ArrayPayloadWord32 $ amap (unW32 . fn) arr]    
+    W64 _ -> [ArrayPayloadWord64 $ amap (unW64 . fn) arr]        
+    F   _ -> [ArrayPayloadFloat  $ amap (unF   . fn) arr]
+    D   _ -> [ArrayPayloadDouble $ amap (unD   . fn) arr]
+    C   _ -> [ArrayPayloadChar   $ amap (unC   . fn) arr]
+    B   _ -> [ArrayPayloadBool   $ amap (unW8  . fn) arr]
+    Tup ls -> concatMap (\ (i,x) -> rebuild x (\ x -> tupref (fn x) i) arr) $ 
+              zip [0..] ls              
+    oth -> error$"This constant should not be found inside an ArrayPayload: "++show oth
+ where
+   tupref (Tup ls) i = ls !! i
 
 
 -- | Convert a list of `Const` scalars of the same type into a
@@ -224,7 +236,7 @@ payloadFromList ls@(hd:_) =
     D   _ -> ArrayPayloadDouble $ fromL $ map unD   ls
     C   _ -> ArrayPayloadChar   $ fromL $ map unC   ls
     B   _ -> ArrayPayloadBool   $ fromL $ map fromBool ls
-    c     -> error$"This constant should not be found inside an ArrayPayload: "++show c
+    c     -> error$"payloadFromList: This constant should not be found inside an ArrayPayload: "++show c
     
   
 -- | Unpack a payload into a list of Const.  Inefficient!

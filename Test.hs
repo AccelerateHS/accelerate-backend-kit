@@ -183,6 +183,12 @@ r8 = I.run p8
 
 
 
+-- A map with a tuple return type:
+p9 :: Acc (Vector (Int32,Int32))
+p9 = let xs = replicate (constant (Z :. (4::Int))) (unit 40)
+     in map (\ x -> lift (x+10, x*10)) xs
+
+
 --------------------------------------------------------------------------------
 -- Let's print matrices nicely.
 
@@ -239,7 +245,7 @@ tests = [ testCase "use/fromList"   (print$ doc t0)
           
         , testGroup "run p2" (runBoth p2)
         , testGroup "run p8" (runBoth p8)
-          
+        , testGroup "run p9" (runBoth p9)
           
         ]
  where

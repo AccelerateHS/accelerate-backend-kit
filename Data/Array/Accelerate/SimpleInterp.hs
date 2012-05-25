@@ -42,9 +42,14 @@ lookup = error"lookup"
 
 data Value = TupVal [Value]
            | ArrVal AccArray
-           | ConstVal { unConstVal :: Const }
+           | ConstVal Const 
   deriving Show           
                  
+-- | Extract a `Const` from a `Value` if that is possible.
+valToConst (ConstVal c ) = c
+valToConst (TupVal ls)   = Tup $ map valToConst ls
+valToConst (ArrVal a)    = error$ "cannot convert Array value to Const: "++show a
+
 --------------------------------------------------------------------------------
 -- Evaluation:
 
@@ -137,7 +142,7 @@ evalA env ae = finalArr
          where  
            inarr = evalA env ae
            evaluator c = -- tracePrint ("In map, evaluating element "++ show c++" to ")$  
-                         unConstVal $ evalE env (ELet v vty (EConst c) bod)
+                         valToConst $ evalE env (ELet v vty (EConst c) bod)
          
        ZipWith  (Lam [(v1,vty1), (v2,vty2)] bod) ae1 ae2  ->
          if dims1 /= dims2 
@@ -153,7 +158,7 @@ evalA env ae = finalArr
                            (L.transpose$ map payloadToList pays1)
                            (L.transpose$ map payloadToList pays2)
 -- INCORRECT - we need to reassemble tuples here:
-           evaluator cls1 cls2 = map unConstVal $ untuple $ evalE env 
+           evaluator cls1 cls2 = map valToConst $ untuple $ evalE env 
                                  (ELet v1 vty1 (EConst$ tuple cls1) $  
                                   ELet v2 vty2 (EConst$ tuple cls2) bod)
 
@@ -181,7 +186,7 @@ evalA env ae = finalArr
                buildFolded :: Int -> (Int -> Const) -> [Const]
                buildFolded _ lookup = 
 --                  tracePrint "\nbuildFOLDED : "$ 
-                  [ unConstVal (innerloop lookup (innerdim * i) innerdim initacc)
+                  [ valToConst (innerloop lookup (innerdim * i) innerdim initacc)
                   | i <- [0..newlen] ]
 
                -- The innermost dim is always contiguous in memory.
@@ -260,11 +265,11 @@ evalPrim p [] =
       
 evalPrim p es = 
   case p of 
-    NP Add -> ConstVal (foldl1 add (map unConstVal es))
-    NP Mul -> ConstVal (foldl1 mul (map unConstVal es))
-    NP Neg -> ConstVal (neg  $ unConstVal $ head es)
-    NP Abs -> ConstVal (absv $ unConstVal $ head es)
-    NP Sig -> ConstVal (sig  $ unConstVal $ head es)
+    NP Add -> ConstVal (foldl1 add (map valToConst es))
+    NP Mul -> ConstVal (foldl1 mul (map valToConst es))
+    NP Neg -> ConstVal (neg  $ valToConst $ head es)
+    NP Abs -> ConstVal (absv $ valToConst $ head es)
+    NP Sig -> ConstVal (sig  $ valToConst $ head es)
 --           | IP IntPrim
 --           | FP FloatPrim
 --           | SP ScalarPrim
