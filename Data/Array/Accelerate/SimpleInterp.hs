@@ -83,12 +83,20 @@ evalA env ae = finalArr
                             ConstVal (B False) -> loop ae3
 
        Use _ty arr -> ArrVal arr
-       Generate _ty eSz (Lam [(vr,_vty)] bodE) ->
-         -- A tricky thing it to support elementwise functions that
-         -- produce tuples, which in turn need to be unpacked into a
+       Generate _ty eSz (Lam [(vr,vty)] bodE) ->
+         trace ("[dbg] GENERATING: "++ show dims ++" "++ show _ty) $ 
+         
+         -- It's tricky to support elementwise functions that produce
+         -- tuples, which in turn need to be unpacked into a
          -- multi-payload array....
-         error" UNFINISHED: GENERATE - finish me"
+         ArrVal $ AccArray dims $ payloadsFromList $ 
+         map (\ind -> valToConst $ evalE env (ELet vr vty (EConst ind) bodE)) 
+             (indexSpace dims)
+                  
          where 
+           -- UNFINISHED: needs to be much more general:
+           indexSpace [n] = map I [0..n-1]
+           
            dims = 
              -- Indices can be arbitrary shapes:
              case evalE env eSz of 
@@ -96,12 +104,23 @@ evalA env ae = finalArr
                ConstVal (Tup ls) -> map (\ (I i) -> i) ls
          
        --------------------------------------------------------------------------------
+                              
+       -- One way to think of the slice descriptor fed to replicate is
+       -- it contains exactly as many "All"s as there are dimensions
+       -- in the input.  These All's are replaced, in order, by input
+       -- dimensions.  
+       -- 
+       -- "Fixed" dimensions on the other hand are the replication
+       -- dimensions.  Varying indices in those dimensions will not
+       -- change the value contained in the indexed slot in the array.
        Replicate slcSig ex ae ->          
-         trace ("REPLICATING "++show finalElems) $
+         trace ("REPLICATING "++show finalElems ++ " newdims "++show dimsOut ++ " dims in "++show dimsIn) $
          if length dimsOut /= replicateDims || 
             length dimsIn  /= retainDims
          then error$ "replicate: replicating across "++show slcSig
-                  ++ " dimensions whereas the first argument to replicate had dimension "++show(dimsOut)
+                  ++ " dimensions whereas the first argument to replicate had dimension "++show dimsOut
+--         else if replicateDims == 0  -- This isn't a replication at all!
+--         then ArrVal $ AccArray dimsIn payls
          else ArrVal $ AccArray newDims $ 
               concatMap (payloadsFromList . loop dimsIn slcSig dimsOut) 
                         payloadLists
@@ -110,7 +129,8 @@ evalA env ae = finalArr
            replicateDims = length $ filter (== Fixed) slcSig
            retainDims    = length $ filter (== All)   slcSig
            dimsOut = case evalE env ex of 
-                      ConstVal (I n) -> [n]
+                      ConstVal (I n)    -> [n]
+                      ConstVal (Tup []) -> []
                       TupVal ls -> map (\ (ConstVal (I n)) -> n) ls
                       oth -> error $ "replicate: bad first argument to replicate: "++show oth
            AccArray dimsIn payls = evalA env ae
@@ -127,12 +147,14 @@ evalA env ae = finalArr
            injectDims l1       (Fixed : l2)  (dim:l3) = dim : injectDims l1 l2 l3
            injectDims l1 l2 l3 = error$ "injectDims: bad input: "++ show (l1,l2,l3)
 
+       -- UNFINISHED:        
+
            -- This is potentially very inefficient.  It builds up a long list.
            -- 
            -- First case: Innermost dimension - the original data `outdim` times:
            loop []       [Fixed]  [outdim]  orig  = concat $ Prelude.replicate outdim orig
-           loop [indim]  [All]    []        orig  = undefined
-           loop []  (All:slcRst) (outdim:outRst) orig = undefined
+           loop [indim]  [All]    []        orig  = error "UNFINISHED: replicate(1)"
+           loop []  (All:slcRst) (outdim:outRst) orig = error "UNFINISHED: replicate(2)"
            loop a b c _ = error$ "evalA/replicate/loop: unhandled case: "++ show a ++" "++ show b++" "++ show c
            
        --------------------------------------------------------------------------------

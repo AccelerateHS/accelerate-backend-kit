@@ -38,12 +38,14 @@ r0 = I.run p0
 
 -- | Sharing recovery will create a Let here:
 p1 :: Acc (Scalar Float)
-p1 = let xs = generate (constant (Z :. (10::Int))) (\ (i) -> 3.3 )
-         ys = xs
-     in  fold (+) 0 (zipWith (*) xs ys)
+p1 = fold (+) 0 (zipWith (*) p1a p1a)
 t1 :: S.AExp
 t1 = convertToSimpleAST p1
 r1 = I.run p1
+
+-- | Just generate:
+p1a :: Acc (Vector Float)
+p1a = generate (constant (Z :. (10::Int))) (\ (i) -> 3.3 )
 
 -- | And again with a 2D array:
 p1b :: Acc (Vector Float)
@@ -250,6 +252,9 @@ tests = [ testCase "use/fromList"   (print$ doc t0)
                     
           
         , testGroup "run p0"  (runBoth p0)
+        
+        , testGroup "run p1"  (runBoth p1)
+        , testGroup "run p1a" (runBoth p1a)
         , testGroup "run p1b" (runBoth p1b)
         , testGroup "run p1c" (runBoth p1c)
         , testGroup "run p1d" (runBoth p1d)
