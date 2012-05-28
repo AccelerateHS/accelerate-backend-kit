@@ -4,6 +4,10 @@
 
 -- | Utilities for working with the simplified representation of
 --   Accelerate arrays on the Haskell heap.
+-- 
+--   These functions should mainly be used for constructing
+--   interpreters and reference implementations.  Many of them are
+--   unsuited for high-performance scenarios.
 module Data.Array.Accelerate.SimpleArray
    ( 
           
@@ -18,7 +22,7 @@ module Data.Array.Accelerate.SimpleArray
      Data.Array.Accelerate.SimpleArray.replicate,      
      
      -- * Functions for operating on payloads (internal components of AccArrays)     
-     payloadToList, payloadFromList,
+     payloadToList, payloadsFromList,
      payloadLength, 
      mapPayload, 
      
@@ -33,6 +37,7 @@ import Data.Array.Accelerate.SimpleAST
 import           Debug.Trace
 import           Data.Int
 import           Data.Word
+import           Data.List          as L
 import           Data.Array.Unboxed as U
 import qualified Data.Array.Unsafe as Un
 import qualified Data.Array.MArray as MA
@@ -147,6 +152,7 @@ unF (F x) = x
 unD (D x) = x
 unC (C x) = x
 unB (B x) = x
+unTup (Tup ls) = ls
 -- Length of a UArray:
 arrLen arr = let (st,en) = U.bounds arr in en - st      
 
@@ -161,15 +167,23 @@ arrLen arr = let (st,en) = U.bounds arr in en - st
 mapArray :: (Const -> Const) -> AccArray -> AccArray
 mapArray fn (AccArray sh [pl]) = 
   AccArray sh (mapPayload fn pl)
---mapArray fn (AccArray sh pls) =  AccArray sh (map (mapPayload fn) pls)
+
+-- This case is more complicated.  Here's where the coalescing happens.
+mapArray fn (AccArray sh pls) = 
+  -- For the time being we fall back to an extremely inefficient
+  -- system.  This function should only ever be really be used for
+  -- non-performance-critical reference implemenatations.
+  AccArray sh $ payloadsFromList $ 
+  map fn $ 
+  map Tup $ L.transpose $ map payloadToList pls
 
 -- | Apply an elementwise function to a single payload.  The function
 --   must consistently map the same type of input to the same type of
 --   output `Const`.
 -- 
---   If the output for each precossed element is a tuple, then this
---   function will return a list of the corresponding number of
---   `ArrayPayload's.
+--   The output for each precossed element may be a tuple, the number
+--   of elements within that tuple determines how many `ArrayPayload`s
+--   will reside in this function's output list.
 mapPayload :: (Const -> Const) -> ArrayPayload -> [ArrayPayload]
 mapPayload fn payl =   
 --  tracePrint ("\nMapPayload of "++show payl++" was : ") $ 
@@ -214,31 +228,34 @@ rebuild first fn arr =
    tupref (Tup ls) i = ls !! i
 
 
--- | Convert a list of `Const` scalars of the same type into a
---   `ArrayPayload`.  Keep in mind that this is an inefficient thing
---   to do, and in performant code you should never convert arrays to
---   or from lists.
-payloadFromList :: [Const] -> ArrayPayload
-payloadFromList [] = error "payloadFromList: cannot convert empty list -- what are the type of its contents?"
-payloadFromList ls@(hd:_) = 
+-- | Convert a list of `Const` scalars of the same type into one or
+--   more `ArrayPayload`s.  Keep in mind that this is an inefficient
+--   thing to do, and in performant code you should never convert
+--   arrays to or from lists.
+--   
+--   More than one `ArrayPayload` output is produced when the inputs
+--   are tuple constants.
+payloadsFromList :: [Const] -> [ArrayPayload]
+payloadsFromList [] = error "payloadFromList: cannot convert empty list -- what are the type of its contents?"
+payloadsFromList ls@(hd:_) = 
   case hd of 
-    I   _ -> ArrayPayloadInt    $ fromL $ map unI   ls
-    I8  _ -> ArrayPayloadInt8   $ fromL $ map unI8  ls
-    I16 _ -> ArrayPayloadInt16  $ fromL $ map unI16 ls
-    I32 _ -> ArrayPayloadInt32  $ fromL $ map unI32 ls
-    I64 _ -> ArrayPayloadInt64  $ fromL $ map unI64 ls
-    W   _ -> ArrayPayloadWord   $ fromL $ map unW   ls
-    W8  _ -> ArrayPayloadWord8  $ fromL $ map unW8  ls
-    W16 _ -> ArrayPayloadWord16 $ fromL $ map unW16 ls
-    W32 _ -> ArrayPayloadWord32 $ fromL $ map unW32 ls
-    W64 _ -> ArrayPayloadWord64 $ fromL $ map unW64 ls
-    F   _ -> ArrayPayloadFloat  $ fromL $ map unF   ls
-    D   _ -> ArrayPayloadDouble $ fromL $ map unD   ls
-    C   _ -> ArrayPayloadChar   $ fromL $ map unC   ls
-    B   _ -> ArrayPayloadBool   $ fromL $ map fromBool ls
-    c     -> error$"payloadFromList: This constant should not be found inside an ArrayPayload: "++show c
-    
-  
+    I   _ -> [ArrayPayloadInt    $ fromL $ map unI   ls]
+    I8  _ -> [ArrayPayloadInt8   $ fromL $ map unI8  ls]
+    I16 _ -> [ArrayPayloadInt16  $ fromL $ map unI16 ls]
+    I32 _ -> [ArrayPayloadInt32  $ fromL $ map unI32 ls]
+    I64 _ -> [ArrayPayloadInt64  $ fromL $ map unI64 ls]
+    W   _ -> [ArrayPayloadWord   $ fromL $ map unW   ls]
+    W8  _ -> [ArrayPayloadWord8  $ fromL $ map unW8  ls]
+    W16 _ -> [ArrayPayloadWord16 $ fromL $ map unW16 ls]
+    W32 _ -> [ArrayPayloadWord32 $ fromL $ map unW32 ls]
+    W64 _ -> [ArrayPayloadWord64 $ fromL $ map unW64 ls]
+    F   _ -> [ArrayPayloadFloat  $ fromL $ map unF   ls]
+    D   _ -> [ArrayPayloadDouble $ fromL $ map unD   ls]
+    C   _ -> [ArrayPayloadChar   $ fromL $ map unC   ls]
+    B   _ -> [ArrayPayloadBool   $ fromL $ map fromBool ls]
+    Tup _ -> concatMap payloadsFromList $ 
+             L.transpose $ map unTup ls
+      
 -- | Unpack a payload into a list of Const.  Inefficient!
 payloadToList :: ArrayPayload -> [Const]
 payloadToList payl =   
@@ -284,12 +301,12 @@ replicate dims const = AccArray dims (payload const)
        C x -> [ArrayPayloadChar   (fromL$ Prelude.replicate len x)]
        B x -> [ArrayPayloadBool   (fromL$ Prelude.replicate len (fromBool const))]
        Tup ls -> concatMap payload ls 
-
 -- TODO -- add all C array types to the ArrayPayload type:
 --            | CF CFloat   | CD CDouble 
 --            | CS  CShort  | CI  CInt  | CL  CLong  | CLL  CLLong
 --            | CUS CUShort | CUI CUInt | CUL CULong | CULL CULLong
 --            | CC  CChar   | CSC CSChar | CUC CUChar 
+
 
 -- | An AccArray stores an array of tuples.  This function reports how
 --   many components there are in the stored tuples (one or more).

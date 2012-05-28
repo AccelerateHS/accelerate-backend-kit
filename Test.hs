@@ -73,6 +73,9 @@ p2 = let xs = replicate (constant (Z :. (4::Int))) (unit 40)
 t2 = convertToSimpleAST p2
 r2 = I.run p2
 
+p2a :: Acc (Scalar Word)
+p2a = unit 40
+
 p2b :: Acc (Array DIM2 Int)
 p2b = let arr = generate (constant (Z :. (5::Int))) unindex1
 --      in replicate (constant$ Z :. (4::Int) :. All) arr
@@ -188,7 +191,15 @@ p9 :: Acc (Vector (Int32,Int32))
 p9 = let xs = replicate (constant (Z :. (4::Int))) (unit 40)
      in map (\ x -> lift (x+10, x*10)) xs
 
-
+-- How about tuples coming in and going out:
+p9b :: Acc (Vector (Int32,Int32,Int32))
+p9b = map (\ e ->  
+                  let (x,y) = unlift e in 
+--                  (x::Exp Int32) + (y::Exp Int32)
+                  lift (x::Exp Int32, y::Exp Int32, x+y)
+          )
+          p9
+ 
 --------------------------------------------------------------------------------
 -- Let's print matrices nicely.
 
@@ -244,9 +255,11 @@ tests = [ testCase "use/fromList"   (print$ doc t0)
         , testGroup "run p1d" (runBoth p1d)
           
         , testGroup "run p2" (runBoth p2)
+        , testGroup "run p2a" (runBoth p2a)
+          
         , testGroup "run p8" (runBoth p8)
         , testGroup "run p9" (runBoth p9)
-          
+        , testGroup "run p9b" (runBoth p9b)
         ]
  where
   runBoth p = (hUnitTestToTests$ Sug.toList (I.run p) ~=? Sug.toList (run p))

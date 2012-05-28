@@ -31,14 +31,16 @@ tracePrint s x = trace (s++show x) x
 -- | Run an Accelerate computation using a simple (and very
 --   inefficient) interpreter.
 run :: forall a . Sug.Arrays a => Acc a -> a
-run acc = repackAcc acc $ 
-          evalA M.empty (convertToSimpleAST acc)
+run acc = 
+          trace ("[dbg] Repacking AccArray: "++show array) $ 
+          repackAcc acc array
+ where array = evalA M.empty (convertToSimpleAST acc)
 
 --------------------------------------------------------------------------------
 -- Values and Environments:
 
 type Env = M.Map Var Value
-lookup = error"lookup"
+lookup = error "UNFINISHED: lookup"
 
 data Value = TupVal [Value]
            | ArrVal AccArray
@@ -85,7 +87,7 @@ evalA env ae = finalArr
          -- A tricky thing it to support elementwise functions that
          -- produce tuples, which in turn need to be unpacked into a
          -- multi-payload array....
-         error"GENERATE - finish me"
+         error" UNFINISHED: GENERATE - finish me"
          where 
            dims = 
              -- Indices can be arbitrary shapes:
@@ -101,8 +103,8 @@ evalA env ae = finalArr
          then error$ "replicate: replicating across "++show slcSig
                   ++ " dimensions whereas the first argument to replicate had dimension "++show(dimsOut)
          else ArrVal $ AccArray newDims $ 
-              map (payloadFromList . loop dimsIn slcSig dimsOut) 
-                  payloadLists
+              concatMap (payloadsFromList . loop dimsIn slcSig dimsOut) 
+                        payloadLists
         where
            newDims = injectDims dimsIn slcSig dimsOut
            replicateDims = length $ filter (== Fixed) slcSig
@@ -152,7 +154,7 @@ evalA env ae = finalArr
          where 
            a1@(AccArray dims1 pays1) = evalA env ae1
            a2@(AccArray dims2 pays2) = evalA env ae2
-           final = map payloadFromList $ 
+           final = concatMap payloadsFromList $ 
                    L.transpose $ 
                    zipWith evaluator 
                            (L.transpose$ map payloadToList pays1)
@@ -199,25 +201,25 @@ evalA env ae = finalArr
                          M.insert v2 (ConstVal$ lookup offset) env) 
                         bodE 
        
-       Index     slcty ae ex -> error "Index"
-       TupleRefFromRight i ae -> error "TupleRefFromRight"
-       Apply afun ae          -> error "Apply"
+       Index     slcty ae ex -> error "UNFINISHED: Index"
+       TupleRefFromRight i ae -> error "UNFINISHED: TupleRefFromRight"
+       Apply afun ae          -> error "UNFINISHED: Apply"
 
 
-       Fold1    fn ae         -> error "Foldl1"
-       FoldSeg  fn ex ae1 ae2 -> error "FoldSeg"
-       Fold1Seg fn    ae1 ae2 -> error "Fold1Seg" 
-       Scanl    fn ex ae      -> error "Scanl"
-       Scanl'   fn ex ae      -> error "Scanl'"
-       Scanl1   fn    ae      -> error "Scanl1"       
-       Scanr    fn ex ae      -> error "Scanr"
-       Scanr'   fn ex ae      -> error "Scanr'"
-       Scanr1   fn    ae      -> error "Scanr1"       
-       Permute fn1 ae1 fn2 ae2 -> error "Permute"
-       Backpermute ex fn ae     -> error "Backpermute"
-       Reshape     ex    ae     -> error "Reshape"
-       Stencil     fn  bnd ae   -> error "Stencil"
-       Stencil2 fn bnd1 ae1 bnd2 ae2 -> error "Stencil2"
+       Fold1    fn ae         -> error "UNFINISHED: Foldl1"
+       FoldSeg  fn ex ae1 ae2 -> error "UNFINISHED: FoldSeg"
+       Fold1Seg fn    ae1 ae2 -> error "UNFINISHED: Fold1Seg" 
+       Scanl    fn ex ae      -> error "UNFINISHED: Scanl"
+       Scanl'   fn ex ae      -> error "UNFINISHED: Scanl'"
+       Scanl1   fn    ae      -> error "UNFINISHED: Scanl1"       
+       Scanr    fn ex ae      -> error "UNFINISHED: Scanr"
+       Scanr'   fn ex ae      -> error "UNFINISHED: Scanr'"
+       Scanr1   fn    ae      -> error "UNFINISHED: Scanr1"       
+       Permute fn1 ae1 fn2 ae2 -> error "UNFINISHED: Permute"
+       Backpermute ex fn ae     -> error "UNFINISHED: Backpermute"
+       Reshape     ex    ae     -> error "UNFINISHED: Reshape"
+       Stencil     fn  bnd ae   -> error "UNFINISHED: Stencil"
+       Stencil2 fn bnd1 ae1 bnd2 ae2 -> error "UNFINISHED: Stencil2"
 
        _ -> error$"Accelerate array expression breaks invariants: "++ show aexp
 
@@ -243,18 +245,21 @@ evalE env expr =
 
     EPrimApp p es      -> evalPrim p (map (evalE env) es)
 
-    ETupProjectFromRight ind ex -> error "ETupProjectFromRight"
-    EIndex indls       -> error "EIndex"
-    EIndexAny          -> error "EIndexAny"
-    EIndexConsDynamic e1 e2 -> error "EIndexConsDynamic"
-    EIndexHeadDynamic ex    -> error "EIndexHeadDynamic"
-    EIndexTailDynamic ex    -> error "EIndexTailDynamic"
+    ETupProjectFromRight ind ex -> 
+      case (ind, evalE env ex) of 
+        (_,ConstVal (Tup ls)) -> ConstVal$ reverse ls !! ind
+        (0,ConstVal scalar)   -> ConstVal$ scalar 
+
+    EIndex indls       -> error "UNFINISHED: EIndex"
+    EIndexAny          -> error "UNFINISHED: EIndexAny"
+    EIndexConsDynamic e1 e2 -> error "UNFINISHED: EIndexConsDynamic"
+    EIndexHeadDynamic ex    -> error "UNFINISHED: EIndexHeadDynamic"
+    EIndexTailDynamic ex    -> error "UNFINISHED: EIndexTailDynamic"
         
 
 --------------------------------------------------------------------------------
 
-indexArray = error "implement indexArray"
-
+indexArray = error "UNFINISHED: implement indexArray"
 
 --------------------------------------------------------------------------------
 
@@ -270,6 +275,7 @@ evalPrim p es =
     NP Neg -> ConstVal (neg  $ valToConst $ head es)
     NP Abs -> ConstVal (absv $ valToConst $ head es)
     NP Sig -> ConstVal (sig  $ valToConst $ head es)
+    _ -> error$"UNFINISHED: evalPrim needs to be extended to handle all primitives: "++show p
 --           | IP IntPrim
 --           | FP FloatPrim
 --           | SP ScalarPrim

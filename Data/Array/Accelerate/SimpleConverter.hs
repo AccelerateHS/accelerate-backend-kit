@@ -96,9 +96,9 @@ getAccTypePre acc = getAccType (OpenAcc acc)
 
 getExpType :: forall env aenv ans . Sug.Elt ans => OpenExp env aenv ans -> S.Type
 getExpType _ = convertType ty 
-  where  ty  = Sug.eltType ((error"This shouldn't happen (0)")::ans) 
+  where  ty  = Sug.eltType ((typeOnlyErr"getExpType")::ans) 
 
-
+{-# INLINE typeOnlyErr #-}
 typeOnlyErr msg = error$ msg++ ": This is a value that should never be evaluated.  It carries type information only."
 
 --------------------------------------------------------------------------------
@@ -158,7 +158,7 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
          let sty = getAccType acc
          S.Apply (S.ALam [(v, sty)] bod) <$> convertAcc acc
 
-    Apply _afun _acc -> error "This case is impossible"
+    Apply _afun _acc -> error "convertAcc: This case is impossible"
 
     Atuple (atup :: Atuple (OpenAcc aenv) b ) -> 
       let loop :: Atuple (OpenAcc aenv') a' -> EnvM [S.AExp] 
@@ -248,7 +248,7 @@ convertTupleIdx tix = loop tix
   loop (SuccTupIdx idx) = 1 + loop idx
 
 convertBoundary :: Boundary a -> S.Boundary
-convertBoundary = error "convertBoundary: implement me"
+convertBoundary = error "convertBoundary: implement me" -- FIXME TODO
 
 -- Evaluate a closed expression
 convertExp :: forall env aenv ans . OpenExp env aenv ans -> EnvM S.Exp
@@ -659,8 +659,14 @@ unpackArray arrrepr = (ty, S.AccArray shp payloads,
 -- representation with the type information necessary to form a proper
 -- Accelerate array.
 packArray :: forall sh e . (Sug.Elt e, Sug.Shape sh) => S.AccArray -> Sug.Array sh e
+
+-- packArray (S.AccArray dims []) = 
+--   if all (== 0) dims
+--   then Sug.Array (Sug.fromElt (Sug.listToShape dims :: sh)) (error "UNFINISHED: packArray")
+--   else error$ "packArray: corrupt input AccArray is empty, but stated dimensions are: "++ show dims
+
 packArray orig@(S.AccArray dims payloads) = 
-  if length dims == length dims'
+  if length dims == length dims' -- Is the expected rank correct?
   then Sug.Array shpVal (packit (typeOnlyErr "packArray1"::Sug.Array sh e) payloads)
   else error$"SimpleConverter.packArray: array does not have the expected dimensions: "++show dims++" expected "++show dims'
  where 
@@ -673,12 +679,21 @@ packArray orig@(S.AccArray dims payloads) =
 
   loop :: forall e . TupleType e -> [S.ArrayPayload] -> (ArrayData e)
   loop tupTy payloads =
+--   trace ("LOOPING "++show (length payloads)++" tupty:"++show tupTy) $
+   let err2 :: String -> (forall a . a)
+       err2 msg = error$"packArray: given a SimpleAST.AccArray of the wrong type, expected "++msg++" received: "++paystr
+       paystr = "\n  "++(unlines$ map (take 80 . show) payloads) ++ "\n dimension: "++show dims
+   in
    case (tupTy, payloads) of
     (UnitTuple,_)     -> AD_Unit
 
+    -- Tuples are nested ON THE LEFT in Accelerate currently:
     -- In SimpleAST we ignore the extra unit on the end in the AccArray representation:
-    (PairTuple UnitTuple (r::TupleType b),_) -> AD_Pair AD_Unit (loop r payloads) 
-    (PairTuple t1 t2, hd:tl)                 -> AD_Pair (loop t1 [hd]) (loop t2 tl)
+    (PairTuple UnitTuple (r::TupleType b),_)  -> AD_Pair AD_Unit (loop r payloads) 
+--    (PairTuple (r::TupleType b) UnitTuple, _) -> AD_Pair (loop r payloads) AD_Unit 
+    (PairTuple t1 t2, [payl]) -> error$"packArray: encountered PairTuple but only one payload.\n Expected type: "
+                                 ++show tupTy++ "\n Payload: "++paystr
+    (PairTuple t1 t2, ls)  -> AD_Pair (loop t1 (init ls)) (loop t2 [last ls])
 
     (SingleTuple (NumScalarType (FloatingNumType (TypeFloat _))),  [S.ArrayPayloadFloat uarr])  -> AD_Float uarr
     (SingleTuple (NumScalarType (FloatingNumType (TypeDouble _))), [S.ArrayPayloadDouble uarr]) -> AD_Double uarr
@@ -713,22 +728,21 @@ packArray orig@(S.AccArray dims payloads) =
 
     -- We could have a single catch-all cases here, but blowing it up
     -- like this allows meaningful feedback from -fwarn-incomplete-patterns:
-    (SingleTuple (NumScalarType (FloatingNumType (TypeFloat _))),  _) -> err2
-    (SingleTuple (NumScalarType (FloatingNumType (TypeDouble _))), _) -> err2
-    (SingleTuple (NumScalarType (IntegralNumType (TypeInt   _))), _) -> err2
-    (SingleTuple (NumScalarType (IntegralNumType (TypeInt8  _))), _) -> err2
-    (SingleTuple (NumScalarType (IntegralNumType (TypeInt16 _))), _) -> err2
-    (SingleTuple (NumScalarType (IntegralNumType (TypeInt32 _))), _) -> err2
-    (SingleTuple (NumScalarType (IntegralNumType (TypeInt64 _))), _) -> err2
-    (SingleTuple (NumScalarType (IntegralNumType (TypeWord   _))), _) -> err2
-    (SingleTuple (NumScalarType (IntegralNumType (TypeWord8  _))), _) -> err2
-    (SingleTuple (NumScalarType (IntegralNumType (TypeWord16 _))), _) -> err2
-    (SingleTuple (NumScalarType (IntegralNumType (TypeWord32 _))), _) -> err2
-    (SingleTuple (NumScalarType (IntegralNumType (TypeWord64 _))), _) -> err2
-    (SingleTuple (NonNumScalarType (TypeBool _)), _) -> err2
-    (SingleTuple (NonNumScalarType (TypeChar _)), _) -> err2
-
-  err2 = error "packArray: given a SimpleAST.AccArray of the wrong type."
+    (SingleTuple (NumScalarType (FloatingNumType (TypeFloat _))),  _) -> err2 "Float"
+    (SingleTuple (NumScalarType (FloatingNumType (TypeDouble _))), _) -> err2 "Double"
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt   _))), _) -> err2 "Int"
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt8  _))), _) -> err2 "Int8"
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt16 _))), _) -> err2 "Int16"
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt32 _))), _) -> err2 "Int32"
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt64 _))), _) -> err2 "Int64"
+    (SingleTuple (NumScalarType (IntegralNumType (TypeWord   _))), _) -> err2 "Word"
+    (SingleTuple (NumScalarType (IntegralNumType (TypeWord8  _))), _) -> err2 "Word8"
+    (SingleTuple (NumScalarType (IntegralNumType (TypeWord16 _))), _) -> err2 "Word16"
+    (SingleTuple (NumScalarType (IntegralNumType (TypeWord32 _))), _) -> err2 "Word32"
+    (SingleTuple (NumScalarType (IntegralNumType (TypeWord64 _))), _) -> err2 "Word64"
+    (SingleTuple (NonNumScalarType (TypeBool _)), _) -> err2 "Bool"
+    (SingleTuple (NonNumScalarType (TypeChar _)), _) -> err2  "Char"
+  
 
 
 -- | Repackage a result in simplified form as an properly typed result
