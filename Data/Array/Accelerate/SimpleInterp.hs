@@ -131,7 +131,7 @@ evalA env ae = finalArr
            dimsOut = case evalE env ex of 
                       ConstVal (I n)    -> [n]
                       ConstVal (Tup []) -> []
-                      TupVal ls -> map (\ (ConstVal (I n)) -> n) ls
+--                      TupVal ls -> map (\ (ConstVal (I n)) -> n) ls
                       oth -> error $ "replicate: bad first argument to replicate: "++show oth
            AccArray dimsIn payls = evalA env ae
            

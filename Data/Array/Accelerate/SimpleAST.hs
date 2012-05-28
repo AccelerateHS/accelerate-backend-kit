@@ -21,7 +21,9 @@ module Data.Array.Accelerate.SimpleAST
      SliceType(..), SliceComponent(..),
            
      -- * Helper routines and predicates:
-     var, isIntType, isFloatType, primArity
+     var, primArity,
+     isIntType, isFloatType, isNumType, 
+     isIntConst, isFloatConst, isNumConst
     )   
  where
 
@@ -260,22 +262,6 @@ data Type = TTuple [Type]
 
 type Dims = Int
 
-isIntType ty =
-  case ty of {
-    TInt  ->t;     TInt8 ->t;    TInt16  ->t;  TInt32  ->t;  TInt64 ->t; 
-    TCShort  ->t;  TCInt   ->t;  TCLong  ->t;  TCLLong ->t; 
-    TCUShort ->t;  TCUInt  ->t;  TCULong ->t;  TCULLong ->t;
-     _ -> False
-  }
- where t = True
-
-isFloatType ty = 
-  case ty of {
-    TFloat  ->t; TDouble ->t; 
-    TCFloat ->t; TCDouble ->t;
-    _ -> False  
-  }
- where t = True
 
 -- | Slices of arrays.  These have a length matching the
 -- dimensionality of the slice.  
@@ -360,6 +346,61 @@ type RawData e = UArray Int e
 --   2D shape: Tup [I 2, I 3]
 --   3D shape: Tup [I 2, I 3, I 4]
 -- etc.
+
+
+--------------------------------------------------------------------------------
+-- Convenience functions for dealing with large sum types.
+--------------------------------------------------------------------------------
+
+-- | Is the type numeric, rather than, for example, an array, tuple,
+-- boolean or character.  Note that C characters are considered
+-- numeric.
+isNumType ty = isIntType ty || isFloatType ty
+
+-- | Is the scalar type integral?  This includes words as well as
+-- signed ints as well as C types.
+isIntType ty =
+  case ty of {
+    TInt  ->t;     TInt8 ->t;    TInt16  ->t;  TInt32  ->t;  TInt64 ->t; 
+    TWord  ->t;    TWord8 ->t;   TWord16  ->t; TWord32  ->t; TWord64 ->t; 
+    TCShort  ->t;  TCInt   ->t;  TCLong  ->t;  TCLLong ->t; 
+    TCUShort ->t;  TCUInt  ->t;  TCULong ->t;  TCULLong ->t;
+     _ -> False
+  }
+ where t = True
+
+isFloatType ty = 
+  case ty of {
+    TFloat  ->t; TDouble ->t; 
+    TCFloat ->t; TCDouble ->t;
+    _ -> False  
+  }
+ where t = True
+
+-- | Is it a numeric constant representing an exact integer?  This
+-- includes words as well as signed ints as well as C types.
+isIntConst c =
+  case c of {
+    I _ ->t;    I8 _ ->t;    I16 _  ->t;  I32 _  ->t;  I64 _ ->t; 
+    W _ ->t;    W8 _ ->t;    W16 _  ->t;  W32 _  ->t;  W64 _ ->t;     
+    CS _ ->t;  CI _ ->t;  CL _ ->t;  CLL _ ->t; 
+    CUS _ ->t;  CUI _ ->t;  CUL _ ->t;  CULL _ ->t;
+     _ -> False
+  }
+ where t = True
+
+-- | Is the constant an inexact floating point number (of any precision)?
+isFloatConst c = 
+  case c of {
+    F _ ->t;  D _ ->t; 
+    CF _ ->t; CD _ ->t;
+    _ -> False  
+  }
+ where t = True
+
+-- | Is the constant numeric, rather than a tuple, boolean or
+-- character.  Note that C characters are considered numeric.
+isNumConst ty = isIntConst ty || isFloatConst ty
 
 
 

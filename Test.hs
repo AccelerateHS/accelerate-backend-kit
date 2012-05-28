@@ -252,7 +252,6 @@ tests = [ testCase "use/fromList"   (print$ doc t0)
                     
           
         , testGroup "run p0"  (runBoth p0)
-        
         , testGroup "run p1"  (runBoth p1)
         , testGroup "run p1a" (runBoth p1a)
         , testGroup "run p1b" (runBoth p1b)
@@ -261,6 +260,8 @@ tests = [ testCase "use/fromList"   (print$ doc t0)
           
         , testGroup "run p2" (runBoth p2)
         , testGroup "run p2a" (runBoth p2a)
+          
+--        , testGroup "run p2b" (runBoth p2b) -- EIndexHeadDynamic
           
         , testGroup "run p8" (runBoth p8)
         , testGroup "run p9" (runBoth p9)
