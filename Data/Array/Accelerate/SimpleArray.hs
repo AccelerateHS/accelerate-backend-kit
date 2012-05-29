@@ -384,6 +384,9 @@ splitComponent x@(AccArray _ ls) =
 -- 
 -- This uses the most basic possible representation of
 -- multidimensional indices, namely "[Int]"
+-- 
+-- Note that these indices are the REVERSE of the Accelerate source
+-- representation.  Fastest varying index is the LEFTMOST.
 indexArray ::  AccArray -> [Int] -> Const
 -- Index into a Scalar:
 indexArray (AccArray dims payloads) ind | length ind /= length dims = 
@@ -395,7 +398,8 @@ indexArray (AccArray dims payloads) ind =
      tuple $ map (`indexPayload` position) payloads
   where 
     -- How many elements do we per increment of this dimension?  Rightmost is fastest changing.
-    multipliers = scanr (*) 1 (init dims) -- The rightmost gets a 1 multiplier.
+    -- multipliers = scanr (*) 1 (init dims) -- The rightmost gets a 1 multiplier.
+    multipliers = scanl (*) 1 (tail dims) -- The leftmost gets a 1 multiplier.
     position = sum $ zipWith (*) multipliers ind
 
 -- Private helper

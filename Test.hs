@@ -92,10 +92,14 @@ p2b = let arr = generate (constant (Z :. (5::Int))) unindex1
           -- 2nd generates: Array (Z :. 5 :. 4) [0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4]
 t2b = convertToSimpleAST p2b
 
-p2c :: Acc (Array DIM3 Int)
-p2c = let arr = generate (constant (Z :. (3::Int) :. (3::Int))) 
-                         (\e -> let (r,c) = unlift$ unindex2 e in 3 * r + c)
-      in replicate (constant$ Z :. All :. (2::Int) :. All) arr
+-- | A 2D array with some tuple operations:
+p2c :: Acc (Array DIM2 Int)
+p2c = generate (constant (Z :. (3::Int) :. (3::Int)))
+               (\e -> let (r,c) = unlift$ unindex2 e in 3 * r + c)
+
+-- | Expand 2D -> 3D
+p2cc :: Acc (Array DIM3 Int)
+p2cc = replicate (constant$ Z :. All :. (2::Int) :. All) p2c
 --      in replicate (constant$ Z :. All :. All :. (2::Int)) arr  
 
 p2d :: Acc (Array DIM4 (Int,Int))
@@ -110,6 +114,14 @@ p2e = let arr = generate (constant (Z :. (5::Int))) unindex1
 p2f :: Acc (Array DIM0 Int)
 p2f = let  arr = unit (constant 33)
       in replicate (constant$ Z) arr
+
+-- | Similar to p2c, except now simply return indices:
+p2g :: Acc (Array DIM2 (Int,Int))
+p2g = generate (constant (Z :. (3::Int) :. (3::Int))) unindex2
+
+p2h :: Acc (Array DIM3 (Int,Int))
+p2h = replicate (constant$ Z :. All :. (2::Int) :. All) p2g
+
 
 --------------------------------------------------------------------------------
 
@@ -269,9 +281,12 @@ tests = [ testCase "use/fromList"   (print$ doc t0)
         , testGroup "run p2a" (runBoth p2a)          
         , testGroup "run p2b" (runBoth p2b) -- EIndexHeadDynamic
         , testGroup "run p2c" (runBoth p2c)
+        , testGroup "run p2cc" (runBoth p2cc)          
         , testGroup "run p2d" (runBoth p2d)
         , testGroup "run p2e" (runBoth p2e)
         , testGroup "run p2f" (runBoth p2f)          
+        , testGroup "run p2g" (runBoth p2g)    
+        , testGroup "run p2h" (runBoth p2h)          
         
         , testGroup "run p3" (runBoth p3)  
         , testGroup "run p4" (runBoth p4)  

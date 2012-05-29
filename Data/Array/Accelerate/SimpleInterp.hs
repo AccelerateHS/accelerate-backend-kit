@@ -134,12 +134,9 @@ evalA env ae = finalArr
                       ConstVal (Tup ls) -> 
                         map (fromIntegral . constToInteger) $ 
                         filter isNumConst ls
---                      TupVal ls -> map (\ (ConstVal (I n)) -> n) ls
                       oth -> error $ "replicate: bad first argument to replicate: "++show oth
-           inArray@(AccArray dimsIn payls) = evalA env ae
+           inArray@(AccArray dimsIn _) = evalA env ae
            
-           payloadLists = map payloadToList payls
-
            -- The number of final elements is the starting elements times the degree of replication:
            finalElems = foldl (*) 1 dimsIn * 
                         foldl (*) 1 dimsOut
@@ -157,8 +154,8 @@ evalA env ae = finalArr
            unliftInd :: [Int] -> [Int]
            unliftInd = unliftLoop slcSig 
            unliftLoop [] [] = []
-           unliftLoop (Fixed:sig) (_:inds) =     unliftLoop sig inds 
-           unliftLoop (All:sig)   (i:inds) = i : unliftLoop sig inds
+           unliftLoop (Fixed:ssig) (_:inds) =     unliftLoop ssig inds 
+           unliftLoop (All:ssig)   (i:inds) = i : unliftLoop ssig inds
 
 
            
