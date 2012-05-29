@@ -43,16 +43,15 @@ t1 :: S.AExp
 t1 = convertToSimpleAST p1
 r1 = I.run p1
 
--- | Just generate:
-p1a :: Acc (Vector Float)
-p1a = generate (constant (Z :. (10::Int))) 
-       (A.fromIntegral . unindex1) 
-      --(\ (i) -> 3.3 )
-
+-- | Just generate 
 p1aa :: Acc (Vector Int)
 p1aa = generate (constant (Z :. (10::Int)))
        (unindex1)
-      --(\ (i) -> 3.3 )
+
+-- | Also exercise fromIntegral:
+p1a :: Acc (Vector Float)
+p1a = generate (constant (Z :. (10::Int))) 
+       (A.fromIntegral . unindex1) 
 
 
 -- | And again with a 2D array:
@@ -73,7 +72,6 @@ p1c = let xs = use$ fromList (Z :. (5::Int)) [1..10::Word]
 p1d :: Acc (Vector (Word,Word))
 p1d = let xs = use$ fromList (Z :. (5::Int)) [1..10::Word] 
       in zipWith (\ x y -> lift (x*y, x+y)) xs xs
-
 
 ----------------------------------------
 
@@ -263,16 +261,24 @@ tests = [ testCase "use/fromList"   (print$ doc t0)
         , testGroup "run p1"  (runBoth p1)
         , testGroup "run p1a" (runBoth p1a)   -- fromIntegral
         , testGroup "run p1aa" (runBoth p1aa)
-          
         , testGroup "run p1b" (runBoth p1b)
         , testGroup "run p1c" (runBoth p1c)
         , testGroup "run p1d" (runBoth p1d)
           
         , testGroup "run p2" (runBoth p2)
-        , testGroup "run p2a" (runBoth p2a)
-          
+        , testGroup "run p2a" (runBoth p2a)          
 --        , testGroup "run p2b" (runBoth p2b) -- EIndexHeadDynamic
-          
+        , testGroup "run p2c" (runBoth p2c)
+        , testGroup "run p2d" (runBoth p2d)
+        , testGroup "run p2e" (runBoth p2e)
+        , testGroup "run p2f" (runBoth p2f)          
+        
+        , testGroup "run p3" (runBoth p3)  
+        , testGroup "run p4" (runBoth p4)  
+        , testGroup "run p4b" (runBoth p4b)  
+        , testGroup "run p5" (runBoth p5)   
+        , testGroup "run p6" (runBoth p6)    
+        , testGroup "run p7" (runBoth p7)      
         , testGroup "run p8" (runBoth p8)
         , testGroup "run p9" (runBoth p9)
         , testGroup "run p9b" (runBoth p9b)
