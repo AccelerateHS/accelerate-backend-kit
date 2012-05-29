@@ -524,8 +524,7 @@ convertConst ty c =
 
 convertPrimApp :: (Sug.Elt a, Sug.Elt b)
                => PrimFun (a -> b) -> PreOpenExp OpenAcc env aenv a
-               -> EnvM S.Exp
-               
+               -> EnvM S.Exp               
 convertPrimApp p arg = 
   do 
      args2 <- convertExp arg
@@ -555,6 +554,66 @@ convertPrimApp p arg =
       PrimNeg _ty -> S.NP S.Neg
       
       PrimQuot _ty -> S.IP S.Quot
+      PrimRem  _   -> S.IP S.Rem
+      PrimIDiv _   -> S.IP S.IDiv
+      PrimMod  _   -> S.IP S.Mod
+      PrimBAnd _   -> S.IP S.BAnd
+      PrimBOr  _   -> S.IP S.BOr
+      PrimBXor _   -> S.IP S.BXor
+      PrimBNot _   -> S.IP S.BNot
+      PrimBShiftL _ -> S.IP S.BShiftL
+      PrimBShiftR _ -> S.IP S.BShiftR
+      PrimBRotateL _ -> S.IP S.BRotateL
+      PrimBRotateR _ -> S.IP S.BRotateR
+  
+  -- PrimFDiv        :: FloatingType a -> PrimFun ((a, a) -> a)
+  -- PrimRecip       :: FloatingType a -> PrimFun (a      -> a)
+  -- PrimSin         :: FloatingType a -> PrimFun (a      -> a)
+  -- PrimCos         :: FloatingType a -> PrimFun (a      -> a)
+  -- PrimTan         :: FloatingType a -> PrimFun (a      -> a)
+  -- PrimAsin        :: FloatingType a -> PrimFun (a      -> a)
+  -- PrimAcos        :: FloatingType a -> PrimFun (a      -> a)
+  -- PrimAtan        :: FloatingType a -> PrimFun (a      -> a)
+  -- PrimAsinh       :: FloatingType a -> PrimFun (a      -> a)
+  -- PrimAcosh       :: FloatingType a -> PrimFun (a      -> a)
+  -- PrimAtanh       :: FloatingType a -> PrimFun (a      -> a)
+  -- PrimExpFloating :: FloatingType a -> PrimFun (a      -> a)
+  -- PrimSqrt        :: FloatingType a -> PrimFun (a      -> a)
+  -- PrimLog         :: FloatingType a -> PrimFun (a      -> a)
+  -- PrimFPow        :: FloatingType a -> PrimFun ((a, a) -> a)
+  -- PrimLogBase     :: FloatingType a -> PrimFun ((a, a) -> a)
+  -- PrimAtan2       :: FloatingType a -> PrimFun ((a, a) -> a)
+  -- PrimTruncate    :: FloatingType a -> IntegralType b -> PrimFun (a -> b)
+  -- PrimRound       :: FloatingType a -> IntegralType b -> PrimFun (a -> b)
+  -- PrimFloor       :: FloatingType a -> IntegralType b -> PrimFun (a -> b)
+  -- PrimCeiling     :: FloatingType a -> IntegralType b -> PrimFun (a -> b)
+  -- -- FIXME: add missing operations from RealFrac & RealFloat
+      
+      PrimLt   _ -> S.BP S.Lt
+      -- PrimGt   _ -> S.BP S.Gt
+      -- PrimLtEq _ -> S.BP S.LtEq
+      -- PrimGtEq _ -> S.BP S.GtEq
+      -- PrimEq  _  -> S.BP S.Eq
+      -- PrimNEq _  -> S.BP S.NEq
+      -- PrimMax _  -> S.BP S.Max
+      -- PrimMin _  -> S.BP S.Min
+
+  -- -- logical operators
+  -- PrimLAnd :: PrimFun ((Bool, Bool) -> Bool)
+  -- PrimLOr  :: PrimFun ((Bool, Bool) -> Bool)
+  -- PrimLNot :: PrimFun (Bool         -> Bool)
+
+  -- -- character conversions
+  -- PrimOrd  :: PrimFun (Char -> Int)
+  -- PrimChr  :: PrimFun (Int  -> Char)
+  -- -- FIXME: use IntegralType?
+
+  -- -- FIXME: conversions between various integer types
+  -- --        should we have an overloaded functions like 'toInt'?  
+  -- --        (or 'fromEnum' for enums?)
+  -- PrimBoolToInt    :: PrimFun (Bool -> Int)
+  -- PrimFromIntegral :: IntegralType a -> NumType b -> PrimFun (a -> b)
+
 
       _ -> error$ "primapp not handled yet: "++show (PrimApp pr arg)
 

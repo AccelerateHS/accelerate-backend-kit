@@ -14,7 +14,7 @@ import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import Data.Int
 -- import Data.Array.Accelerate (use,Z,(:.))
 -- import qualified Data.Array.Accelerate as Acc
-import Data.Array.Accelerate
+import Data.Array.Accelerate as A 
 import Data.Array.Accelerate.Interpreter
 
 import Test.Framework
@@ -45,7 +45,9 @@ r1 = I.run p1
 
 -- | Just generate:
 p1a :: Acc (Vector Float)
-p1a = generate (constant (Z :. (10::Int))) (\ (i) -> 3.3 )
+p1a = generate (constant (Z :. (10::Int))) 
+       (A.fromIntegral . unindex1) 
+      --(\ (i) -> 3.3 )
 
 -- | And again with a 2D array:
 p1b :: Acc (Vector Float)

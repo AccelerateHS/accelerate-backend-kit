@@ -42,11 +42,16 @@ run acc =
 type Env = M.Map Var Value
 lookup = error "UNFINISHED: lookup"
 
+-- | The value representation for the interpreter.
+-- 
+-- /Convention:/  Multidimensional index values are represented as a
+-- const tuple of scalars.
 data Value = TupVal [Value]
            | ArrVal AccArray
            | ConstVal Const 
   deriving Show           
-                 
+
+
 -- | Extract a `Const` from a `Value` if that is possible.
 valToConst (ConstVal c ) = c
 valToConst (TupVal ls)   = Tup $ map valToConst ls
@@ -109,11 +114,11 @@ evalA env ae = finalArr
             length dimsIn  /= retainDims
          then error$ "replicate: replicating across "++show slcSig
                   ++ " dimensions whereas the first argument to replicate had dimension "++show dimsOut
---         else if replicateDims == 0  -- This isn't a replication at all!
---         then ArrVal $ AccArray dimsIn payls
          else ArrVal $ AccArray newDims $ 
-              concatMap (payloadsFromList . loop dimsIn slcSig dimsOut) 
-                        payloadLists
+              payloadsFromList $ 
+              map (\ ind -> let intind = map (fromIntegral . constToInteger) (untuple ind) in 
+                            indexArray inArray (unliftInd intind))
+                  (indexSpace newDims)
         where
            newDims = injectDims dimsIn slcSig dimsOut
            replicateDims = length $ filter (== Fixed) slcSig
@@ -126,7 +131,7 @@ evalA env ae = finalArr
                         filter isNumConst ls
 --                      TupVal ls -> map (\ (ConstVal (I n)) -> n) ls
                       oth -> error $ "replicate: bad first argument to replicate: "++show oth
-           AccArray dimsIn payls = evalA env ae
+           inArray@(AccArray dimsIn payls) = evalA env ae
            
            payloadLists = map payloadToList payls
 
@@ -135,10 +140,21 @@ evalA env ae = finalArr
                         foldl (*) 1 dimsOut
            
            -- Insert the new dimensions where "Any"s occur.
+           injectDims :: [Int] -> SliceType -> [Int] -> [Int]
            injectDims [] [] [] = []
            injectDims (dim:l1) (All : l2)    l3       = dim : injectDims l1 l2 l3
            injectDims l1       (Fixed : l2)  (dim:l3) = dim : injectDims l1 l2 l3
            injectDims l1 l2 l3 = error$ "injectDims: bad input: "++ show (l1,l2,l3)
+
+           -- Take an index (represented as [Int]) into the larger,
+           -- replicated, index space and project it back into the
+           -- originating index space.
+           unliftInd :: [Int] -> [Int]
+           unliftInd = unliftLoop slcSig 
+           unliftLoop [] [] = []
+           unliftLoop (Fixed:sig) (_:inds) =     unliftLoop sig inds 
+           unliftLoop (All:sig)   (i:inds) = i : unliftLoop sig inds
+
 
        -- UNFINISHED:        
 
@@ -175,7 +191,7 @@ evalA env ae = finalArr
                            (L.transpose$ map payloadToList pays1)
                            (L.transpose$ map payloadToList pays2)
 -- INCORRECT - we need to reassemble tuples here:
-           evaluator cls1 cls2 = map valToConst $ untuple $ evalE env 
+           evaluator cls1 cls2 = map valToConst $ untupleVal $ evalE env 
                                  (ELet v1 vty1 (EConst$ tuple cls1) $  
                                   ELet v2 vty2 (EConst$ tuple cls2) bod)
 
@@ -250,7 +266,9 @@ evalE env expr =
                             ConstVal (B True)  -> evalE env e2 
                             ConstVal (B False) -> evalE env e3
 
-    EIndexScalar ae ex -> indexArray (evalA env ae) (evalE env ex)
+    EIndexScalar ae ex -> ConstVal$ indexArray (evalA env ae) 
+                           (map (fromIntegral . constToInteger) $ 
+                            untuple$ valToConst$ evalE env ex)
   
     EShape ae          -> let AccArray sh _ = evalA env ae 
                           in ConstVal$ Tup $ map I sh
@@ -273,14 +291,13 @@ evalE env expr =
     EIndexConsDynamic e1 e2 -> error "UNFINISHED: EIndexConsDynamic"
     EIndexHeadDynamic ex    -> case evalE env ex of 
                                  ConstVal (Tup ls) -> ConstVal (head ls)
+                                 ConstVal c        -> ConstVal c 
+                                 oth -> error$ "EIndexHeadDynamic, unhandled: "++ show oth
     EIndexTailDynamic ex    -> case evalE env ex of 
                                  ConstVal (Tup ls) -> ConstVal (Tup (tail ls))
-        
+                                 oth -> error$ "EIndexTailDynamic, unhandled: "++ show oth
 
 --------------------------------------------------------------------------------
-
-indexArray = error "UNFINISHED: implement indexArray"
-
 
 -- Create a list of Const/int indices corresponding to the index space
 -- of an Accelerate array, layed out in the appropriate order for
@@ -299,12 +316,20 @@ indexSpace = map tuple . loop
            
 
 -- Unary tuples do not exist in the language:
+tuple :: [Const] -> Const
 tuple [x] = x
 tuple ls  = Tup ls
 
-untuple (TupVal ls) = ls
-untuple x           = [x]
+-- This currently handles nested Tups, but we generally insure those won't occur:
+untuple :: Const -> [Const]
+untuple (Tup ls) = concatMap untuple ls
+untuple oth = [oth]
 
+-- This goes inside both types of tuples (Val and Const).
+untupleVal :: Value -> [Value]
+untupleVal (TupVal ls)  = concatMap untupleVal ls
+untupleVal (ConstVal c) = map ConstVal $ untuple c
+untupleVal (ArrVal a)   = [ArrVal a]
 
 
 --------------------------------------------------------------------------------

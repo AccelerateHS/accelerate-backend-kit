@@ -17,6 +17,7 @@ module Data.Array.Accelerate.SimpleArray
      -- * Functions for operating on `AccArray`s
      mapArray,
      splitComponent, numComponents,
+     indexArray,
 
      -- * Functions for constructing `AccArray`s
      Data.Array.Accelerate.SimpleArray.replicate,      
@@ -24,7 +25,7 @@ module Data.Array.Accelerate.SimpleArray
      -- * Functions for operating on payloads (internal components of AccArrays)     
      payloadToList, payloadsFromList,
      payloadLength, 
-     mapPayload, 
+     mapPayload, indexPayload,
      
      applyToPayload, applyToPayload2, applyToPayload3,                                           
    )
@@ -74,6 +75,27 @@ payloadLength payl =
     ArrayPayloadChar   arr -> arrLen arr
     ArrayPayloadBool   arr -> arrLen arr
  
+
+-- | Dereference an element within a payload.  Payload is indexed in
+-- the same way as an array (single dimension, zero-based).
+indexPayload :: ArrayPayload -> Int -> Const
+indexPayload payl i = 
+  case payl of 
+    ArrayPayloadInt    arr -> I   (arr U.! i)
+    ArrayPayloadInt8   arr -> I8  (arr U.! i)
+    ArrayPayloadInt16  arr -> I16 (arr U.! i)
+    ArrayPayloadInt32  arr -> I32 (arr U.! i)
+    ArrayPayloadInt64  arr -> I64 (arr U.! i)
+    ArrayPayloadWord   arr -> W   (arr U.! i)
+    ArrayPayloadWord8  arr -> W8  (arr U.! i)
+    ArrayPayloadWord16 arr -> W16 (arr U.! i)
+    ArrayPayloadWord32 arr -> W32 (arr U.! i)
+    ArrayPayloadWord64 arr -> W64 (arr U.! i)
+    ArrayPayloadFloat  arr -> F   (arr U.! i)
+    ArrayPayloadDouble arr -> D   (arr U.! i)
+    ArrayPayloadChar   arr -> C   (arr U.! i)
+    ArrayPayloadBool   arr -> toBool (arr U.! i) 
+
 -- | Apply a generic transformation to the Array Payload irrespective
 --   of element type.  This is useful for rearranging or removing
 --   elements of a payload without looking at the contents.
@@ -327,3 +349,28 @@ splitComponent (AccArray sh (h1:h2:rst)) =
 splitComponent x@(AccArray _ ls) = 
   error$ "splitComponent: input array has only "++show(length ls)++
          " components, needs at least two:\n   "++ show x
+
+
+-- indexArray :: Num a => AccArray -> [a] -> Const 
+
+-- | Dereference an element from an AccArray.
+-- 
+-- This uses the most basic possible representation of
+-- multidimensional indices, namely "[Int]"
+indexArray ::  AccArray -> [Int] -> Const
+-- Index into a Scalar:
+indexArray (AccArray dims payloads) ind | length ind /= length dims = 
+  error$"indexArray: array dimensions were "++show dims++" but index was of different length: "++ show ind
+indexArray (AccArray []   payloads) []  = tuple $ map (`indexPayload` 0)        payloads
+indexArray (AccArray dims payloads) ind = 
+     trace ("[dbg] Indexing array "++show ind++" multipliers "++show multipliers++" pos "++show position
+            ++" array:\n          "++show (AccArray dims payloads)) $ 
+     tuple $ map (`indexPayload` position) payloads
+  where 
+    -- How many elements do we per increment of this dimension?  Rightmost is fastest changing.
+    multipliers = scanr (*) 1 (init dims) -- The rightmost gets a 1 multiplier.
+    position = sum $ zipWith (*) multipliers ind
+
+tuple :: [Const] -> Const
+tuple [x] = x
+tuple ls  = Tup ls
