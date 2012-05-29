@@ -346,12 +346,15 @@ evalPrim p es =
     NP Neg -> ConstVal (neg  $ valToConst $ head es)
     NP Abs -> ConstVal (absv $ valToConst $ head es)
     NP Sig -> ConstVal (sig  $ valToConst $ head es)
-    _ -> error$"UNFINISHED: evalPrim needs to be extended to handle all primitives: "++show p
+    
 --           | IP IntPrim
 --           | FP FloatPrim
 --           | SP ScalarPrim
 --           | BP BoolPrim
 --           | OP OtherPrim
+    OP FromIntegral -> error "evalPrim: Need more type information to implement this..."
+
+    _ -> error$"UNFINISHED: evalPrim needs to be extended to handle all primitives: "++show p
 
 
 add :: Const -> Const -> Const

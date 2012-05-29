@@ -548,6 +548,7 @@ convertPrimApp p arg =
    op pr   = 
     case pr of 
       PrimAdd _ty -> S.NP S.Add
+      PrimSub _ty -> S.NP S.Sub
       PrimMul _ty -> S.NP S.Mul
       PrimSig _ty -> S.NP S.Sig
       PrimAbs _ty -> S.NP S.Abs
@@ -566,56 +567,47 @@ convertPrimApp p arg =
       PrimBRotateL _ -> S.IP S.BRotateL
       PrimBRotateR _ -> S.IP S.BRotateR
   
-  -- PrimFDiv        :: FloatingType a -> PrimFun ((a, a) -> a)
-  -- PrimRecip       :: FloatingType a -> PrimFun (a      -> a)
-  -- PrimSin         :: FloatingType a -> PrimFun (a      -> a)
-  -- PrimCos         :: FloatingType a -> PrimFun (a      -> a)
-  -- PrimTan         :: FloatingType a -> PrimFun (a      -> a)
-  -- PrimAsin        :: FloatingType a -> PrimFun (a      -> a)
-  -- PrimAcos        :: FloatingType a -> PrimFun (a      -> a)
-  -- PrimAtan        :: FloatingType a -> PrimFun (a      -> a)
-  -- PrimAsinh       :: FloatingType a -> PrimFun (a      -> a)
-  -- PrimAcosh       :: FloatingType a -> PrimFun (a      -> a)
-  -- PrimAtanh       :: FloatingType a -> PrimFun (a      -> a)
-  -- PrimExpFloating :: FloatingType a -> PrimFun (a      -> a)
-  -- PrimSqrt        :: FloatingType a -> PrimFun (a      -> a)
-  -- PrimLog         :: FloatingType a -> PrimFun (a      -> a)
-  -- PrimFPow        :: FloatingType a -> PrimFun ((a, a) -> a)
-  -- PrimLogBase     :: FloatingType a -> PrimFun ((a, a) -> a)
-  -- PrimAtan2       :: FloatingType a -> PrimFun ((a, a) -> a)
-  -- PrimTruncate    :: FloatingType a -> IntegralType b -> PrimFun (a -> b)
-  -- PrimRound       :: FloatingType a -> IntegralType b -> PrimFun (a -> b)
-  -- PrimFloor       :: FloatingType a -> IntegralType b -> PrimFun (a -> b)
-  -- PrimCeiling     :: FloatingType a -> IntegralType b -> PrimFun (a -> b)
-  -- -- FIXME: add missing operations from RealFrac & RealFloat
+      PrimFDiv  _ -> S.FP S.FDiv
+      PrimRecip _ -> S.FP S.Recip
+      PrimSin   _ -> S.FP S.Sin
+      PrimCos   _ -> S.FP S.Cos
+      PrimTan   _ -> S.FP S.Tan
+      PrimAsin  _ -> S.FP S.Asin
+      PrimAcos  _ -> S.FP S.Acos
+      PrimAtan  _ -> S.FP S.Atan
+      PrimAsinh _ -> S.FP S.Asinh
+      PrimAcosh _ -> S.FP S.Acosh
+      PrimAtanh _ -> S.FP S.Atanh
+      PrimExpFloating _ -> S.FP S.ExpFloating
+      PrimSqrt _ -> S.FP S.Sqrt
+      PrimLog  _ -> S.FP S.Log
+      PrimFPow _ -> S.FP S.FPow
+      PrimLogBase _ -> S.FP S.LogBase
+      PrimAtan2   _ -> S.FP S.Atan2
+      PrimTruncate _ _ -> S.FP S.Truncate
+      PrimRound  _ _ -> S.FP S.Round
+      PrimFloor  _ _ -> S.FP S.Floor
+      PrimCeiling _ _ -> S.FP S.Ceiling
       
-      PrimLt   _ -> S.BP S.Lt
-      -- PrimGt   _ -> S.BP S.Gt
-      -- PrimLtEq _ -> S.BP S.LtEq
-      -- PrimGtEq _ -> S.BP S.GtEq
-      -- PrimEq  _  -> S.BP S.Eq
-      -- PrimNEq _  -> S.BP S.NEq
-      -- PrimMax _  -> S.BP S.Max
-      -- PrimMin _  -> S.BP S.Min
+      PrimLt   _ -> S.SP S.Lt
+      PrimGt   _ -> S.SP S.Gt
+      PrimLtEq _ -> S.SP S.LtEq
+      PrimGtEq _ -> S.SP S.GtEq
+      PrimEq  _  -> S.SP S.Eq
+      PrimNEq _  -> S.SP S.NEq
+      PrimMax _  -> S.SP S.Max
+      PrimMin _  -> S.SP S.Min
 
-  -- -- logical operators
-  -- PrimLAnd :: PrimFun ((Bool, Bool) -> Bool)
-  -- PrimLOr  :: PrimFun ((Bool, Bool) -> Bool)
-  -- PrimLNot :: PrimFun (Bool         -> Bool)
+      PrimLAnd  -> S.BP S.And
+      PrimLOr   -> S.BP S.Or
+      PrimLNot  -> S.BP S.Not
 
-  -- -- character conversions
-  -- PrimOrd  :: PrimFun (Char -> Int)
-  -- PrimChr  :: PrimFun (Int  -> Char)
-  -- -- FIXME: use IntegralType?
+      PrimOrd   -> S.OP S.Ord
+      PrimChr   -> S.OP S.Chr
 
-  -- -- FIXME: conversions between various integer types
-  -- --        should we have an overloaded functions like 'toInt'?  
-  -- --        (or 'fromEnum' for enums?)
-  -- PrimBoolToInt    :: PrimFun (Bool -> Int)
-  -- PrimFromIntegral :: IntegralType a -> NumType b -> PrimFun (a -> b)
+      PrimBoolToInt      -> S.OP S.BoolToInt
+      PrimFromIntegral _ _ -> S.OP S.FromIntegral
 
-
-      _ -> error$ "primapp not handled yet: "++show (PrimApp pr arg)
 
 --------------------------------------------------------------------------------
 -- Convert Accelerate Functions

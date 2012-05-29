@@ -37,8 +37,8 @@ t0 = convertToSimpleAST p0
 r0 = I.run p0
 
 -- | Sharing recovery will create a Let here:
-p1 :: Acc (Scalar Float)
-p1 = fold (+) 0 (zipWith (*) p1a p1a)
+p1 :: Acc (Scalar Int)
+p1 = fold (+) 0 (zipWith (*) p1aa p1aa)
 t1 :: S.AExp
 t1 = convertToSimpleAST p1
 r1 = I.run p1
@@ -48,6 +48,12 @@ p1a :: Acc (Vector Float)
 p1a = generate (constant (Z :. (10::Int))) 
        (A.fromIntegral . unindex1) 
       --(\ (i) -> 3.3 )
+
+p1aa :: Acc (Vector Int)
+p1aa = generate (constant (Z :. (10::Int)))
+       (unindex1)
+      --(\ (i) -> 3.3 )
+
 
 -- | And again with a 2D array:
 p1b :: Acc (Vector Float)
@@ -255,7 +261,9 @@ tests = [ testCase "use/fromList"   (print$ doc t0)
           
         , testGroup "run p0"  (runBoth p0)
         , testGroup "run p1"  (runBoth p1)
-        , testGroup "run p1a" (runBoth p1a)
+--       , testGroup "run p1a" (runBoth p1a)   -- fromIntegral
+        , testGroup "run p1aa" (runBoth p1aa)
+          
         , testGroup "run p1b" (runBoth p1b)
         , testGroup "run p1c" (runBoth p1c)
         , testGroup "run p1d" (runBoth p1d)

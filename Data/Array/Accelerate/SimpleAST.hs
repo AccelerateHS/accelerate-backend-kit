@@ -195,7 +195,7 @@ data Prim = NP NumPrim
           
 -- | Primitives that operate on /all/ numeric types.
 --   Neg/Abs/Sig are unary:
-data NumPrim = Add | Mul | Neg | Abs | Sig
+data NumPrim = Add | Sub | Mul | Neg | Abs | Sig
   deriving (Read,Show,Eq,Ord,Generic)
 
 -- | Primitive integral-only operations.
