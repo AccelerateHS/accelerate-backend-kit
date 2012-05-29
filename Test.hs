@@ -267,7 +267,7 @@ tests = [ testCase "use/fromList"   (print$ doc t0)
           
         , testGroup "run p2" (runBoth p2)
         , testGroup "run p2a" (runBoth p2a)          
---        , testGroup "run p2b" (runBoth p2b) -- EIndexHeadDynamic
+        , testGroup "run p2b" (runBoth p2b) -- EIndexHeadDynamic
         , testGroup "run p2c" (runBoth p2c)
         , testGroup "run p2d" (runBoth p2d)
         , testGroup "run p2e" (runBoth p2e)

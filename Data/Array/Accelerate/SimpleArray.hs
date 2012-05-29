@@ -379,7 +379,6 @@ splitComponent x@(AccArray _ ls) =
          " components, needs at least two:\n   "++ show x
 
 
--- indexArray :: Num a => AccArray -> [a] -> Const 
 
 -- | Dereference an element from an AccArray.
 -- 
@@ -399,6 +398,7 @@ indexArray (AccArray dims payloads) ind =
     multipliers = scanr (*) 1 (init dims) -- The rightmost gets a 1 multiplier.
     position = sum $ zipWith (*) multipliers ind
 
+-- Private helper
 tuple :: [Const] -> Const
 tuple [x] = x
 tuple ls  = Tup ls

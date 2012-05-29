@@ -109,7 +109,8 @@ evalA env ae = finalArr
        -- dimensions.  Varying indices in those dimensions will not
        -- change the value contained in the indexed slot in the array.
        Replicate (TArray _dim elty) slcSig ex ae ->          
-         trace ("REPLICATING "++show finalElems ++ " newdims "++show dimsOut ++ " dims in "++show dimsIn) $
+         trace ("[dbg] REPLICATING to "++show finalElems ++ " elems, newdims "++show newDims ++ " dims in "++show dimsIn) $
+         trace ("[dbg]   replicatation index stream: "++show (map (map constToInteger . untuple) allIndices)) $ 
          if length dimsOut /= replicateDims || 
             length dimsIn  /= retainDims
          then error$ "replicate: replicating across "++show slcSig
@@ -121,9 +122,10 @@ evalA env ae = finalArr
               payloadsFromList elty $ 
               map (\ ind -> let intind = map (fromIntegral . constToInteger) (untuple ind) in 
                             indexArray inArray (unliftInd intind))
-                  (indexSpace newDims)
+                  allIndices
         where
-           newDims = injectDims dimsIn slcSig dimsOut
+           allIndices = indexSpace newDims
+           newDims    = injectDims dimsIn slcSig dimsOut
            replicateDims = length $ filter (== Fixed) slcSig
            retainDims    = length $ filter (== All)   slcSig
            -- These are ONLY the new replicated dimensions (excluding All fields):
@@ -293,11 +295,15 @@ evalE env expr =
 
 --------------------------------------------------------------------------------
 
--- Create a list of Const/int indices corresponding to the index space
--- of an Accelerate array, layed out in the appropriate order for
--- Accelerate.  indexSpace [n] = map I [0..n-1]
+-- | Create a list of Const/int indices corresponding to the index space
+--   of an Accelerate array, layed out in the appropriate order for
+--   Accelerate.  
+--                                  
+-- Note that indices in this interpreter are in REVERSE ORDER from
+-- Accelerate source code.  The fastest changing dimension is the LEFTMOST.
 indexSpace :: [Int] -> [Const]
-indexSpace = map tuple . loop 
+indexSpace inds = map (tuple . reverse) $ 
+                  loop (reverse inds)
   where 
     loop :: [Int] -> [[Const]]
     loop []  = []
