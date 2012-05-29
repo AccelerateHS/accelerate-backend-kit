@@ -59,13 +59,6 @@ evalA :: Env -> AExp -> AccArray
 evalA env ae = finalArr
   where 
    ArrVal finalArr = loop ae 
-      
-   -- Unary tuples do not exist in the language:
-   tuple [x] = x
-   tuple ls  = Tup ls
-
-   untuple (TupVal ls) = ls
-   untuple x           = [x]
 
    loop :: AExp -> Value
    loop aexp =
@@ -94,9 +87,6 @@ evalA env ae = finalArr
              (indexSpace dims)
                   
          where 
-           -- UNFINISHED: needs to be much more general:
-           indexSpace [n] = map I [0..n-1]
-           
            dims = 
              -- Indices can be arbitrary shapes:
              case evalE env eSz of 
@@ -128,9 +118,12 @@ evalA env ae = finalArr
            newDims = injectDims dimsIn slcSig dimsOut
            replicateDims = length $ filter (== Fixed) slcSig
            retainDims    = length $ filter (== All)   slcSig
+           -- These are ONLY the new replicated dimensions (excluding All fields):
            dimsOut = case evalE env ex of 
-                      ConstVal (I n)    -> [n]
-                      ConstVal (Tup []) -> []
+                      ConstVal s | isIntConst s -> [fromIntegral$ constToInteger s]
+                      ConstVal (Tup ls) -> 
+                        map (fromIntegral . constToInteger) $ 
+                        filter isNumConst ls
 --                      TupVal ls -> map (\ (ConstVal (I n)) -> n) ls
                       oth -> error $ "replicate: bad first argument to replicate: "++show oth
            AccArray dimsIn payls = evalA env ae
@@ -270,18 +263,49 @@ evalE env expr =
     ETupProjectFromRight ind ex -> 
       case (ind, evalE env ex) of 
         (_,ConstVal (Tup ls)) -> ConstVal$ reverse ls !! ind
+        (ind,TupVal ls)       -> reverse ls !! ind
         (0,ConstVal scalar)   -> ConstVal$ scalar 
+        (ind,const) -> error$ "ETupProjectFromRight: could not index position "
+                       ++ show ind ++ " in tuple " ++ show const
 
     EIndex indls       -> error "UNFINISHED: EIndex"
     EIndexAny          -> error "UNFINISHED: EIndexAny"
     EIndexConsDynamic e1 e2 -> error "UNFINISHED: EIndexConsDynamic"
-    EIndexHeadDynamic ex    -> error "UNFINISHED: EIndexHeadDynamic"
-    EIndexTailDynamic ex    -> error "UNFINISHED: EIndexTailDynamic"
+    EIndexHeadDynamic ex    -> case evalE env ex of 
+                                 ConstVal (Tup ls) -> ConstVal (head ls)
+    EIndexTailDynamic ex    -> case evalE env ex of 
+                                 ConstVal (Tup ls) -> ConstVal (Tup (tail ls))
         
 
 --------------------------------------------------------------------------------
 
 indexArray = error "UNFINISHED: implement indexArray"
+
+
+-- Create a list of Const/int indices corresponding to the index space
+-- of an Accelerate array, layed out in the appropriate order for
+-- Accelerate.  indexSpace [n] = map I [0..n-1]
+indexSpace :: [Int] -> [Const]
+indexSpace = map tuple . loop 
+  where 
+    loop :: [Int] -> [[Const]]
+    loop []  = []
+    loop [n] = map (\i -> [I i]) [0..n-1]
+    loop (hd:tl) = 
+      let rest = loop tl in
+      concatMap (\ i -> map (I i:) rest)
+                [0..hd-1]
+  -- map I [0..n-1]
+           
+
+-- Unary tuples do not exist in the language:
+tuple [x] = x
+tuple ls  = Tup ls
+
+untuple (TupVal ls) = ls
+untuple x           = [x]
+
+
 
 --------------------------------------------------------------------------------
 

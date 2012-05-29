@@ -21,7 +21,7 @@ module Data.Array.Accelerate.SimpleAST
      SliceType(..), SliceComponent(..),
            
      -- * Helper routines and predicates:
-     var, primArity,
+     var, primArity, constToInteger,
      isIntType, isFloatType, isNumType, 
      isIntConst, isFloatConst, isNumConst
     )   
@@ -403,6 +403,25 @@ isFloatConst c =
 isNumConst ty = isIntConst ty || isFloatConst ty
 
 
+-- | Convert any const satisfying `isIntConst` into a Haskell
+-- `Integer` value.
+constToInteger c = 
+  case c of 
+    I   i -> toInteger i
+    I8  i -> toInteger i
+    I16 i -> toInteger i
+    I32 i -> toInteger i
+    I64 i -> toInteger i
+    W   i -> toInteger i
+    W8  i -> toInteger i
+    W16 i -> toInteger i
+    W32 i -> toInteger i
+    W64 i -> toInteger i
+    CS  i -> toInteger i
+    CI  i -> toInteger i
+    CL  i -> toInteger i 
+    CLL i -> toInteger i 
+    CUS i -> toInteger i 
 
 --------------------------------------------------------------------------------
 -- Boilerplate for generic pretty printing:
