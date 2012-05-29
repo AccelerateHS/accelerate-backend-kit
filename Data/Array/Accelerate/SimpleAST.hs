@@ -80,7 +80,12 @@ var :: String -> Var
 -- Accelerate Array-level Expressions
 --------------------------------------------------------------------------------
 
--- | Array-level expressions
+-- | Array-level expressions.  
+-- 
+-- Many of these constructors contain the result type as the first
+-- field.  Types on `Let`s are the only really important ones, but the
+-- others can reduce headaches when consuming the AST for constructs
+-- like Replicate that change the type.
 data AExp = 
     Vr Var -- Array variable bound by a Let.
   | Unit Exp -- Turn an element into a singleton array
@@ -91,9 +96,9 @@ data AExp =
     
   | Apply AFun AExp              -- Function $ Argument
   | Cond Exp AExp AExp           -- Array level if statements
-  | Use  Type AccArray           -- A real live ARRAY goes here!
-  | Generate Type Exp Fun        -- Generate Function Array, very similar to map
-  | Replicate SliceType Exp AExp -- Replicate array across one or more dimensions.
+  | Use       Type AccArray      -- A real live ARRAY goes here!
+  | Generate  Type Exp Fun       -- Generate Function Array, very similar to map
+  | Replicate Type SliceType Exp AExp -- Replicate array across one or more dimensions.
   | Index     SliceType AExp Exp -- Index a sub-array (slice).
                                  -- Index sliceIndex Array SliceDims
   | Map      Fun AExp            -- Map Function Array

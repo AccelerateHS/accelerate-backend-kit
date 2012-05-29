@@ -211,9 +211,11 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
     Scanr1 f   acc -> S.Scanr1 <$> convertFun f
                                <*> convertAcc acc
 
-    Replicate sliceIndex slix a ->       
-      S.Replicate (cvtSlice sliceIndex) <$> convertExp slix 
-                                        <*> convertAcc a
+    Replicate sliceIndex slix a ->
+      S.Replicate (getAccTypePre eacc) 
+                  (cvtSlice sliceIndex) 
+                  <$> convertExp slix 
+                  <*> convertAcc a
     Index sliceIndex acc slix -> 
       S.Index (cvtSlice sliceIndex)     <$> convertAcc acc
                                         <*> convertExp slix

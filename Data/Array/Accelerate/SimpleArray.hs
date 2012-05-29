@@ -23,7 +23,7 @@ module Data.Array.Accelerate.SimpleArray
      Data.Array.Accelerate.SimpleArray.replicate,      
      
      -- * Functions for operating on payloads (internal components of AccArrays)     
-     payloadToList, payloadsFromList,
+     payloadToList, payloadsFromList, payloadsFromList1,
      payloadLength, 
      mapPayload, indexPayload,
      
@@ -195,7 +195,7 @@ mapArray fn (AccArray sh pls) =
   -- For the time being we fall back to an extremely inefficient
   -- system.  This function should only ever be really be used for
   -- non-performance-critical reference implemenatations.
-  AccArray sh $ payloadsFromList $ 
+  AccArray sh $ payloadsFromList1 $ 
   map fn $ 
   map Tup $ L.transpose $ map payloadToList pls
 
@@ -255,11 +255,38 @@ rebuild first fn arr =
 --   thing to do, and in performant code you should never convert
 --   arrays to or from lists.
 --   
+--   The first argument is the exected element type.
+--   
 --   More than one `ArrayPayload` output is produced when the inputs
 --   are tuple constants.
-payloadsFromList :: [Const] -> [ArrayPayload]
-payloadsFromList [] = error "payloadFromList: cannot convert empty list -- what are the type of its contents?"
-payloadsFromList ls@(hd:_) = 
+payloadsFromList :: Type -> [Const] -> [ArrayPayload]
+payloadsFromList ty ls = 
+  case ty of 
+    TInt   -> [ArrayPayloadInt    $ fromL $ map unI   ls]
+    TInt8  -> [ArrayPayloadInt8   $ fromL $ map unI8  ls]
+    TInt16  -> [ArrayPayloadInt16  $ fromL $ map unI16 ls]
+    TInt32  -> [ArrayPayloadInt32  $ fromL $ map unI32 ls]
+    TInt64  -> [ArrayPayloadInt64  $ fromL $ map unI64 ls]
+    TWord    -> [ArrayPayloadWord   $ fromL $ map unW   ls]
+    TWord8   -> [ArrayPayloadWord8  $ fromL $ map unW8  ls]
+    TWord16  -> [ArrayPayloadWord16 $ fromL $ map unW16 ls]
+    TWord32  -> [ArrayPayloadWord32 $ fromL $ map unW32 ls]
+    TWord64  -> [ArrayPayloadWord64 $ fromL $ map unW64 ls]
+    TFloat  -> [ArrayPayloadFloat  $ fromL $ map unF   ls]
+    TDouble -> [ArrayPayloadDouble $ fromL $ map unD   ls]
+    TChar   -> [ArrayPayloadChar   $ fromL $ map unC   ls]
+    TBool   -> [ArrayPayloadBool   $ fromL $ map fromBool ls]
+    TTuple tys -> concatMap (uncurry payloadsFromList)                 
+                            (zip tys (L.transpose $ map unTup ls))
+    oth -> error$"payloadsFromList: This constant should not be found inside an ArrayPayload: "++show oth
+
+
+-- | Same as `payloadsFromList` but requires that the list be
+--   non-empty.  The type is inferred from the type of the contained
+--   `Const`s.
+payloadsFromList1 :: [Const] -> [ArrayPayload]
+payloadsFromList1 [] = error "payloadFromList1: cannot convert empty list -- what are the type of its contents?"
+payloadsFromList1 ls@(hd:_) = 
   case hd of 
     I   _ -> [ArrayPayloadInt    $ fromL $ map unI   ls]
     I8  _ -> [ArrayPayloadInt8   $ fromL $ map unI8  ls]
@@ -275,9 +302,10 @@ payloadsFromList ls@(hd:_) =
     D   _ -> [ArrayPayloadDouble $ fromL $ map unD   ls]
     C   _ -> [ArrayPayloadChar   $ fromL $ map unC   ls]
     B   _ -> [ArrayPayloadBool   $ fromL $ map fromBool ls]
-    Tup _ -> concatMap payloadsFromList $ 
+    Tup _ -> concatMap payloadsFromList1 $ 
              L.transpose $ map unTup ls
-      
+    oth -> error$"payloadsFromList1: This constant should not be found inside an ArrayPayload: "++show oth      
+
 -- | Unpack a payload into a list of Const.  Inefficient!
 payloadToList :: ArrayPayload -> [Const]
 payloadToList payl =   

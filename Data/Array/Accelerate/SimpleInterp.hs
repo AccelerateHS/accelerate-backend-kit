@@ -81,13 +81,13 @@ evalA env ae = finalArr
                             ConstVal (B False) -> loop ae3
 
        Use _ty arr -> ArrVal arr
-       Generate _ty eSz (Lam [(vr,vty)] bodE) ->
-         trace ("[dbg] GENERATING: "++ show dims ++" "++ show _ty) $ 
+       Generate (TArray _dim elty) eSz (Lam [(vr,vty)] bodE) ->
+         trace ("[dbg] GENERATING: "++ show dims ++" "++ show elty) $ 
          
          -- It's tricky to support elementwise functions that produce
          -- tuples, which in turn need to be unpacked into a
          -- multi-payload array....
-         ArrVal $ AccArray dims $ payloadsFromList $ 
+         ArrVal $ AccArray dims $ payloadsFromList elty $ 
          map (\ind -> valToConst $ evalE env (ELet vr vty (EConst ind) bodE)) 
              (indexSpace dims)
                   
@@ -108,14 +108,17 @@ evalA env ae = finalArr
        -- "Fixed" dimensions on the other hand are the replication
        -- dimensions.  Varying indices in those dimensions will not
        -- change the value contained in the indexed slot in the array.
-       Replicate slcSig ex ae ->          
+       Replicate (TArray _dim elty) slcSig ex ae ->          
          trace ("REPLICATING "++show finalElems ++ " newdims "++show dimsOut ++ " dims in "++show dimsIn) $
          if length dimsOut /= replicateDims || 
             length dimsIn  /= retainDims
          then error$ "replicate: replicating across "++show slcSig
                   ++ " dimensions whereas the first argument to replicate had dimension "++show dimsOut
+         else if replicateDims == 0  -- This isn't a replication at all!
+         then ArrVal $ inArray
+         
          else ArrVal $ AccArray newDims $ 
-              payloadsFromList $ 
+              payloadsFromList elty $ 
               map (\ ind -> let intind = map (fromIntegral . constToInteger) (untuple ind) in 
                             indexArray inArray (unliftInd intind))
                   (indexSpace newDims)
@@ -156,15 +159,6 @@ evalA env ae = finalArr
            unliftLoop (All:sig)   (i:inds) = i : unliftLoop sig inds
 
 
-       -- UNFINISHED:        
-
-           -- This is potentially very inefficient.  It builds up a long list.
-           -- 
-           -- First case: Innermost dimension - the original data `outdim` times:
-           loop []       [Fixed]  [outdim]  orig  = concat $ Prelude.replicate outdim orig
-           loop [indim]  [All]    []        orig  = error "UNFINISHED: replicate(1)"
-           loop []  (All:slcRst) (outdim:outRst) orig = error "UNFINISHED: replicate(2)"
-           loop a b c _ = error$ "evalA/replicate/loop: unhandled case: "++ show a ++" "++ show b++" "++ show c
            
        --------------------------------------------------------------------------------
        Map (Lam [(v,vty)] bod) ae -> 
@@ -185,7 +179,7 @@ evalA env ae = finalArr
          where 
            a1@(AccArray dims1 pays1) = evalA env ae1
            a2@(AccArray dims2 pays2) = evalA env ae2
-           final = concatMap payloadsFromList $ 
+           final = concatMap payloadsFromList1 $ 
                    L.transpose $ 
                    zipWith evaluator 
                            (L.transpose$ map payloadToList pays1)
