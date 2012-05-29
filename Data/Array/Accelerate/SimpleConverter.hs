@@ -522,7 +522,7 @@ convertConst ty c =
 -- Convert Accelerate Primitive Applications: 
 --------------------------------------------------------------------------------
 
-convertPrimApp :: (Sug.Elt a, Sug.Elt b)
+convertPrimApp :: forall a b env aenv . (Sug.Elt a, Sug.Elt b)
                => PrimFun (a -> b) -> PreOpenExp OpenAcc env aenv a
                -> EnvM S.Exp               
 convertPrimApp p arg = 
@@ -530,8 +530,10 @@ convertPrimApp p arg =
      args2 <- convertExp arg
      return (loop args2)
  where 
-   -- Push primapps inside lets:
+   -- ASSUMPTION!  We assume that there is nothing keeping the primapp
+   -- from its args except for Lets...
    loop :: S.Exp -> S.Exp
+   -- Push primapps inside lets:
    loop args' = case args' of 
                   S.ELet v sty e1 e2 ->
                     S.ELet v sty e1 (loop e2)
@@ -539,11 +541,12 @@ convertPrimApp p arg =
                   S.ETuple ls -> mkPapp ls
                   oth         -> mkPapp [oth]
                   
+   ty = getExpType (error "convertPrimApp: dummy value should not be used" :: OpenExp env aenv b)
    mkPapp ls = if length ls == arity
-               then S.EPrimApp newprim ls
+               then S.EPrimApp ty newprim ls
                else error$"SimpleConverter.convertPrimApp: wrong number of arguments to prim "
                     ++show newprim++": "++ show ls
-   arity   = S.primArity newprim             
+   arity   = S.primArity newprim
    newprim = op p 
    op pr   = 
     case pr of 

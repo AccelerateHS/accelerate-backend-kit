@@ -276,7 +276,7 @@ evalE env expr =
     EShapeSize ex      -> case evalE env ex of 
                             _ -> error "need more work on shapes"
 
-    EPrimApp p es      -> evalPrim p (map (evalE env) es)
+    EPrimApp ty p es  -> evalPrim ty p (map (evalE env) es)
 
     ETupProjectFromRight ind ex -> 
       case (ind, evalE env ex) of 
@@ -334,25 +334,38 @@ untupleVal (ArrVal a)   = [ArrVal a]
 
 --------------------------------------------------------------------------------
 
-evalPrim :: Prim -> [Value] -> Value
-evalPrim p [] = 
-  case p of 
-    NP Add -> ConstVal (I 0)
+evalPrim :: Type -> Prim -> [Value] -> Value
+-- evalPrim ty p [] = 
+--   case p of 
+--     NP Add -> ConstVal (I 0)
       
-evalPrim p es = 
+evalPrim ty p [x,y] = 
   case p of 
-    NP Add -> ConstVal (foldl1 add (map valToConst es))
-    NP Mul -> ConstVal (foldl1 mul (map valToConst es))
-    NP Neg -> ConstVal (neg  $ valToConst $ head es)
-    NP Abs -> ConstVal (absv $ valToConst $ head es)
-    NP Sig -> ConstVal (sig  $ valToConst $ head es)
+--    NP Add -> ConstVal (foldl1 add (map valToConst es))
+--    NP Mul -> ConstVal (foldl1 mul (map valToConst es))
+--    NP Neg -> ConstVal (neg  $ valToConst $ head es)
+--    NP Abs -> ConstVal (absv $ valToConst $ head es)
+--    NP Sig -> ConstVal (sig  $ valToConst $ head es)
     
+    NP Add -> ConstVal (add (valToConst x) (valToConst y))
+    NP Mul -> ConstVal (mul (valToConst x) (valToConst y))
+    
+evalPrim ty p [x] = 
+  case p of 
+    NP Neg -> ConstVal (neg  $ valToConst x)
+    NP Abs -> ConstVal (absv $ valToConst x)
+    NP Sig -> ConstVal (sig  $ valToConst x)
+
 --           | IP IntPrim
 --           | FP FloatPrim
 --           | SP ScalarPrim
 --           | BP BoolPrim
 --           | OP OtherPrim
-    OP FromIntegral -> error "evalPrim: Need more type information to implement this..."
+    OP FromIntegral -> ConstVal $       
+      case ty of 
+        TFloat  -> F$ fromConst (valToConst x)
+        TDouble -> D$ fromConst (valToConst x)
+--      error "evalPrim: Need more type information to implement this..."
 
     _ -> error$"UNFINISHED: evalPrim needs to be extended to handle all primitives: "++show p
 

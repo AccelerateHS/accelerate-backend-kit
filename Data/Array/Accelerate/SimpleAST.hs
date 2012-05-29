@@ -1,7 +1,7 @@
 {-# LANGUAGE DeriveGeneric, CPP #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE FlexibleContexts #-}
--- {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 -- TEMP: for UArray Read instance:
 {-# LANGUAGE ScopedTypeVariables, FlexibleInstances #-}
 module Data.Array.Accelerate.SimpleAST  
@@ -21,7 +21,7 @@ module Data.Array.Accelerate.SimpleAST
      SliceType(..), SliceComponent(..),
            
      -- * Helper routines and predicates:
-     var, primArity, constToInteger,
+     var, primArity, constToInteger, fromConst, 
      isIntType, isFloatType, isNumType, 
      isIntConst, isFloatConst, isNumConst
     )   
@@ -140,7 +140,7 @@ data Exp =
     EVr Var -- Variable bound by a Let.
   | ELet Var Type Exp Exp    -- ELet Var Type RHS Body
   -- ELet is used for common subexpression elimination
-  | EPrimApp Prim [Exp]  -- *Any* primitive scalar function
+  | EPrimApp Type Prim [Exp]  -- *Any* primitive scalar function, including type of return value.
   | ETuple [Exp]
   | EConst Const
    -- [2012.04.02] I can't presently compute the length from the TupleIdx.
@@ -421,7 +421,66 @@ constToInteger c =
     CI  i -> toInteger i
     CL  i -> toInteger i 
     CLL i -> toInteger i 
-    CUS i -> toInteger i 
+    CUS n -> toInteger n
+    CUI n -> toInteger n
+    CUL n -> toInteger n
+    CULL n -> toInteger n
+    CC   n  -> toInteger n
+    CUC  n  -> toInteger n
+    CSC  n  -> toInteger n
+    F    _  -> error "constToInteger: cannot convert TFloat Const to Integer"
+    CF   _  -> error "constToInteger: cannot convert TCFloat Const to Integer"
+    D    _  -> error "constToInteger: cannot convert TDouble Const to Integer"
+    CD   _  -> error "constToInteger: cannot convert TCDouble Const to Integer"
+    C    _  -> error "constToInteger: cannot convert TChar Const to Integer"
+    B    _  -> error "constToInteger: cannot convert TBool Const to Integer"
+    Tup  _  -> error "constToInteger: cannot convert tuple Const to Integer"
+
+-- TODO: we could go this route in the future:
+
+-- instance Num  Const where 
+-- instance Real Const where 
+-- instance Ord  Const where 
+
+-- -- For convenience we make it possible to call Haskell functions
+-- -- directly on "Consts".  Be warned that these are PARTIAL functions,
+-- -- some Consts and combinations of Consts certainly lead to errors.
+-- instance Integral Const where 
+--   toInteger x = 
+  
+fromConst :: Num a => Const -> a 
+fromConst c = 
+  case c of 
+    I   n -> fromIntegral n
+    I8  n -> fromIntegral n
+    I16 n -> fromIntegral n
+    I32 n -> fromIntegral n
+    I64 n -> fromIntegral n
+    W   n -> fromIntegral n
+    W8  n -> fromIntegral n
+    W16 n -> fromIntegral n
+    W32 n -> fromIntegral n
+    W64 n -> fromIntegral n
+    CS  n -> fromIntegral n
+    CI  n -> fromIntegral n
+    CL  n -> fromIntegral n
+    CLL n -> fromIntegral n
+    CUS n -> fromIntegral n
+    CUI n -> fromIntegral n
+    CUL n -> fromIntegral n
+    CULL n -> fromIntegral n
+    CC   n  -> fromIntegral n
+    CUC  n  -> fromIntegral n
+    CSC  n  -> fromIntegral n
+    F    _  -> error "fromConst: cannot convert TFloat Const to a Num"
+    CF   _  -> error "fromConst: cannot convert TCFloat Const to a Num"
+    D    _  -> error "fromConst: cannot convert TDouble Const to a Num"
+    CD   _  -> error "fromConst: cannot convert TCDouble Const to a Num"
+    C    _  -> error "fromConst: cannot convert TChar Const to a Num"
+    B    _  -> error "fromConst: cannot convert TBool Const to a Num"
+    Tup  _  -> error "fromConst: cannot convert tuple Const to a Num"
+    
+
 
 --------------------------------------------------------------------------------
 -- Boilerplate for generic pretty printing:
@@ -479,6 +538,8 @@ instance (Read elt, U.IArray UArray elt) => Read (U.UArray Int elt) where
 
 test :: UArray Int Int
 test = read "array (1,5) [(1,200),(2,201),(3,202),(4,203),(5,204)]" :: U.UArray Int Int
+
+
 
 
 

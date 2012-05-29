@@ -261,7 +261,7 @@ tests = [ testCase "use/fromList"   (print$ doc t0)
           
         , testGroup "run p0"  (runBoth p0)
         , testGroup "run p1"  (runBoth p1)
---       , testGroup "run p1a" (runBoth p1a)   -- fromIntegral
+        , testGroup "run p1a" (runBoth p1a)   -- fromIntegral
         , testGroup "run p1aa" (runBoth p1aa)
           
         , testGroup "run p1b" (runBoth p1b)
