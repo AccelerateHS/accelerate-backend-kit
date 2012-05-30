@@ -151,7 +151,7 @@ data Exp =
    -- [2012.04.02] I can't presently compute the length from the TupleIdx.
    --  | EPrj Int Int Exp  -- n m e : Project the nth field of an m-length tuple.
   | ETupProjectFromRight Int Exp  -- Project the nth field FROM THE RIGHT end of the tuple.  
-  | EIndex [Exp] -- Index into a multi-dimensional array:
+  | EIndex [Exp] -- An index into a multi-dimensional array:
   | EIndexAny 
   -- I'm not sure I'm following this -- 
   -- Accelerate would seem to allow run-time CONSING of indices:

@@ -40,7 +40,10 @@ run acc =
 -- Values and Environments:
 
 type Env = M.Map Var Value
-lookup = error "UNFINISHED: lookup"
+envLookup env vr = 
+  case M.lookup vr env of 
+    Just x -> x 
+    Nothing -> error$ "envLookup: no binding for variable "++show vr
 
 -- | The value representation for the interpreter.
 -- 
@@ -61,7 +64,9 @@ valToConst (ArrVal a)    = error$ "cannot convert Array value to Const: "++show 
 -- Evaluation:
 
 evalA :: Env -> AExp -> AccArray
-evalA env ae = finalArr
+evalA env ae = 
+    trace ("[dbg] evalA with environment: "++show env++"\n    "++show ae)
+    finalArr
   where 
    ArrVal finalArr = loop ae 
 
@@ -69,10 +74,10 @@ evalA env ae = finalArr
    loop aexp =
      case aexp of 
        --     Vr Var -- Array variable bound by a Let.
-       Vr  v             -> env M.! v
+       Vr  v             -> envLookup env v
        Let vr ty lhs bod -> ArrVal$ evalA (M.insert vr (loop lhs) env) bod
 
-       Unit e -> case evalE M.empty e of 
+       Unit e -> case evalE env e of 
                    ConstVal c -> ArrVal$ SA.replicate [] c
        ArrayTuple aes -> TupVal (map loop aes)
 
@@ -225,7 +230,7 @@ evalA env ae = finalArr
                          M.insert v2 (ConstVal$ lookup offset) env) 
                         bodE 
        
-       Index     slcty ae ex -> error "UNFINISHED: Index"
+       Index     slcty  ae ex -> error "UNFINISHED: Index"
        TupleRefFromRight i ae -> error "UNFINISHED: TupleRefFromRight"
        Apply afun ae          -> error "UNFINISHED: Apply"
 
@@ -250,7 +255,7 @@ evalA env ae = finalArr
 evalE :: Env -> Exp -> Value
 evalE env expr = 
   case expr of 
-    EVr  v             -> env M.! v
+    EVr  v             -> envLookup env v
     ELet vr _ty lhs bod -> evalE (M.insert vr (evalE env lhs) env) bod
     ETuple es          -> TupVal$ map (evalE env) es
     EConst c           -> ConstVal c
@@ -279,9 +284,14 @@ evalE env expr =
         (ind,const) -> error$ "ETupProjectFromRight: could not index position "
                        ++ show ind ++ " in tuple " ++ show const
 
-    EIndex indls       -> error "UNFINISHED: EIndex"
-    EIndexAny          -> error "UNFINISHED: EIndexAny"
-    EIndexConsDynamic e1 e2 -> error "UNFINISHED: EIndexConsDynamic"
+    -- This is our chosen representation for index values:
+    EIndex indls       -> let ls = map (valToConst . evalE env) indls in
+                          ConstVal$ tuple ls
+    
+    EIndexAny          -> error "UNFINISHED: evalE of EIndexAny"
+    EIndexConsDynamic e1 e2 -> case (evalE env e1, evalE env e2) of
+                                 (ConstVal c1, ConstVal c2) -> ConstVal (Tup (c1 : untuple c2))
+                                   
     EIndexHeadDynamic ex    -> case evalE env ex of 
                                  ConstVal (Tup ls) -> ConstVal (head ls)
                                  ConstVal c        -> ConstVal c 
