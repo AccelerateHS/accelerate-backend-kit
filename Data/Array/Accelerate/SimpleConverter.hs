@@ -38,6 +38,8 @@ import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import qualified Data.Array.Accelerate.SimpleAST   as S
 import qualified Data.Array.Accelerate.SimpleArray as SA
 
+import Text.PrettyPrint.GenericPretty (Out(doc), Generic)
+
 import Data.Map as M
 import qualified Data.List as L
 
@@ -449,11 +451,17 @@ convertType ty =
 --   That is, an array of ints will come out as just an array of ints
 --   with no extra fuss.
 convertArrayType :: forall arrs . Sug.ArraysR arrs -> S.Type
-convertArrayType ty = 
-    case loop ty of 
-      S.TTuple [S.TTuple [], realty] -> realty
-      t -> error$ "SimpleConverter: made invalid assumuptions about array types from Acc frontend: "++show t
+convertArrayType ty = tupleTy $ flatten $ loop ty
   where 
+    -- Flatten the snoc-list representation of tuples, at the array as well as scalar level
+    flatten (S.TTuple [S.TTuple [], realty]) = [realty] -- Shave off the "endcap" unit.
+    flatten (S.TTuple [deeper, head]) = head : flatten deeper
+    flatten t = error$ "convertArrayType: made invalid assumuptions about array\n"++
+                "       types from Acc frontend, expecting ((),a), received:\n"++show(doc t)
+
+    tupleTy [ty] = ty
+    tupleTy ls = S.TTuple ls
+
     loop :: forall arrs . Sug.ArraysR arrs -> S.Type
     loop ty = 
       case ty of 
