@@ -671,9 +671,10 @@ staticTupleIndices ae = aexp M.empty ae
        S.TupleRefFromRight ind ae -> S.TupleRefFromRight ind (aexp tenv ae)
 
        -- TODO: Inline apply:
-       S.Apply (S.ALam [(v,ty)] abod) ae -> 
+       S.Apply fn ae -> 
          S.Apply (S.ALam [(v,ty)] (aexp tenv' abod)) (aexp tenv ae)
          where tenv' = M.insert v ty tenv         
+               S.ALam [(v,ty)] abod = fn 
 
        S.Cond ex ae1 ae2 -> S.Cond (exp tenv ex) (aexp tenv ae1) (aexp tenv ae2)
        S.Use ty arr -> S.Use ty arr
@@ -681,35 +682,16 @@ staticTupleIndices ae = aexp M.empty ae
        S.Replicate aty slice ex ae -> S.Replicate aty slice (exp tenv ex) (aexp tenv ae)
        S.Index     slc ae ex -> S.Index slc (aexp tenv ae) (exp tenv ex)
               
-       S.Fold fn einit ae ->
-         S.Fold (lam2 tenv fn) (exp tenv einit) (aexp tenv ae)
-
-       S.Fold1 fn ae ->
-         S.Fold1 (lam2 tenv fn) (aexp tenv ae)
-
-       S.FoldSeg fn einit ae aeseg ->
-         S.FoldSeg (lam2 tenv fn) (exp tenv einit) (aexp tenv ae) (aexp tenv aeseg)
-
-       S.Fold1Seg fn ae aeseg ->
-         S.Fold1Seg (lam2 tenv fn) (aexp tenv ae) (aexp tenv aeseg)
-
-       S.Scanl fn einit ae ->
-         S.Scanl (lam2 tenv fn) (exp tenv einit) (aexp tenv ae)
-
-       S.Scanl' fn einit ae ->
-         S.Scanl' (lam2 tenv fn) (exp tenv einit) (aexp tenv ae)
-
-       S.Scanl1 fn ae ->
-         S.Scanl1 (lam2 tenv fn) (aexp tenv ae)
-
-       S.Scanr fn einit ae ->
-         S.Scanr (lam2 tenv fn) (exp tenv einit) (aexp tenv ae)
-
-       S.Scanr' fn einit ae ->
-         S.Scanr' (lam2 tenv fn) (exp tenv einit) (aexp tenv ae)
-
-       S.Scanr1 fn ae ->
-         S.Scanr1 (lam2 tenv fn) (aexp tenv ae)
+       S.Fold  fn einit ae         -> S.Fold  (lam2 tenv fn) (exp tenv einit) (aexp tenv ae)
+       S.Fold1 fn       ae         -> S.Fold1 (lam2 tenv fn) (aexp tenv ae)
+       S.FoldSeg fn einit ae aeseg -> S.FoldSeg  (lam2 tenv fn) (exp tenv einit) (aexp tenv ae) (aexp tenv aeseg)
+       S.Fold1Seg fn      ae aeseg -> S.Fold1Seg (lam2 tenv fn) (aexp tenv ae) (aexp tenv aeseg)
+       S.Scanl    fn einit ae      -> S.Scanl  (lam2 tenv fn) (exp tenv einit) (aexp tenv ae)
+       S.Scanl'   fn einit ae      -> S.Scanl' (lam2 tenv fn) (exp tenv einit) (aexp tenv ae)
+       S.Scanl1   fn       ae      -> S.Scanl1 (lam2 tenv fn) (aexp tenv ae)
+       S.Scanr    fn einit ae      -> S.Scanr  (lam2 tenv fn) (exp tenv einit) (aexp tenv ae)
+       S.Scanr'   fn einit ae      -> S.Scanr' (lam2 tenv fn) (exp tenv einit) (aexp tenv ae)
+       S.Scanr1   fn       ae      -> S.Scanr1 (lam2 tenv fn) (aexp tenv ae)
 
        S.Permute fn2 ae1 fn1 ae2 -> 
          S.Permute (lam2 tenv fn2) (aexp tenv ae1) 
@@ -727,74 +709,30 @@ staticTupleIndices ae = aexp M.empty ae
    lam2 tenv (S.Lam args@[(v1,ty1),(v2,ty2)] bod) = S.Lam args (exp tenv' bod)
      where tenv' = M.insert v1 ty1 $ M.insert v2 ty2 tenv
 
+   exp :: M.Map S.Var S.Type -> S.Exp -> S.Exp 
    exp tenv e = 
      case e of  
-       S.EVr vr -> S.EVr vr
---        EPrimApp p args -> parens$ spaces$ prim p : map exp args
---        ECond  e1 e2 e3 -> sexpFormLs "if" [exp e1, exp e2, exp e3]
---        EIndexScalar arr e -> sexpFormLs "vector-ref" $ [begin (aexp arr), exp e]
---        ESize arr -> sexpForm "vector-length" (begin$ aexp arr)
-       
---        EConst c -> const c 
---        ETuple ls -> error "unimplemented: add tuples to Harlan"
---        ETupProjectFromRight ind e -> error "unimplemented: add tuples to Harlan"
---        EIndex els -> error "unimplemented: add tuples to Harlan"
+       S.EVr vr -> S.EVr vr       
+       S.ELet vr ty rhs bod -> S.ELet vr ty (exp tenv' rhs) (exp tenv bod)
+         where tenv' = M.insert vr ty tenv
+       S.EPrimApp ty p args -> S.EPrimApp ty p (L.map (exp tenv) args)
+       S.ECond e1 e2 e3 -> S.ECond (exp tenv e1) (exp tenv e2) (exp tenv e3)
+       S.EIndexScalar ae ex -> S.EIndexScalar (aexp tenv ae) (exp tenv ex)
+       S.EShapeSize ex -> S.EShapeSize (exp  tenv ex)
+       S.EShape     ae -> S.EShape     (aexp tenv ae)
 
+       S.EConst c  -> S.EConst c 
+       S.ETuple ls -> S.ETuple (L.map (exp tenv) ls)
+       S.ETupProjectFromRight ind ex -> S.ETupProjectFromRight ind (exp tenv ex)
+       S.EIndex els -> error "staticTupleIndices: EIndex is slated to be removed"
+
+       -- TODO: Eliminate
        S.EIndexConsDynamic e1 e2 -> 
          -- This is potentially inefficient.
          error$"IndexCons - finish me"
---        EIndexHeadDynamic e -> error "unimplemented: add tuples to Harlan"
---        EIndexTailDynamic e -> error "unimplemented: add tuples to Harlan"
-
---        EShape arr -> error "unimplemented: implement array shapes in Harlan"
-
-   
---    prim :: Prim -> Builder
---    prim p = fromByteString $
---      case p of
---        NP Add -> "+"
---        NP Mul -> "*"
---        _ -> error$ "Accelerate primitive not current supported in Harlan backend: "++show p
-
---    const c =
---      case c of
---        I i   -> shwNum i
---        I8 i  -> shwNum i
---        I16 i -> shwNum i
---        I32 i -> shwNum i
---        I64 i -> shwNum i
---        W   i -> shwNum i
---        W8  i -> shwNum i
---        W16 i -> shwNum i
---        W32 i -> shwNum i
---        W64 i -> shwNum i
-       
---        F   f -> shwNum f
---        D   f -> shwNum f
---        -- FIXME: This is not a fullproof way to encode character constants:
---        C   c -> fromString$ "#\\" ++ [c]
---        B True  -> fromString "#t"
---        B False -> fromString "#f"
-
---        Tup ls -> error$ "unimplemented: tuple constants"
---        MinBound -> error$ "unimplemented: MinBound"
---        MaxBound -> error$ "unimplemented: MaxBound"
---        Pi       -> error$ "unimplemented: Pi"
---        CF cf -> error "unimplemented: CF"
---        CD cd -> error "unimplemented: CD"
---        CS cs ->  error "unimplemented: CS"
---        CI ci -> error "unimplemented: CI"
---        CL cl -> error "unimplemented: CL"
---        CLL cll -> error "unimplemented: CLL"
---        CUS cus -> error "unimplemented: CUS"
---        CUI cui -> error "unimplemented: CUI"
---        CUL cul -> error "unimplemented: CUL"
---        CULL cull -> error "unimplemented: CULL"
---        CC  cchar ->  error "unimplemented: CC"
---        CSC cschar -> error "unimplemented: CSC"
---        CUC cuchar -> error "unimplemented: CUC"
-
-
+         
+       S.EIndexHeadDynamic e -> error "unimplemented: eliminate indexheaddynamic"
+       S.EIndexTailDynamic e -> error "unimplemented: eliminate indextaildynamic"
 
 
 --------------------------------------------------------------------------------
