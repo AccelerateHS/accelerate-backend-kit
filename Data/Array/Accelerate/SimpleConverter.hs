@@ -307,7 +307,8 @@ convertExp e =
                              S.EIndex (_:tl) -> S.EIndex tl
                              S.EIndex []     -> error "IndexTail of empty index."
                              _               -> S.EIndexTailDynamic eix'
-    IndexAny       -> return S.EIndexAny
+    IndexAny       -> error "convertToSimpleAST: not expecting to observe IndexAny value."
+      -- return S.EIndexAny
 
     Cond c t ex -> S.ECond <$> convertExp c 
                            <*> convertExp t

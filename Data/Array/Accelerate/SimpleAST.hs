@@ -152,10 +152,9 @@ data Exp =
    --  | EPrj Int Int Exp  -- n m e : Project the nth field of an m-length tuple.
   | ETupProjectFromRight Int Exp  -- Project the nth field FROM THE RIGHT end of the tuple.  
   | EIndex [Exp] -- An index into a multi-dimensional array:
-  | EIndexAny 
-  -- I'm not sure I'm following this -- 
-  -- Accelerate would seem to allow run-time CONSING of indices:
-  -- In a staged model like this shouldn't we be able to get rid of that at metaprogram eval time?  
+--  | EIndexAny  
+  -- Accelerate allows run-time CONSING of indices:
+  -- (In a staged model like this shouldn't we be able to get rid of that at metaprogram eval time?)
   | EIndexConsDynamic Exp Exp
   | EIndexHeadDynamic Exp 
   | EIndexTailDynamic Exp 
@@ -278,7 +277,7 @@ type Dims = Int
 -- The result is that the "fastest varying" dimension is on the left
 -- in this representation.
 type SliceType      = [SliceComponent]
-data SliceComponent = Fixed | All
+data SliceComponent = Fixed | All 
   deriving (Eq,Show,Read,Generic)
 
 -- TEMP / OLD:

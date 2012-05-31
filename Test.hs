@@ -17,9 +17,9 @@ import Data.Int
 import Data.Array.Accelerate as A 
 import Data.Array.Accelerate.Interpreter
 
-import Test.Framework
+import Test.Framework (testGroup, defaultMain)
 import Test.Framework.Providers.HUnit
-import Test.HUnit 
+import Test.HUnit      ((~=?))
 import Data.List       (intersperse)
 import Data.List.Split (splitEvery)
 
@@ -221,6 +221,25 @@ p9b = map (\ e ->
           p9
  
 --------------------------------------------------------------------------------
+-- How do we create IndexAny?
+
+-- repN :: Int -> Array sh e -> Acc (Array (sh:.Int) e)
+-- repN n a = replicate (Any :. n) a
+
+repN :: (Shape sh, Elt e) => Int -> Acc (Array sh e) -> Acc (Array (sh:.Int) e)
+repN n a = replicate (constant$ Any :. n) a
+
+p10 :: Acc (Array DIM1 Float)
+p10 = repN 3 (unit 40.4)
+
+p10b :: Acc (Array DIM2 Float)
+p10b = repN 4 p10
+
+p10c :: Acc (Array DIM1 Float)
+p10c = replicate (constant$ Any :. (3::Int)) (unit 4.4)
+
+
+--------------------------------------------------------------------------------
 -- Let's print matrices nicely.
 
 padleft n str | length str >= n = str
@@ -297,6 +316,10 @@ tests = [ testCase "use/fromList"   (print$ doc t0)
         , testGroup "run p8" (runBoth p8)
         , testGroup "run p9" (runBoth p9)
         , testGroup "run p9b" (runBoth p9b)
+          
+        , testGroup "run p10" (runBoth p10)          
+        , testGroup "run p10b" (runBoth p10b)
+        , testGroup "run p10c" (runBoth p10c)        
         ]
  where
   runBoth p = (hUnitTestToTests$ Sug.toList (I.run p) ~=? Sug.toList (run p))

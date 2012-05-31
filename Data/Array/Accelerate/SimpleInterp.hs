@@ -288,7 +288,7 @@ evalE env expr =
     EIndex indls       -> let ls = map (valToConst . evalE env) indls in
                           ConstVal$ tuple ls
     
-    EIndexAny          -> error "UNFINISHED: evalE of EIndexAny"
+--    EIndexAny          -> error "UNFINISHED: evalE of EIndexAny - not implemented"
     EIndexConsDynamic e1 e2 -> case (evalE env e1, evalE env e2) of
                                  (ConstVal c1, ConstVal c2) -> ConstVal (Tup (c1 : untuple c2))
                                    
