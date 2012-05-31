@@ -148,7 +148,7 @@ p4b = let arr = generate (constant (Z :. (3::Int) :. (3::Int))) (\_ -> 33)
 t4b = convertToSimpleAST p4b
 
 
--- This one generates EIndex:
+-- This one generates EIndex. It creates an array containing a slice descriptor.
 p5 :: Acc (Scalar (((Z :. All) :. Int) :. All))
 p5 = unit$ lift $ Z :. All :. (2::Int) :. All
 t5 = convertToSimpleAST p5

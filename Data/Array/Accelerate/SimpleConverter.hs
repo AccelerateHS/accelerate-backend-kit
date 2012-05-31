@@ -857,9 +857,9 @@ packArray orig@(S.AccArray dims payloads) =
     -- Tuples are nested ON THE LEFT in Accelerate currently:
     -- In SimpleAST we ignore the extra unit on the end in the AccArray representation:
     (PairTuple UnitTuple (r::TupleType b),_)  -> AD_Pair AD_Unit (loop r payloads) 
---    (PairTuple (r::TupleType b) UnitTuple, _) -> AD_Pair (loop r payloads) AD_Unit 
-    (PairTuple t1 t2, [payl]) -> error$"packArray: encountered PairTuple but only one payload.\n Expected type: "
-                                 ++show tupTy++ "\n Payload: "++paystr
+    -- This might occur given our representation of `All` in slice descriptors:
+    -- But these units DON'T have a physical representation in the payloads:
+    (PairTuple (r::TupleType b) UnitTuple, _) -> AD_Pair (loop r payloads) AD_Unit 
     (PairTuple t1 t2, ls)  -> AD_Pair (loop t1 (init ls)) (loop t2 [last ls])
 
     (SingleTuple (NumScalarType (FloatingNumType (TypeFloat _))),  [S.ArrayPayloadFloat uarr])  -> AD_Float uarr
