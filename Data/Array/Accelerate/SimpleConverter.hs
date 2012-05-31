@@ -662,35 +662,35 @@ convertFun2 fn = do
 -- Compiler pass to remove dynamic cons/head/tail on indices.
 --------------------------------------------------------------------------------
 
-
-staticTupleIndices :: S.AExp -> S.AExp
-staticTupleIndices ae = aexp M.empty ae
+-- | This lowers the AST further /after/ conversion from Accelerate's
+--   front-end AST representation.  It removes unnecessary constructs.
+desugarConverted :: S.AExp -> S.AExp
+desugarConverted ae = aexp M.empty ae
  where
 --   aexp :: M.Map Var Int -> AExp -> [Builder]
    aexp tenv aex = 
      case aex of 
+       
+       -- Here we convert Apply to Let:
+       S.Apply fn ae -> 
+         S.Let (v,ty, aexp tenv' abod) (aexp tenv ae)
+         where tenv' = M.insert v ty tenv         
+               S.ALam [(v,ty)] abod = fn 
+       
+       -- The rest is BOILERPLATE; could scrap if we so chose:
+       -------------------------------------------------------
        S.Vr vr -> S.Vr vr
        S.Let (vr,ty,rhs) bod -> S.Let (vr,ty,loop rhs) (loop bod)
           where loop = aexp (M.insert vr ty tenv)
        S.Unit ex -> S.Unit (exp tenv ex)
             
-       S.Generate aty ex fn -> 
-         S.Generate aty (exp tenv ex) (lam1 tenv fn)
-       
-       S.ZipWith fn ae1 ae2 -> 
-         S.ZipWith (lam2 tenv fn) (aexp tenv ae1) (aexp tenv ae2)
-
-       S.Map fn ae -> S.Map (lam1 tenv fn) (aexp tenv ae)
+       S.Generate aty ex fn -> S.Generate aty (exp tenv ex) (lam1 tenv fn)
+       S.ZipWith fn ae1 ae2 -> S.ZipWith (lam2 tenv fn) (aexp tenv ae1) (aexp tenv ae2)
+       S.Map     fn ae      -> S.Map (lam1 tenv fn) (aexp tenv ae)
 
        -- TODO: Can we get rid of array tupling entirely?
        S.ArrayTuple aes -> S.ArrayTuple $ L.map (aexp tenv) aes       
        S.TupleRefFromRight ind ae -> S.TupleRefFromRight ind (aexp tenv ae)
-
-       -- TODO: Inline apply:
-       S.Apply fn ae -> 
-         S.Apply (S.ALam [(v,ty)] (aexp tenv' abod)) (aexp tenv ae)
-         where tenv' = M.insert v ty tenv         
-               S.ALam [(v,ty)] abod = fn 
 
        S.Cond ex ae1 ae2 -> S.Cond (exp tenv ex) (aexp tenv ae1) (aexp tenv ae2)
        S.Use ty arr -> S.Use ty arr

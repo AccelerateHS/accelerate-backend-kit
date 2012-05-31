@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP, ScopedTypeVariables #-}
+{-# LANGUAGE DeriveGeneric #-}
 -- {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 -- An example interpreter for the simplified AST.
@@ -21,6 +22,8 @@ import Data.Array.Unboxed ((!), UArray)
 import qualified Data.Array.Unboxed as U
 import qualified Data.Array         as A
 import qualified Data.List as L
+
+import Text.PrettyPrint.GenericPretty (Out(doc), Generic)
 
 import Debug.Trace (trace)
 tracePrint s x = trace (s++show x) x
@@ -52,8 +55,9 @@ envLookup env vr =
 data Value = TupVal [Value]
            | ArrVal AccArray
            | ConstVal Const 
-  deriving Show           
-
+  deriving (Show, Generic)
+           
+instance Out Value
 
 -- | Extract a `Const` from a `Value` if that is possible.
 valToConst (ConstVal c ) = c
@@ -65,10 +69,11 @@ valToConst (ArrVal a)    = error$ "cannot convert Array value to Const: "++show 
 
 evalA :: Env -> AExp -> AccArray
 evalA env ae = 
-    trace ("[dbg] evalA with environment: "++show env++"\n    "++show ae)
-    finalArr
+    trace ("[dbg] evalA with environment: "++show env++"\n    "++show ae) $
+    case loop ae of 
+      ArrVal finalArr -> finalArr
+      oth -> error$ "evalA: did not produce an array as output of Acc computation:\n"++show(doc oth)
   where 
-   ArrVal finalArr = loop ae 
 
    loop :: AExp -> Value
    loop aexp =

@@ -238,6 +238,11 @@ p10b = repN 4 p10
 p10c :: Acc (Array DIM1 Float)
 p10c = replicate (constant$ Any :. (3::Int)) (unit 4.4)
 
+----------------------------------------
+
+-- How about tuples of arrays?
+p11 :: Acc (Scalar Int, Scalar Int16, Scalar Int32)
+p11 = lift (unit 1, unit 2, unit 3)
 
 --------------------------------------------------------------------------------
 -- Let's print matrices nicely.
@@ -319,9 +324,14 @@ tests = [ testCase "use/fromList"   (print$ doc t0)
           
         , testGroup "run p10" (runBoth p10)          
         , testGroup "run p10b" (runBoth p10b)
-        , testGroup "run p10c" (runBoth p10c)        
+        , testGroup "run p10c" (runBoth p10c)
+        , testGroup "run p11" $ hUnitTestToTests $
+          (I.run p11) ~=? (run p11)
         ]
  where
   runBoth p = (hUnitTestToTests$ Sug.toList (I.run p) ~=? Sug.toList (run p))
+
+instance Eq a => Eq (Array sh a) where
+  a1 == a2 = Sug.toList a1 == Sug.toList a2
 
 -- main = print (I.run p8)
