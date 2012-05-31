@@ -8,7 +8,7 @@ module Data.Array.Accelerate.SimpleAST
    ( 
      -- * The types making up Accelerate ASTs:
      AExp(..), AFun(..), 
-     Exp(..), Fun(..), 
+     Exp(..), Fun1(..), Fun2(..),
      Type(..), Const(..),
      Prim(..), NumPrim(..), IntPrim(..), FloatPrim(..), ScalarPrim(..), BoolPrim(..), OtherPrim(..),
      Boundary(..),
@@ -97,27 +97,27 @@ data AExp =
   | Apply AFun AExp              -- Function $ Argument
   | Cond Exp AExp AExp           -- Array level if statements
   | Use       Type AccArray      -- A real live ARRAY goes here!
-  | Generate  Type Exp Fun       -- Generate Function Array, very similar to map
+  | Generate  Type Exp Fun1      -- Generate Function Array, very similar to map
   | Replicate Type SliceType Exp AExp -- Replicate array across one or more dimensions.
   | Index     SliceType AExp Exp -- Index a sub-array (slice).
                                  -- Index sliceIndex Array SliceDims
-  | Map      Fun AExp            -- Map Function Array
-  | ZipWith  Fun AExp AExp       -- ZipWith Function Array1 Array2
-  | Fold     Fun Exp AExp        -- Fold Function Default Array
-  | Fold1    Fun AExp            -- Fold1 Function Array
-  | FoldSeg  Fun Exp AExp AExp   -- FoldSeg Function Default Array 'Segment Descriptor'
-  | Fold1Seg Fun     AExp AExp   -- FoldSeg Function         Array 'Segment Descriptor'
-  | Scanl    Fun Exp AExp        -- Scanl  Function InitialValue LinearArray
-  | Scanl'   Fun Exp AExp        -- Scanl' Function InitialValue LinearArray
-  | Scanl1   Fun     AExp        -- Scanl  Function              LinearArray
-  | Scanr    Fun Exp AExp        -- Scanr  Function InitialValue LinearArray
-  | Scanr'   Fun Exp AExp        -- Scanr' Function InitialValue LinearArray
-  | Scanr1   Fun     AExp        -- Scanr  Function              LinearArray
-  | Permute  Fun AExp Fun AExp   -- Permute CombineFun DefaultArr PermFun SourceArray
-  | Backpermute Exp Fun AExp     -- Backpermute ResultDimension   PermFun SourceArray
-  | Reshape     Exp     AExp     -- Reshape Shape Array
-  | Stencil  Fun Boundary AExp
-  | Stencil2 Fun Boundary AExp Boundary AExp -- Two source arrays/boundaries
+  | Map      Fun1 AExp           -- Map Function Array
+  | ZipWith  Fun2 AExp AExp      -- ZipWith Function Array1 Array2
+  | Fold     Fun2 Exp AExp       -- Fold Function Default Array
+  | Fold1    Fun2 AExp           -- Fold1 Function Array
+  | FoldSeg  Fun2 Exp AExp AExp  -- FoldSeg Function Default Array 'Segment Descriptor'
+  | Fold1Seg Fun2     AExp AExp  -- FoldSeg Function         Array 'Segment Descriptor'
+  | Scanl    Fun2 Exp AExp       -- Scanl  Function InitialValue LinearArray
+  | Scanl'   Fun2 Exp AExp       -- Scanl' Function InitialValue LinearArray
+  | Scanl1   Fun2     AExp       -- Scanl  Function              LinearArray
+  | Scanr    Fun2 Exp AExp       -- Scanr  Function InitialValue LinearArray
+  | Scanr'   Fun2 Exp AExp       -- Scanr' Function InitialValue LinearArray
+  | Scanr1   Fun2     AExp       -- Scanr  Function              LinearArray
+  | Permute  Fun2 AExp Fun1 AExp -- Permute CombineFun DefaultArr PermFun SourceArray
+  | Backpermute Exp Fun1 AExp    -- Backpermute ResultDimension   PermFun SourceArray
+  | Reshape     Exp      AExp    -- Reshape Shape Array
+  | Stencil  Fun1 Boundary AExp
+  | Stencil2 Fun2 Boundary AExp Boundary AExp -- Two source arrays/boundaries
  deriving (Read,Show,Eq,Generic)
 
 -- | Array-level functions.
@@ -136,9 +136,14 @@ data Boundary = Clamp               -- ^clamp coordinates to the extent of the a
 -- Accelerate Scalar Expressions and Functions
 --------------------------------------------------------------------------------
 
--- | Scalar functions
-data Fun = Lam [(Var,Type)] Exp
+-- | Scalar functions, arity 1
+data Fun1 = Lam1 (Var,Type) Exp
  deriving (Read,Show,Eq,Generic)
+
+-- | Scalar functions, arity 2
+data Fun2 = Lam2 (Var,Type) (Var,Type) Exp
+ deriving (Read,Show,Eq,Generic)
+
 
 -- | Scalar expressions
 data Exp = 
@@ -490,7 +495,8 @@ fromConst c =
 -- Boilerplate for generic pretty printing:
 
 instance Out Type
-instance Out Fun
+instance Out Fun1
+instance Out Fun2
 instance Out Exp
 instance Out AExp
 instance Out AFun

@@ -136,7 +136,7 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
     
     Generate sh f -> S.Generate (getAccTypePre eacc)
                                 <$> convertExp sh
-                                <*> convertFun f
+                                <*> convertFun1 f
 
     -- This is real live runtime array data:
     Use (arrrepr :: Sug.ArrRepr a) ->
@@ -177,39 +177,39 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
 
     Unit e        -> S.Unit <$> convertExp e 
 
-    Map     f acc       -> S.Map     <$> convertFun f 
-                                     <*> convertAcc acc
-    ZipWith f acc1 acc2 -> S.ZipWith <$> convertFun f
-                                     <*> convertAcc acc1
-                                     <*> convertAcc acc2
-    Fold     f e acc -> S.Fold  <$> convertFun f
-                                <*> convertExp e 
-                                <*> convertAcc acc
-    Fold1    f   acc -> S.Fold1 <$> convertFun f
-                                <*> convertAcc acc
-    FoldSeg  f e acc1 acc2 -> S.FoldSeg  <$> convertFun f
-                                         <*> convertExp e
-                                         <*> convertAcc acc1
-                                         <*> convertAcc acc2
-    Fold1Seg f   acc1 acc2 -> S.Fold1Seg <$> convertFun f
-                                         <*> convertAcc acc1
-                                         <*> convertAcc acc2
-    Scanl  f e acc -> S.Scanl  <$> convertFun f
-                               <*> convertExp e 
-                               <*> convertAcc acc
-    Scanl' f e acc -> S.Scanl' <$> convertFun f
-                               <*> convertExp e 
-                               <*> convertAcc acc
-    Scanl1 f   acc -> S.Scanl1 <$> convertFun f
-                               <*> convertAcc acc
-    Scanr  f e acc -> S.Scanr  <$> convertFun f
-                               <*> convertExp e 
-                               <*> convertAcc acc
-    Scanr' f e acc -> S.Scanr' <$> convertFun f
-                               <*> convertExp e 
-                               <*> convertAcc acc
-    Scanr1 f   acc -> S.Scanr1 <$> convertFun f
-                               <*> convertAcc acc
+    Map     f acc       -> S.Map     <$> convertFun1 f 
+                                     <*> convertAcc  acc
+    ZipWith f acc1 acc2 -> S.ZipWith <$> convertFun2 f
+                                     <*> convertAcc  acc1
+                                     <*> convertAcc  acc2
+    Fold     f e acc -> S.Fold  <$> convertFun2 f
+                                <*> convertExp  e 
+                                <*> convertAcc  acc
+    Fold1    f   acc -> S.Fold1 <$> convertFun2 f
+                                <*> convertAcc  acc
+    FoldSeg  f e acc1 acc2 -> S.FoldSeg  <$> convertFun2 f
+                                         <*> convertExp  e
+                                         <*> convertAcc  acc1
+                                         <*> convertAcc  acc2
+    Fold1Seg f   acc1 acc2 -> S.Fold1Seg <$> convertFun2 f
+                                         <*> convertAcc  acc1
+                                         <*> convertAcc  acc2
+    Scanl  f e acc -> S.Scanl  <$> convertFun2 f
+                               <*> convertExp  e 
+                               <*> convertAcc  acc
+    Scanl' f e acc -> S.Scanl' <$> convertFun2 f
+                               <*> convertExp  e 
+                               <*> convertAcc  acc
+    Scanl1 f   acc -> S.Scanl1 <$> convertFun2 f
+                               <*> convertAcc  acc
+    Scanr  f e acc -> S.Scanr  <$> convertFun2 f
+                               <*> convertExp  e 
+                               <*> convertAcc  acc
+    Scanr' f e acc -> S.Scanr' <$> convertFun2 f
+                               <*> convertExp  e 
+                               <*> convertAcc  acc
+    Scanr1 f   acc -> S.Scanr1 <$> convertFun2 f
+                               <*> convertAcc  acc
 
     Replicate sliceIndex slix a ->
       S.Replicate (getAccTypePre eacc) 
@@ -220,18 +220,18 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
       S.Index (cvtSlice sliceIndex)     <$> convertAcc acc
                                         <*> convertExp slix
     Reshape e acc -> S.Reshape <$> convertExp e <*> convertAcc acc
-    Permute fn dft pfn acc -> S.Permute <$> convertFun fn 
-                                        <*> convertAcc dft
-                                        <*> convertFun pfn
-                                        <*> convertAcc acc
-    Backpermute e pfn acc -> S.Backpermute <$> convertExp e 
-                                           <*> convertFun pfn
-                                           <*> convertAcc acc 
-    Stencil  sten bndy acc -> S.Stencil <$> convertFun sten
+    Permute fn dft pfn acc -> S.Permute <$> convertFun2 fn 
+                                        <*> convertAcc  dft
+                                        <*> convertFun1 pfn
+                                        <*> convertAcc  acc
+    Backpermute e pfn acc -> S.Backpermute <$> convertExp  e 
+                                           <*> convertFun1 pfn
+                                           <*> convertAcc  acc 
+    Stencil  sten bndy acc -> S.Stencil <$> convertFun1 sten
                                         <*> return (convertBoundary bndy)
                                         <*> convertAcc acc
     Stencil2 sten bndy1 acc1 bndy2 acc2 -> 
-      S.Stencil2 <$> convertFun sten 
+      S.Stencil2 <$> convertFun2 sten 
                  <*> return (convertBoundary bndy1) <*> convertAcc acc1
                  <*> return (convertBoundary bndy2) <*> convertAcc acc2
 
@@ -619,16 +619,16 @@ convertPrimApp p arg =
 -- Convert Accelerate Functions
 --------------------------------------------------------------------------------
 
--- Convert an open, scalar function:
-convertFun :: OpenFun e ae t0 -> EnvM S.Fun
+-- Convert an open, scalar function with arbitrary arity:
+convertFun :: OpenFun e ae t0 -> EnvM ([(S.Var,S.Type)],S.Exp)
 convertFun =  loop [] 
  where 
    loop :: forall env aenv t . 
-           [(S.Var,S.Type)] -> OpenFun env aenv t -> EnvM S.Fun
+           [(S.Var,S.Type)] -> OpenFun env aenv t -> EnvM ([(S.Var,S.Type)],S.Exp)
    loop acc (Body b) = do b'  <- convertExp b 
                           -- It would perhaps be nice to record the output type of function 
                           -- here as well.  But b's type isn't in class Elt.
-                          return (S.Lam (reverse acc) b')
+                          return (reverse acc, b')
    -- Here we again dig around in the Haskell types to find the type information we need.
    -- In this case we use quite a few scoped type variables:
    loop acc orig@(Lam f2) | (_:: OpenFun env aenv (arg -> res)) <- orig 
@@ -640,6 +640,22 @@ convertFun =  loop []
                                           v <- envLookup 0
                                           loop ((v,sty) : acc) f2
                                return x 
+
+convertFun1 :: OpenFun e ae t0 -> EnvM S.Fun1
+convertFun1 fn = do 
+  x <- convertFun fn
+  case x of 
+    ([(v,ty)], bod) -> return$ S.Lam1 (v,ty) bod
+    (ls,_) -> error$"convertFun1: expected Accelerate function of arity one, instead arguments were: "++show ls
+
+convertFun2 :: OpenFun e ae t0 -> EnvM S.Fun2
+convertFun2 fn = do
+  x <- convertFun fn
+  case x of 
+    ([(v1,ty1),(v2,ty2)], bod) -> return$ S.Lam2 (v1,ty1) (v2,ty2) bod
+    (ls,_) -> error$"convertFun2: expected Accelerate function of arity two, instead arguments were: "++show ls
+
+
 
 
 --------------------------------------------------------------------------------
@@ -703,10 +719,10 @@ staticTupleIndices ae = aexp M.empty ae
        S.Stencil2  fn bnd1 ae1 bnd2 ae2 ->  S.Stencil2 (lam2 tenv fn) bnd1 (aexp tenv ae1)
                                                                       bnd2 (aexp tenv ae2)
    -- Handle arity 1 lambdas:
-   lam1 tenv (S.Lam [(v,ty)] bod) = S.Lam [(v,ty)] (exp tenv' bod)
+   lam1 tenv (S.Lam1 (v,ty) bod) = S.Lam1 (v,ty) (exp tenv' bod)
      where tenv' = M.insert v ty tenv
    -- Handle arity 2 lambdas:
-   lam2 tenv (S.Lam args@[(v1,ty1),(v2,ty2)] bod) = S.Lam args (exp tenv' bod)
+   lam2 tenv (S.Lam2 (v1,ty1) (v2,ty2) bod) = S.Lam2 (v1,ty1) (v2,ty2) (exp tenv' bod)
      where tenv' = M.insert v1 ty1 $ M.insert v2 ty2 tenv
 
    exp :: M.Map S.Var S.Type -> S.Exp -> S.Exp 
