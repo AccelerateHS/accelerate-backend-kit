@@ -90,7 +90,7 @@ data AExp =
     Vr Var -- Array variable bound by a Let.
   | Unit Exp -- Turn an element into a singleton array
     -- Let is used for common subexpression elimination
-  | Let  Var Type AExp AExp    -- Let Var Type RHS Body
+  | Let (Var,Type,AExp) AExp    -- Let Var Type RHS Body
   | ArrayTuple [AExp]          -- Tuple of arrays.
   | TupleRefFromRight Int AExp 
     
@@ -148,7 +148,7 @@ data Fun2 = Lam2 (Var,Type) (Var,Type) Exp
 -- | Scalar expressions
 data Exp = 
     EVr Var -- Variable bound by a Let.
-  | ELet Var Type Exp Exp    -- ELet Var Type RHS Body
+  | ELet (Var,Type,Exp) Exp    -- ELet Var Type RHS Body
   -- ELet is used for common subexpression elimination
   | EPrimApp Type Prim [Exp]  -- *Any* primitive scalar function, including type of return value.
   | ETuple [Exp]

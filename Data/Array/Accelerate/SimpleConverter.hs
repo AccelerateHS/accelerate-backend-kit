@@ -124,7 +124,7 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
           (v,a2) <- withExtendedEnv "a"$ 
                     convertAcc acc2 
           let sty = getAccType acc1
-          return$ S.Let v sty a1 a2
+          return$ S.Let (v,sty,a1) a2
 
     Avar idx -> 
       do var <- envLookup (idxToInt idx)
@@ -261,7 +261,7 @@ convertExp e =
          (v,e2) <- withExtendedEnv "e"$ 
                    convertExp exp2 
          let sty = getExpType exp1
-         return$ S.ELet v sty e1 e2
+         return$ S.ELet (v,sty,e1) e2
     
     -- Here is where we get to peek at the type of a variable:
     Var idx -> 
@@ -538,8 +538,8 @@ convertPrimApp p arg =
    loop :: S.Exp -> S.Exp
    -- Push primapps inside lets:
    loop args' = case args' of 
-                  S.ELet v sty e1 e2 ->
-                    S.ELet v sty e1 (loop e2)
+                  S.ELet (v,sty,e1) e2 ->
+                    S.ELet (v,sty,e1) (loop e2)
                   -- WARNING!  Need a sanity check on arity here:
                   S.ETuple ls -> mkPapp ls
                   oth         -> mkPapp [oth]
@@ -670,7 +670,7 @@ staticTupleIndices ae = aexp M.empty ae
    aexp tenv aex = 
      case aex of 
        S.Vr vr -> S.Vr vr
-       S.Let vr ty rhs bod -> S.Let vr ty (loop rhs) (loop bod)
+       S.Let (vr,ty,rhs) bod -> S.Let (vr,ty,loop rhs) (loop bod)
           where loop = aexp (M.insert vr ty tenv)
        S.Unit ex -> S.Unit (exp tenv ex)
             
@@ -729,7 +729,7 @@ staticTupleIndices ae = aexp M.empty ae
    exp tenv e = 
      case e of  
        S.EVr vr -> S.EVr vr       
-       S.ELet vr ty rhs bod -> S.ELet vr ty (exp tenv' rhs) (exp tenv bod)
+       S.ELet (vr,ty,rhs) bod -> S.ELet (vr,ty, exp tenv' rhs) (exp tenv bod)
          where tenv' = M.insert vr ty tenv
        S.EPrimApp ty p args -> S.EPrimApp ty p (L.map (exp tenv) args)
        S.ECond e1 e2 e3 -> S.ECond (exp tenv e1) (exp tenv e2) (exp tenv e3)

@@ -75,7 +75,7 @@ evalA env ae =
      case aexp of 
        --     Vr Var -- Array variable bound by a Let.
        Vr  v             -> envLookup env v
-       Let vr ty lhs bod -> ArrVal$ evalA (M.insert vr (loop lhs) env) bod
+       Let (vr,ty,lhs) bod -> ArrVal$ evalA (M.insert vr (loop lhs) env) bod
 
        Unit e -> case evalE env e of 
                    ConstVal c -> ArrVal$ SA.replicate [] c
@@ -93,7 +93,7 @@ evalA env ae =
          -- tuples, which in turn need to be unpacked into a
          -- multi-payload array....
          ArrVal $ AccArray dims $ payloadsFromList elty $ 
-         map (\ind -> valToConst $ evalE env (ELet vr vty (EConst ind) bodE)) 
+         map (\ind -> valToConst $ evalE env (ELet (vr,vty,EConst ind) bodE)) 
              (indexSpace dims)
                   
          where 
@@ -173,7 +173,7 @@ evalA env ae =
          where  
            inarr = evalA env ae
            evaluator c = -- tracePrint ("In map, evaluating element "++ show c++" to ")$  
-                         valToConst $ evalE env (ELet v vty (EConst c) bod)
+                         valToConst $ evalE env (ELet (v,vty, EConst c) bod)
          
        ZipWith  (Lam2 (v1,vty1) (v2,vty2) bod) ae1 ae2  ->
          if dims1 /= dims2 
@@ -190,8 +190,8 @@ evalA env ae =
                            (L.transpose$ map payloadToList pays2)
 -- INCORRECT - we need to reassemble tuples here:
            evaluator cls1 cls2 = map valToConst $ untupleVal $ evalE env 
-                                 (ELet v1 vty1 (EConst$ tuple cls1) $  
-                                  ELet v2 vty2 (EConst$ tuple cls2) bod)
+                                 (ELet (v1,vty1, EConst$ tuple cls1) $  
+                                  ELet (v2,vty2, EConst$ tuple cls2) bod)
 
        --------------------------------------------------------------------------------       
        -- Shave off leftmost dim in 'sh' list 
@@ -256,7 +256,7 @@ evalE :: Env -> Exp -> Value
 evalE env expr = 
   case expr of 
     EVr  v             -> envLookup env v
-    ELet vr _ty lhs bod -> evalE (M.insert vr (evalE env lhs) env) bod
+    ELet (vr,_ty,lhs) bod -> evalE (M.insert vr (evalE env lhs) env) bod
     ETuple es          -> TupVal$ map (evalE env) es
     EConst c           -> ConstVal c
 
