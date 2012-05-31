@@ -658,16 +658,13 @@ staticTupleIndices ae = aexp M.empty ae
           where loop = aexp (M.insert vr ty tenv)
        S.Unit ex -> S.Unit (exp tenv ex)
             
-       S.Generate aty ex (S.Lam [(vr,ty)] bod) -> 
-         S.Generate aty (exp tenv ex) (S.Lam [(vr,ty)] (exp tenv' bod))
-         where tenv' = M.insert vr ty tenv
+       S.Generate aty ex fn -> 
+         S.Generate aty (exp tenv ex) (lam1 tenv fn)
        
-       S.ZipWith (S.Lam args@[(x,t1),(y,t2)] bod) ae1 ae2 -> 
-         S.ZipWith (S.Lam args (exp tenv' bod)) (aexp tenv ae1) (aexp tenv ae2)
-         where tenv' = M.insert x t1 $ M.insert y t2 tenv
+       S.ZipWith fn ae1 ae2 -> 
+         S.ZipWith (lam2 tenv fn) (aexp tenv ae1) (aexp tenv ae2)
 
-       S.Map (S.Lam [(v,ty)] bod) ae -> S.Map (S.Lam [(v,ty)] (exp tenv' bod)) (aexp tenv ae)
-         where tenv' = M.insert v ty tenv
+       S.Map fn ae -> S.Map (lam1 tenv fn) (aexp tenv ae)
 
        -- TODO: Can we get rid of array tupling entirely?
        S.ArrayTuple aes -> S.ArrayTuple $ L.map (aexp tenv) aes       
@@ -684,60 +681,49 @@ staticTupleIndices ae = aexp M.empty ae
        S.Replicate aty slice ex ae -> S.Replicate aty slice (exp tenv ex) (aexp tenv ae)
        S.Index     slc ae ex -> S.Index slc (aexp tenv ae) (exp tenv ex)
               
-       S.Fold (S.Lam args@[(v1,ty1),(v2,ty2)] bod) einit ae ->
-         S.Fold (S.Lam args (exp tenv' bod)) (exp tenv einit) (aexp tenv ae)
-         where tenv' = M.insert v1 ty1 $ M.insert v2 ty2 tenv
+       S.Fold fn einit ae ->
+         S.Fold (lam2 tenv fn) (exp tenv einit) (aexp tenv ae)
 
-       S.Fold1 (S.Lam args@[(v1,ty1),(v2,ty2)] bod) ae ->
-         S.Fold1 (S.Lam args (exp tenv' bod)) (aexp tenv ae)
-         where tenv' = M.insert v1 ty1 $ M.insert v2 ty2 tenv
+       S.Fold1 fn ae ->
+         S.Fold1 (lam2 tenv fn) (aexp tenv ae)
 
-       S.FoldSeg (S.Lam args@[(v1,ty1),(v2,ty2)] bod) einit ae aeseg ->
-         S.FoldSeg (S.Lam args (exp tenv' bod)) (exp tenv einit) (aexp tenv ae) (aexp tenv aeseg)
-         where tenv' = M.insert v1 ty1 $ M.insert v2 ty2 tenv
+       S.FoldSeg fn einit ae aeseg ->
+         S.FoldSeg (lam2 tenv fn) (exp tenv einit) (aexp tenv ae) (aexp tenv aeseg)
 
-       S.Fold1Seg (S.Lam args@[(v1,ty1),(v2,ty2)] bod) ae aeseg ->
-         S.Fold1Seg (S.Lam args (exp tenv' bod)) (aexp tenv ae) (aexp tenv aeseg)
-         where tenv' = M.insert v1 ty1 $ M.insert v2 ty2 tenv
+       S.Fold1Seg fn ae aeseg ->
+         S.Fold1Seg (lam2 tenv fn) (aexp tenv ae) (aexp tenv aeseg)
 
-       S.Scanl (S.Lam args@[(v1,ty1),(v2,ty2)] bod) einit ae ->
-         S.Scanl (S.Lam args (exp tenv' bod)) (exp tenv einit) (aexp tenv ae)
-         where tenv' = M.insert v1 ty1 $ M.insert v2 ty2 tenv
+       S.Scanl fn einit ae ->
+         S.Scanl (lam2 tenv fn) (exp tenv einit) (aexp tenv ae)
 
-       S.Scanl' (S.Lam args@[(v1,ty1),(v2,ty2)] bod) einit ae ->
-         S.Scanl' (S.Lam args (exp tenv' bod)) (exp tenv einit) (aexp tenv ae)
-         where tenv' = M.insert v1 ty1 $ M.insert v2 ty2 tenv
+       S.Scanl' fn einit ae ->
+         S.Scanl' (lam2 tenv fn) (exp tenv einit) (aexp tenv ae)
 
-       S.Scanl1 (S.Lam args@[(v1,ty1),(v2,ty2)] bod) ae ->
-         S.Scanl1 (S.Lam args (exp tenv' bod)) (aexp tenv ae)
-         where tenv' = M.insert v1 ty1 $ M.insert v2 ty2 tenv
+       S.Scanl1 fn ae ->
+         S.Scanl1 (lam2 tenv fn) (aexp tenv ae)
 
-       S.Scanr (S.Lam args@[(v1,ty1),(v2,ty2)] bod) einit ae ->
-         S.Scanr (S.Lam args (exp tenv' bod)) (exp tenv einit) (aexp tenv ae)
-         where tenv' = M.insert v1 ty1 $ M.insert v2 ty2 tenv
+       S.Scanr fn einit ae ->
+         S.Scanr (lam2 tenv fn) (exp tenv einit) (aexp tenv ae)
 
-       S.Scanr' (S.Lam args@[(v1,ty1),(v2,ty2)] bod) einit ae ->
-         S.Scanr' (S.Lam args (exp tenv' bod)) (exp tenv einit) (aexp tenv ae)
-         where tenv' = M.insert v1 ty1 $ M.insert v2 ty2 tenv
+       S.Scanr' fn einit ae ->
+         S.Scanr' (lam2 tenv fn) (exp tenv einit) (aexp tenv ae)
 
-       S.Scanr1 (S.Lam args@[(v1,ty1),(v2,ty2)] bod) ae ->
-         S.Scanr1 (S.Lam args (exp tenv' bod)) (aexp tenv ae)
-         where tenv' = M.insert v1 ty1 $ M.insert v2 ty2 tenv
+       S.Scanr1 fn ae ->
+         S.Scanr1 (lam2 tenv fn) (aexp tenv ae)
 
-       S.Permute (S.Lam args@[(v1,ty1),(v2,ty2)] bod1) ae1
-                 (S.Lam [(v,ty)] bod2) ae2 -> 
-         S.Permute (S.Lam args     (exp tenv'  bod1)) (aexp tenv ae1) 
-                   (S.Lam [(v,ty)] (exp tenv'' bod2)) (aexp tenv ae2)
-         where tenv'  = M.insert v1 ty1 $ M.insert v2 ty2 tenv
-               tenv'' =                   M.insert v  ty  tenv
+       S.Permute fn2 ae1 fn1 ae2 -> 
+         S.Permute (lam2 tenv fn2) (aexp tenv ae1) 
+                   (lam1 tenv fn1) (aexp tenv ae2)
+
        S.Backpermute ex lam ae -> S.Backpermute (exp tenv ex) (lam1 tenv lam) (aexp tenv ae)
        S.Reshape     ex     ae -> S.Reshape     (exp tenv ex)                 (aexp tenv ae)
        S.Stencil   fn bndry ae -> S.Stencil     (lam1 tenv fn) bndry          (aexp tenv ae)
        S.Stencil2  fn bnd1 ae1 bnd2 ae2 ->  S.Stencil2 (lam2 tenv fn) bnd1 (aexp tenv ae1)
                                                                       bnd2 (aexp tenv ae2)
+   -- Handle arity 1 lambdas:
    lam1 tenv (S.Lam [(v,ty)] bod) = S.Lam [(v,ty)] (exp tenv' bod)
      where tenv' = M.insert v ty tenv
-
+   -- Handle arity 2 lambdas:
    lam2 tenv (S.Lam args@[(v1,ty1),(v2,ty2)] bod) = S.Lam args (exp tenv' bod)
      where tenv' = M.insert v1 ty1 $ M.insert v2 ty2 tenv
 
