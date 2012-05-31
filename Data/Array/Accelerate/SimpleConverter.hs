@@ -38,7 +38,7 @@ import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import qualified Data.Array.Accelerate.SimpleAST   as S
 import qualified Data.Array.Accelerate.SimpleArray as SA
 
-
+import Data.Map as M
 import qualified Data.List as L
 
 import Debug.Trace(trace)
@@ -641,6 +641,176 @@ convertFun =  loop []
                                           loop ((v,sty) : acc) f2
                                return x 
 
+
+--------------------------------------------------------------------------------
+-- Compiler pass to remove dynamic cons/head/tail on indices.
+--------------------------------------------------------------------------------
+
+
+staticTupleIndices :: S.AExp -> S.AExp
+staticTupleIndices ae = aexp M.empty ae
+ where
+--   aexp :: M.Map Var Int -> AExp -> [Builder]
+   aexp tenv aex = 
+     case aex of 
+       S.Vr vr -> S.Vr vr
+       S.Let vr ty rhs bod -> S.Let vr ty (loop rhs) (loop bod)
+          where loop = aexp (M.insert vr ty tenv)
+       S.Unit ex -> S.Unit (exp tenv ex)
+            
+       S.Generate aty ex (S.Lam [(vr,ty)] bod) -> 
+         S.Generate aty (exp tenv ex) (S.Lam [(vr,ty)] (exp tenv' bod))
+         where tenv' = M.insert vr ty tenv
+       
+       S.ZipWith (S.Lam args@[(x,t1),(y,t2)] bod) ae1 ae2 -> 
+         S.ZipWith (S.Lam args (exp tenv' bod)) (aexp tenv ae1) (aexp tenv ae2)
+         where tenv' = M.insert x t1 $ M.insert y t2 tenv
+
+       S.Map (S.Lam [(v,ty)] bod) ae -> S.Map (S.Lam [(v,ty)] (exp tenv' bod)) (aexp tenv ae)
+         where tenv' = M.insert v ty tenv
+
+       -- TODO: Can we get rid of array tupling entirely?
+       S.ArrayTuple aes -> S.ArrayTuple $ L.map (aexp tenv) aes       
+       S.TupleRefFromRight ind ae -> S.TupleRefFromRight ind (aexp tenv ae)
+
+       -- TODO: Inline apply:
+       S.Apply (S.ALam [(v,ty)] abod) ae -> 
+         S.Apply (S.ALam [(v,ty)] (aexp tenv' abod)) (aexp tenv ae)
+         where tenv' = M.insert v ty tenv         
+
+       S.Cond ex ae1 ae2 -> S.Cond (exp tenv ex) (aexp tenv ae1) (aexp tenv ae2)
+       S.Use ty arr -> S.Use ty arr
+ 
+       S.Replicate aty slice ex ae -> S.Replicate aty slice (exp tenv ex) (aexp tenv ae)
+       S.Index     slc ae ex -> S.Index slc (aexp tenv ae) (exp tenv ex)
+              
+       S.Fold (S.Lam args@[(v1,ty1),(v2,ty2)] bod) einit ae ->
+         S.Fold (S.Lam args (exp tenv' bod)) (exp tenv einit) (aexp tenv ae)
+         where tenv' = M.insert v1 ty1 $ M.insert v2 ty2 tenv
+
+       S.Fold1 (S.Lam args@[(v1,ty1),(v2,ty2)] bod) ae ->
+         S.Fold1 (S.Lam args (exp tenv' bod)) (aexp tenv ae)
+         where tenv' = M.insert v1 ty1 $ M.insert v2 ty2 tenv
+
+       S.FoldSeg (S.Lam args@[(v1,ty1),(v2,ty2)] bod) einit ae aeseg ->
+         S.FoldSeg (S.Lam args (exp tenv' bod)) (exp tenv einit) (aexp tenv ae) (aexp tenv aeseg)
+         where tenv' = M.insert v1 ty1 $ M.insert v2 ty2 tenv
+
+       S.Fold1Seg (S.Lam args@[(v1,ty1),(v2,ty2)] bod) ae aeseg ->
+         S.Fold1Seg (S.Lam args (exp tenv' bod)) (aexp tenv ae) (aexp tenv aeseg)
+         where tenv' = M.insert v1 ty1 $ M.insert v2 ty2 tenv
+
+       S.Scanl (S.Lam args@[(v1,ty1),(v2,ty2)] bod) einit ae ->
+         S.Scanl (S.Lam args (exp tenv' bod)) (exp tenv einit) (aexp tenv ae)
+         where tenv' = M.insert v1 ty1 $ M.insert v2 ty2 tenv
+
+       S.Scanl' (S.Lam args@[(v1,ty1),(v2,ty2)] bod) einit ae ->
+         S.Scanl' (S.Lam args (exp tenv' bod)) (exp tenv einit) (aexp tenv ae)
+         where tenv' = M.insert v1 ty1 $ M.insert v2 ty2 tenv
+
+       S.Scanl1 (S.Lam args@[(v1,ty1),(v2,ty2)] bod) ae ->
+         S.Scanl1 (S.Lam args (exp tenv' bod)) (aexp tenv ae)
+         where tenv' = M.insert v1 ty1 $ M.insert v2 ty2 tenv
+
+       S.Scanr (S.Lam args@[(v1,ty1),(v2,ty2)] bod) einit ae ->
+         S.Scanr (S.Lam args (exp tenv' bod)) (exp tenv einit) (aexp tenv ae)
+         where tenv' = M.insert v1 ty1 $ M.insert v2 ty2 tenv
+
+       S.Scanr' (S.Lam args@[(v1,ty1),(v2,ty2)] bod) einit ae ->
+         S.Scanr' (S.Lam args (exp tenv' bod)) (exp tenv einit) (aexp tenv ae)
+         where tenv' = M.insert v1 ty1 $ M.insert v2 ty2 tenv
+
+       S.Scanr1 (S.Lam args@[(v1,ty1),(v2,ty2)] bod) ae ->
+         S.Scanr1 (S.Lam args (exp tenv' bod)) (aexp tenv ae)
+         where tenv' = M.insert v1 ty1 $ M.insert v2 ty2 tenv
+
+       S.Permute (S.Lam args@[(v1,ty1),(v2,ty2)] bod1) ae1
+                 (S.Lam [(v,ty)] bod2) ae2 -> 
+         S.Permute (S.Lam args     (exp tenv'  bod1)) (aexp tenv ae1) 
+                   (S.Lam [(v,ty)] (exp tenv'' bod2)) (aexp tenv ae2)
+         where tenv'  = M.insert v1 ty1 $ M.insert v2 ty2 tenv
+               tenv'' =                   M.insert v  ty  tenv
+       S.Backpermute ex lam ae -> S.Backpermute (exp tenv ex) (lam1 tenv lam) (aexp tenv ae)
+       S.Reshape     ex     ae -> S.Reshape     (exp tenv ex)                 (aexp tenv ae)
+       S.Stencil   fn bndry ae -> S.Stencil     (lam1 tenv fn) bndry          (aexp tenv ae)
+       S.Stencil2  fn bnd1 ae1 bnd2 ae2 ->  S.Stencil2 (lam2 tenv fn) bnd1 (aexp tenv ae1)
+                                                                      bnd2 (aexp tenv ae2)
+   lam1 tenv (S.Lam [(v,ty)] bod) = S.Lam [(v,ty)] (exp tenv' bod)
+     where tenv' = M.insert v ty tenv
+
+   lam2 tenv (S.Lam args@[(v1,ty1),(v2,ty2)] bod) = S.Lam args (exp tenv' bod)
+     where tenv' = M.insert v1 ty1 $ M.insert v2 ty2 tenv
+
+   exp tenv e = 
+     case e of  
+       S.EVr vr -> S.EVr vr
+--        EPrimApp p args -> parens$ spaces$ prim p : map exp args
+--        ECond  e1 e2 e3 -> sexpFormLs "if" [exp e1, exp e2, exp e3]
+--        EIndexScalar arr e -> sexpFormLs "vector-ref" $ [begin (aexp arr), exp e]
+--        ESize arr -> sexpForm "vector-length" (begin$ aexp arr)
+       
+--        EConst c -> const c 
+--        ETuple ls -> error "unimplemented: add tuples to Harlan"
+--        ETupProjectFromRight ind e -> error "unimplemented: add tuples to Harlan"
+--        EIndex els -> error "unimplemented: add tuples to Harlan"
+
+       S.EIndexConsDynamic e1 e2 -> 
+         -- This is potentially inefficient.
+         error$"IndexCons - finish me"
+--        EIndexHeadDynamic e -> error "unimplemented: add tuples to Harlan"
+--        EIndexTailDynamic e -> error "unimplemented: add tuples to Harlan"
+
+--        EShape arr -> error "unimplemented: implement array shapes in Harlan"
+
+   
+--    prim :: Prim -> Builder
+--    prim p = fromByteString $
+--      case p of
+--        NP Add -> "+"
+--        NP Mul -> "*"
+--        _ -> error$ "Accelerate primitive not current supported in Harlan backend: "++show p
+
+--    const c =
+--      case c of
+--        I i   -> shwNum i
+--        I8 i  -> shwNum i
+--        I16 i -> shwNum i
+--        I32 i -> shwNum i
+--        I64 i -> shwNum i
+--        W   i -> shwNum i
+--        W8  i -> shwNum i
+--        W16 i -> shwNum i
+--        W32 i -> shwNum i
+--        W64 i -> shwNum i
+       
+--        F   f -> shwNum f
+--        D   f -> shwNum f
+--        -- FIXME: This is not a fullproof way to encode character constants:
+--        C   c -> fromString$ "#\\" ++ [c]
+--        B True  -> fromString "#t"
+--        B False -> fromString "#f"
+
+--        Tup ls -> error$ "unimplemented: tuple constants"
+--        MinBound -> error$ "unimplemented: MinBound"
+--        MaxBound -> error$ "unimplemented: MaxBound"
+--        Pi       -> error$ "unimplemented: Pi"
+--        CF cf -> error "unimplemented: CF"
+--        CD cd -> error "unimplemented: CD"
+--        CS cs ->  error "unimplemented: CS"
+--        CI ci -> error "unimplemented: CI"
+--        CL cl -> error "unimplemented: CL"
+--        CLL cll -> error "unimplemented: CLL"
+--        CUS cus -> error "unimplemented: CUS"
+--        CUI cui -> error "unimplemented: CUI"
+--        CUL cul -> error "unimplemented: CUL"
+--        CULL cull -> error "unimplemented: CULL"
+--        CC  cchar ->  error "unimplemented: CC"
+--        CSC cschar -> error "unimplemented: CSC"
+--        CUC cuchar -> error "unimplemented: CUC"
+
+
+
+
 --------------------------------------------------------------------------------
 -- Convert Accelerate Array Data
 --------------------------------------------------------------------------------
@@ -739,7 +909,7 @@ packArray orig@(S.AccArray dims payloads) =
 --   trace ("LOOPING "++show (length payloads)++" tupty:"++show tupTy) $
    let err2 :: String -> (forall a . a)
        err2 msg = error$"packArray: given a SimpleAST.AccArray of the wrong type, expected "++msg++" received: "++paystr
-       paystr = "\n  "++(unlines$ map (take 80 . show) payloads) ++ "\n dimension: "++show dims
+       paystr = "\n  "++(unlines$ L.map (take 80 . show) payloads) ++ "\n dimension: "++show dims
    in
    case (tupTy, payloads) of
     (UnitTuple,_)     -> AD_Unit
