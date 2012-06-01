@@ -814,17 +814,20 @@ removeArrayTuple (binds, bod) = S.Letrec [] [] (S.TTuple [])
    dorhs eenv aex = 
      case aex of 
        
+       -- Have to consider flattening of nested array tuples here:
+       S.ArrayTuple ls -> concatMap (dorhs eenv) $ ls
+              
        -- S.TupleRefFromRight ind ae | not (isTupled ae) -> 
        --   error "removeArrayTuple: TupleRefFromRight with unexpected input: "++show ae
        S.TupleRefFromRight ind ae -> 
          case dorhs eenv ae of 
            -- The builtin operators (e.g. Fold) do NOT return tuples.
            -- Tuples can only take one of three forms at this point:
-           [S.Vr vr] -> error "do lookup"
---           S.Cond ex ae1 ae2 -> 
---           S.ArrayTuple 
-           
---         S.TupleRefFromRight ind (dorhs eenv ae)
+           [S.Vr vr] -> 
+             case M.lookup vr eenv of 
+               Just newNames -> [S.Vr$ (reverse newNames) !! ind]
+               Nothing -> error$"removeArrayTuple: variable not bound at this point: "++show vr
+           [S.ArrayTuple ls] -> [reverse ls !! ind]
        
        -- Conditionals with tuples underneath need to be broken up:
        S.Cond ex ae1 ae2 | isTupled aex ->         
@@ -836,42 +839,32 @@ removeArrayTuple (binds, bod) = S.Letrec [] [] (S.TTuple [])
        
        S.Cond ex ae1 ae2 -> [S.Cond ex (aexp eenv ae1) (aexp eenv ae2)]
        
-       -- Have to consider flattening of nested array tuples here:
-       S.ArrayTuple ls -> concatMap (dorhs eenv) $ ls
-
        -- The rest is BOILERPLATE:
        -------------------------------------------------------
-       S.Vr vr      -> [S.Vr vr]
-       S.Unit ex    -> [S.Unit ex]
-       S.Use ty arr -> [S.Use ty arr]
-       S.Generate aty ex fn -> [S.Generate aty ex (lam1 eenv fn)]
-       S.ZipWith fn ae1 ae2 -> [S.ZipWith (lam2 eenv fn) (aexp eenv ae1) (aexp eenv ae2)]
-       S.Map     fn ae      -> [S.Map (lam1 eenv fn) (aexp eenv ae)]
+       S.Vr vr                     -> [S.Vr vr]
+       S.Unit ex                   -> [S.Unit ex]
+       S.Use ty arr                -> [S.Use ty arr]
+       S.Generate aty ex fn        -> [S.Generate aty ex fn]
+       S.ZipWith fn ae1 ae2        -> [S.ZipWith fn (aexp eenv ae1) (aexp eenv ae2)]
+       S.Map     fn ae             -> [S.Map fn (aexp eenv ae)]
        S.Replicate aty slice ex ae -> [S.Replicate aty slice ex (aexp eenv ae)]
        S.Index     slc ae ex       -> [S.Index slc (aexp eenv ae) ex]
-       S.Fold  fn einit ae         -> [S.Fold  (lam2 eenv fn) einit (aexp eenv ae)]
-       S.Fold1 fn       ae         -> [S.Fold1 (lam2 eenv fn) (aexp eenv ae)]
-       S.FoldSeg fn einit ae aeseg -> [S.FoldSeg  (lam2 eenv fn) einit (aexp eenv ae) (aexp eenv aeseg)]
-       S.Fold1Seg fn      ae aeseg -> [S.Fold1Seg (lam2 eenv fn) (aexp eenv ae) (aexp eenv aeseg)]
-       S.Scanl    fn einit ae      -> [S.Scanl  (lam2 eenv fn) (einit) (aexp eenv ae)]
-       S.Scanl'   fn einit ae      -> [S.Scanl' (lam2 eenv fn) (einit) (aexp eenv ae)]
-       S.Scanl1   fn       ae      -> [S.Scanl1 (lam2 eenv fn) (aexp eenv ae)]
-       S.Scanr    fn einit ae      -> [S.Scanr  (lam2 eenv fn) (einit) (aexp eenv ae)]
-       S.Scanr'   fn einit ae      -> [S.Scanr' (lam2 eenv fn) (einit) (aexp eenv ae)]
-       S.Scanr1   fn       ae      -> [S.Scanr1 (lam2 eenv fn) (aexp eenv ae)]
-       S.Permute fn2 ae1 fn1 ae2   -> [S.Permute (lam2 eenv fn2) (aexp eenv ae1) 
-                                                 (lam1 eenv fn1) (aexp eenv ae2)]
-       S.Backpermute ex lam ae -> [S.Backpermute (ex) (lam1 eenv lam) (aexp eenv ae)]
-       S.Reshape     ex     ae -> [S.Reshape     (ex)                 (aexp eenv ae)]
-       S.Stencil   fn bndry ae -> [S.Stencil     (lam1 eenv fn) bndry (aexp eenv ae)]
-       S.Stencil2  fn bnd1 ae1 bnd2 ae2 -> [S.Stencil2 (lam2 eenv fn) bnd1 (aexp eenv ae1)
-                                                                      bnd2 (aexp eenv ae2)]
-   -- Handle arity 1 lambdas:
-   lam1 eenv (S.Lam1 (v,ty) bod) = S.Lam1 (v,ty) (bod)
-     where eenv' = M.insert v ty eenv
-   -- Handle arity 2 lambdas:
-   lam2 eenv (S.Lam2 (v1,ty1) (v2,ty2) bod) = S.Lam2 (v1,ty1) (v2,ty2) (bod)
-     where eenv' = M.insert v1 ty1 $ M.insert v2 ty2 eenv
+       S.Fold     fn einit ae      -> [S.Fold  fn einit (aexp eenv ae)]
+       S.Fold1    fn       ae      -> [S.Fold1 fn (aexp eenv ae)]
+       S.FoldSeg fn einit ae aeseg -> [S.FoldSeg  fn einit (aexp eenv ae) (aexp eenv aeseg)]
+       S.Fold1Seg fn      ae aeseg -> [S.Fold1Seg fn (aexp eenv ae) (aexp eenv aeseg)]
+       S.Scanl    fn einit ae      -> [S.Scanl  fn einit (aexp eenv ae)]
+       S.Scanl'   fn einit ae      -> [S.Scanl' fn einit (aexp eenv ae)]
+       S.Scanl1   fn       ae      -> [S.Scanl1 fn (aexp eenv ae)]
+       S.Scanr    fn einit ae      -> [S.Scanr  fn einit (aexp eenv ae)]
+       S.Scanr'   fn einit ae      -> [S.Scanr' fn einit (aexp eenv ae)]
+       S.Scanr1   fn       ae      -> [S.Scanr1 fn (aexp eenv ae)]
+       S.Permute fn2 ae1 fn1 ae2   -> [S.Permute fn2 (aexp eenv ae1) fn1 (aexp eenv ae2)]
+       S.Backpermute ex lam ae     -> [S.Backpermute (ex) lam (aexp eenv ae)]
+       S.Reshape     ex     ae     -> [S.Reshape     (ex)                 (aexp eenv ae)]
+       S.Stencil   fn bndry ae     -> [S.Stencil     fn bndry (aexp eenv ae)]
+       S.Stencil2  fn bnd1 ae1 bnd2 ae2 -> [S.Stencil2 fn bnd1 (aexp eenv ae1)
+                                                          bnd2 (aexp eenv ae2)]
     
 --------------------------------------------------------------------------------
 -- Compiler pass to remove dynamic cons/head/tail on indices.
