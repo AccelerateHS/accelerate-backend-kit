@@ -259,6 +259,12 @@ p11c = lift (p11b,p11b)
 --           new     = lift (a,c)
 --       in lift (new,new)
 
+p12 :: Acc (Scalar Word32, Scalar Float)
+p12 = let arr = generate (constant (Z :. (5::Int))) unindex1 in 
+      cond (arr A.! (index1 2) >* 2)
+           (lift (unit 10, unit 20.0))
+           (lift (unit 40, unit 30.0))
+
 --------------------------------------------------------------------------------
 -- Let's print matrices nicely.
 
@@ -341,8 +347,9 @@ tests = [ testCase "use/fromList"   (print$ doc t0)
         , testGroup "run p10b" (runBoth p10b)
         , testGroup "run p10c" (runBoth p10c)
         , testGroup "run p11" $ hUnitTestToTests $ I.run p11 ~=? run p11
-        , testGroup "run p11b" $ hUnitTestToTests $ I.run p11b ~=? run p11b
-        , testGroup "run p11c" $ hUnitTestToTests $ I.run p11c ~=? run p11c
+--        , testGroup "run p11b" $ hUnitTestToTests $ I.run p11b ~=? run p11b
+--        , testGroup "run p11c" $ hUnitTestToTests $ I.run p11c ~=? run p11c
+--        , testGroup "run p12" $ hUnitTestToTests $ I.run p11 ~=? run p11        
         ]
  where
   runBoth p = (hUnitTestToTests$ Sug.toList (I.run p) ~=? Sug.toList (run p))

@@ -362,6 +362,8 @@ evalPrim ty p [x,y] =
     NP Add -> ConstVal (add (valToConst x) (valToConst y))
     NP Mul -> ConstVal (mul (valToConst x) (valToConst y))
     
+    oth -> error$"evalPrim needs to handle "++show oth
+
 evalPrim ty p [x] = 
   case p of 
     NP Neg -> ConstVal (neg  $ valToConst x)

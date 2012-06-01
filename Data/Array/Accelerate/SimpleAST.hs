@@ -7,6 +7,7 @@
 module Data.Array.Accelerate.SimpleAST  
    ( 
      -- * The types making up Accelerate ASTs:
+     Prog(..),
      AExp(..), AFun(..), 
      Exp(..), Fun1(..), Fun2(..),
      Type(..), Const(..),
@@ -77,6 +78,34 @@ var :: String -> Var
 
 
 --------------------------------------------------------------------------------
+-- Complete Accelerate Programs
+--------------------------------------------------------------------------------
+
+-- | A complete program consists of a set of top-level array
+--   bindings (with mutual interdependencies), followed by a list
+--   (tuple) of result arrays.
+-- 
+--   The top level bindings may bind either arrays or scalar
+--   expressions.  (Scalars are used for conditionals and other
+--   arguments to array operations.)  These bindings could be in two
+--   separate lists, and there is no necessary order except as implied
+--   by data dependencies.  However, for convenience we maintain the
+--   invariant that the binding list is topologically sorted and can
+--   thus be evaluated in order.
+-- 
+--   Note that because there is no recursion, dependencies form a DAG.
+data Prog = Letrec { 
+  progBinds   :: [(Var,Type,Either Exp AExp)],
+  progResults :: [AExp],
+  progType    :: Type
+}
+
+
+-- TODO: invariant checker
+-- checkValidProg
+
+
+--------------------------------------------------------------------------------
 -- Accelerate Array-level Expressions
 --------------------------------------------------------------------------------
 
@@ -121,7 +150,7 @@ data AExp =
  deriving (Read,Show,Eq,Generic)
 
 -- | Array-level functions.
-data AFun = ALam [(Var,Type)] AExp
+data AFun = ALam (Var,Type) AExp
  deriving (Read,Show,Eq,Generic)
 
 -- | Boundary condition specification for stencil operations.

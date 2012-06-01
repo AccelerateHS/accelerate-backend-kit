@@ -24,7 +24,7 @@ module Data.Array.Accelerate.SimpleConverter
 import Control.Monad
 import Control.Applicative ((<$>),(<*>))
 import Prelude                                     hiding (sum)
-import Control.Monad.State.Strict (State, evalState, get, put)
+import Control.Monad.State.Strict (State, evalState, runState, get, put)
 
 -- friends
 import Data.Array.Accelerate.Type                  
@@ -53,7 +53,11 @@ import Debug.Trace(trace)
 -- | Convert the sophisticate Accelerate-internal AST representation
 --   into something very simple for external consumption.
 convertToSimpleAST :: Sug.Arrays a => Sug.Acc a -> S.AExp
-convertToSimpleAST = runEnvM . convertAcc . Sug.convertAcc
+convertToSimpleAST = 
+--  desugarConverted . 
+  liftLets .     
+  runEnvM . convertAcc . 
+  Sug.convertAcc
 
 --------------------------------------------------------------------------------
 -- Environments
@@ -158,7 +162,7 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
     Apply (Alam (Abody funAcc)) acc -> 
       do (v,bod) <- withExtendedEnv "a" $ convertAcc funAcc
          let sty = getAccType acc
-         S.Apply (S.ALam [(v, sty)] bod) <$> convertAcc acc
+         S.Apply (S.ALam (v, sty) bod) <$> convertAcc acc
 
     Apply _afun _acc -> error "convertAcc: This case is impossible"
 
@@ -456,8 +460,11 @@ convertArrayType ty = tupleTy $ flatten $ loop ty
     -- Flatten the snoc-list representation of tuples, at the array as well as scalar level
     flatten (S.TTuple [S.TTuple [], realty]) = [realty] -- Shave off the "endcap" unit.
     flatten (S.TTuple [deeper, head]) = head : flatten deeper
-    flatten t = error$ "convertArrayType: made invalid assumuptions about array\n"++
-                "       types from Acc frontend, expecting ((),a), received:\n"++show(doc t)
+    flatten t = 
+      let str = show(doc t) in 
+      case length str of -- Avoid nested exceptions:
+        _ -> error$ "convertArrayType: made invalid assumuptions about array\n"++
+             "       types from Acc frontend, expecting ((),a), received:\n"++str
 
     tupleTy [ty] = ty
     tupleTy ls = S.TTuple ls
@@ -665,10 +672,84 @@ convertFun2 fn = do
 
 
 
+isTrivial _ = False
+
+
+--------------------------------------------------------------------------------
+-- Compiler pass to lift Lets
+--------------------------------------------------------------------------------
+
+-- | This pass lifts all Let bindings to the outside.  
+-- 
+--   The resulting program will have a spine of Lets (with Let-free
+--   RHS's) followed by a Let-free body.
+liftLets :: S.AExp -> S.AExp
+liftLets x = 
+     if L.null binds then loop binds else
+     trace ("[dbg] Lifted out "++show (length binds)++" Lets ...") $ loop binds
+  where (binds, bod) = gatherLets x
+        loop [] = bod
+        loop (hd:tl) = S.Let hd $ loop tl
+
+gatherLets :: S.AExp -> ([(S.Var, S.Type, S.AExp)], S.AExp)
+gatherLets prog = (reverse binds, prog')
+ where 
+   (prog',binds) = runState (loop prog) [] 
+   loop :: S.AExp -> State [(S.Var, S.Type, S.AExp)] S.AExp
+   loop aex = 
+     case aex of 
+       S.Let (v1,t1, rhs) bod -> 
+          do rhs' <- loop rhs -- Important: Collect these bindings first.
+             ls <- get
+             put$ (v1,t1,rhs') : ls
+             loop bod
+       S.Vr vr               -> return aex
+       S.Unit ex             -> return aex
+       S.Use ty arr          -> return aex
+       S.Generate aty ex fn  -> return aex
+       S.ZipWith fn ae1 ae2  -> S.ZipWith fn <$> loop ae1 <*> loop ae2 
+       S.Map     fn ae       -> S.Map     fn <$> loop ae
+       S.TupleRefFromRight ind ae -> S.TupleRefFromRight ind <$> loop ae
+       S.Cond ex ae1 ae2     -> S.Cond ex <$> loop ae1 <*> loop ae2 
+       S.Replicate aty slice ex ae -> S.Replicate aty slice ex <$> loop ae
+       S.Index     slc ae ex -> do ae' <- loop ae
+                                   return$ S.Index slc ae' ex
+       S.Fold  fn einit ae         -> S.Fold  fn einit    <$> loop ae
+       S.Fold1 fn       ae         -> S.Fold1 fn          <$> loop ae 
+       S.FoldSeg fn einit ae aeseg -> S.FoldSeg fn einit  <$> loop ae <*> loop aeseg 
+       S.Fold1Seg fn      ae aeseg -> S.Fold1Seg fn       <$> loop ae <*> loop aeseg 
+       S.Scanl    fn einit ae      -> S.Scanl    fn einit <$> loop ae  
+       S.Scanl'   fn einit ae      -> S.Scanl'   fn einit <$> loop ae  
+       S.Scanl1   fn       ae      -> S.Scanl1   fn       <$> loop ae 
+       S.Scanr    fn einit ae      -> S.Scanr    fn einit <$> loop ae 
+       S.Scanr'   fn einit ae      -> S.Scanr'   fn einit <$> loop ae 
+       S.Scanr1   fn       ae      -> S.Scanr1   fn       <$> loop ae
+       S.Permute fn2 ae1 fn1 ae2 -> (\ a b -> S.Permute fn2 a fn1 ae2)
+                                 <$> loop ae1 <*> loop ae2
+       S.Backpermute ex lam ae -> S.Backpermute ex lam   <$> loop ae
+       S.Reshape     ex     ae -> S.Reshape     ex       <$> loop ae
+       S.Stencil   fn bndry ae -> S.Stencil     fn bndry <$> loop ae
+       S.Stencil2  fn bnd1 ae1 bnd2 ae2 -> (\ a b -> S.Stencil2 fn bnd1 a bnd2 b) 
+                                        <$> loop ae1 <*> loop ae2
+       S.Apply  fn  ae  -> S.Apply fn <$> loop ae       
+       S.ArrayTuple aes -> S.ArrayTuple <$> mapM loop aes
+
+
+--------------------------------------------------------------------------------
+-- Compiler pass to remove Array tuples
+--------------------------------------------------------------------------------
+
+-- | This removes ArrayTuple and TupleRefFromRight.  However, the
+--   final body may return more than one array (i.e. an ArrayTuple),
+--   so the output must no longer be an expression but a `Prog`.
+removeArrayTuple :: S.AExp -> S.Prog
+removeArrayTuple prog = S.Letrec [] [] (S.TTuple [])
+  where 
 
 --------------------------------------------------------------------------------
 -- Compiler pass to remove dynamic cons/head/tail on indices.
 --------------------------------------------------------------------------------
+
 
 -- | This lowers the AST further /after/ conversion from Accelerate's
 --   front-end AST representation.  It removes unnecessary constructs.
@@ -676,6 +757,21 @@ desugarConverted :: S.AExp -> S.AExp
 desugarConverted ae = aexp M.empty ae
  where
 --   aexp :: M.Map Var Int -> AExp -> [Builder]
+   
+   -- Trace the spine of lets.  We allow array tuples only at the very end:
+   prog tenv aex = 
+     case aex of 
+       -- Lift out Let's as we encounter them:
+       S.Let (v1,t1, S.Let (v2,t2,rhs) bod1) bod2 -> 
+         prog tenv $ S.Let (v2,t2,rhs) $
+                     S.Let (v1,t1,bod1) bod2
+
+
+--       S.Let (vr,ty,rhs) bod -> S.Let (vr,ty,aexp tenv' rhs) (tail tenv bod)
+--          where tenv' = M.insert vr ty tenv
+       oth -> aexp tenv oth
+
+
    aexp tenv aex = 
      case aex of 
        
@@ -683,21 +779,28 @@ desugarConverted ae = aexp M.empty ae
        S.Apply fn ae -> 
          S.Let (v,ty, aexp tenv' abod) (aexp tenv ae)
          where tenv' = M.insert v ty tenv         
-               S.ALam [(v,ty)] abod = fn 
+               S.ALam (v,ty) abod = fn 
        
+       -- TODO: Can we get rid of array tupling entirely?
+       S.ArrayTuple aes -> S.ArrayTuple $ L.map (aexp tenv) aes       
+       -- S.ArrayTuple aes -> error$"desugarConverted: encountered ArrayTuple that was not on the RHS of a Let:\n"++show(doc aex)
+
+       -- S.Let (vr,ty, S.ArrayTuple rhss) bod -> error "S.Let FINISHME"
+         -- S.Let (vr,ty,loop rhs) (loop bod)
+         -- where loop = aexp (M.insert vr ty tenv)
+
+
        -- The rest is BOILERPLATE; could scrap if we so chose:
        -------------------------------------------------------
        S.Vr vr -> S.Vr vr
-       S.Let (vr,ty,rhs) bod -> S.Let (vr,ty,loop rhs) (loop bod)
-          where loop = aexp (M.insert vr ty tenv)
+       S.Let (vr,ty,rhs) bod -> S.Let (vr,ty,aexp tenv' rhs) (aexp tenv bod)
+          where tenv' = M.insert vr ty tenv
        S.Unit ex -> S.Unit (exp tenv ex)
             
        S.Generate aty ex fn -> S.Generate aty (exp tenv ex) (lam1 tenv fn)
        S.ZipWith fn ae1 ae2 -> S.ZipWith (lam2 tenv fn) (aexp tenv ae1) (aexp tenv ae2)
        S.Map     fn ae      -> S.Map (lam1 tenv fn) (aexp tenv ae)
 
-       -- TODO: Can we get rid of array tupling entirely?
-       S.ArrayTuple aes -> S.ArrayTuple $ L.map (aexp tenv) aes       
        S.TupleRefFromRight ind ae -> S.TupleRefFromRight ind (aexp tenv ae)
 
        S.Cond ex ae1 ae2 -> S.Cond (exp tenv ex) (aexp tenv ae1) (aexp tenv ae2)
@@ -736,6 +839,19 @@ desugarConverted ae = aexp M.empty ae
    exp :: M.Map S.Var S.Type -> S.Exp -> S.Exp 
    exp tenv e = 
      case e of  
+       -- S.EIndex els -> error "staticTupleIndices: EIndex is slated to be removed"
+
+       -- -- TODO: Eliminate
+       -- S.EIndexConsDynamic e1 e2 -> 
+       --   -- This is potentially inefficient.
+       --   error$"IndexCons - finish me"
+         
+       -- S.EIndexHeadDynamic e -> error "unimplemented: eliminate indexheaddynamic"
+       -- S.EIndexTailDynamic e -> error "unimplemented: eliminate indextaildynamic"
+
+       
+       -- The rest is BOILERPLATE:
+       ------------------------------------------------------------
        S.EVr vr -> S.EVr vr       
        S.ELet (vr,ty,rhs) bod -> S.ELet (vr,ty, exp tenv' rhs) (exp tenv bod)
          where tenv' = M.insert vr ty tenv
@@ -748,15 +864,11 @@ desugarConverted ae = aexp M.empty ae
        S.EConst c  -> S.EConst c 
        S.ETuple ls -> S.ETuple (L.map (exp tenv) ls)
        S.ETupProjectFromRight ind ex -> S.ETupProjectFromRight ind (exp tenv ex)
-       S.EIndex els -> error "staticTupleIndices: EIndex is slated to be removed"
-
-       -- TODO: Eliminate
-       S.EIndexConsDynamic e1 e2 -> 
-         -- This is potentially inefficient.
-         error$"IndexCons - finish me"
-         
-       S.EIndexHeadDynamic e -> error "unimplemented: eliminate indexheaddynamic"
-       S.EIndexTailDynamic e -> error "unimplemented: eliminate indextaildynamic"
+       
+       S.EIndex els -> S.EIndex (L.map (exp tenv) els)
+       S.EIndexConsDynamic e1 e2 -> S.EIndexConsDynamic (exp tenv e1) (exp tenv e2)
+       S.EIndexHeadDynamic ex -> S.EIndexHeadDynamic (exp tenv ex)
+       S.EIndexTailDynamic ex -> S.EIndexTailDynamic (exp tenv ex)
 
 
 --------------------------------------------------------------------------------
