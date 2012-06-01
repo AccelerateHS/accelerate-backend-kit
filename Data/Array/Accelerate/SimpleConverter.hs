@@ -681,6 +681,8 @@ isTrivial _ = False
 
 -- | This pass lifts all Let bindings to the outside.  
 -- 
+--   @Apply@ also gets converted to @Let@ in this pass.
+-- 
 --   The resulting program will have a spine of Lets (with Let-free
 --   RHS's) followed by a Let-free body.
 liftLets :: S.AExp -> S.AExp
@@ -695,14 +697,21 @@ gatherLets :: S.AExp -> ([(S.Var, S.Type, S.AExp)], S.AExp)
 gatherLets prog = (reverse binds, prog')
  where 
    (prog',binds) = runState (loop prog) [] 
+   addbind bnd = do ls <- get; put (bnd:ls)
    loop :: S.AExp -> State [(S.Var, S.Type, S.AExp)] S.AExp
    loop aex = 
      case aex of 
-       S.Let (v1,t1, rhs) bod -> 
+       S.Let (v,ty,rhs) bod -> 
           do rhs' <- loop rhs -- Important: Collect these bindings first.
-             ls <- get
-             put$ (v1,t1,rhs') : ls
+             addbind (v,ty,rhs')
              loop bod
+       S.Apply fn ae -> 
+          do let S.ALam (v,ty) abod = fn 
+             rhs' <- loop ae
+             addbind (v,ty,rhs')
+             loop abod
+       -- The rest is BOILERPLATE:      
+       ----------------------------------------      
        S.Vr vr               -> return aex
        S.Unit ex             -> return aex
        S.Use ty arr          -> return aex
@@ -712,8 +721,7 @@ gatherLets prog = (reverse binds, prog')
        S.TupleRefFromRight ind ae -> S.TupleRefFromRight ind <$> loop ae
        S.Cond ex ae1 ae2     -> S.Cond ex <$> loop ae1 <*> loop ae2 
        S.Replicate aty slice ex ae -> S.Replicate aty slice ex <$> loop ae
-       S.Index     slc ae ex -> do ae' <- loop ae
-                                   return$ S.Index slc ae' ex
+       S.Index     slc ae ex -> (\ ae' -> S.Index slc ae' ex) <$> loop ae
        S.Fold  fn einit ae         -> S.Fold  fn einit    <$> loop ae
        S.Fold1 fn       ae         -> S.Fold1 fn          <$> loop ae 
        S.FoldSeg fn einit ae aeseg -> S.FoldSeg fn einit  <$> loop ae <*> loop aeseg 
@@ -731,7 +739,6 @@ gatherLets prog = (reverse binds, prog')
        S.Stencil   fn bndry ae -> S.Stencil     fn bndry <$> loop ae
        S.Stencil2  fn bnd1 ae1 bnd2 ae2 -> (\ a b -> S.Stencil2 fn bnd1 a bnd2 b) 
                                         <$> loop ae1 <*> loop ae2
-       S.Apply  fn  ae  -> S.Apply fn <$> loop ae       
        S.ArrayTuple aes -> S.ArrayTuple <$> mapM loop aes
 
 
@@ -742,10 +749,130 @@ gatherLets prog = (reverse binds, prog')
 -- | This removes ArrayTuple and TupleRefFromRight.  However, the
 --   final body may return more than one array (i.e. an ArrayTuple),
 --   so the output must no longer be an expression but a `Prog`.
-removeArrayTuple :: S.AExp -> S.Prog
-removeArrayTuple prog = S.Letrec [] [] (S.TTuple [])
-  where 
+-- 
+--   This pass introduces new variable names and thus makes
+--   assumptions about the naming convention.  It assumes that adding
+--   "_N" suffixes to existing variables will not capture existing
+--   variables.       
+-- 
+--   This pass introduces new top-level scalar bindings to enable the
+--   elimination of @ArrayTuple@s under @Cond@s.
+removeArrayTuple :: ([(S.Var, S.Type, S.AExp)], S.AExp) -> S.Prog
+-- removeArrayTuple :: S.AExp -> S.Prog
+removeArrayTuple (binds, bod) = S.Letrec [] [] (S.TTuple [])
+  where
+   
+   pushTuplRefIn (S.Vr vr) = undefined
+    
+   origenv = M.fromList $ L.map (\ (a,b,c) -> (a,c)) binds
 
+   -- Is a variable bound to an ArrayTuple?  If so, return its components.
+   -- chaseTupledVar :: Var -> Maybe []
+   -- chaseTupledVar vr = 
+   --   case lookup vr env of 
+   --     S.Vr v2         -> chaseTupledVar v2
+   --     S.ArrayTuple ls -> Just ls
+   --     _               -> Nothing
+
+   -- Is a variable bound to an ArrayTuple?
+   isTupledVar :: S.Var -> Bool
+   isTupledVar vr = loop (origenv M.! vr)
+     where 
+       strictAnd True  True  = True
+       strictAnd False False = False
+       strictAnd x     y     = error$"isTupledVar: expecting var "++show vr
+                               ++" to be bound to a tuple in both sides of the conditional" 
+       loop x =
+         case x of 
+           S.Vr v2          -> isTupledVar v2
+           S.ArrayTuple ls  -> True
+           S.Cond _ ae1 ae2 -> loop ae1 `strictAnd` loop ae2
+           _                -> False
+   
+   isTupled (S.ArrayTuple _) = True
+   isTupled (S.Vr vr)        = isTupledVar vr
+   isTupled  _               = False
+
+   -- This iterates over the bindings from top to bottom.  It ASSUMES
+   -- that they are topologically sorted.  This way it can break up
+   -- Conds as it goes, and rely on those results downstream.
+   doBinds acc [] = unpackInOrder acc binds
+   doBinds acc ((vr,ty,rhs) :remaining) = undefined
+--     doBinds (M.insert vr (dorhs acc rhs) undefined) remaining
+
+   unpackInOrder mp [] = []
+
+   -- Process an aexp where we KNOW not to expect tuples.
+   aexp eenv aex = 
+     case dorhs eenv aex of 
+       [one] -> one 
+       _     -> error$"removeArrayTuple: Significant invariant breakage did not expect expr to produce a tuple: "++show aex
+
+   -- Process the right hand side of a binding, splitting it into
+   -- multiple bindings if the RHS is a tuple.
+--   dorhs :: () -> S.AExp -> [S.AExp]
+   dorhs eenv aex = 
+     case aex of 
+       
+       -- S.TupleRefFromRight ind ae | not (isTupled ae) -> 
+       --   error "removeArrayTuple: TupleRefFromRight with unexpected input: "++show ae
+       S.TupleRefFromRight ind ae -> 
+         case dorhs eenv ae of 
+           -- The builtin operators (e.g. Fold) do NOT return tuples.
+           -- Tuples can only take one of three forms at this point:
+           [S.Vr vr] -> error "do lookup"
+--           S.Cond ex ae1 ae2 -> 
+--           S.ArrayTuple 
+           
+--         S.TupleRefFromRight ind (dorhs eenv ae)
+       
+       -- Conditionals with tuples underneath need to be broken up:
+       S.Cond ex ae1 ae2 | isTupled aex ->         
+         L.map (uncurry $ S.Cond vr) (zip ls1 ls2)
+         where
+          (vr,binds) = error "if istriv vr then __ else fresh"
+          ls1 = error "deTuple ae1"
+          ls2 = error "deTuple ae2"
+       
+       S.Cond ex ae1 ae2 -> [S.Cond ex (aexp eenv ae1) (aexp eenv ae2)]
+       
+       -- Have to consider flattening of nested array tuples here:
+       S.ArrayTuple ls -> concatMap (dorhs eenv) $ ls
+
+       -- The rest is BOILERPLATE:
+       -------------------------------------------------------
+       S.Vr vr      -> [S.Vr vr]
+       S.Unit ex    -> [S.Unit ex]
+       S.Use ty arr -> [S.Use ty arr]
+       S.Generate aty ex fn -> [S.Generate aty ex (lam1 eenv fn)]
+       S.ZipWith fn ae1 ae2 -> [S.ZipWith (lam2 eenv fn) (aexp eenv ae1) (aexp eenv ae2)]
+       S.Map     fn ae      -> [S.Map (lam1 eenv fn) (aexp eenv ae)]
+       S.Replicate aty slice ex ae -> [S.Replicate aty slice ex (aexp eenv ae)]
+       S.Index     slc ae ex       -> [S.Index slc (aexp eenv ae) ex]
+       S.Fold  fn einit ae         -> [S.Fold  (lam2 eenv fn) einit (aexp eenv ae)]
+       S.Fold1 fn       ae         -> [S.Fold1 (lam2 eenv fn) (aexp eenv ae)]
+       S.FoldSeg fn einit ae aeseg -> [S.FoldSeg  (lam2 eenv fn) einit (aexp eenv ae) (aexp eenv aeseg)]
+       S.Fold1Seg fn      ae aeseg -> [S.Fold1Seg (lam2 eenv fn) (aexp eenv ae) (aexp eenv aeseg)]
+       S.Scanl    fn einit ae      -> [S.Scanl  (lam2 eenv fn) (einit) (aexp eenv ae)]
+       S.Scanl'   fn einit ae      -> [S.Scanl' (lam2 eenv fn) (einit) (aexp eenv ae)]
+       S.Scanl1   fn       ae      -> [S.Scanl1 (lam2 eenv fn) (aexp eenv ae)]
+       S.Scanr    fn einit ae      -> [S.Scanr  (lam2 eenv fn) (einit) (aexp eenv ae)]
+       S.Scanr'   fn einit ae      -> [S.Scanr' (lam2 eenv fn) (einit) (aexp eenv ae)]
+       S.Scanr1   fn       ae      -> [S.Scanr1 (lam2 eenv fn) (aexp eenv ae)]
+       S.Permute fn2 ae1 fn1 ae2   -> [S.Permute (lam2 eenv fn2) (aexp eenv ae1) 
+                                                 (lam1 eenv fn1) (aexp eenv ae2)]
+       S.Backpermute ex lam ae -> [S.Backpermute (ex) (lam1 eenv lam) (aexp eenv ae)]
+       S.Reshape     ex     ae -> [S.Reshape     (ex)                 (aexp eenv ae)]
+       S.Stencil   fn bndry ae -> [S.Stencil     (lam1 eenv fn) bndry (aexp eenv ae)]
+       S.Stencil2  fn bnd1 ae1 bnd2 ae2 -> [S.Stencil2 (lam2 eenv fn) bnd1 (aexp eenv ae1)
+                                                                      bnd2 (aexp eenv ae2)]
+   -- Handle arity 1 lambdas:
+   lam1 eenv (S.Lam1 (v,ty) bod) = S.Lam1 (v,ty) (bod)
+     where eenv' = M.insert v ty eenv
+   -- Handle arity 2 lambdas:
+   lam2 eenv (S.Lam2 (v1,ty1) (v2,ty2) bod) = S.Lam2 (v1,ty1) (v2,ty2) (bod)
+     where eenv' = M.insert v1 ty1 $ M.insert v2 ty2 eenv
+    
 --------------------------------------------------------------------------------
 -- Compiler pass to remove dynamic cons/head/tail on indices.
 --------------------------------------------------------------------------------
@@ -788,7 +915,6 @@ desugarConverted ae = aexp M.empty ae
        -- S.Let (vr,ty, S.ArrayTuple rhss) bod -> error "S.Let FINISHME"
          -- S.Let (vr,ty,loop rhs) (loop bod)
          -- where loop = aexp (M.insert vr ty tenv)
-
 
        -- The rest is BOILERPLATE; could scrap if we so chose:
        -------------------------------------------------------
