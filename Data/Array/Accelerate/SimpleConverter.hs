@@ -24,7 +24,7 @@ module Data.Array.Accelerate.SimpleConverter
 import Control.Monad
 import Control.Applicative ((<$>),(<*>))
 import Prelude                                     hiding (sum)
-import Control.Monad.State.Strict (State, evalState, runState, get, put)
+import Control.Monad.State.Strict (State, evalState, runState, get, put, modify)
 
 -- friends
 import Data.Array.Accelerate.Type                  
@@ -746,6 +746,12 @@ gatherLets prog = (reverse binds, prog')
 -- Compiler pass to remove Array tuples
 --------------------------------------------------------------------------------
 
+type SubNameMap = M.Map S.Var [S.Var]
+-- | A binding EITHER for a scalar or array variable:
+type FlexBinding = (S.Var, S.Type, Either S.Exp S.AExp)
+
+type CollectM = State (Int,[(S.Var,S.Type,S.Exp)])
+
 -- | This removes ArrayTuple and TupleRefFromRight.  However, the
 --   final body may return more than one array (i.e. an ArrayTuple),
 --   so the output must no longer be an expression but a `Prog`.
@@ -759,20 +765,17 @@ gatherLets prog = (reverse binds, prog')
 --   elimination of @ArrayTuple@s under @Cond@s.
 removeArrayTuple :: ([(S.Var, S.Type, S.AExp)], S.AExp) -> S.Prog
 -- removeArrayTuple :: S.AExp -> S.Prog
-removeArrayTuple (binds, bod) = S.Letrec [] [] (S.TTuple [])
-  where
-   
-   pushTuplRefIn (S.Vr vr) = undefined
+removeArrayTuple (binds, bod) = evalState main (0,[])
+  where    
+   main = do (newbinds,nameMap) <- doBinds [] M.empty binds
+             newbod    <- dorhs nameMap bod
+             newbinds2 <- dischargeNewScalarBinds
+             return $ S.Letrec (newbinds ++ newbinds2)
+                               (deTuple nameMap newbod) 
+                               (S.TTuple [])
+ 
     
    origenv = M.fromList $ L.map (\ (a,b,c) -> (a,c)) binds
-
-   -- Is a variable bound to an ArrayTuple?  If so, return its components.
-   -- chaseTupledVar :: Var -> Maybe []
-   -- chaseTupledVar vr = 
-   --   case lookup vr env of 
-   --     S.Vr v2         -> chaseTupledVar v2
-   --     S.ArrayTuple ls -> Just ls
-   --     _               -> Nothing
 
    -- Is a variable bound to an ArrayTuple?
    isTupledVar :: S.Var -> Bool
@@ -793,78 +796,145 @@ removeArrayTuple (binds, bod) = S.Letrec [] [] (S.TTuple [])
    isTupled (S.Vr vr)        = isTupledVar vr
    isTupled  _               = False
 
+   dischargeNewScalarBinds = do 
+     (cntr,newbinds) <- get 
+     put (cntr,[])
+     return$ L.map (\(v,t,r) -> (v,t, Left r)) newbinds
+
    -- This iterates over the bindings from top to bottom.  It ASSUMES
    -- that they are topologically sorted.  This way it can break up
-   -- Conds as it goes, and rely on those results downstream.
-   doBinds acc [] = unpackInOrder acc binds
-   doBinds acc ((vr,ty,rhs) :remaining) = undefined
---     doBinds (M.insert vr (dorhs acc rhs) undefined) remaining
+   -- Conds as it goes, and rely on those results subsequently.
+   -- 
+   -- We keep two accumulators, the first a list (for output) and the
+   -- second a map (for fast access).
+   doBinds :: [FlexBinding] -> SubNameMap -> [(S.Var, S.Type, S.AExp)] 
+           -> CollectM ([FlexBinding],SubNameMap)
+   doBinds acc macc [] = return (reverse acc, macc)
+   doBinds acc macc ((vr,ty,rhs) :remaining) = do 
+     rhs' <- dorhs macc rhs     
+     newbinds <- dischargeNewScalarBinds 
+     let numElems = let S.TTuple ls = ty in length ls
+         acc'  = (vr,ty, Right rhs') : newbinds ++ acc
+         macc' = M.insert vr (freshNames vr numElems) macc
+     doBinds acc' macc' remaining
 
+   freshNames vr len = L.map (S.var . ((show vr ++"_")++) . show) [1..len]
+
+   -- Unpack the bindings in the same (topologically sorted) order they originally occurred.
    unpackInOrder mp [] = []
+   unpackInOrder mp ((vr,_,_):tl) = mp M.! vr : unpackInOrder mp tl
 
-   -- Process an aexp where we KNOW not to expect tuples.
-   aexp eenv aex = 
-     case dorhs eenv aex of 
-       [one] -> one 
-       _     -> error$"removeArrayTuple: Significant invariant breakage did not expect expr to produce a tuple: "++show aex
+   -- Unpack an expression representing a known tuple.  AFTER Conds
+   -- are broken up such an expression will have a very transparent
+   -- form.
+   deTuple eenv ae = 
+     case ae of 
+       -- The builtin operators (e.g. Fold) do NOT return tuples.
+       -- Tuples can only take one of two forms at this point:
+       S.ArrayTuple ls   -> ls
+       S.Vr vr -> 
+         case M.lookup vr eenv of 
+           Just newNames -> L.map S.Vr newNames
+           Nothing -> error$"removeArrayTuple: variable not bound at this point: "++show vr
+       oth -> [oth]
 
-   -- Process the right hand side of a binding, splitting it into
-   -- multiple bindings if the RHS is a tuple.
---   dorhs :: () -> S.AExp -> [S.AExp]
+   
+   -- Process the right hand side of a binding, breakup up Conds and
+   -- rewriting variable references to their new detupled targets.
+   dorhs :: M.Map S.Var [S.Var] -> S.AExp -> CollectM S.AExp
+   -- The eenv here maps old names onto a list of new "subnames" for
+   -- tuple components.  
    dorhs eenv aex = 
      case aex of 
        
        -- Have to consider flattening of nested array tuples here:
-       S.ArrayTuple ls -> concatMap (dorhs eenv) $ ls
-              
+       -- S.ArrayTuple ls -> concatMap (dorhs eenv) $ ls
+       S.ArrayTuple ls -> S.ArrayTuple <$> mapM (dorhs eenv) ls 
+       
        -- S.TupleRefFromRight ind ae | not (isTupled ae) -> 
        --   error "removeArrayTuple: TupleRefFromRight with unexpected input: "++show ae
-       S.TupleRefFromRight ind ae -> 
-         case dorhs eenv ae of 
-           -- The builtin operators (e.g. Fold) do NOT return tuples.
-           -- Tuples can only take one of three forms at this point:
-           [S.Vr vr] -> 
-             case M.lookup vr eenv of 
-               Just newNames -> [S.Vr$ (reverse newNames) !! ind]
-               Nothing -> error$"removeArrayTuple: variable not bound at this point: "++show vr
-           [S.ArrayTuple ls] -> [reverse ls !! ind]
+       S.TupleRefFromRight ind ae -> do
+         rhs' <- dorhs eenv ae
+         return $ reverse (deTuple eenv rhs') !! ind
        
        -- Conditionals with tuples underneath need to be broken up:
        S.Cond ex ae1 ae2 | isTupled aex ->         
-         L.map (uncurry $ S.Cond vr) (zip ls1 ls2)
-         where
-          (vr,binds) = error "if istriv vr then __ else fresh"
-          ls1 = error "deTuple ae1"
-          ls2 = error "deTuple ae2"
+         -- Breaking up the conditional requires possibly let-binding the scalar expression:
+         do 
+            ae1' <- dorhs eenv ae1
+            ae2' <- dorhs eenv ae2
+            (cntr,bnds) <- get
+            let triv = isTrivial ex  
+            unless triv $ put (cntr+1, bnds)
+            let fresh = S.var $ "cnd_" ++ show cntr
+                ex' = if triv then ex' else S.EVr fresh
+                ls1 = deTuple eenv ae1'
+                ls2 = deTuple eenv ae2'
+                result = S.ArrayTuple $ L.map (uncurry $ S.Cond ex') (zip ls1 ls2)
+            -- Here we add the new binding, if needed:
+            let fakeType = trace "WARNING - REPLACE THIS WITH A REAL TYPE" (S.TTuple [])
+            unless triv $ modify (\ (c,ls) -> (c, (fresh,fakeType,ex):ls))
+            return result          
        
-       S.Cond ex ae1 ae2 -> [S.Cond ex (aexp eenv ae1) (aexp eenv ae2)]
+       S.Cond ex ae1 ae2 -> S.Cond ex <$> dorhs eenv ae1 <*> dorhs eenv ae2
        
+       -- The rest is BOILERPLATE:      
+       ----------------------------------------      
+       S.Vr vr                     -> return aex
+       S.Unit ex                   -> return aex
+       S.Use ty arr                -> return aex
+       S.Generate aty ex fn        -> return aex
+       S.ZipWith fn ae1 ae2        -> S.ZipWith fn <$> dorhs eenv ae1 <*> dorhs eenv ae2 
+       S.Map     fn ae             -> S.Map     fn <$> dorhs eenv ae
+       S.TupleRefFromRight ind ae  -> S.TupleRefFromRight ind <$> dorhs eenv ae
+       S.Cond ex ae1 ae2           -> S.Cond ex <$> dorhs eenv ae1 <*> dorhs eenv ae2 
+       S.Replicate aty slice ex ae -> S.Replicate aty slice ex <$> dorhs eenv ae
+       S.Index     slc ae    ex    -> (\ ae' -> S.Index slc ae' ex) <$> dorhs eenv ae
+       S.Fold  fn einit ae         -> S.Fold  fn einit    <$> dorhs eenv ae
+       S.Fold1 fn       ae         -> S.Fold1 fn          <$> dorhs eenv ae 
+       S.FoldSeg fn einit ae aeseg -> S.FoldSeg fn einit  <$> dorhs eenv ae <*> dorhs eenv aeseg 
+       S.Fold1Seg fn      ae aeseg -> S.Fold1Seg fn       <$> dorhs eenv ae <*> dorhs eenv aeseg 
+       S.Scanl    fn einit ae      -> S.Scanl    fn einit <$> dorhs eenv ae  
+       S.Scanl'   fn einit ae      -> S.Scanl'   fn einit <$> dorhs eenv ae  
+       S.Scanl1   fn       ae      -> S.Scanl1   fn       <$> dorhs eenv ae 
+       S.Scanr    fn einit ae      -> S.Scanr    fn einit <$> dorhs eenv ae 
+       S.Scanr'   fn einit ae      -> S.Scanr'   fn einit <$> dorhs eenv ae 
+       S.Scanr1   fn       ae      -> S.Scanr1   fn       <$> dorhs eenv ae
+       S.Permute fn2 ae1 fn1 ae2   -> (\ a b -> S.Permute fn2 a fn1 ae2)
+                                   <$> dorhs eenv ae1 <*> dorhs eenv ae2
+       S.Backpermute ex lam ae     -> S.Backpermute ex lam   <$> dorhs eenv ae
+       S.Reshape     ex     ae     -> S.Reshape     ex       <$> dorhs eenv ae
+       S.Stencil   fn bndry ae     -> S.Stencil     fn bndry <$> dorhs eenv ae
+       S.Stencil2  fn bnd1 ae1 bnd2 ae2 -> (\ a b -> S.Stencil2 fn bnd1 a bnd2 b) 
+                                        <$> dorhs eenv ae1 <*> dorhs eenv ae2
+       S.ArrayTuple aes -> S.ArrayTuple <$> mapM (dorhs eenv) aes
+
        -- The rest is BOILERPLATE:
        -------------------------------------------------------
-       S.Vr vr                     -> [S.Vr vr]
-       S.Unit ex                   -> [S.Unit ex]
-       S.Use ty arr                -> [S.Use ty arr]
-       S.Generate aty ex fn        -> [S.Generate aty ex fn]
-       S.ZipWith fn ae1 ae2        -> [S.ZipWith fn (aexp eenv ae1) (aexp eenv ae2)]
-       S.Map     fn ae             -> [S.Map fn (aexp eenv ae)]
-       S.Replicate aty slice ex ae -> [S.Replicate aty slice ex (aexp eenv ae)]
-       S.Index     slc ae ex       -> [S.Index slc (aexp eenv ae) ex]
-       S.Fold     fn einit ae      -> [S.Fold  fn einit (aexp eenv ae)]
-       S.Fold1    fn       ae      -> [S.Fold1 fn (aexp eenv ae)]
-       S.FoldSeg fn einit ae aeseg -> [S.FoldSeg  fn einit (aexp eenv ae) (aexp eenv aeseg)]
-       S.Fold1Seg fn      ae aeseg -> [S.Fold1Seg fn (aexp eenv ae) (aexp eenv aeseg)]
-       S.Scanl    fn einit ae      -> [S.Scanl  fn einit (aexp eenv ae)]
-       S.Scanl'   fn einit ae      -> [S.Scanl' fn einit (aexp eenv ae)]
-       S.Scanl1   fn       ae      -> [S.Scanl1 fn (aexp eenv ae)]
-       S.Scanr    fn einit ae      -> [S.Scanr  fn einit (aexp eenv ae)]
-       S.Scanr'   fn einit ae      -> [S.Scanr' fn einit (aexp eenv ae)]
-       S.Scanr1   fn       ae      -> [S.Scanr1 fn (aexp eenv ae)]
-       S.Permute fn2 ae1 fn1 ae2   -> [S.Permute fn2 (aexp eenv ae1) fn1 (aexp eenv ae2)]
-       S.Backpermute ex lam ae     -> [S.Backpermute (ex) lam (aexp eenv ae)]
-       S.Reshape     ex     ae     -> [S.Reshape     (ex)                 (aexp eenv ae)]
-       S.Stencil   fn bndry ae     -> [S.Stencil     fn bndry (aexp eenv ae)]
-       S.Stencil2  fn bnd1 ae1 bnd2 ae2 -> [S.Stencil2 fn bnd1 (aexp eenv ae1)
-                                                          bnd2 (aexp eenv ae2)]
+       -- S.Vr vr                     -> [S.Vr vr]
+       -- S.Unit ex                   -> [S.Unit ex]
+       -- S.Use ty arr                -> [S.Use ty arr]
+       -- S.Generate aty ex fn        -> [S.Generate aty ex fn]
+       -- S.ZipWith fn ae1 ae2        -> [S.ZipWith fn (aexp eenv ae1) (aexp eenv ae2)]
+       -- S.Map     fn ae             -> [S.Map fn (aexp eenv ae)]
+       -- S.Replicate aty slice ex ae -> [S.Replicate aty slice ex (aexp eenv ae)]
+       -- S.Index     slc ae ex       -> [S.Index slc (aexp eenv ae) ex]
+       -- S.Fold     fn einit ae      -> [S.Fold  fn einit (aexp eenv ae)]
+       -- S.Fold1    fn       ae      -> [S.Fold1 fn (aexp eenv ae)]
+       -- S.FoldSeg fn einit ae aeseg -> [S.FoldSeg  fn einit (aexp eenv ae) (aexp eenv aeseg)]
+       -- S.Fold1Seg fn      ae aeseg -> [S.Fold1Seg fn (aexp eenv ae) (aexp eenv aeseg)]
+       -- S.Scanl    fn einit ae      -> [S.Scanl  fn einit (aexp eenv ae)]
+       -- S.Scanl'   fn einit ae      -> [S.Scanl' fn einit (aexp eenv ae)]
+       -- S.Scanl1   fn       ae      -> [S.Scanl1 fn (aexp eenv ae)]
+       -- S.Scanr    fn einit ae      -> [S.Scanr  fn einit (aexp eenv ae)]
+       -- S.Scanr'   fn einit ae      -> [S.Scanr' fn einit (aexp eenv ae)]
+       -- S.Scanr1   fn       ae      -> [S.Scanr1 fn (aexp eenv ae)]
+       -- S.Permute fn2 ae1 fn1 ae2   -> [S.Permute fn2 (aexp eenv ae1) fn1 (aexp eenv ae2)]
+       -- S.Backpermute ex lam ae     -> [S.Backpermute (ex) lam (aexp eenv ae)]
+       -- S.Reshape     ex     ae     -> [S.Reshape     (ex)                 (aexp eenv ae)]
+       -- S.Stencil   fn bndry ae     -> [S.Stencil     fn bndry (aexp eenv ae)]
+       -- S.Stencil2  fn bnd1 ae1 bnd2 ae2 -> [S.Stencil2 fn bnd1 (aexp eenv ae1)
+       --                                                    bnd2 (aexp eenv ae2)]
     
 --------------------------------------------------------------------------------
 -- Compiler pass to remove dynamic cons/head/tail on indices.
