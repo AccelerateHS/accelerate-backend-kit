@@ -98,7 +98,7 @@ data Prog = Letrec {
   progBinds   :: [(Var,Type,Either Exp AExp)],
   progResults :: [AExp],
   progType    :: Type
-}
+} deriving (Read,Show,Eq,Generic)
 
 
 -- TODO: invariant checker
@@ -524,6 +524,7 @@ fromConst c =
 -- Boilerplate for generic pretty printing:
 
 instance Out Type
+instance Out Prog
 instance Out Fun1
 instance Out Fun2
 instance Out Exp
@@ -565,6 +566,7 @@ instance Out CSChar  where docPrec _ = text . show; doc = docPrec 0
 instance Out CUChar  where docPrec _ = text . show; doc = docPrec 0 
 
 -- TODO: Get proper pretty printing going here:
+-- This just converts the non-pretty version:
 instance Out AccArray where docPrec _ = text . show; doc = docPrec 0
 
 -- Why is this one not included in the array package?:

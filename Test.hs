@@ -4,7 +4,7 @@
 
 module Main where
 
-import Data.Array.Accelerate.SimpleConverter (convertToSimpleAST)
+import Data.Array.Accelerate.SimpleConverter (convertToSimpleAST, convertToSimpleProg)
 import qualified Data.Array.Accelerate.SimpleAST    as S
 import qualified Data.Array.Accelerate.SimpleInterp as I
 -- import qualified Data.Array.Accelerate.Smart       as Sugar
@@ -39,8 +39,7 @@ r0 = I.run p0
 -- | Sharing recovery will create a Let here:
 p1 :: Acc (Scalar Int)
 p1 = fold (+) 0 (zipWith (*) p1aa p1aa)
-t1 :: S.AExp
-t1 = convertToSimpleAST p1
+t1 = convertToSimpleProg p1
 r1 = I.run p1
 
 -- | Just generate 
@@ -58,8 +57,7 @@ p1a = generate (constant (Z :. (10::Int)))
 p1b :: Acc (Vector Float)
 p1b = let xs = use$ fromList (Z :. (2::Int) :. (5::Int)) [1..10::Float]
       in  fold (+) 0 xs
-t1b :: S.AExp
-t1b = convertToSimpleAST p1b
+t1b = convertToSimpleProg p1b
 r1b = I.run p1b
 
 
@@ -78,7 +76,7 @@ p1d = let xs = use$ fromList (Z :. (5::Int)) [1..10::Word]
 p2 :: Acc (Vector Int32)
 p2 = let xs = replicate (constant (Z :. (4::Int))) (unit 40)
      in map (+ 10) xs
-t2 = convertToSimpleAST p2
+t2 = convertToSimpleProg p2
 r2 = I.run p2
 
 p2a :: Acc (Scalar Word)
@@ -90,7 +88,7 @@ p2b = let arr = generate (constant (Z :. (5::Int))) unindex1
       in replicate (constant$ Z :. All :. (4::Int)) arr
           -- 1st generates: Array (Z :. 4 :. 5) [0,1,2,3,4,0,1,2,3,4,0,1,2,3,4,0,1,2,3,4]
           -- 2nd generates: Array (Z :. 5 :. 4) [0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4]
-t2b = convertToSimpleAST p2b
+t2b = convertToSimpleProg p2b
 
 -- | A 2D array with some tuple operations:
 p2c :: Acc (Array DIM2 Int)
@@ -129,7 +127,7 @@ p3 :: Acc (Array DIM3 Int32)
 p3 = let arr = generate  (constant (Z :. (5::Int))) (\_ -> 33)
          xs  = replicate (constant$ Z :. (2::Int) :. All :. (3::Int)) arr
      in xs 
-t3 = convertToSimpleAST p3
+t3 = convertToSimpleProg p3
 r3 = I.run p3
 
 -- Test 4, a program that creates an IndexScalar:
@@ -137,7 +135,7 @@ p4 :: Acc (Scalar Int64)
 p4 = let arr = generate (constant (Z :. (5::Int))) (\_ -> 33) in
      unit $ arr ! (index1 2)
         -- (Lang.constant (Z :. (3::Int)))  
-t4 = convertToSimpleAST p4         
+t4 = convertToSimpleProg p4         
 r4 = I.run p4
 
 p4b :: Acc (Scalar Int64)
@@ -145,13 +143,13 @@ p4b = let arr = generate (constant (Z :. (3::Int) :. (3::Int))) (\_ -> 33)
               :: Acc (Array DIM2 Int64)
       in
      unit $ arr ! (index2 1 2)
-t4b = convertToSimpleAST p4b
+t4b = convertToSimpleProg p4b
 
 
 -- This one generates EIndex. It creates an array containing a slice descriptor.
 p5 :: Acc (Scalar (((Z :. All) :. Int) :. All))
 p5 = unit$ lift $ Z :. All :. (2::Int) :. All
-t5 = convertToSimpleAST p5
+t5 = convertToSimpleProg p5
 r5 = I.run p5
 
 -- This one generates ETupProjectFromRight:
@@ -162,7 +160,7 @@ p6 = map go (use xs)
     xs = fromList sh [(1,10),(2,20)]
     sh = Z :. (2::Int)
     go x = let (a,b) = unlift x   in a*b
-t6 = convertToSimpleAST p6
+t6 = convertToSimpleProg p6
 r6 = I.run p6
 
 transposeAcc :: Array DIM2 Float -> Acc (Array DIM2 Float)
@@ -176,7 +174,7 @@ transposeAcc mat =
 -- This one uses dynamic index head/tail (but not cons):
 p7 :: Acc (Array DIM2 Float)
 p7 = transposeAcc (fromList (Z :. (2::Int) :. (2::Int)) [1..4])
-t7 = convertToSimpleAST p7
+t7 = convertToSimpleProg p7
 r7 = I.run p7
 -- Evaluating "doc t7" prints:
 -- Let a0
@@ -198,7 +196,7 @@ p8 :: Acc (Scalar Float)
 p8 = unit$ pi + (constant pi :: Exp Float) *
            negate (negate (abs (signum pi)))
 
-t8 = convertToSimpleAST p8
+t8 = convertToSimpleProg p8
 r8 = I.run p8
 
 -- Prim arguments don't need to directly be tuple expressions:

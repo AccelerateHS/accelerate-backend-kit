@@ -12,7 +12,7 @@
 
 module Data.Array.Accelerate.SimpleConverter 
        ( 
-         convertToSimpleAST, 
+         convertToSimpleAST,  convertToSimpleProg, 
          unpackArray, packArray, repackAcc,
          
          -- TEMP:
@@ -58,6 +58,12 @@ convertToSimpleAST =
   liftLets .     
   runEnvM . convertAcc . 
   Sug.convertAcc
+
+
+convertToSimpleProg :: Sug.Arrays a => Sug.Acc a -> S.Prog
+convertToSimpleProg =  removeArrayTuple . gatherLets . convertToSimpleAST
+
+
 
 --------------------------------------------------------------------------------
 -- Environments
@@ -838,6 +844,12 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
            Nothing -> error$"removeArrayTuple: variable not bound at this point: "++show vr
        oth -> [oth]
 
+   -- For array expressions that we know are not tuples:
+   arrayonly eenv aex = 
+     case aex of 
+       S.ArrayTuple ls -> error$"desugarConverted: encountered ArrayTuple that was not on the RHS of a Let:\n"++show(doc aex)
+       S.Cond ex ae1 ae2 -> S.Cond ex <$> arrayonly eenv ae1 <*> arrayonly eenv ae2
+       oth -> dorhs eenv oth
    
    -- Process the right hand side of a binding, breakup up Conds and
    -- rewriting variable references to their new detupled targets.
@@ -884,57 +896,29 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
        S.Unit ex                   -> return aex
        S.Use ty arr                -> return aex
        S.Generate aty ex fn        -> return aex
-       S.ZipWith fn ae1 ae2        -> S.ZipWith fn <$> dorhs eenv ae1 <*> dorhs eenv ae2 
-       S.Map     fn ae             -> S.Map     fn <$> dorhs eenv ae
-       S.TupleRefFromRight ind ae  -> S.TupleRefFromRight ind <$> dorhs eenv ae
-       S.Cond ex ae1 ae2           -> S.Cond ex <$> dorhs eenv ae1 <*> dorhs eenv ae2 
-       S.Replicate aty slice ex ae -> S.Replicate aty slice ex <$> dorhs eenv ae
-       S.Index     slc ae    ex    -> (\ ae' -> S.Index slc ae' ex) <$> dorhs eenv ae
-       S.Fold  fn einit ae         -> S.Fold  fn einit    <$> dorhs eenv ae
-       S.Fold1 fn       ae         -> S.Fold1 fn          <$> dorhs eenv ae 
-       S.FoldSeg fn einit ae aeseg -> S.FoldSeg fn einit  <$> dorhs eenv ae <*> dorhs eenv aeseg 
-       S.Fold1Seg fn      ae aeseg -> S.Fold1Seg fn       <$> dorhs eenv ae <*> dorhs eenv aeseg 
-       S.Scanl    fn einit ae      -> S.Scanl    fn einit <$> dorhs eenv ae  
-       S.Scanl'   fn einit ae      -> S.Scanl'   fn einit <$> dorhs eenv ae  
-       S.Scanl1   fn       ae      -> S.Scanl1   fn       <$> dorhs eenv ae 
-       S.Scanr    fn einit ae      -> S.Scanr    fn einit <$> dorhs eenv ae 
-       S.Scanr'   fn einit ae      -> S.Scanr'   fn einit <$> dorhs eenv ae 
-       S.Scanr1   fn       ae      -> S.Scanr1   fn       <$> dorhs eenv ae
+       S.ZipWith fn ae1 ae2        -> S.ZipWith fn <$> arrayonly eenv ae1 <*> arrayonly eenv ae2 
+       S.Map     fn ae             -> S.Map     fn <$> arrayonly eenv ae
+       S.TupleRefFromRight ind ae  -> S.TupleRefFromRight ind <$> arrayonly eenv ae
+       S.Cond ex ae1 ae2           -> S.Cond ex <$> arrayonly eenv ae1 <*> arrayonly eenv ae2 
+       S.Replicate aty slice ex ae -> S.Replicate aty slice ex <$> arrayonly eenv ae
+       S.Index     slc ae    ex    -> (\ ae' -> S.Index slc ae' ex) <$> arrayonly eenv ae
+       S.Fold  fn einit ae         -> S.Fold  fn einit    <$> arrayonly eenv ae
+       S.Fold1 fn       ae         -> S.Fold1 fn          <$> arrayonly eenv ae 
+       S.FoldSeg fn einit ae aeseg -> S.FoldSeg fn einit  <$> arrayonly eenv ae <*> arrayonly eenv aeseg 
+       S.Fold1Seg fn      ae aeseg -> S.Fold1Seg fn       <$> arrayonly eenv ae <*> arrayonly eenv aeseg 
+       S.Scanl    fn einit ae      -> S.Scanl    fn einit <$> arrayonly eenv ae  
+       S.Scanl'   fn einit ae      -> S.Scanl'   fn einit <$> arrayonly eenv ae  
+       S.Scanl1   fn       ae      -> S.Scanl1   fn       <$> arrayonly eenv ae 
+       S.Scanr    fn einit ae      -> S.Scanr    fn einit <$> arrayonly eenv ae 
+       S.Scanr'   fn einit ae      -> S.Scanr'   fn einit <$> arrayonly eenv ae 
+       S.Scanr1   fn       ae      -> S.Scanr1   fn       <$> arrayonly eenv ae
        S.Permute fn2 ae1 fn1 ae2   -> (\ a b -> S.Permute fn2 a fn1 ae2)
-                                   <$> dorhs eenv ae1 <*> dorhs eenv ae2
-       S.Backpermute ex lam ae     -> S.Backpermute ex lam   <$> dorhs eenv ae
-       S.Reshape     ex     ae     -> S.Reshape     ex       <$> dorhs eenv ae
-       S.Stencil   fn bndry ae     -> S.Stencil     fn bndry <$> dorhs eenv ae
+                                   <$> arrayonly eenv ae1 <*> arrayonly eenv ae2
+       S.Backpermute ex lam ae     -> S.Backpermute ex lam   <$> arrayonly eenv ae
+       S.Reshape     ex     ae     -> S.Reshape     ex       <$> arrayonly eenv ae
+       S.Stencil   fn bndry ae     -> S.Stencil     fn bndry <$> arrayonly eenv ae
        S.Stencil2  fn bnd1 ae1 bnd2 ae2 -> (\ a b -> S.Stencil2 fn bnd1 a bnd2 b) 
-                                        <$> dorhs eenv ae1 <*> dorhs eenv ae2
-       S.ArrayTuple aes -> S.ArrayTuple <$> mapM (dorhs eenv) aes
-
-       -- The rest is BOILERPLATE:
-       -------------------------------------------------------
-       -- S.Vr vr                     -> [S.Vr vr]
-       -- S.Unit ex                   -> [S.Unit ex]
-       -- S.Use ty arr                -> [S.Use ty arr]
-       -- S.Generate aty ex fn        -> [S.Generate aty ex fn]
-       -- S.ZipWith fn ae1 ae2        -> [S.ZipWith fn (aexp eenv ae1) (aexp eenv ae2)]
-       -- S.Map     fn ae             -> [S.Map fn (aexp eenv ae)]
-       -- S.Replicate aty slice ex ae -> [S.Replicate aty slice ex (aexp eenv ae)]
-       -- S.Index     slc ae ex       -> [S.Index slc (aexp eenv ae) ex]
-       -- S.Fold     fn einit ae      -> [S.Fold  fn einit (aexp eenv ae)]
-       -- S.Fold1    fn       ae      -> [S.Fold1 fn (aexp eenv ae)]
-       -- S.FoldSeg fn einit ae aeseg -> [S.FoldSeg  fn einit (aexp eenv ae) (aexp eenv aeseg)]
-       -- S.Fold1Seg fn      ae aeseg -> [S.Fold1Seg fn (aexp eenv ae) (aexp eenv aeseg)]
-       -- S.Scanl    fn einit ae      -> [S.Scanl  fn einit (aexp eenv ae)]
-       -- S.Scanl'   fn einit ae      -> [S.Scanl' fn einit (aexp eenv ae)]
-       -- S.Scanl1   fn       ae      -> [S.Scanl1 fn (aexp eenv ae)]
-       -- S.Scanr    fn einit ae      -> [S.Scanr  fn einit (aexp eenv ae)]
-       -- S.Scanr'   fn einit ae      -> [S.Scanr' fn einit (aexp eenv ae)]
-       -- S.Scanr1   fn       ae      -> [S.Scanr1 fn (aexp eenv ae)]
-       -- S.Permute fn2 ae1 fn1 ae2   -> [S.Permute fn2 (aexp eenv ae1) fn1 (aexp eenv ae2)]
-       -- S.Backpermute ex lam ae     -> [S.Backpermute (ex) lam (aexp eenv ae)]
-       -- S.Reshape     ex     ae     -> [S.Reshape     (ex)                 (aexp eenv ae)]
-       -- S.Stencil   fn bndry ae     -> [S.Stencil     fn bndry (aexp eenv ae)]
-       -- S.Stencil2  fn bnd1 ae1 bnd2 ae2 -> [S.Stencil2 fn bnd1 (aexp eenv ae1)
-       --                                                    bnd2 (aexp eenv ae2)]
+                                        <$> arrayonly eenv ae1 <*> arrayonly eenv ae2
     
 --------------------------------------------------------------------------------
 -- Compiler pass to remove dynamic cons/head/tail on indices.
@@ -961,7 +945,6 @@ desugarConverted ae = aexp M.empty ae
 --          where tenv' = M.insert vr ty tenv
        oth -> aexp tenv oth
 
-
    aexp tenv aex = 
      case aex of 
        
@@ -973,7 +956,6 @@ desugarConverted ae = aexp M.empty ae
        
        -- TODO: Can we get rid of array tupling entirely?
        S.ArrayTuple aes -> S.ArrayTuple $ L.map (aexp tenv) aes       
-       -- S.ArrayTuple aes -> error$"desugarConverted: encountered ArrayTuple that was not on the RHS of a Let:\n"++show(doc aex)
 
        -- S.Let (vr,ty, S.ArrayTuple rhss) bod -> error "S.Let FINISHME"
          -- S.Let (vr,ty,loop rhs) (loop bod)
