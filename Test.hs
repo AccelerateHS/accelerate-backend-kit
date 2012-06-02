@@ -245,7 +245,7 @@ p11 = lift (unit 1, unit 2, unit 3)
 p11b :: Acc (Scalar Int, Scalar Int32)
 p11b = let (a,b,c) = unlift p11 
                      :: (Acc (Scalar Int), Acc (Scalar Int16), Acc (Scalar Int32)) 
-                     -- NOTE!  Should ^^ type annotation REALLY be necessary?
+                     -- NOTE!  Should this ^^ type annotation REALLY be necessary?
                      -- Is there no way to further constrain the mechanism here?
                      -- Are there really other viable intermediate types here?
        in lift (a,c)

@@ -770,16 +770,21 @@ type CollectM = State (Int,[(S.Var,S.Type,S.Exp)])
 --   This pass introduces new top-level scalar bindings to enable the
 --   elimination of @ArrayTuple@s under @Cond@s.
 removeArrayTuple :: ([(S.Var, S.Type, S.AExp)], S.AExp) -> S.Prog
--- removeArrayTuple :: S.AExp -> S.Prog
 removeArrayTuple (binds, bod) = evalState main (0,[])
   where    
    main = do (newbinds,nameMap) <- doBinds [] M.empty binds
              newbod    <- dorhs nameMap bod
              newbinds2 <- dischargeNewScalarBinds
              return $ S.Letrec (newbinds ++ newbinds2)
-                               (deTuple nameMap newbod) 
+                               (deepDeTuple nameMap newbod) 
+--                               (deTuple nameMap newbod)
                                (S.TTuple [])
  
+   -- Called on already processed expressions:
+   deepDeTuple eenv ae = 
+     case ae of      
+       S.ArrayTuple ls   -> concatMap (deepDeTuple eenv) ls
+       oth -> [oth]
     
    origenv = M.fromList $ L.map (\ (a,b,c) -> (a,c)) binds
 
@@ -818,10 +823,12 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
    doBinds acc macc [] = return (reverse acc, macc)
    doBinds acc macc ((vr,ty,rhs) :remaining) = do 
      rhs' <- dorhs macc rhs     
-     newbinds <- dischargeNewScalarBinds 
-     let numElems = let S.TTuple ls = ty in length ls
-         acc'  = (vr,ty, Right rhs') : newbinds ++ acc
-         macc' = M.insert vr (freshNames vr numElems) macc
+     rhsScalars <- dischargeNewScalarBinds 
+     let unpacked  = L.map Right$ deTuple macc rhs'
+         subnames  = freshNames vr (length unpacked)
+         flattened = zip3 subnames (deTupleTy ty) unpacked 
+         macc' = M.insert vr subnames macc
+         acc'  = rhsScalars ++ flattened ++ acc
      doBinds acc' macc' remaining
 
    freshNames vr len = L.map (S.var . ((show vr ++"_")++) . show) [1..len]
@@ -843,6 +850,11 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
            Just newNames -> L.map S.Vr newNames
            Nothing -> error$"removeArrayTuple: variable not bound at this point: "++show vr
        oth -> [oth]
+       
+   -- Types are stored in reverse order from natural Accelerate textual order:
+   -- deTupleTy (S.TTuple ls) = concatMap deTupleTy (reverse ls)
+   deTupleTy (S.TTuple ls) = reverse ls
+   deTupleTy oth           = [oth]
 
    -- For array expressions that we know are not tuples:
    arrayonly eenv aex = 
@@ -858,6 +870,12 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
    -- tuple components.  
    dorhs eenv aex = 
      case aex of 
+       
+       -- Variable references to tuples need to be deconstructed.
+       -- The original variable will disappear.
+       S.Vr vr -> case M.lookup vr eenv of  
+                    Just names -> return $ S.ArrayTuple (L.map S.Vr names)
+                    Nothing    -> return aex
        
        -- Have to consider flattening of nested array tuples here:
        -- S.ArrayTuple ls -> concatMap (dorhs eenv) $ ls
@@ -892,7 +910,6 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
        
        -- The rest is BOILERPLATE:      
        ----------------------------------------      
-       S.Vr vr                     -> return aex
        S.Unit ex                   -> return aex
        S.Use ty arr                -> return aex
        S.Generate aty ex fn        -> return aex
