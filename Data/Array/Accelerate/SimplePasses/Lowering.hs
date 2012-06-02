@@ -1,10 +1,16 @@
 
 -- | A few different passes for lowering the raw Acc-converted ASTs.
 
+
+-- TODO:
+--  * Add copy-propagation to removeArrayTuple
+
 module Data.Array.Accelerate.SimplePasses.Lowering 
        (
          liftLets, gatherLets,
          removeArrayTuple
+         
+         -- staticTuples -- Unfinished
        )
        where 
 
@@ -13,30 +19,23 @@ import Control.Monad
 import Control.Applicative ((<$>),(<*>))
 import Prelude                                     hiding (sum)
 import Control.Monad.State.Strict (State, evalState, runState, get, put, modify)
-
--- friends
-import Data.Array.Accelerate.Type                  
-import Data.Array.Accelerate.Array.Data            
-import Data.Array.Accelerate.Array.Representation  hiding (sliceIndex)
-import Data.Array.Accelerate.AST
-import Data.Array.Accelerate.Tuple
--- import Data.Array.Accelerate.Analysis.Shape (accDim)
-import qualified Data.Array.Accelerate.Smart       as Sug
-import qualified Data.Array.Accelerate.Array.Sugar as Sug
-import qualified Data.Array.Accelerate.SimpleAST   as S
-import qualified Data.Array.Accelerate.SimpleArray as SA
-
-import Text.PrettyPrint.GenericPretty (Out(doc), Generic)
-
 import Data.Map as M
-import qualified Data.List as L
+import Data.List as L
+import Text.PrettyPrint.GenericPretty (Out(doc), Generic)
+import Data.Array.Accelerate.SimpleAST   as S
 
 import Debug.Trace(trace)
 tracePrint s x = trace (s ++ show x) x
 
 ------------------------------------------------------------
 
-isTrivial _ = False
+-- TODO : Finish this.  
+
+-- Trivial expressions can be duplicated and don't warrant introducing let bindings.
+isTrivial (S.EVr _)    = True
+isTrivial (S.EConst _) = True                     
+isTrivial _            = False
+-- This will pretty much always be false for any realistic Cond condition...
 
 --------------------------------------------------------------------------------
 -- Compiler pass to lift Lets
@@ -304,11 +303,12 @@ mkArrayTuple ls    = S.ArrayTuple ls
 -- Compiler pass to remove dynamic cons/head/tail on indices.
 --------------------------------------------------------------------------------
 
+-- UNFINISHED UNFINISHED UNFINISHED UNFINISHED UNFINISHED UNFINISHED UNFINISHED 
 
--- | This lowers the AST further /after/ conversion from Accelerate's
---   front-end AST representation.  It removes unnecessary constructs.
-desugarConverted :: S.AExp -> S.AExp
-desugarConverted ae = aexp M.empty ae
+-- | This removes dynamic cons/head/tail on indices.  Indices are
+--   plain tuples after this pass.
+staticTuples :: S.AExp -> S.AExp
+staticTuples ae = aexp M.empty ae
  where
 --   aexp :: M.Map Var Int -> AExp -> [Builder]
    
