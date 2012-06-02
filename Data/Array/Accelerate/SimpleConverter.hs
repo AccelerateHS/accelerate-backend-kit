@@ -38,13 +38,15 @@ import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import qualified Data.Array.Accelerate.SimpleAST   as S
 import qualified Data.Array.Accelerate.SimpleArray as SA
 
+-- import Data.Array.Accelerate.SimplePasses.Lowering ()
+
 import Text.PrettyPrint.GenericPretty (Out(doc), Generic)
 
 import Data.Map as M
 import qualified Data.List as L
 
 import Debug.Trace(trace)
--- tracePrint s x = trace (s ++ show x) x
+tracePrint s x = trace (s ++ show x) x
 
 --------------------------------------------------------------------------------
 -- Exposed entrypoints for this module:
@@ -55,7 +57,13 @@ import Debug.Trace(trace)
 convertToSimpleAST :: Sug.Arrays a => Sug.Acc a -> S.AExp
 convertToSimpleAST = 
 --  desugarConverted . 
-  liftLets .     
+#if 1
+  progToAExp . removeArrayTuple . 
+  tracePrint "\nLetsGathered:\n" .
+  gatherLets .
+#else
+  liftLets . 
+#endif
   runEnvM . convertAcc . 
   Sug.convertAcc
 
@@ -64,6 +72,19 @@ convertToSimpleProg :: Sug.Arrays a => Sug.Acc a -> S.Prog
 convertToSimpleProg =  removeArrayTuple . gatherLets . convertToSimpleAST
 
 
+-- Temporary -- convert a Prog back to an AExp.  I haven't refactored
+-- the interpreter yet....
+progToAExp :: S.Prog -> S.AExp
+progToAExp (S.Letrec binds results _ty) = 
+  case ebinds of 
+    [] -> loop1 abinds
+    oth -> error $ "progToAExp: this function is not complete, can't handle these scalar bindings:\n"++show oth
+  where 
+    (ebinds, abinds) = L.partition isLeft binds
+    isLeft (_,_,Left _) = True
+    isLeft _            = False
+    loop1 [] = mkArrayTuple results
+    loop1 ((vr,ty,Right rhs):tl) = S.Let (vr,ty,rhs) $ loop1 tl
 
 --------------------------------------------------------------------------------
 -- Environments
@@ -179,7 +200,7 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
                                    rest  <- loop t
                                    return (first : rest)
       in do ls <- loop atup
-            return$ S.ArrayTuple (reverse ls)
+            return$ mkArrayTuple (reverse ls)
 
     Aprj ind expr -> 
       let len :: TupleIdx tr a -> Int 
@@ -827,8 +848,11 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
      let unpacked  = L.map Right$ deTuple macc rhs'
          subnames  = freshNames vr (length unpacked)
          flattened = zip3 subnames (deTupleTy ty) unpacked 
-         macc' = M.insert vr subnames macc
-         acc'  = rhsScalars ++ flattened ++ acc
+         (macc',thisbnd) = 
+           if length subnames > 1 
+           then (M.insert vr subnames macc, flattened)
+           else (macc, [(vr,ty,Right rhs')])
+         acc'  = rhsScalars ++ thisbnd ++ acc
      doBinds acc' macc' remaining
 
    freshNames vr len = L.map (S.var . ((show vr ++"_")++) . show) [1..len]
@@ -859,7 +883,7 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
    -- For array expressions that we know are not tuples:
    arrayonly eenv aex = 
      case aex of 
-       S.ArrayTuple ls -> error$"desugarConverted: encountered ArrayTuple that was not on the RHS of a Let:\n"++show(doc aex)
+       S.ArrayTuple ls -> error$"removeArrayTuple: encountered ArrayTuple that was not on the RHS of a Let:\n"++show(doc aex)
        S.Cond ex ae1 ae2 -> S.Cond ex <$> arrayonly eenv ae1 <*> arrayonly eenv ae2
        oth -> dorhs eenv oth
    
@@ -874,7 +898,7 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
        -- Variable references to tuples need to be deconstructed.
        -- The original variable will disappear.
        S.Vr vr -> case M.lookup vr eenv of  
-                    Just names -> return $ S.ArrayTuple (L.map S.Vr names)
+                    Just names -> return $ mkArrayTuple (L.map S.Vr names)
                     Nothing    -> return aex
        
        -- Have to consider flattening of nested array tuples here:
@@ -900,7 +924,7 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
                 ex' = if triv then ex' else S.EVr fresh
                 ls1 = deTuple eenv ae1'
                 ls2 = deTuple eenv ae2'
-                result = S.ArrayTuple $ L.map (uncurry $ S.Cond ex') (zip ls1 ls2)
+                result = mkArrayTuple $ L.map (uncurry $ S.Cond ex') (zip ls1 ls2)
             -- Here we add the new binding, if needed:
             let fakeType = trace "WARNING - REPLACE THIS WITH A REAL TYPE" (S.TTuple [])
             unless triv $ modify (\ (c,ls) -> (c, (fresh,fakeType,ex):ls))
@@ -937,6 +961,9 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
        S.Stencil2  fn bnd1 ae1 bnd2 ae2 -> (\ a b -> S.Stencil2 fn bnd1 a bnd2 b) 
                                         <$> arrayonly eenv ae1 <*> arrayonly eenv ae2
     
+mkArrayTuple [one] = one
+mkArrayTuple ls    = S.ArrayTuple ls
+
 --------------------------------------------------------------------------------
 -- Compiler pass to remove dynamic cons/head/tail on indices.
 --------------------------------------------------------------------------------
