@@ -13,6 +13,7 @@ module Data.Array.Accelerate.SimpleInterp
 import Data.Array.Accelerate.Smart                   (Acc)
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import Data.Array.Accelerate.SimpleAST             as S
+import Data.Array.Accelerate.SimplePasses.IRTypes  as T
 import Data.Array.Accelerate.SimpleArray           as SA
 import Data.Array.Accelerate.SimpleConverter (convertToSimpleAST, packArray, repackAcc)
 
@@ -67,7 +68,7 @@ valToConst (ArrVal a)    = error$ "cannot convert Array value to Const: "++show 
 --------------------------------------------------------------------------------
 -- Evaluation:
 
-evalA :: Env -> AExp -> AccArray
+evalA :: Env -> T.AExp -> AccArray
 evalA env ae = 
     trace ("[dbg] evalA with environment: "++show env++"\n    "++show ae) $
     case loop ae of 
@@ -75,30 +76,30 @@ evalA env ae =
       oth -> error$ "evalA: did not produce an array as output of Acc computation:\n"++show(doc oth)
   where 
 
-   loop :: AExp -> Value
+   loop :: T.AExp -> Value
    loop aexp =
      case aexp of 
        --     Vr Var -- Array variable bound by a Let.
-       Vr  v             -> envLookup env v
-       Let (vr,ty,lhs) bod -> ArrVal$ evalA (M.insert vr (loop lhs) env) bod
+       T.Vr  v             -> envLookup env v
+       T.Let (vr,ty,lhs) bod -> ArrVal$ evalA (M.insert vr (loop lhs) env) bod
 
-       Unit e -> case evalE env e of 
+       T.Unit e -> case evalE env e of 
                    ConstVal c -> ArrVal$ SA.replicate [] c
-       ArrayTuple aes -> TupVal (map loop aes)
+       T.ArrayTuple aes -> TupVal (map loop aes)
 
-       Cond e1 ae2 ae3 -> case evalE env e1 of 
+       T.Cond e1 ae2 ae3 -> case evalE env e1 of 
                             ConstVal (B True)  -> loop ae2 
                             ConstVal (B False) -> loop ae3
 
-       Use _ty arr -> ArrVal arr
-       Generate (TArray _dim elty) eSz (Lam1 (vr,vty) bodE) ->
+       T.Use _ty arr -> ArrVal arr
+       T.Generate (TArray _dim elty) eSz (T.Lam1 (vr,vty) bodE) ->
          trace ("[dbg] GENERATING: "++ show dims ++" "++ show elty) $ 
          
          -- It's tricky to support elementwise functions that produce
          -- tuples, which in turn need to be unpacked into a
          -- multi-payload array....
          ArrVal $ AccArray dims $ payloadsFromList elty $ 
-         map (\ind -> valToConst $ evalE env (ELet (vr,vty,EConst ind) bodE)) 
+         map (\ind -> valToConst $ evalE env (T.ELet (vr,vty,T.EConst ind) bodE)) 
              (indexSpace dims)
                   
          where 
@@ -118,7 +119,7 @@ evalA env ae =
        -- "Fixed" dimensions on the other hand are the replication
        -- dimensions.  Varying indices in those dimensions will not
        -- change the value contained in the indexed slot in the array.
-       Replicate (TArray _dim elty) slcSig ex ae ->          
+       T.Replicate (TArray _dim elty) slcSig ex ae ->          
          trace ("[dbg] REPLICATING to "++show finalElems ++ " elems, newdims "++show newDims ++ " dims in "++show dimsIn) $
          trace ("[dbg]   replicatation index stream: "++show (map (map constToInteger . untuple) allIndices)) $ 
          if length dimsOut /= replicateDims || 
@@ -170,7 +171,7 @@ evalA env ae =
 
            
        --------------------------------------------------------------------------------
-       Map (Lam1 (v,vty) bod) ae -> 
+       T.Map (T.Lam1 (v,vty) bod) ae -> 
 -- TODO!!! Handle maps that change the tupling...
          
 --         trace ("MAPPING: over input arr "++ show inarr) $ 
@@ -178,9 +179,9 @@ evalA env ae =
          where  
            inarr = evalA env ae
            evaluator c = -- tracePrint ("In map, evaluating element "++ show c++" to ")$  
-                         valToConst $ evalE env (ELet (v,vty, EConst c) bod)
+                         valToConst $ evalE env (T.ELet (v,vty, T.EConst c) bod)
          
-       ZipWith  (Lam2 (v1,vty1) (v2,vty2) bod) ae1 ae2  ->
+       T.ZipWith  (T.Lam2 (v1,vty1) (v2,vty2) bod) ae1 ae2  ->
          if dims1 /= dims2 
          then error$"zipWith: internal error, input arrays not the same dimension: "++ show dims1 ++" "++ show dims2
 -- TODO: Handle the case where the resulting array is an array of tuples:
@@ -195,13 +196,13 @@ evalA env ae =
                            (L.transpose$ map payloadToList pays2)
 -- INCORRECT - we need to reassemble tuples here:
            evaluator cls1 cls2 = map valToConst $ untupleVal $ evalE env 
-                                 (ELet (v1,vty1, EConst$ tuple cls1) $  
-                                  ELet (v2,vty2, EConst$ tuple cls2) bod)
+                                 (T.ELet (v1,vty1, T.EConst$ tuple cls1) $  
+                                  T.ELet (v2,vty2, T.EConst$ tuple cls2) bod)
 
        --------------------------------------------------------------------------------       
        -- Shave off leftmost dim in 'sh' list 
        -- (the rightmost dim in the user's (Z :. :.) expression):
-       Fold     (Lam2 (v1,_) (v2,_) bodE) ex ae -> 
+       T.Fold (T.Lam2 (v1,_) (v2,_) bodE) ex ae -> 
          -- trace ("FOLDING, shape "++show (innerdim:sh') ++ " lens "++ 
          --        show (alllens, L.group alllens) ++" arr "++show payloads++"\n") $ 
            case payloads of 
@@ -235,53 +236,53 @@ evalA env ae =
                          M.insert v2 (ConstVal$ lookup offset) env) 
                         bodE 
        
-       Index     slcty  ae ex -> error "UNFINISHED: Index"
-       TupleRefFromRight i ae -> error "UNFINISHED: TupleRefFromRight"
-       Apply afun ae          -> error "UNFINISHED: Apply"
+       T.Index     slcty  ae ex -> error "UNFINISHED: Index"
+       T.TupleRefFromRight i ae -> error "UNFINISHED: TupleRefFromRight"
+       T.Apply afun ae          -> error "UNFINISHED: Apply"
 
 
-       Fold1    fn ae         -> error "UNFINISHED: Foldl1"
-       FoldSeg  fn ex ae1 ae2 -> error "UNFINISHED: FoldSeg"
-       Fold1Seg fn    ae1 ae2 -> error "UNFINISHED: Fold1Seg" 
-       Scanl    fn ex ae      -> error "UNFINISHED: Scanl"
-       Scanl'   fn ex ae      -> error "UNFINISHED: Scanl'"
-       Scanl1   fn    ae      -> error "UNFINISHED: Scanl1"       
-       Scanr    fn ex ae      -> error "UNFINISHED: Scanr"
-       Scanr'   fn ex ae      -> error "UNFINISHED: Scanr'"
-       Scanr1   fn    ae      -> error "UNFINISHED: Scanr1"       
-       Permute fn1 ae1 fn2 ae2 -> error "UNFINISHED: Permute"
-       Backpermute ex fn ae     -> error "UNFINISHED: Backpermute"
-       Reshape     ex    ae     -> error "UNFINISHED: Reshape"
-       Stencil     fn  bnd ae   -> error "UNFINISHED: Stencil"
-       Stencil2 fn bnd1 ae1 bnd2 ae2 -> error "UNFINISHED: Stencil2"
+       T.Fold1    fn ae         -> error "UNFINISHED: Foldl1"
+       T.FoldSeg  fn ex ae1 ae2 -> error "UNFINISHED: FoldSeg"
+       T.Fold1Seg fn    ae1 ae2 -> error "UNFINISHED: Fold1Seg" 
+       T.Scanl    fn ex ae      -> error "UNFINISHED: Scanl"
+       T.Scanl'   fn ex ae      -> error "UNFINISHED: Scanl'"
+       T.Scanl1   fn    ae      -> error "UNFINISHED: Scanl1"       
+       T.Scanr    fn ex ae      -> error "UNFINISHED: Scanr"
+       T.Scanr'   fn ex ae      -> error "UNFINISHED: Scanr'"
+       T.Scanr1   fn    ae      -> error "UNFINISHED: Scanr1"       
+       T.Permute fn1 ae1 fn2 ae2 -> error "UNFINISHED: Permute"
+       T.Backpermute ex fn ae     -> error "UNFINISHED: Backpermute"
+       T.Reshape     ex    ae     -> error "UNFINISHED: Reshape"
+       T.Stencil     fn  bnd ae   -> error "UNFINISHED: Stencil"
+       T.Stencil2 fn bnd1 ae1 bnd2 ae2 -> error "UNFINISHED: Stencil2"
 
        _ -> error$"Accelerate array expression breaks invariants: "++ show aexp
 
-evalE :: Env -> Exp -> Value
+evalE :: Env -> T.Exp -> Value
 evalE env expr = 
   case expr of 
-    EVr  v             -> envLookup env v
-    ELet (vr,_ty,lhs) bod -> evalE (M.insert vr (evalE env lhs) env) bod
-    ETuple es          -> TupVal$ map (evalE env) es
-    EConst c           -> ConstVal c
+    T.EVr  v             -> envLookup env v
+    T.ELet (vr,_ty,lhs) bod -> evalE (M.insert vr (evalE env lhs) env) bod
+    T.ETuple es          -> TupVal$ map (evalE env) es
+    T.EConst c           -> ConstVal c
 
-    ECond e1 e2 e3     -> case evalE env e1 of 
+    T.ECond e1 e2 e3     -> case evalE env e1 of 
                             ConstVal (B True)  -> evalE env e2 
                             ConstVal (B False) -> evalE env e3
 
-    EIndexScalar ae ex -> ConstVal$ indexArray (evalA env ae) 
+    T.EIndexScalar ae ex -> ConstVal$ indexArray (evalA env ae) 
                            (map (fromIntegral . constToInteger) $ 
                             untuple$ valToConst$ evalE env ex)
   
-    EShape ae          -> let AccArray sh _ = evalA env ae 
+    T.EShape ae          -> let AccArray sh _ = evalA env ae 
                           in ConstVal$ Tup $ map I sh
     
-    EShapeSize ex      -> case evalE env ex of 
+    T.EShapeSize ex      -> case evalE env ex of 
                             _ -> error "need more work on shapes"
 
-    EPrimApp ty p es  -> evalPrim ty p (map (evalE env) es)
+    T.EPrimApp ty p es  -> evalPrim ty p (map (evalE env) es)
 
-    ETupProjectFromRight ind ex -> 
+    T.ETupProjectFromRight ind ex -> 
       case (ind, evalE env ex) of 
         (_,ConstVal (Tup ls)) -> ConstVal$ reverse ls !! ind
         (ind,TupVal ls)       -> reverse ls !! ind
@@ -290,18 +291,18 @@ evalE env expr =
                        ++ show ind ++ " in tuple " ++ show const
 
     -- This is our chosen representation for index values:
-    EIndex indls       -> let ls = map (valToConst . evalE env) indls in
+    T.EIndex indls       -> let ls = map (valToConst . evalE env) indls in
                           ConstVal$ tuple ls
     
 --    EIndexAny          -> error "UNFINISHED: evalE of EIndexAny - not implemented"
-    EIndexConsDynamic e1 e2 -> case (evalE env e1, evalE env e2) of
+    T.EIndexConsDynamic e1 e2 -> case (evalE env e1, evalE env e2) of
                                  (ConstVal c1, ConstVal c2) -> ConstVal (Tup (c1 : untuple c2))
                                    
-    EIndexHeadDynamic ex    -> case evalE env ex of 
+    T.EIndexHeadDynamic ex    -> case evalE env ex of 
                                  ConstVal (Tup ls) -> ConstVal (head ls)
                                  ConstVal c        -> ConstVal c 
                                  oth -> error$ "EIndexHeadDynamic, unhandled: "++ show oth
-    EIndexTailDynamic ex    -> case evalE env ex of 
+    T.EIndexTailDynamic ex    -> case evalE env ex of 
                                  ConstVal (Tup ls) -> ConstVal (Tup (tail ls))
                                  oth -> error$ "EIndexTailDynamic, unhandled: "++ show oth
 

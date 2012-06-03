@@ -32,7 +32,6 @@ import Prelude hiding (zipWith,replicate,map)
 import qualified Prelude as P
 
 p0 = use $ fromList (Z :. (2::Int) :. (5::Int)) [1..10::Int64]
-t0 :: S.AExp
 t0 = convertToSimpleAST p0
 r0 = I.run p0
 

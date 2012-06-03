@@ -314,8 +314,6 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
        T.Generate aty ex fn        -> return$ TLeaf$ S.Generate aty (cE ex) (cF fn)
        T.ZipWith fn ae1 ae2        -> lf$ S.ZipWith (cF2 fn) <$> arrayonly eenv ae1 <*> arrayonly eenv ae2 
        T.Map     fn ae             -> lf$ S.Map     (cF fn) <$> arrayonly eenv ae
-       T.TupleRefFromRight ind ae  -> lf$ S.TupleRefFromRight ind <$> arrayonly eenv ae
-       T.Cond ex ae1 ae2           -> lf$ S.Cond (cE ex) <$> arrayonly eenv ae1 <*> arrayonly eenv ae2 
        T.Replicate aty slice ex ae -> lf$ S.Replicate aty slice (cE ex) <$> arrayonly eenv ae
        T.Index     slc ae    ex    -> lf$ (\ ae' -> S.Index slc ae' (cE ex)) <$> arrayonly eenv ae
        T.Fold  fn einit ae         -> lf$ S.Fold  (cF2 fn) (cE einit)    <$> arrayonly eenv ae
@@ -340,9 +338,6 @@ lf x = TLeaf <$> x
 cE = convertExps    
 cF  = convertFun1
 cF2 = convertFun2
-
-mkArrayTuple [one] = one
-mkArrayTuple ls    = T.ArrayTuple ls
 
 --------------------------------------------------------------------------------
 -- Compiler pass to remove dynamic cons/head/tail on indices.

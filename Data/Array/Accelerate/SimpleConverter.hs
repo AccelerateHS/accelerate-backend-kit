@@ -72,6 +72,8 @@ convertToSimpleProg =  removeArrayTuple . gatherLets . convertToSimpleAST
 -- Temporary -- convert a Prog back to an AExp.  I haven't refactored
 -- the interpreter yet....
 progToAExp :: S.Prog -> T.AExp
+progToAExp = error "progToAExp UNFINISHED"
+{-
 progToAExp (S.Letrec binds results _ty) = 
   case ebinds of 
     [] -> T.convertAExps $ loop1 abinds
@@ -82,6 +84,7 @@ progToAExp (S.Letrec binds results _ty) =
     isLeft _            = False
     loop1 [] = mkArrayTuple results
     loop1 ((vr,ty,Right rhs):tl) = S.Let (vr,ty,rhs) $ loop1 tl
+-}
 
 --------------------------------------------------------------------------------
 -- Environments
@@ -186,7 +189,7 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
     Apply (Alam (Abody funAcc)) acc -> 
       do (v,bod) <- withExtendedEnv "a" $ convertAcc funAcc
          let sty = getAccType acc
-         T.Apply (T.ALam (v, sty) bod) <$> convertAcc acc
+         T.Apply (T.Lam1 (v, sty) bod) <$> convertAcc acc
 
     Apply _afun _acc -> error "convertAcc: This case is impossible"
 
@@ -680,14 +683,14 @@ convertFun =  loop []
                                           loop ((v,sty) : acc) f2
                                return x 
 
-convertFun1 :: OpenFun e ae t0 -> EnvM T.Fun1
+convertFun1 :: OpenFun e ae t0 -> EnvM (T.Fun1 T.Exp)
 convertFun1 fn = do 
   x <- convertFun fn
   case x of 
     ([(v,ty)], bod) -> return$ T.Lam1 (v,ty) bod
     (ls,_) -> error$"convertFun1: expected Accelerate function of arity one, instead arguments were: "++show ls
 
-convertFun2 :: OpenFun e ae t0 -> EnvM T.Fun2
+convertFun2 :: OpenFun e ae t0 -> EnvM (T.Fun2 T.Exp)
 convertFun2 fn = do
   x <- convertFun fn
   case x of 
@@ -881,7 +884,7 @@ repackAcc dummy simpl = Sug.toArr converted
 
 
 mkArrayTuple [one] = one
-mkArrayTuple ls    = S.ArrayTuple ls
+mkArrayTuple ls    = T.ArrayTuple ls
 
 --------------------------------------------------------------------------------
 
