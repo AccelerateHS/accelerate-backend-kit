@@ -22,6 +22,9 @@ import Control.Monad
 import Control.Applicative ((<$>),(<*>))
 import Prelude                                     hiding (sum)
 import Control.Monad.State.Strict (State, evalState, runState, get, put, modify)
+import Data.Map as M
+import qualified Data.List as L
+import Text.PrettyPrint.GenericPretty (Out(doc), Generic)
 
 -- friends
 import Data.Array.Accelerate.Type                  
@@ -32,15 +35,13 @@ import Data.Array.Accelerate.Tuple
 -- import Data.Array.Accelerate.Analysis.Shape (accDim)
 import qualified Data.Array.Accelerate.Smart       as Sug
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
-import qualified Data.Array.Accelerate.SimpleAST   as S
 import qualified Data.Array.Accelerate.SimpleArray as SA
 
+import qualified Data.Array.Accelerate.SimpleAST   as S
+-- Temporary AST before we get to the final one:
+import qualified Data.Array.Accelerate.SimplePasses.IRTypes as T
+
 import Data.Array.Accelerate.SimplePasses.Lowering (gatherLets, removeArrayTuple)
-
-import Text.PrettyPrint.GenericPretty (Out(doc), Generic)
-
-import Data.Map as M
-import qualified Data.List as L
 
 import Debug.Trace(trace)
 tracePrint s x = trace (s ++ show x) x
