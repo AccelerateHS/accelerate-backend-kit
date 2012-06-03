@@ -4,8 +4,11 @@
 --   This file contains intermediate representation(s).
 
 module Data.Array.Accelerate.SimplePasses.IRTypes
-       (
-         )
+   (
+     AExp(..), AFun(..), 
+     Exp(..), Fun1(..), Fun2(..),
+     convertAExps, convertExps
+   )
        where
 
 import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
@@ -13,6 +16,7 @@ import           System.IO.Unsafe (unsafePerformIO)
 import qualified Data.Map          as M
 
 import Data.Array.Accelerate.SimpleAST hiding (Exp, AExp, Fun1, Fun2, AFun)
+import qualified Data.Array.Accelerate.SimpleAST as S
 
 --------------------------------------------------------------------------------
 
@@ -106,3 +110,22 @@ data Exp =
    -- Number of elements of a shape
   | EShapeSize Exp 
  deriving (Read,Show,Eq,Generic)
+
+--------------------------------------------------------------------------------
+
+instance Out Fun1
+instance Out Fun2
+instance Out Exp
+instance Out AExp
+instance Out AFun
+
+--------------------------------------------------------------------------------
+-- Temporary conversion function
+--------------------------------------------------------------------------------
+
+
+convertAExps :: AExp -> S.AExp
+convertAExps = undefined
+
+convertExps :: Exp -> S.Exp
+convertExps = undefined

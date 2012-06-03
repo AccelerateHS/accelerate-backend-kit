@@ -4,11 +4,10 @@
 -- {-# ANN module "HLint: ignore Eta reduce" #-}
 
 -- TODO LIST:
---   * Implement Use
 --   * Audit treatment of shapes and indices
 --   * Audit tuple flattening guarantees
 --   * Add type info to some language forms... 
-
+--   * Convert boundary
 
 module Data.Array.Accelerate.SimpleConverter 
        ( 
@@ -52,7 +51,7 @@ tracePrint s x = trace (s ++ show x) x
 
 -- | Convert the sophisticate Accelerate-internal AST representation
 --   into something very simple for external consumption.
-convertToSimpleAST :: Sug.Arrays a => Sug.Acc a -> S.AExp
+convertToSimpleAST :: Sug.Arrays a => Sug.Acc a -> T.AExp
 convertToSimpleAST = 
 --  desugarConverted . 
 #if 1
@@ -72,10 +71,10 @@ convertToSimpleProg =  removeArrayTuple . gatherLets . convertToSimpleAST
 
 -- Temporary -- convert a Prog back to an AExp.  I haven't refactored
 -- the interpreter yet....
-progToAExp :: S.Prog -> S.AExp
+progToAExp :: S.Prog -> T.AExp
 progToAExp (S.Letrec binds results _ty) = 
   case ebinds of 
-    [] -> loop1 abinds
+    [] -> T.convertAExps $ loop1 abinds
     oth -> error $ "progToAExp: this function is not complete, can't handle these scalar bindings:\n"++show oth
   where 
     (ebinds, abinds) = L.partition isLeft binds
@@ -137,8 +136,8 @@ typeOnlyErr msg = error$ msg++ ": This is a value that should never be evaluated
 --------------------------------------------------------------------------------
 
         
--- convertAcc :: Delayable a => OpenAcc aenv a -> EnvM S.AExp
-convertAcc :: OpenAcc aenv a -> EnvM S.AExp
+-- convertAcc :: Delayable a => OpenAcc aenv a -> EnvM T.AExp
+convertAcc :: OpenAcc aenv a -> EnvM T.AExp
 convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc 
  where 
  cvtSlice :: SliceIndex slix sl co dim -> S.SliceType
@@ -147,7 +146,7 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
  cvtSlice (SliceFixed sliceIdx) = S.Fixed : cvtSlice sliceIdx 
 
  convertPreOpenAcc :: forall aenv a . 
-                      PreOpenAcc OpenAcc aenv a -> EnvM S.AExp
+                      PreOpenAcc OpenAcc aenv a -> EnvM T.AExp
  convertPreOpenAcc eacc = 
   case eacc of 
     Alet acc1 acc2 -> 
@@ -155,17 +154,17 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
           (v,a2) <- withExtendedEnv "a"$ 
                     convertAcc acc2 
           let sty = getAccType acc1
-          return$ S.Let (v,sty,a1) a2
+          return$ T.Let (v,sty,a1) a2
 
     Avar idx -> 
       do var <- envLookup (idxToInt idx)
-         return$ S.Vr var
+         return$ T.Vr var
 
     ------------------------------------------------------------
     -- Array creation:
     -- These should include types.
     
-    Generate sh f -> S.Generate (getAccTypePre eacc)
+    Generate sh f -> T.Generate (getAccTypePre eacc)
                                 <$> convertExp sh
                                 <*> convertFun1 f
 
@@ -175,24 +174,24 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
          -- value to avoid errors about ArrRepr type functions not
          -- being injective.
          let (ty,arr,_::Phantom a) = unpackArray arrrepr in 
-         return$ S.Use ty arr 
+         return$ T.Use ty arr 
 
     -- End Array creation prims.
     ------------------------------------------------------------
 
-    Acond cond acc1 acc2 -> S.Cond <$> convertExp cond 
+    Acond cond acc1 acc2 -> T.Cond <$> convertExp cond 
                                    <*> convertAcc acc1 
                                    <*> convertAcc acc2
 
     Apply (Alam (Abody funAcc)) acc -> 
       do (v,bod) <- withExtendedEnv "a" $ convertAcc funAcc
          let sty = getAccType acc
-         S.Apply (S.ALam (v, sty) bod) <$> convertAcc acc
+         T.Apply (T.ALam (v, sty) bod) <$> convertAcc acc
 
     Apply _afun _acc -> error "convertAcc: This case is impossible"
 
     Atuple (atup :: Atuple (OpenAcc aenv) b ) -> 
-      let loop :: Atuple (OpenAcc aenv') a' -> EnvM [S.AExp] 
+      let loop :: Atuple (OpenAcc aenv') a' -> EnvM [T.AExp] 
           loop NilAtup = return [] 
           loop (SnocAtup t a) = do first <- convertAcc a
                                    rest  <- loop t
@@ -204,65 +203,65 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
       let len :: TupleIdx tr a -> Int 
           len ZeroTupIdx     = 0
           len (SuccTupIdx x) = 1 + len x
-      in S.TupleRefFromRight (len ind) <$> convertAcc expr
+      in T.TupleRefFromRight (len ind) <$> convertAcc expr
 
-    Unit e        -> S.Unit <$> convertExp e 
+    Unit e        -> T.Unit <$> convertExp e 
 
-    Map     f acc       -> S.Map     <$> convertFun1 f 
+    Map     f acc       -> T.Map     <$> convertFun1 f 
                                      <*> convertAcc  acc
-    ZipWith f acc1 acc2 -> S.ZipWith <$> convertFun2 f
+    ZipWith f acc1 acc2 -> T.ZipWith <$> convertFun2 f
                                      <*> convertAcc  acc1
                                      <*> convertAcc  acc2
-    Fold     f e acc -> S.Fold  <$> convertFun2 f
+    Fold     f e acc -> T.Fold  <$> convertFun2 f
                                 <*> convertExp  e 
                                 <*> convertAcc  acc
-    Fold1    f   acc -> S.Fold1 <$> convertFun2 f
+    Fold1    f   acc -> T.Fold1 <$> convertFun2 f
                                 <*> convertAcc  acc
-    FoldSeg  f e acc1 acc2 -> S.FoldSeg  <$> convertFun2 f
+    FoldSeg  f e acc1 acc2 -> T.FoldSeg  <$> convertFun2 f
                                          <*> convertExp  e
                                          <*> convertAcc  acc1
                                          <*> convertAcc  acc2
-    Fold1Seg f   acc1 acc2 -> S.Fold1Seg <$> convertFun2 f
+    Fold1Seg f   acc1 acc2 -> T.Fold1Seg <$> convertFun2 f
                                          <*> convertAcc  acc1
                                          <*> convertAcc  acc2
-    Scanl  f e acc -> S.Scanl  <$> convertFun2 f
+    Scanl  f e acc -> T.Scanl  <$> convertFun2 f
                                <*> convertExp  e 
                                <*> convertAcc  acc
-    Scanl' f e acc -> S.Scanl' <$> convertFun2 f
+    Scanl' f e acc -> T.Scanl' <$> convertFun2 f
                                <*> convertExp  e 
                                <*> convertAcc  acc
-    Scanl1 f   acc -> S.Scanl1 <$> convertFun2 f
+    Scanl1 f   acc -> T.Scanl1 <$> convertFun2 f
                                <*> convertAcc  acc
-    Scanr  f e acc -> S.Scanr  <$> convertFun2 f
+    Scanr  f e acc -> T.Scanr  <$> convertFun2 f
                                <*> convertExp  e 
                                <*> convertAcc  acc
-    Scanr' f e acc -> S.Scanr' <$> convertFun2 f
+    Scanr' f e acc -> T.Scanr' <$> convertFun2 f
                                <*> convertExp  e 
                                <*> convertAcc  acc
-    Scanr1 f   acc -> S.Scanr1 <$> convertFun2 f
+    Scanr1 f   acc -> T.Scanr1 <$> convertFun2 f
                                <*> convertAcc  acc
 
     Replicate sliceIndex slix a ->
-      S.Replicate (getAccTypePre eacc) 
+      T.Replicate (getAccTypePre eacc) 
                   (cvtSlice sliceIndex) 
                   <$> convertExp slix 
                   <*> convertAcc a
     Index sliceIndex acc slix -> 
-      S.Index (cvtSlice sliceIndex)     <$> convertAcc acc
+      T.Index (cvtSlice sliceIndex)     <$> convertAcc acc
                                         <*> convertExp slix
-    Reshape e acc -> S.Reshape <$> convertExp e <*> convertAcc acc
-    Permute fn dft pfn acc -> S.Permute <$> convertFun2 fn 
+    Reshape e acc -> T.Reshape <$> convertExp e <*> convertAcc acc
+    Permute fn dft pfn acc -> T.Permute <$> convertFun2 fn 
                                         <*> convertAcc  dft
                                         <*> convertFun1 pfn
                                         <*> convertAcc  acc
-    Backpermute e pfn acc -> S.Backpermute <$> convertExp  e 
+    Backpermute e pfn acc -> T.Backpermute <$> convertExp  e 
                                            <*> convertFun1 pfn
                                            <*> convertAcc  acc 
-    Stencil  sten bndy acc -> S.Stencil <$> convertFun1 sten
+    Stencil  sten bndy acc -> T.Stencil <$> convertFun1 sten
                                         <*> return (convertBoundary bndy)
                                         <*> convertAcc acc
     Stencil2 sten bndy1 acc1 bndy2 acc2 -> 
-      S.Stencil2 <$> convertFun2 sten 
+      T.Stencil2 <$> convertFun2 sten 
                  <*> return (convertBoundary bndy1) <*> convertAcc acc1
                  <*> return (convertBoundary bndy2) <*> convertAcc acc2
 
@@ -284,7 +283,7 @@ convertBoundary :: Boundary a -> S.Boundary
 convertBoundary = error "convertBoundary: implement me" -- FIXME TODO
 
 -- Evaluate a closed expression
-convertExp :: forall env aenv ans . OpenExp env aenv ans -> EnvM S.Exp
+convertExp :: forall env aenv ans . OpenExp env aenv ans -> EnvM T.Exp
 convertExp e = 
   case e of 
     Let exp1 exp2 -> 
@@ -292,12 +291,12 @@ convertExp e =
          (v,e2) <- withExtendedEnv "e"$ 
                    convertExp exp2 
          let sty = getExpType exp1
-         return$ S.ELet (v,sty,e1) e2
+         return$ T.ELet (v,sty,e1) e2
     
     -- Here is where we get to peek at the type of a variable:
     Var idx -> 
       do var <- envLookup (idxToInt idx)
-         return$ S.EVr var
+         return$ T.EVr var
     
     -- Lift let's outside of primapps so we can get to the tuple:
     -- This will be tricky because of changing the debruijn indicies:
@@ -306,7 +305,7 @@ convertExp e =
 
     Tuple tup -> convertTuple tup
 
-    Const c   -> return$ S.EConst$ 
+    Const c   -> return$ T.EConst$ 
                  convertConst (Sug.eltType (typeOnlyErr "convertExp" ::ans)) c
 
     -- NOTE: The incoming AST indexes tuples FROM THE RIGHT:
@@ -314,46 +313,46 @@ convertExp e =
                  -- If I could get access to the IsTuple dict I could do something here:
                  -- The problem is the type function EltRepr....
                  let n = convertTupleIdx idx in 
---                 S.EPrj n m <$> convertExp e
-                 S.ETupProjectFromRight n <$> convertExp ex
+--                 T.EPrj n m <$> convertExp e
+                 T.ETupProjectFromRight n <$> convertExp ex
 
     -- This would seem to force indices to be LISTS at runtime??
-    IndexNil       -> return$ S.EIndex []
+    IndexNil       -> return$ T.EIndex []
     IndexCons esh ei -> do esh' <- convertExp esh
                            ei'  <- convertExp ei
                            return $ case esh' of
-                             S.EIndex ls -> S.EIndex (ei' : ls)
-                             _           -> S.EIndexConsDynamic ei' esh'
+                             T.EIndex ls -> T.EIndex (ei' : ls)
+                             _           -> T.EIndexConsDynamic ei' esh'
     IndexHead eix   -> do eix' <- convertExp eix
                           return $ case eix' of
                              -- WARNING: This is a potentially unsafe optimization:
                              -- Throwing away expressions:
-                             S.EIndex (h:_) -> h 
-                             S.EIndex []    -> error "IndexHead of empty index."
-                             _              -> S.EIndexHeadDynamic eix'
+                             T.EIndex (h:_) -> h 
+                             T.EIndex []    -> error "IndexHead of empty index."
+                             _              -> T.EIndexHeadDynamic eix'
     IndexTail eix   -> do eix' <- convertExp eix
                           return $ case eix' of
                              -- WARNING: This is a potentially unsafe optimization:
                              -- Throwing away expressions:
-                             S.EIndex (_:tl) -> S.EIndex tl
-                             S.EIndex []     -> error "IndexTail of empty index."
-                             _               -> S.EIndexTailDynamic eix'
+                             T.EIndex (_:tl) -> T.EIndex tl
+                             T.EIndex []     -> error "IndexTail of empty index."
+                             _               -> T.EIndexTailDynamic eix'
     IndexAny       -> error "convertToSimpleAST: not expecting to observe IndexAny value."
-      -- return S.EIndexAny
+      -- return T.EIndexAny
 
-    Cond c t ex -> S.ECond <$> convertExp c 
+    Cond c t ex -> T.ECond <$> convertExp c 
                            <*> convertExp t
                            <*> convertExp ex
     
-    IndexScalar acc eix -> S.EIndexScalar <$> convertAcc acc
+    IndexScalar acc eix -> T.EIndexScalar <$> convertAcc acc
                                           <*> convertExp eix
-    Shape acc -> S.EShape <$> convertAcc acc
-    ShapeSize  acc -> S.EShapeSize  <$> convertExp acc
+    Shape acc -> T.EShape <$> convertAcc acc
+    ShapeSize  acc -> T.EShapeSize  <$> convertExp acc
 
     -- We are committed to specific binary representations of numeric
     -- types anyway, so we simply encode special constants here,
     -- rather than preserving their specialness:
-    PrimConst c -> return$ S.EConst $ 
+    PrimConst c -> return$ T.EConst $ 
                    case (c, getExpType e) of 
                      (PrimPi _, S.TFloat)   -> S.F pi 
                      (PrimPi _, S.TDouble)  -> S.D pi 
@@ -410,14 +409,14 @@ convertExp e =
 
 -- | Convert a tuple expression to our simpler Tuple representation (containing a list):
 --   ASSUMES that the target expression is in fact a tuple construct.
-convertTuple :: Tuple (PreOpenExp OpenAcc env aenv) t' -> EnvM S.Exp
-convertTuple NilTup = return$ S.ETuple []
+convertTuple :: Tuple (PreOpenExp OpenAcc env aenv) t' -> EnvM T.Exp
+convertTuple NilTup = return$ T.ETuple []
 convertTuple (SnocTup tup e) = 
 --    trace "convertTuple..."$
     do e' <- convertExp e
        tup' <- convertTuple tup
        case tup' of 
-         S.ETuple ls -> return$ S.ETuple$ ls ++ [e']
+         T.ETuple ls -> return$ T.ETuple$ ls ++ [e']
          se -> error$ "convertTuple: expected a tuple expression, received:\n  "++ show se
 
 
@@ -567,7 +566,7 @@ convertConst ty c =
 
 convertPrimApp :: forall a b env aenv . (Sug.Elt a, Sug.Elt b)
                => PrimFun (a -> b) -> PreOpenExp OpenAcc env aenv a
-               -> EnvM S.Exp               
+               -> EnvM T.Exp               
 convertPrimApp p arg = 
   do 
      args2 <- convertExp arg
@@ -575,18 +574,18 @@ convertPrimApp p arg =
  where 
    -- ASSUMPTION!  We assume that there is nothing keeping the primapp
    -- from its args except for Lets...
-   loop :: S.Exp -> S.Exp
+   loop :: T.Exp -> T.Exp
    -- Push primapps inside lets:
    loop args' = case args' of 
-                  S.ELet (v,sty,e1) e2 ->
-                    S.ELet (v,sty,e1) (loop e2)
+                  T.ELet (v,sty,e1) e2 ->
+                    T.ELet (v,sty,e1) (loop e2)
                   -- WARNING!  Need a sanity check on arity here:
-                  S.ETuple ls -> mkPapp ls
+                  T.ETuple ls -> mkPapp ls
                   oth         -> mkPapp [oth]
                   
    ty = getExpType (error "convertPrimApp: dummy value should not be used" :: OpenExp env aenv b)
    mkPapp ls = if length ls == arity
-               then S.EPrimApp ty newprim ls
+               then T.EPrimApp ty newprim ls
                else error$"SimpleConverter.convertPrimApp: wrong number of arguments to prim "
                     ++show newprim++": "++ show ls
    arity   = S.primArity newprim
@@ -660,11 +659,11 @@ convertPrimApp p arg =
 --------------------------------------------------------------------------------
 
 -- Convert an open, scalar function with arbitrary arity:
-convertFun :: OpenFun e ae t0 -> EnvM ([(S.Var,S.Type)],S.Exp)
+convertFun :: OpenFun e ae t0 -> EnvM ([(S.Var,S.Type)],T.Exp)
 convertFun =  loop [] 
  where 
    loop :: forall env aenv t . 
-           [(S.Var,S.Type)] -> OpenFun env aenv t -> EnvM ([(S.Var,S.Type)],S.Exp)
+           [(S.Var,S.Type)] -> OpenFun env aenv t -> EnvM ([(S.Var,S.Type)],T.Exp)
    loop acc (Body b) = do b'  <- convertExp b 
                           -- It would perhaps be nice to record the output type of function 
                           -- here as well.  But b's type isn't in class Elt.
@@ -681,18 +680,18 @@ convertFun =  loop []
                                           loop ((v,sty) : acc) f2
                                return x 
 
-convertFun1 :: OpenFun e ae t0 -> EnvM S.Fun1
+convertFun1 :: OpenFun e ae t0 -> EnvM T.Fun1
 convertFun1 fn = do 
   x <- convertFun fn
   case x of 
-    ([(v,ty)], bod) -> return$ S.Lam1 (v,ty) bod
+    ([(v,ty)], bod) -> return$ T.Lam1 (v,ty) bod
     (ls,_) -> error$"convertFun1: expected Accelerate function of arity one, instead arguments were: "++show ls
 
-convertFun2 :: OpenFun e ae t0 -> EnvM S.Fun2
+convertFun2 :: OpenFun e ae t0 -> EnvM T.Fun2
 convertFun2 fn = do
   x <- convertFun fn
   case x of 
-    ([(v1,ty1),(v2,ty2)], bod) -> return$ S.Lam2 (v1,ty1) (v2,ty2) bod
+    ([(v1,ty1),(v2,ty2)], bod) -> return$ T.Lam2 (v1,ty1) (v2,ty2) bod
     (ls,_) -> error$"convertFun2: expected Accelerate function of arity two, instead arguments were: "++show ls
 
 
