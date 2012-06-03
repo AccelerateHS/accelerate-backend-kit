@@ -72,7 +72,7 @@ gatherLets prog = (reverse binds, prog')
              addbind (v,ty,rhs')
              loop bod
        T.Apply fn ae -> 
-          do let T.ALam (v,ty) abod = fn 
+          do let T.Lam1 (v,ty) abod = fn 
              rhs' <- loop ae
              addbind (v,ty,rhs')
              loop abod
@@ -120,8 +120,25 @@ type FlexBindings = Bindings (Either T.Exp S.AExp)
 type CollectM = State (Int, Bindings T.Exp)
 
 -- A temporary tree datatype.  This is used internally in `removeArrayTuple`.
-data TempTree a = TT a a [TempTree a] -- Node of degree two or more 
+data TempTree a = TT (TempTree a) (TempTree a) [TempTree a] -- Node of degree two or more 
                 | TLeaf a
+  deriving Show                 
+
+listToTT [] = error "listToTT: We are only representing non-empty tuples of arrays here... looks like that's not good enough"
+listToTT [x] = x 
+listToTT (x:y:tl) = TT x y tl
+
+listOfLeaves = listToTT . L.map TLeaf
+
+-- Index from the right:
+indexTT _ i | i < 0 = error "indexTT: negative index not allowed"
+indexTT (TLeaf x) 0 = TLeaf x 
+indexTT (TLeaf x) i = error$"cannot index singleton tuple with index: "++show i
+indexTT (TT a b rest) i = reverse (a:b:rest) !! i
+
+fromLeaf (TLeaf x) = x
+fromLeaf oth = error$"fromLeaf: was expecting a TLeaf! "++show oth
+
 
 -- | This removes ArrayTuple and TupleRefFromRight.  However, the
 --   final body may return more than one array (i.e. an ArrayTuple),
@@ -165,11 +182,11 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
 --        oth -> [oth]
 
    flattenTT :: TempTree S.AExp -> [S.AExp]
-   flattenTT  ae = undefined
---      case ae of      
---        T.ArrayTuple ls   -> concatMap (deepDeTuple eenv) ls
---        oth -> [oth]
-
+   flattenTT x = 
+     case x of      
+       TLeaf e   -> [e]
+       TT a b ls -> flattenTT a ++ flattenTT b ++
+                    concatMap flattenTT ls
     
    mapBindings fn [] = []
    mapBindings fn ((v,t,x):tl) = (v,t,fn x) : mapBindings fn tl
@@ -221,12 +238,6 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
      rhs' <- dorhs macc rhs     
      rhsScalars <- dischargeNewScalarBinds 
      
---      let (macc',thisbnd) = 
---            case rhs' of
---             TLeaf ae -> (macc, [(vr,ty,Right rhs')])
---             TT one two rest -> error "doBInds- FINISH THIS"
---          acc'  = error "FINISHIT" -- rhsScalars ++ thisbnd ++ acc
-         
      let (macc',thisbnd) = 
            case L.map Right $ flattenTT rhs' of
              [ae] -> (macc, [(vr,ty,ae)]) -- No fresh names.
@@ -234,84 +245,46 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
                let subnames  = freshNames vr (length unpacked)
                    flattened = zip3 subnames (deTupleTy ty) unpacked 
                in (M.insert vr subnames macc, flattened)
---      let -- unpacked  = deTuple macc $ flattenTT rhs'
---          unpacked  = L.map Right $ flattenTT rhs'
---          subnames  = freshNames vr (length unpacked)
---          flattened = zip3 subnames (deTupleTy ty) unpacked 
---          (macc',thisbnd) = 
---            if length subnames > 1 
---            then (M.insert vr subnames macc, flattened)
---            else (macc, [(vr,ty,Right rhs')])
-
---      let unpacked  = L.map Right$ deTuple macc rhs'
---          subnames  = freshNames vr (length unpacked)
---          flattened = zip3 subnames (deTupleTy ty) unpacked 
---          (macc',thisbnd) = 
---            if length subnames > 1 
---            then (M.insert vr subnames macc, flattened)
---            else (macc, [(vr,ty,Right rhs')])
-     
      let acc'  = rhsScalars ++ thisbnd ++ acc
      doBinds acc' macc' remaining
 
    freshNames vr len = L.map (S.var . ((show vr ++"_")++) . show) [1..len]
 
-   -- Unpack the bindings in the same (topologically sorted) order they originally occurred.
-   unpackInOrder mp [] = []
-   unpackInOrder mp ((vr,_,_):tl) = mp M.! vr : unpackInOrder mp tl
-
-   -- Unpack an expression representing a known tuple.  AFTER Conds
-   -- are broken up such an expression will have a very transparent
-   -- form.
-   deTuple eenv ae = 
-     case ae of 
-       -- The builtin operators (e.g. Fold) do NOT return tuples.
-       -- Tuples can only take one of two forms at this point:
-       T.ArrayTuple ls   -> ls
-       T.Vr vr -> 
-         case M.lookup vr eenv of 
-           Just newNames -> L.map T.Vr newNames
-           Nothing -> error$"removeArrayTuple: variable not bound at this point: "++show vr
-       oth -> [oth]
-       
    -- Types are stored in reverse order from natural Accelerate textual order:
    -- deTupleTy (S.TTuple ls) = concatMap deTupleTy (reverse ls)
    deTupleTy (S.TTuple ls) = reverse ls
    deTupleTy oth           = [oth]
 
    -- For array expressions that we know are not tuples:
+   arrayonly :: SubNameMap -> T.AExp -> CollectM S.AExp
    arrayonly eenv aex = 
      case aex of 
        T.ArrayTuple ls -> error$"removeArrayTuple: encountered ArrayTuple that was not on the RHS of a Let:\n"++show(doc aex)
-       T.Cond ex ae1 ae2 -> T.Cond ex <$> arrayonly eenv ae1 <*> arrayonly eenv ae2
---       oth -> dorhs eenv oth
+       T.Cond ex ae1 ae2 -> S.Cond (cE ex) <$> arrayonly eenv ae1 <*> arrayonly eenv ae2
+       oth -> fromLeaf <$> dorhs eenv oth
    
    -- Process the right hand side of a binding, breakup up Conds and
    -- rewriting variable references to their new detupled targets.
    dorhs :: M.Map S.Var [S.Var] -> T.AExp -> CollectM (TempTree S.AExp)
-   dorhs = undefined
-#if 0   
    -- The eenv here maps old names onto a list of new "subnames" for
    -- tuple components.  
    dorhs eenv aex = 
-     case aex of 
+     case aex of
        
        -- Variable references to tuples need to be deconstructed.
        -- The original variable will disappear.
        T.Vr vr -> case M.lookup vr eenv of  
-                    Just names -> return $ mkArrayTuple (L.map S.Vr names)
-                    Nothing    -> return aex
-       
+                    Just names -> return $ listToTT (L.map (TLeaf . S.Vr) names)
+                    Nothing    -> return $ TLeaf (S.Vr vr)
+
        -- Have to consider flattening of nested array tuples here:
        -- T.ArrayTuple ls -> concatMap (dorhs eenv) $ ls
-       T.ArrayTuple ls -> S.ArrayTuple <$> mapM (dorhs eenv) ls 
-       
-       -- T.TupleRefFromRight ind ae | not (isTupled ae) -> 
-       --   error "removeArrayTuple: TupleRefFromRight with unexpected input: "++show ae
+       T.ArrayTuple ls -> listToTT <$> mapM (dorhs eenv) ls      
+
        T.TupleRefFromRight ind ae -> do
          rhs' <- dorhs eenv ae
-         return $ reverse (deTuple eenv rhs') !! ind
-       
+         return $ indexTT rhs' ind 
+
        -- Conditionals with tuples underneath need to be broken up:
        T.Cond ex ae1 ae2 | isTupled aex ->         
          -- Breaking up the conditional requires possibly let-binding the scalar expression:
@@ -323,47 +296,50 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
             unless triv $ put (cntr+1, bnds)
             let fresh = S.var $ "cnd_" ++ show cntr
                 ex' = if triv then ex' else S.EVr fresh
-                ls1 = deTuple eenv ae1'
-                ls2 = deTuple eenv ae2'
-                result = mkArrayTuple $ L.map (uncurry $ S.Cond ex') (zip ls1 ls2)
+                ls1 = flattenTT ae1' -- These must be fully flattened if there are nested tuples.
+                ls2 = flattenTT ae2'
+                result = listOfLeaves $ L.map (uncurry $ S.Cond ex') (zip ls1 ls2)
             -- Here we add the new binding, if needed:
             let fakeType = trace "WARNING - REPLACE THIS WITH A REAL TYPE" (S.TTuple [])
             unless triv $ modify (\ (c,ls) -> (c, (fresh,fakeType,ex):ls))
             return result          
-       
-       T.Cond ex ae1 ae2 -> S.Cond ex <$> dorhs eenv ae1 <*> dorhs eenv ae2
+
+       T.Cond ex ae1 ae2 -> (\ a b -> TLeaf$ S.Cond (cE ex) (fromLeaf a) (fromLeaf b))
+                            <$> dorhs eenv ae1 <*> dorhs eenv ae2
        
        -- The rest is BOILERPLATE:      
        ----------------------------------------      
-       T.Unit ex                   -> S.Unit (cE ex)
-       T.Use ty arr                -> S.Use ty arr
-       T.Generate aty ex fn        -> S.Generate aty (cE ex) fn
-       T.ZipWith fn ae1 ae2        -> S.ZipWith fn <$> arrayonly eenv ae1 <*> arrayonly eenv ae2 
-       T.Map     fn ae             -> S.Map     fn <$> arrayonly eenv ae
-       T.TupleRefFromRight ind ae  -> S.TupleRefFromRight ind <$> arrayonly eenv ae
-       T.Cond ex ae1 ae2           -> S.Cond (cE ex) <$> arrayonly eenv ae1 <*> arrayonly eenv ae2 
-       T.Replicate aty slice ex ae -> S.Replicate aty slice (cE ex) <$> arrayonly eenv ae
-       T.Index     slc ae    ex    -> (\ ae' -> S.Index slc ae' (cE ex)) <$> arrayonly eenv ae
-       T.Fold  fn einit ae         -> S.Fold  fn einit    <$> arrayonly eenv ae
-       T.Fold1 fn       ae         -> S.Fold1 fn          <$> arrayonly eenv ae 
-       T.FoldSeg fn einit ae aeseg -> S.FoldSeg fn einit  <$> arrayonly eenv ae <*> arrayonly eenv aeseg 
-       T.Fold1Seg fn      ae aeseg -> S.Fold1Seg fn       <$> arrayonly eenv ae <*> arrayonly eenv aeseg 
-       T.Scanl    fn einit ae      -> S.Scanl    fn einit <$> arrayonly eenv ae  
-       T.Scanl'   fn einit ae      -> S.Scanl'   fn einit <$> arrayonly eenv ae  
-       T.Scanl1   fn       ae      -> S.Scanl1   fn       <$> arrayonly eenv ae 
-       T.Scanr    fn einit ae      -> S.Scanr    fn einit <$> arrayonly eenv ae 
-       T.Scanr'   fn einit ae      -> S.Scanr'   fn einit <$> arrayonly eenv ae 
-       T.Scanr1   fn       ae      -> S.Scanr1   fn       <$> arrayonly eenv ae
-       T.Permute fn2 ae1 fn1 ae2   -> (\ a b -> S.Permute fn2 a fn1 ae2)
+       T.Unit ex                   -> return$ TLeaf$ S.Unit (cE ex)
+       T.Use ty arr                -> return$ TLeaf$ S.Use ty arr
+       T.Generate aty ex fn        -> return$ TLeaf$ S.Generate aty (cE ex) (cF fn)
+       T.ZipWith fn ae1 ae2        -> lf$ S.ZipWith (cF2 fn) <$> arrayonly eenv ae1 <*> arrayonly eenv ae2 
+       T.Map     fn ae             -> lf$ S.Map     (cF fn) <$> arrayonly eenv ae
+       T.TupleRefFromRight ind ae  -> lf$ S.TupleRefFromRight ind <$> arrayonly eenv ae
+       T.Cond ex ae1 ae2           -> lf$ S.Cond (cE ex) <$> arrayonly eenv ae1 <*> arrayonly eenv ae2 
+       T.Replicate aty slice ex ae -> lf$ S.Replicate aty slice (cE ex) <$> arrayonly eenv ae
+       T.Index     slc ae    ex    -> lf$ (\ ae' -> S.Index slc ae' (cE ex)) <$> arrayonly eenv ae
+       T.Fold  fn einit ae         -> lf$ S.Fold  (cF2 fn) (cE einit)    <$> arrayonly eenv ae
+       T.Fold1 fn       ae         -> lf$ S.Fold1 (cF2 fn)               <$> arrayonly eenv ae 
+       T.FoldSeg fn einit ae aeseg -> lf$ S.FoldSeg (cF2 fn) (cE einit)  <$> arrayonly eenv ae <*> arrayonly eenv aeseg 
+       T.Fold1Seg fn      ae aeseg -> lf$ S.Fold1Seg (cF2 fn)            <$> arrayonly eenv ae <*> arrayonly eenv aeseg 
+       T.Scanl    fn einit ae      -> lf$ S.Scanl    (cF2 fn) (cE einit) <$> arrayonly eenv ae  
+       T.Scanl'   fn einit ae      -> lf$ S.Scanl'   (cF2 fn) (cE einit) <$> arrayonly eenv ae  
+       T.Scanl1   fn       ae      -> lf$ S.Scanl1   (cF2 fn)            <$> arrayonly eenv ae 
+       T.Scanr    fn einit ae      -> lf$ S.Scanr    (cF2 fn) (cE einit) <$> arrayonly eenv ae 
+       T.Scanr'   fn einit ae      -> lf$ S.Scanr'   (cF2 fn) (cE einit) <$> arrayonly eenv ae 
+       T.Scanr1   fn       ae      -> lf$ S.Scanr1   (cF2 fn)            <$> arrayonly eenv ae
+       T.Permute fn2 ae1 fn1 ae2   -> lf$ (\ a b -> S.Permute (cF2 fn2) a (cF fn1) b)
                                    <$> arrayonly eenv ae1 <*> arrayonly eenv ae2
-       T.Backpermute ex lam ae     -> S.Backpermute (cE ex) lam   <$> arrayonly eenv ae
-       T.Reshape     ex     ae     -> S.Reshape     (cE ex)       <$> arrayonly eenv ae
-       T.Stencil   fn bndry ae     -> S.Stencil     fn bndry <$> arrayonly eenv ae
-       T.Stencil2  fn bnd1 ae1 bnd2 ae2 -> (\ a b -> S.Stencil2 fn bnd1 a bnd2 b) 
+       T.Backpermute ex fn  ae     -> lf$ S.Backpermute (cE ex) (cF fn) <$> arrayonly eenv ae
+       T.Reshape     ex     ae     -> lf$ S.Reshape     (cE ex)         <$> arrayonly eenv ae
+       T.Stencil   fn bndry ae     -> lf$ S.Stencil     (cF fn) bndry   <$> arrayonly eenv ae
+       T.Stencil2  fn bnd1 ae1 bnd2 ae2 -> lf$ (\ a b -> S.Stencil2 (cF2 fn) bnd1 a bnd2 b)
                                         <$> arrayonly eenv ae1 <*> arrayonly eenv ae2
-#endif
      
+lf x = TLeaf <$> x
 cE = convertExps    
+cF  = convertFun1
+cF2 = convertFun2
 
 mkArrayTuple [one] = one
 mkArrayTuple ls    = T.ArrayTuple ls
@@ -401,7 +377,7 @@ staticTuples ae = aexp M.empty ae
        T.Apply fn ae -> 
          T.Let (v,ty, aexp tenv' abod) (aexp tenv ae)
          where tenv' = M.insert v ty tenv         
-               T.ALam (v,ty) abod = fn 
+               T.Lam1 (v,ty) abod = fn 
        
        -- TODO: Can we get rid of array tupling entirely?
        T.ArrayTuple aes -> T.ArrayTuple $ L.map (aexp tenv) aes       

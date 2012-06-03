@@ -1,13 +1,14 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 -- | We don't go straight from Data.Array.Accelerate.AST to the SimpleAST.
 --   This file contains intermediate representation(s).
 
 module Data.Array.Accelerate.SimplePasses.IRTypes
    (
-     AExp(..), AFun(..), 
+     AExp(..), -- AFun(..), 
      Exp(..), Fun1(..), Fun2(..),
-     convertAExps, convertExps
+     convertAExps, convertExps, convertFun1, convertFun2
    )
        where
 
@@ -37,35 +38,35 @@ data AExp =
   | ArrayTuple [AExp]           -- Tuple of arrays.
   | TupleRefFromRight Int AExp 
     
-  | Apply AFun AExp              -- Function $ Argument
+  | Apply (Fun1 AExp) AExp              -- Function $ Argument
   | Cond Exp AExp AExp           -- Array level if statements
   | Use       Type AccArray      -- A real live ARRAY goes here!
-  | Generate  Type Exp Fun1      -- Generate Function Array, very similar to map
+  | Generate  Type Exp (Fun1 Exp)      -- Generate Function Array, very similar to map
   | Replicate Type SliceType Exp AExp -- Replicate array across one or more dimensions.
   | Index     SliceType AExp Exp -- Index a sub-array (slice).
                                  -- Index sliceIndex Array SliceDims
-  | Map      Fun1 AExp           -- Map Function Array
-  | ZipWith  Fun2 AExp AExp      -- ZipWith Function Array1 Array2
-  | Fold     Fun2 Exp AExp       -- Fold Function Default Array
-  | Fold1    Fun2 AExp           -- Fold1 Function Array
-  | FoldSeg  Fun2 Exp AExp AExp  -- FoldSeg Function Default Array 'Segment Descriptor'
-  | Fold1Seg Fun2     AExp AExp  -- FoldSeg Function         Array 'Segment Descriptor'
-  | Scanl    Fun2 Exp AExp       -- Scanl  Function InitialValue LinearArray
-  | Scanl'   Fun2 Exp AExp       -- Scanl' Function InitialValue LinearArray
-  | Scanl1   Fun2     AExp       -- Scanl  Function              LinearArray
-  | Scanr    Fun2 Exp AExp       -- Scanr  Function InitialValue LinearArray
-  | Scanr'   Fun2 Exp AExp       -- Scanr' Function InitialValue LinearArray
-  | Scanr1   Fun2     AExp       -- Scanr  Function              LinearArray
-  | Permute  Fun2 AExp Fun1 AExp -- Permute CombineFun DefaultArr PermFun SourceArray
-  | Backpermute Exp Fun1 AExp    -- Backpermute ResultDimension   PermFun SourceArray
+  | Map      (Fun1 Exp) AExp           -- Map Function Array
+  | ZipWith  (Fun2 Exp) AExp AExp      -- ZipWith Function Array1 Array2
+  | Fold     (Fun2 Exp) Exp AExp       -- Fold Function Default Array
+  | Fold1    (Fun2 Exp) AExp           -- Fold1 Function Array
+  | FoldSeg  (Fun2 Exp) Exp AExp AExp  -- FoldSeg Function Default Array 'Segment Descriptor'
+  | Fold1Seg (Fun2 Exp)     AExp AExp  -- FoldSeg Function         Array 'Segment Descriptor'
+  | Scanl    (Fun2 Exp) Exp AExp       -- Scanl  Function InitialValue LinearArray
+  | Scanl'   (Fun2 Exp) Exp AExp       -- Scanl' Function InitialValue LinearArray
+  | Scanl1   (Fun2 Exp)     AExp       -- Scanl  Function              LinearArray
+  | Scanr    (Fun2 Exp) Exp AExp       -- Scanr  Function InitialValue LinearArray
+  | Scanr'   (Fun2 Exp) Exp AExp       -- Scanr' Function InitialValue LinearArray
+  | Scanr1   (Fun2 Exp)     AExp       -- Scanr  Function              LinearArray
+  | Permute  (Fun2 Exp) AExp (Fun1 Exp) AExp -- Permute CombineFun DefaultArr PermFun SourceArray
+  | Backpermute Exp (Fun1 Exp) AExp    -- Backpermute ResultDimension   PermFun SourceArray
   | Reshape     Exp      AExp    -- Reshape Shape Array
-  | Stencil  Fun1 Boundary AExp
-  | Stencil2 Fun2 Boundary AExp Boundary AExp -- Two source arrays/boundaries
+  | Stencil  (Fun1 Exp) Boundary AExp
+  | Stencil2 (Fun2 Exp) Boundary AExp Boundary AExp -- Two source arrays/boundaries
  deriving (Read,Show,Eq,Generic)
 
 -- | Array-level functions.
-data AFun = ALam (Var,Type) AExp
- deriving (Read,Show,Eq,Generic)
+-- data AFun = ALam (Var,Type) AExp
+--  deriving (Read,Show,Eq,Generic)
 
 
 --------------------------------------------------------------------------------
@@ -73,13 +74,12 @@ data AFun = ALam (Var,Type) AExp
 --------------------------------------------------------------------------------
 
 -- | Scalar functions, arity 1
-data Fun1 = Lam1 (Var,Type) Exp
+data Fun1 a = Lam1 (Var,Type) a
  deriving (Read,Show,Eq,Generic)
 
 -- | Scalar functions, arity 2
-data Fun2 = Lam2 (Var,Type) (Var,Type) Exp
+data Fun2 a = Lam2 (Var,Type) (Var,Type) a
  deriving (Read,Show,Eq,Generic)
-
 
 -- | Scalar expressions
 data Exp = 
@@ -113,11 +113,12 @@ data Exp =
 
 --------------------------------------------------------------------------------
 
-instance Out Fun1
-instance Out Fun2
+instance Out (Fun1 AExp)
+instance Out (Fun1 Exp)
+instance Out (Fun2 Exp)
 instance Out Exp
 instance Out AExp
-instance Out AFun
+-- instance Out AFun
 
 --------------------------------------------------------------------------------
 -- Temporary conversion function
@@ -129,3 +130,9 @@ convertAExps = undefined
 
 convertExps :: Exp -> S.Exp
 convertExps = undefined
+
+convertFun1 :: Fun1 Exp -> S.Fun1
+convertFun1 = undefined
+
+convertFun2 :: Fun2 Exp -> S.Fun2
+convertFun2 = undefined
