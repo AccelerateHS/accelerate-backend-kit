@@ -165,7 +165,7 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
    main = do (newbinds,nameMap) <- doBinds [] M.empty binds
              newbod      <- dorhs nameMap bod
              newbinds2   <- dischargeNewScalarBinds
-             let finalbinds = mapBindings convertLeft (newbinds2 ++ newbinds2)
+             let finalbinds = mapBindings convertLeft (newbinds ++ newbinds2)
              return $ S.Letrec finalbinds
                                (flattenTT newbod)
                                (S.TTuple [])

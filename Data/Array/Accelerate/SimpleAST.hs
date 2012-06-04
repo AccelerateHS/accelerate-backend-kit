@@ -123,7 +123,6 @@ data AExp =
 --  | ArrayTuple [AExp]           -- Tuple of arrays.
 --  | TupleRefFromRight Int AExp 
     
-  | Apply AFun AExp              -- Function $ Argument
   | Cond Exp AExp AExp           -- Array level if statements
   | Use       Type AccArray      -- A real live ARRAY goes here!
   | Generate  Type Exp Fun1      -- Generate Function Array, very similar to map

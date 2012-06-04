@@ -141,8 +141,8 @@ convertExps expr =
     ETuple es             -> S.ETuple (L.map f es)
     EConst c              -> S.EConst c              
     ECond e1 e2 e3        -> S.ECond (f e1) (f e2) (f e3)
-    EIndexScalar ae ex    -> S.EIndexScalar (error "reverseConvertExps: UNFINISHED") (f ex)
-    EShape ae             -> S.EShape (error "reverseConvertExps: UNFINISHED2")
+    EIndexScalar ae ex    -> S.EIndexScalar (convertAExps ae) (f ex)
+    EShape ae             -> S.EShape (convertAExps ae)
     EShapeSize ex         -> S.EShapeSize (f ex)         
     EPrimApp ty p es      -> S.EPrimApp ty p (L.map f es)
     ETupProjectFromRight ind ex -> S.ETupProjectFromRight ind (f ex)
@@ -208,8 +208,8 @@ reverseConvertExps expr =
     S.ETuple es             -> ETuple (L.map f es)
     S.EConst c              -> EConst c              
     S.ECond e1 e2 e3        -> ECond (f e1) (f e2) (f e3)
-    S.EIndexScalar ae ex    -> EIndexScalar (error "reverseConvertExps: UNFINISHED") (f ex)
-    S.EShape ae             -> EShape (error "reverseConvertExps: UNFINISHED2")
+    S.EIndexScalar ae ex    -> EIndexScalar (reverseConvertAExps ae) (f ex)
+    S.EShape ae             -> EShape (reverseConvertAExps ae)
     S.EShapeSize ex         -> EShapeSize (f ex)         
     S.EPrimApp ty p es      -> EPrimApp ty p (L.map f es)
     S.ETupProjectFromRight ind ex -> ETupProjectFromRight ind (f ex)
