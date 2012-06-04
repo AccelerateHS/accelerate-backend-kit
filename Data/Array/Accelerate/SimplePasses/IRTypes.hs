@@ -32,86 +32,72 @@ import qualified Data.Array.Accelerate.SimpleAST as S
 
 -- | Array-level expressions.  
 -- 
--- Many of these constructors contain the result type as the first
--- field.  Types on `Let`s are the only really important ones, but the
--- others can reduce headaches when consuming the AST for constructs
--- like Replicate that change the type.
+--   This is an intermediate datatype that is isomorphic to the the
+--   Accelerate frontend AST type ("Data.Array.Accelerate.AST")
+--   enabling direct translation.  It is also used as the IR for
+--   subsequent lowerings ("Data.Array.Accelerate.SimplePasses.Lowering").
 -- 
+--   See documentation for SimpleAST.  Not reproducing it here.
+--   This type differs by including ArrayTuple, TupleRefFromRight, and Apply.
 -- 
 data AExp = 
-    Vr Var -- Array variable bound by a Let.
-  | Unit Exp -- Turn an element into a singleton array
-    -- Let is used for common subexpression elimination
-  | Let (Var,Type,AExp) AExp    -- Let Var Type RHS Body
-  | ArrayTuple [AExp]           -- Tuple of arrays.
-  | TupleRefFromRight Int AExp 
-    
-  | Apply (Fun1 AExp) AExp              -- Function $ Argument
-  | Cond Exp AExp AExp           -- Array level if statements
-  | Use       Type AccArray      -- A real live ARRAY goes here!
-  | Generate  Type Exp (Fun1 Exp)      -- Generate Function Array, very similar to map
-  | Replicate Type SliceType Exp AExp -- Replicate array across one or more dimensions.
-  | Index     SliceType AExp Exp -- Index a sub-array (slice).
-                                 -- Index sliceIndex Array SliceDims
-  | Map      (Fun1 Exp) AExp           -- Map Function Array
-  | ZipWith  (Fun2 Exp) AExp AExp      -- ZipWith Function Array1 Array2
-  | Fold     (Fun2 Exp) Exp AExp       -- Fold Function Default Array
-  | Fold1    (Fun2 Exp) AExp           -- Fold1 Function Array
-  | FoldSeg  (Fun2 Exp) Exp AExp AExp  -- FoldSeg Function Default Array 'Segment Descriptor'
-  | Fold1Seg (Fun2 Exp)     AExp AExp  -- FoldSeg Function         Array 'Segment Descriptor'
-  | Scanl    (Fun2 Exp) Exp AExp       -- Scanl  Function InitialValue LinearArray
-  | Scanl'   (Fun2 Exp) Exp AExp       -- Scanl' Function InitialValue LinearArray
-  | Scanl1   (Fun2 Exp)     AExp       -- Scanl  Function              LinearArray
-  | Scanr    (Fun2 Exp) Exp AExp       -- Scanr  Function InitialValue LinearArray
-  | Scanr'   (Fun2 Exp) Exp AExp       -- Scanr' Function InitialValue LinearArray
-  | Scanr1   (Fun2 Exp)     AExp       -- Scanr  Function              LinearArray
-  | Permute  (Fun2 Exp) AExp (Fun1 Exp) AExp -- Permute CombineFun DefaultArr PermFun SourceArray
-  | Backpermute Exp (Fun1 Exp) AExp    -- Backpermute ResultDimension   PermFun SourceArray
-  | Reshape     Exp      AExp    -- Reshape Shape Array
+    ArrayTuple [AExp]           -- Tuple of arrays.
+  | TupleRefFromRight Int AExp  -- Dereference tuple 
+  | Apply (Fun1 AExp) AExp      -- Apply a known array-level function.
+  ------------------------------  
+  | Vr Var
+  | Unit Exp
+  | Let (Var,Type,AExp) AExp
+  | Cond Exp AExp AExp
+  | Use       Type AccArray
+  | Generate  Type Exp (Fun1 Exp)
+  | Replicate Type SliceType Exp AExp
+  | Index     SliceType AExp Exp 
+  | Map      (Fun1 Exp) AExp
+  | ZipWith  (Fun2 Exp) AExp AExp
+  | Fold     (Fun2 Exp) Exp AExp 
+  | Fold1    (Fun2 Exp) AExp     
+  | FoldSeg  (Fun2 Exp) Exp AExp AExp
+  | Fold1Seg (Fun2 Exp)     AExp AExp
+  | Scanl    (Fun2 Exp) Exp AExp     
+  | Scanl'   (Fun2 Exp) Exp AExp      
+  | Scanl1   (Fun2 Exp)     AExp     
+  | Scanr    (Fun2 Exp) Exp AExp    
+  | Scanr'   (Fun2 Exp) Exp AExp   
+  | Scanr1   (Fun2 Exp)     AExp  
+  | Permute  (Fun2 Exp) AExp (Fun1 Exp) AExp 
+  | Backpermute Exp (Fun1 Exp) AExp   
+  | Reshape     Exp      AExp   
   | Stencil  (Fun1 Exp) Boundary AExp
-  | Stencil2 (Fun2 Exp) Boundary AExp Boundary AExp -- Two source arrays/boundaries
+  | Stencil2 (Fun2 Exp) Boundary AExp Boundary AExp 
  deriving (Read,Show,Eq,Generic)
 
 
 --------------------------------------------------------------------------------
--- Scalar Expressions and Functions
+-- Scalar Expressions 
 --------------------------------------------------------------------------------
 
--- -- | Scalar functions, arity 1
--- data Fun1 a = Lam1 (Var,Type) a
---  deriving (Read,Show,Eq,Generic)
-
--- -- | Scalar functions, arity 2
--- data Fun2 a = Lam2 (Var,Type) (Var,Type) a
---  deriving (Read,Show,Eq,Generic)
-
 -- | Scalar expressions
+-- 
+--   This differs from `SimpleAST` in that it includes dynamic
+--   list-like treatment of indices.
+-- 
 data Exp = 
-    EVr Var -- Variable bound by a Let.
-  | ELet (Var,Type,Exp) Exp    -- ELet Var Type RHS Body
-  -- ELet is used for common subexpression elimination
-  | EPrimApp Type Prim [Exp]  -- *Any* primitive scalar function, including type of return value.
-  | ETuple [Exp]
-  | EConst Const
-   -- [2012.04.02] I can't presently compute the length from the TupleIdx.
-   --  | EPrj Int Int Exp  -- n m e : Project the nth field of an m-length tuple.
-  | ETupProjectFromRight Int Exp  -- Project the nth field FROM THE RIGHT end of the tuple.  
-  | EIndex [Exp] -- An index into a multi-dimensional array:
---  | EIndexAny  
-  -- Accelerate allows run-time CONSING of indices:
-  -- (In a staged model like this shouldn't we be able to get rid of that at metaprogram eval time?)
+    EIndex [Exp] -- An index into a multi-dimensional array:
   | EIndexConsDynamic Exp Exp
   | EIndexHeadDynamic Exp 
-  | EIndexTailDynamic Exp 
-   -- Conditional expression (non-strict in 2nd and 3rd argument):
+  | EIndexTailDynamic Exp   
+--  | EIndexAny    
+  -----------------------------------
+  | EVr Var
+  | ELet (Var,Type,Exp) Exp
+  | EPrimApp Type Prim [Exp]
+  | ETuple [Exp]
+  | EConst Const
+  | ETupProjectFromRight Int Exp
   | ECond Exp Exp Exp
-   -- Project a single scalar from an array,
-   -- the array expression can not contain any free scalar variables:
   | EIndexScalar AExp Exp 
-   -- Get the shape of an Array:
-   -- The array expression can not contain any free scalar variables
   | EShape AExp
-   -- Number of elements of a shape
   | EShapeSize Exp 
  deriving (Read,Show,Eq,Generic)
 
