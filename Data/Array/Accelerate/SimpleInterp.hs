@@ -23,12 +23,7 @@ import Data.Array.Accelerate.SimpleAST             as T
 #endif
 import Data.Array.Accelerate.SimpleArray           as SA
 import Data.Array.Accelerate.SimpleConverter (convertToSimpleAST, packArray, repackAcc)
-
 import qualified Data.Map as M
-
-import Data.Array.Unboxed ((!), UArray)
-import qualified Data.Array.Unboxed as U
-import qualified Data.Array         as A
 import qualified Data.List as L
 
 import Text.PrettyPrint.GenericPretty (Out(doc), Generic)
@@ -75,7 +70,7 @@ valToConst (ArrVal a)    = error$ "cannot convert Array value to Const: "++show 
 --------------------------------------------------------------------------------
 -- Evaluation:
 
-evalA :: Env -> T.AExp -> AccArray
+evalA :: Env -> T.AExp S.Type -> AccArray
 evalA env ae = 
     trace ("[dbg] evalA with environment: "++show env++"\n    "++show ae) $
     case loop ae of 
@@ -83,19 +78,19 @@ evalA env ae =
       oth -> error$ "evalA: did not produce an array as output of Acc computation:\n"++show(doc oth)
   where 
 
-   loop :: T.AExp -> Value
+   loop :: T.AExp S.Type -> Value
    loop aexp =
      case aexp of 
        --     Vr Var -- Array variable bound by a Let.
-       T.Vr  v             -> envLookup env v
-       T.Let (vr,ty,lhs) bod -> ArrVal$ evalA (M.insert vr (loop lhs) env) bod
+       T.Vr  _ v             -> envLookup env v
+       T.Let _ (vr,ty,lhs) bod -> ArrVal$ evalA (M.insert vr (loop lhs) env) bod
 
-       T.Unit e -> case evalE env e of 
+       T.Unit _ e -> case evalE env e of 
                    ConstVal c -> ArrVal$ SA.replicate [] c
 #ifdef ARRAYTUPLE       
-       T.ArrayTuple aes -> TupVal (map loop aes)
+       T.ArrayTuple _ aes -> TupVal (map loop aes)
 #endif
-       T.Cond e1 ae2 ae3 -> case evalE env e1 of 
+       T.Cond _ e1 ae2 ae3 -> case evalE env e1 of 
                             ConstVal (B True)  -> loop ae2 
                             ConstVal (B False) -> loop ae3
 
@@ -179,7 +174,7 @@ evalA env ae =
 
            
        --------------------------------------------------------------------------------
-       T.Map (S.Lam1 (v,vty) bod) ae -> 
+       T.Map _ (S.Lam1 (v,vty) bod) ae -> 
 -- TODO!!! Handle maps that change the tupling...
          
 --         trace ("MAPPING: over input arr "++ show inarr) $ 
@@ -189,7 +184,7 @@ evalA env ae =
            evaluator c = -- tracePrint ("In map, evaluating element "++ show c++" to ")$  
                          valToConst $ evalE env (T.ELet (v,vty, T.EConst c) bod)
          
-       T.ZipWith  (S.Lam2 (v1,vty1) (v2,vty2) bod) ae1 ae2  ->
+       T.ZipWith _  (S.Lam2 (v1,vty1) (v2,vty2) bod) ae1 ae2  ->
          if dims1 /= dims2 
          then error$"zipWith: internal error, input arrays not the same dimension: "++ show dims1 ++" "++ show dims2
 -- TODO: Handle the case where the resulting array is an array of tuples:
@@ -210,7 +205,7 @@ evalA env ae =
        --------------------------------------------------------------------------------       
        -- Shave off leftmost dim in 'sh' list 
        -- (the rightmost dim in the user's (Z :. :.) expression):
-       T.Fold (S.Lam2 (v1,_) (v2,_) bodE) ex ae -> 
+       T.Fold _ (S.Lam2 (v1,_) (v2,_) bodE) ex ae -> 
          -- trace ("FOLDING, shape "++show (innerdim:sh') ++ " lens "++ 
          --        show (alllens, L.group alllens) ++" arr "++show payloads++"\n") $ 
            case payloads of 
@@ -244,27 +239,27 @@ evalA env ae =
                          M.insert v2 (ConstVal$ lookup offset) env) 
                         bodE 
        
-       T.Index     slcty  ae ex -> error "UNFINISHED: Index"
+       T.Index    _ slcty  ae ex -> error "UNFINISHED: Index"
 #ifdef ARRAYTUPLE
-       T.TupleRefFromRight i ae -> error "UNFINISHED: TupleRefFromRight"
+       T.TupleRefFromRight _ i ae -> error "UNFINISHED: TupleRefFromRight"
 #endif
-       T.Apply afun ae          -> error "UNFINISHED: Apply"
+       T.Apply _ afun ae          -> error "UNFINISHED: Apply"
 
 
-       T.Fold1    fn ae         -> error "UNFINISHED: Foldl1"
-       T.FoldSeg  fn ex ae1 ae2 -> error "UNFINISHED: FoldSeg"
-       T.Fold1Seg fn    ae1 ae2 -> error "UNFINISHED: Fold1Seg" 
-       T.Scanl    fn ex ae      -> error "UNFINISHED: Scanl"
-       T.Scanl'   fn ex ae      -> error "UNFINISHED: Scanl'"
-       T.Scanl1   fn    ae      -> error "UNFINISHED: Scanl1"       
-       T.Scanr    fn ex ae      -> error "UNFINISHED: Scanr"
-       T.Scanr'   fn ex ae      -> error "UNFINISHED: Scanr'"
-       T.Scanr1   fn    ae      -> error "UNFINISHED: Scanr1"       
-       T.Permute fn1 ae1 fn2 ae2 -> error "UNFINISHED: Permute"
-       T.Backpermute ex fn ae     -> error "UNFINISHED: Backpermute"
-       T.Reshape     ex    ae     -> error "UNFINISHED: Reshape"
-       T.Stencil     fn  bnd ae   -> error "UNFINISHED: Stencil"
-       T.Stencil2 fn bnd1 ae1 bnd2 ae2 -> error "UNFINISHED: Stencil2"
+       T.Fold1    _ fn ae         -> error "UNFINISHED: Foldl1"
+       T.FoldSeg  _ fn ex ae1 ae2 -> error "UNFINISHED: FoldSeg"
+       T.Fold1Seg _ fn    ae1 ae2 -> error "UNFINISHED: Fold1Seg" 
+       T.Scanl    _ fn ex ae      -> error "UNFINISHED: Scanl"
+       T.Scanl'   _ fn ex ae      -> error "UNFINISHED: Scanl'"
+       T.Scanl1   _ fn    ae      -> error "UNFINISHED: Scanl1"       
+       T.Scanr    _ fn ex ae      -> error "UNFINISHED: Scanr"
+       T.Scanr'   _ fn ex ae      -> error "UNFINISHED: Scanr'"
+       T.Scanr1   _ fn    ae      -> error "UNFINISHED: Scanr1"       
+       T.Permute _ fn1 ae1 fn2 ae2 -> error "UNFINISHED: Permute"
+       T.Backpermute _ ex fn ae     -> error "UNFINISHED: Backpermute"
+       T.Reshape     _ ex    ae     -> error "UNFINISHED: Reshape"
+       T.Stencil     _ fn  bnd ae   -> error "UNFINISHED: Stencil"
+       T.Stencil2 _ fn bnd1 ae1 bnd2 ae2 -> error "UNFINISHED: Stencil2"
 
        _ -> error$"Accelerate array expression breaks invariants: "++ show aexp
 

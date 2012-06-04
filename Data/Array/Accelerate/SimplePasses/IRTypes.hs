@@ -8,7 +8,7 @@
 
 module Data.Array.Accelerate.SimplePasses.IRTypes
    (
-     AExp(..), 
+     AExp(..), getAnnot, 
      Exp(..), -- Fun1(..), Fun2(..),
      convertAExps,
      convertExps, 
@@ -40,38 +40,39 @@ import qualified Data.Array.Accelerate.SimpleAST as S
 --   See documentation for SimpleAST.  Not reproducing it here.
 --   This type differs by including ArrayTuple, TupleRefFromRight, and Apply.
 -- 
-data AExp = 
-    ArrayTuple [AExp]           -- Tuple of arrays.
-  | TupleRefFromRight Int AExp  -- Dereference tuple 
-  | Apply (Fun1 AExp) AExp      -- Apply a known array-level function.
+--   This type is parameterized by an arbitrary annotation, which
+--   usually includes the type.
+data AExp a = 
+    ArrayTuple a [AExp a]           -- Tuple of arrays.
+  | TupleRefFromRight a Int (AExp a)  -- Dereference tuple 
+  | Apply a (Fun1 (AExp a)) (AExp a)      -- Apply a known array-level function.
   ------------------------------  
-  | Vr Var
-  | Unit Exp
-  | Let (Var,Type,AExp) AExp
-  | Cond Exp AExp AExp
-  | Use       Type AccArray
-  | Generate  Type Exp (Fun1 Exp)
-  | Replicate Type SliceType Exp AExp
-  | Index     SliceType AExp Exp 
-  | Map      (Fun1 Exp) AExp
-  | ZipWith  (Fun2 Exp) AExp AExp
-  | Fold     (Fun2 Exp) Exp AExp 
-  | Fold1    (Fun2 Exp) AExp     
-  | FoldSeg  (Fun2 Exp) Exp AExp AExp
-  | Fold1Seg (Fun2 Exp)     AExp AExp
-  | Scanl    (Fun2 Exp) Exp AExp     
-  | Scanl'   (Fun2 Exp) Exp AExp      
-  | Scanl1   (Fun2 Exp)     AExp     
-  | Scanr    (Fun2 Exp) Exp AExp    
-  | Scanr'   (Fun2 Exp) Exp AExp   
-  | Scanr1   (Fun2 Exp)     AExp  
-  | Permute  (Fun2 Exp) AExp (Fun1 Exp) AExp 
-  | Backpermute Exp (Fun1 Exp) AExp   
-  | Reshape     Exp      AExp   
-  | Stencil  (Fun1 Exp) Boundary AExp
-  | Stencil2 (Fun2 Exp) Boundary AExp Boundary AExp 
+  | Vr   a Var
+  | Unit a Exp
+  | Let  a (Var,Type,(AExp a)) (AExp a)
+  | Cond a Exp (AExp a) (AExp a)
+  | Use  a AccArray
+  | Generate  a Exp (Fun1 Exp)
+  | Replicate a SliceType Exp (AExp a)
+  | Index     a SliceType (AExp a) Exp 
+  | Map       a (Fun1 Exp) (AExp a)
+  | ZipWith   a (Fun2 Exp) (AExp a) (AExp a)
+  | Fold      a (Fun2 Exp) Exp (AExp a) 
+  | Fold1     a (Fun2 Exp) (AExp a)     
+  | FoldSeg   a (Fun2 Exp) Exp (AExp a) (AExp a)
+  | Fold1Seg  a (Fun2 Exp)     (AExp a) (AExp a)
+  | Scanl     a (Fun2 Exp) Exp (AExp a)     
+  | Scanl'    a (Fun2 Exp) Exp (AExp a)      
+  | Scanl1    a (Fun2 Exp)     (AExp a)     
+  | Scanr     a (Fun2 Exp) Exp (AExp a)    
+  | Scanr'    a (Fun2 Exp) Exp (AExp a)   
+  | Scanr1    a (Fun2 Exp)     (AExp a)  
+  | Permute   a (Fun2 Exp) (AExp a) (Fun1 Exp) (AExp a) 
+  | Backpermute a Exp (Fun1 Exp) (AExp a)   
+  | Reshape     a Exp      (AExp a)   
+  | Stencil     a (Fun1 Exp) Boundary (AExp a)
+  | Stencil2    a (Fun2 Exp) Boundary (AExp a) Boundary (AExp a) 
  deriving (Read,Show,Eq,Generic)
-
 
 --------------------------------------------------------------------------------
 -- Scalar Expressions 
@@ -96,18 +97,20 @@ data Exp =
   | EConst Const
   | ETupProjectFromRight Int Exp
   | ECond Exp Exp Exp
-  | EIndexScalar AExp Exp 
-  | EShape AExp
+  | EIndexScalar (AExp Type) Exp 
+  | EShape (AExp Type)
   | EShapeSize Exp 
  deriving (Read,Show,Eq,Generic)
 
 --------------------------------------------------------------------------------
 
-instance Out (Fun1 AExp)
+-- instance Out (Fun1 (AExp Type))
+instance Out a => Out (Fun1 (AExp a))
 instance Out (Fun1 Exp)
 instance Out (Fun2 Exp)
 instance Out Exp
-instance Out AExp
+instance Out a => Out (AExp a)
+-- instance Out (AExp Type)
 -- instance Out AFun
 
 --------------------------------------------------------------------------------
@@ -141,7 +144,7 @@ convertFun2 (Lam2 bnd1 bnd2 bod) = Lam2 bnd1 bnd2 $ convertExps bod
 
 -- | Convert Array expressions /that meet the restrictions/ to the
 --   final SimpleAST type.
-convertAExps :: AExp -> S.AExp
+convertAExps :: AExp Type -> S.AExp
 convertAExps aex =
   let cE  = convertExps 
       cF  = convertFun1
@@ -149,34 +152,67 @@ convertAExps aex =
       f   = convertAExps
   in
   case aex of 
-     Vr v                      -> S.Vr v
-     Let (v,ty,lhs) bod        -> S.Let (v,ty, f lhs) (f bod)
-     Cond a b c                -> S.Cond (cE a) (f b) (f c)
-     Unit ex                   -> S.Unit (cE ex)
-     Use ty arr                -> S.Use ty arr
-     Generate aty ex fn        -> S.Generate aty (cE ex) (cF fn)
-     ZipWith fn ae1 ae2        -> S.ZipWith (cF2 fn) (f ae1) (f ae2)
-     Map     fn ae             -> S.Map     (cF fn)  (f ae)
-     Replicate aty slice ex ae -> S.Replicate aty slice (cE ex) (f ae)
-     Index     slc ae    ex    -> S.Index slc (f ae) (cE ex)
-     Fold  fn einit ae         -> S.Fold     (cF2 fn) (cE einit) (f ae)
-     Fold1 fn       ae         -> S.Fold1    (cF2 fn)            (f ae)
-     FoldSeg fn einit ae aeseg -> S.FoldSeg  (cF2 fn) (cE einit) (f ae) (f aeseg)
-     Fold1Seg fn      ae aeseg -> S.Fold1Seg (cF2 fn)            (f ae) (f aeseg)
-     Scanl    fn einit ae      -> S.Scanl    (cF2 fn) (cE einit) (f ae)
-     Scanl'   fn einit ae      -> S.Scanl'   (cF2 fn) (cE einit) (f ae)
-     Scanl1   fn       ae      -> S.Scanl1   (cF2 fn)            (f ae)
-     Scanr    fn einit ae      -> S.Scanr    (cF2 fn) (cE einit) (f ae)
-     Scanr'   fn einit ae      -> S.Scanr'   (cF2 fn) (cE einit) (f ae)
-     Scanr1   fn       ae      -> S.Scanr1   (cF2 fn)            (f ae)
-     Permute fn2 ae1 fn1 ae2   -> S.Permute (cF2 fn2) (f ae1) (cF fn1) (f ae2)
-     Backpermute ex fn  ae     -> S.Backpermute (cE ex) (cF fn) (f ae)
-     Reshape     ex     ae     -> S.Reshape     (cE ex)         (f ae)
-     Stencil   fn bndry ae     -> S.Stencil     (cF fn) bndry   (f ae)
-     Stencil2  fn bnd1 ae1 bnd2 ae2 -> S.Stencil2 (cF2 fn) bnd1 (f ae1) bnd2 (f ae2)
-     Apply _ _             -> error$"convertAExps: input doesn't meet constraints, Apply encountered."
-     ArrayTuple _          -> error$"convertAExps: input doesn't meet constraints, ArrayTuple encountered."
-     TupleRefFromRight _ _ -> error$"convertAExps: input doesn't meet constraints, TupleRefFromRight encountered."
+     Vr _ v                      -> S.Vr v
+     Let _ (v,ty,lhs) bod        -> S.Let (v,ty, f lhs) (f bod)
+     Cond _ a b c                -> S.Cond (cE a) (f b) (f c)
+     Unit _ ex                   -> S.Unit (cE ex)
+     Use ty arr                  -> S.Use ty arr
+     Generate aty ex fn          -> S.Generate aty (cE ex) (cF fn)
+     ZipWith _ fn ae1 ae2        -> S.ZipWith (cF2 fn) (f ae1) (f ae2)
+     Map     _ fn ae             -> S.Map     (cF fn)  (f ae)
+     Replicate aty slice ex ae   -> S.Replicate aty slice (cE ex) (f ae)
+     Index     _ slc ae    ex    -> S.Index slc (f ae) (cE ex)
+     Fold  _ fn einit ae         -> S.Fold     (cF2 fn) (cE einit) (f ae)
+     Fold1 _ fn       ae         -> S.Fold1    (cF2 fn)            (f ae)
+     FoldSeg _ fn einit ae aeseg -> S.FoldSeg  (cF2 fn) (cE einit) (f ae) (f aeseg)
+     Fold1Seg _ fn      ae aeseg -> S.Fold1Seg (cF2 fn)            (f ae) (f aeseg)
+     Scanl    _ fn einit ae      -> S.Scanl    (cF2 fn) (cE einit) (f ae)
+     Scanl'   _ fn einit ae      -> S.Scanl'   (cF2 fn) (cE einit) (f ae)
+     Scanl1   _ fn       ae      -> S.Scanl1   (cF2 fn)            (f ae)
+     Scanr    _ fn einit ae      -> S.Scanr    (cF2 fn) (cE einit) (f ae)
+     Scanr'   _ fn einit ae      -> S.Scanr'   (cF2 fn) (cE einit) (f ae)
+     Scanr1   _ fn       ae      -> S.Scanr1   (cF2 fn)            (f ae)
+     Permute _ fn2 ae1 fn1 ae2   -> S.Permute (cF2 fn2) (f ae1) (cF fn1) (f ae2)
+     Backpermute _ ex fn  ae     -> S.Backpermute (cE ex) (cF fn) (f ae)
+     Reshape     _ ex     ae     -> S.Reshape     (cE ex)         (f ae)
+     Stencil   _ fn bndry ae     -> S.Stencil     (cF fn) bndry   (f ae)
+     Stencil2  _ fn bnd1 ae1 bnd2 ae2 -> S.Stencil2 (cF2 fn) bnd1 (f ae1) bnd2 (f ae2)
+     Apply _ _ _             -> error$"convertAExps: input doesn't meet constraints, Apply encountered."
+     ArrayTuple _  _          -> error$"convertAExps: input doesn't meet constraints, ArrayTuple encountered."
+     TupleRefFromRight _ _ _ -> error$"convertAExps: input doesn't meet constraints, TupleRefFromRight encountered."
+
+-- | Extract the annotation component from an AExp:
+getAnnot :: AExp a -> a 
+getAnnot ae = 
+  case ae of
+     Vr a _                      -> a
+     Let a _ _                   -> a
+     Cond a _ _ _                -> a
+     Unit a _                    -> a
+     Use a _                     -> a
+     Generate a _ _              -> a
+     ZipWith a _ _ _             -> a
+     Map     a _ _               -> a
+     Replicate a _ _ _           -> a
+     Index     a _ _ _           -> a
+     Fold      a _ _ _           -> a
+     Fold1     a _ _             -> a
+     FoldSeg   a _ _ _ _         -> a
+     Fold1Seg  a _ _ _           -> a
+     Scanl     a _ _ _           -> a
+     Scanl'    a _ _ _           -> a
+     Scanl1    a   _ _           -> a
+     Scanr     a _ _ _           -> a
+     Scanr'    a _ _ _           -> a
+     Scanr1    a   _ _           -> a
+     Permute   a _ _ _ _         -> a
+     Backpermute a _ _ _         -> a
+     Reshape     a _ _           -> a
+     Stencil     a _ _ _         -> a
+     Stencil2    a _ _ _ _ _     -> a
+     Apply       a _ _           -> a
+     ArrayTuple  a _             -> a
+     TupleRefFromRight a _ _     -> a
 
 
 -- TEMP: shouldn't need this:
@@ -208,36 +244,37 @@ reverseConvertFun2 :: S.Fun2 S.Exp -> S.Fun2 Exp
 reverseConvertFun2 (S.Lam2 bnd1 bnd2 bod) = Lam2 bnd1 bnd2 $ reverseConvertExps bod
 
 -- TEMPORARY!
-reverseConvertAExps :: S.AExp -> AExp
+reverseConvertAExps :: S.AExp -> AExp Type
 reverseConvertAExps aex =
   let cE  = reverseConvertExps
       cF  = reverseConvertFun1
       cF2 = reverseConvertFun2
       f   = reverseConvertAExps
+      dt  = TTuple [] -- Dummy type
   in
   case aex of 
-     S.Vr v                      -> Vr v
-     S.Let (v,ty,lhs) bod        -> Let (v,ty, f lhs) (f bod)
-     S.Cond a b c                -> Cond (cE a) (f b) (f c)
-     S.Unit ex                   -> Unit (cE ex)
+     S.Vr v                      -> Vr dt v
+     S.Let (v,ty,lhs) bod        -> Let dt (v,ty, f lhs) (f bod)
+     S.Cond a b c                -> Cond dt (cE a) (f b) (f c)
+     S.Unit ex                   -> Unit dt (cE ex)
      S.Use ty arr                -> Use ty arr
      S.Generate aty ex fn        -> Generate aty (cE ex) (cF fn)
-     S.ZipWith fn ae1 ae2        -> ZipWith (cF2 fn) (f ae1) (f ae2)
-     S.Map     fn ae             -> Map     (cF fn)  (f ae)
+     S.ZipWith fn ae1 ae2        -> ZipWith dt (cF2 fn) (f ae1) (f ae2)
+     S.Map     fn ae             -> Map     dt (cF fn)  (f ae)
      S.Replicate aty slice ex ae -> Replicate aty slice (cE ex) (f ae)
-     S.Index     slc ae    ex    -> Index slc (f ae) (cE ex)
-     S.Fold  fn einit ae         -> Fold     (cF2 fn) (cE einit) (f ae)
-     S.Fold1 fn       ae         -> Fold1    (cF2 fn)            (f ae)
-     S.FoldSeg fn einit ae aeseg -> FoldSeg  (cF2 fn) (cE einit) (f ae) (f aeseg)
-     S.Fold1Seg fn      ae aeseg -> Fold1Seg (cF2 fn)            (f ae) (f aeseg)
-     S.Scanl    fn einit ae      -> Scanl    (cF2 fn) (cE einit) (f ae)
-     S.Scanl'   fn einit ae      -> Scanl'   (cF2 fn) (cE einit) (f ae)
-     S.Scanl1   fn       ae      -> Scanl1   (cF2 fn)            (f ae)
-     S.Scanr    fn einit ae      -> Scanr    (cF2 fn) (cE einit) (f ae)
-     S.Scanr'   fn einit ae      -> Scanr'   (cF2 fn) (cE einit) (f ae)
-     S.Scanr1   fn       ae      -> Scanr1   (cF2 fn)            (f ae)
-     S.Permute fn2 ae1 fn1 ae2   -> Permute (cF2 fn2) (f ae1) (cF fn1) (f ae2)
-     S.Backpermute ex fn  ae     -> Backpermute (cE ex) (cF fn) (f ae)
-     S.Reshape     ex     ae     -> Reshape     (cE ex)         (f ae)
-     S.Stencil   fn bndry ae     -> Stencil     (cF fn) bndry   (f ae)
-     S.Stencil2  fn bnd1 ae1 bnd2 ae2 -> Stencil2 (cF2 fn) bnd1 (f ae1) bnd2 (f ae2)
+     S.Index     slc ae    ex    -> Index dt slc (f ae) (cE ex)
+     S.Fold  fn einit ae         -> Fold     dt (cF2 fn) (cE einit) (f ae)
+     S.Fold1 fn       ae         -> Fold1    dt (cF2 fn)            (f ae)
+     S.FoldSeg fn einit ae aeseg -> FoldSeg  dt (cF2 fn) (cE einit) (f ae) (f aeseg)
+     S.Fold1Seg fn      ae aeseg -> Fold1Seg dt (cF2 fn)            (f ae) (f aeseg)
+     S.Scanl    fn einit ae      -> Scanl    dt (cF2 fn) (cE einit) (f ae)
+     S.Scanl'   fn einit ae      -> Scanl'   dt (cF2 fn) (cE einit) (f ae)
+     S.Scanl1   fn       ae      -> Scanl1   dt (cF2 fn)            (f ae)
+     S.Scanr    fn einit ae      -> Scanr    dt (cF2 fn) (cE einit) (f ae)
+     S.Scanr'   fn einit ae      -> Scanr'   dt (cF2 fn) (cE einit) (f ae)
+     S.Scanr1   fn       ae      -> Scanr1   dt (cF2 fn)            (f ae)
+     S.Permute fn2 ae1 fn1 ae2   -> Permute  dt (cF2 fn2) (f ae1) (cF fn1) (f ae2)
+     S.Backpermute ex fn  ae     -> Backpermute dt (cE ex) (cF fn) (f ae)
+     S.Reshape     ex     ae     -> Reshape     dt (cE ex)         (f ae)
+     S.Stencil   fn bndry ae     -> Stencil     dt (cF fn) bndry   (f ae)
+     S.Stencil2  fn bnd1 ae1 bnd2 ae2 -> Stencil2 dt (cF2 fn) bnd1 (f ae1) bnd2 (f ae2)

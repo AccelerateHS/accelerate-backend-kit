@@ -49,9 +49,11 @@ tracePrint s x = trace (s ++ show x) x
 -- Exposed entrypoints for this module:
 --------------------------------------------------------------------------------
 
+type TAExp = T.AExp S.Type
+
 -- | Convert the sophisticate Accelerate-internal AST representation
 --   into something very simple for external consumption.
-convertToSimpleAST :: Sug.Arrays a => Sug.Acc a -> T.AExp
+convertToSimpleAST :: Sug.Arrays a => Sug.Acc a -> TAExp
 convertToSimpleAST = 
 --  desugarConverted . 
 #if 1
@@ -71,9 +73,9 @@ convertToSimpleProg =  removeArrayTuple . gatherLets . convertToSimpleAST
 
 -- Temporary -- convert a Prog back to an AExp.  I haven't refactored
 -- the interpreter yet....
-progToAExp :: S.Prog -> T.AExp
+progToAExp :: S.Prog -> TAExp
 -- progToAExp = error "progToAExp UNFINISHED"
-progToAExp (S.Letrec binds results _ty) = 
+progToAExp (S.Letrec binds results finalty) = 
   case ebinds of 
     [] -> loop1 abinds
     oth -> error $ "progToAExp: this function is not complete, can't handle these scalar bindings:\n"++show oth
@@ -81,13 +83,12 @@ progToAExp (S.Letrec binds results _ty) =
     (ebinds, abinds) = L.partition isLeft binds
     isLeft (_,_,Left _) = True
     isLeft _            = False
-    loop1 [] = mkArrayTuple $ L.map T.reverseConvertAExps results
-    loop1 ((vr,ty,Right rhs):tl) = T.Let (vr,ty, T.reverseConvertAExps rhs) $ loop1 tl
+    loop1 [] = mkArrayTuple finalty $ L.map T.reverseConvertAExps results
+    loop1 ((vr,ty,Right rhs):tl) = T.Let finalty (vr,ty, T.reverseConvertAExps rhs) $ loop1 tl
 
 --------------------------------------------------------------------------------
 -- Environments
 --------------------------------------------------------------------------------
-
 
 -- We use a simple state monad for keeping track of the environment
 type EnvM = State (SimpleEnv, Counter) 
@@ -138,7 +139,7 @@ typeOnlyErr msg = error$ msg++ ": This is a value that should never be evaluated
 
         
 -- convertAcc :: Delayable a => OpenAcc aenv a -> EnvM T.AExp
-convertAcc :: OpenAcc aenv a -> EnvM T.AExp
+convertAcc :: OpenAcc aenv a -> EnvM TAExp
 convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc 
  where 
  cvtSlice :: SliceIndex slix sl co dim -> S.SliceType
@@ -147,19 +148,23 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
  cvtSlice (SliceFixed sliceIdx) = S.Fixed : cvtSlice sliceIdx 
 
  convertPreOpenAcc :: forall aenv a . 
-                      PreOpenAcc OpenAcc aenv a -> EnvM T.AExp
+                      PreOpenAcc OpenAcc aenv a -> EnvM TAExp
  convertPreOpenAcc eacc = 
+  let 
+--    resty = getAccTypePre eacc 
+    dummyty = S.TTuple []
+  in
   case eacc of 
     Alet acc1 acc2 -> 
        do a1     <- convertAcc acc1
           (v,a2) <- withExtendedEnv "a"$ 
                     convertAcc acc2 
           let sty = getAccType acc1
-          return$ T.Let (v,sty,a1) a2
+          return$ T.Let (getAccTypePre eacc) (v,sty,a1) a2
 
     Avar idx -> 
       do var <- envLookup (idxToInt idx)
-         return$ T.Vr var
+         return$ T.Vr (getAccTypePre eacc) var
 
     ------------------------------------------------------------
     -- Array creation:
@@ -180,66 +185,78 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
     -- End Array creation prims.
     ------------------------------------------------------------
 
-    Acond cond acc1 acc2 -> T.Cond <$> convertExp cond 
+    Acond cond acc1 acc2 -> T.Cond (getAccTypePre eacc)
+                                   <$> convertExp cond 
                                    <*> convertAcc acc1 
                                    <*> convertAcc acc2
 
     Apply (Alam (Abody funAcc)) acc -> 
       do (v,bod) <- withExtendedEnv "a" $ convertAcc funAcc
          let sty = getAccType acc
-         T.Apply (S.Lam1 (v, sty) bod) <$> convertAcc acc
+         T.Apply (getAccTypePre eacc) (S.Lam1 (v, sty) bod) <$> convertAcc acc
 
     Apply _afun _acc -> error "convertAcc: This case is impossible"
 
     Atuple (atup :: Atuple (OpenAcc aenv) b ) -> 
-      let loop :: Atuple (OpenAcc aenv') a' -> EnvM [T.AExp] 
+      let loop :: Atuple (OpenAcc aenv') a' -> EnvM [TAExp] 
           loop NilAtup = return [] 
           loop (SnocAtup t a) = do first <- convertAcc a
                                    rest  <- loop t
                                    return (first : rest)
       in do ls <- loop atup
-            return$ mkArrayTuple (reverse ls)
+            return$ mkArrayTuple (getAccTypePre eacc) (reverse ls)
 
     Aprj ind expr -> 
       let len :: TupleIdx tr a -> Int 
           len ZeroTupIdx     = 0
           len (SuccTupIdx x) = 1 + len x
-      in T.TupleRefFromRight (len ind) <$> convertAcc expr
+      in T.TupleRefFromRight (getAccTypePre eacc) (len ind) <$> convertAcc expr
 
-    Unit e        -> T.Unit <$> convertExp e 
+    Unit e        -> T.Unit (getAccTypePre eacc) <$> convertExp e 
 
-    Map     f acc       -> T.Map     <$> convertFun1 f 
-                                     <*> convertAcc  acc
-    ZipWith f acc1 acc2 -> T.ZipWith <$> convertFun2 f
+    Map     f acc       -> T.Map (getAccTypePre eacc) <$> convertFun1 f 
+                                                      <*> convertAcc  acc
+    ZipWith f acc1 acc2 -> T.ZipWith (getAccTypePre eacc)
+                                     <$> convertFun2 f
                                      <*> convertAcc  acc1
                                      <*> convertAcc  acc2
-    Fold     f e acc -> T.Fold  <$> convertFun2 f
+    Fold     f e acc -> T.Fold  (getAccTypePre eacc)
+                                <$> convertFun2 f
                                 <*> convertExp  e 
                                 <*> convertAcc  acc
-    Fold1    f   acc -> T.Fold1 <$> convertFun2 f
+    Fold1    f   acc -> T.Fold1 (getAccTypePre eacc)
+                                <$> convertFun2 f
                                 <*> convertAcc  acc
-    FoldSeg  f e acc1 acc2 -> T.FoldSeg  <$> convertFun2 f
+    FoldSeg  f e acc1 acc2 -> T.FoldSeg  (getAccTypePre eacc) 
+                                         <$> convertFun2 f
                                          <*> convertExp  e
                                          <*> convertAcc  acc1
                                          <*> convertAcc  acc2
-    Fold1Seg f   acc1 acc2 -> T.Fold1Seg <$> convertFun2 f
+    Fold1Seg f   acc1 acc2 -> T.Fold1Seg (getAccTypePre eacc) 
+                                         <$> convertFun2 f
                                          <*> convertAcc  acc1
                                          <*> convertAcc  acc2
-    Scanl  f e acc -> T.Scanl  <$> convertFun2 f
+    Scanl  f e acc -> T.Scanl  (getAccTypePre eacc)
+                               <$> convertFun2 f
                                <*> convertExp  e 
                                <*> convertAcc  acc
-    Scanl' f e acc -> T.Scanl' <$> convertFun2 f
+    Scanl' f e acc -> T.Scanl' (getAccTypePre eacc)
+                               <$> convertFun2 f
                                <*> convertExp  e 
                                <*> convertAcc  acc
-    Scanl1 f   acc -> T.Scanl1 <$> convertFun2 f
+    Scanl1 f   acc -> T.Scanl1 (getAccTypePre eacc)
+                               <$> convertFun2 f
                                <*> convertAcc  acc
-    Scanr  f e acc -> T.Scanr  <$> convertFun2 f
+    Scanr  f e acc -> T.Scanr  (getAccTypePre eacc)
+                               <$> convertFun2 f
                                <*> convertExp  e 
                                <*> convertAcc  acc
-    Scanr' f e acc -> T.Scanr' <$> convertFun2 f
+    Scanr' f e acc -> T.Scanr' (getAccTypePre eacc)
+                               <$> convertFun2 f
                                <*> convertExp  e 
                                <*> convertAcc  acc
-    Scanr1 f   acc -> T.Scanr1 <$> convertFun2 f
+    Scanr1 f   acc -> T.Scanr1 (getAccTypePre eacc)
+                               <$> convertFun2 f
                                <*> convertAcc  acc
 
     Replicate sliceIndex slix a ->
@@ -248,21 +265,25 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
                   <$> convertExp slix 
                   <*> convertAcc a
     Index sliceIndex acc slix -> 
-      T.Index (cvtSlice sliceIndex)     <$> convertAcc acc
-                                        <*> convertExp slix
-    Reshape e acc -> T.Reshape <$> convertExp e <*> convertAcc acc
-    Permute fn dft pfn acc -> T.Permute <$> convertFun2 fn 
+      T.Index (getAccTypePre eacc) (cvtSlice sliceIndex) <$> convertAcc acc
+                                          <*> convertExp slix
+    Reshape e acc -> T.Reshape (getAccTypePre eacc) <$> convertExp e <*> convertAcc acc
+    Permute fn dft pfn acc -> T.Permute (getAccType acc) -- Final type is same as input.
+                                        <$> convertFun2 fn 
                                         <*> convertAcc  dft
                                         <*> convertFun1 pfn
                                         <*> convertAcc  acc
-    Backpermute e pfn acc -> T.Backpermute <$> convertExp  e 
-                                           <*> convertFun1 pfn
-                                           <*> convertAcc  acc 
-    Stencil  sten bndy acc -> T.Stencil <$> convertFun1 sten
+    Backpermute e pfn acc -> T.Backpermute (getAccTypePre eacc)
+                                        <$> convertExp  e 
+                                        <*> convertFun1 pfn
+                                        <*> convertAcc  acc 
+    Stencil  sten bndy acc -> T.Stencil (getAccTypePre eacc)
+                                        <$> convertFun1 sten
                                         <*> return (convertBoundary bndy)
                                         <*> convertAcc acc
     Stencil2 sten bndy1 acc1 bndy2 acc2 -> 
-      T.Stencil2 <$> convertFun2 sten 
+      T.Stencil2 (getAccTypePre eacc)
+                 <$> convertFun2 sten 
                  <*> return (convertBoundary bndy1) <*> convertAcc acc1
                  <*> return (convertBoundary bndy2) <*> convertAcc acc2
 
@@ -881,8 +902,8 @@ repackAcc dummy simpl = Sug.toArr converted
          (packArray simpl) :: (Sug.Array sh e)
 
 
-mkArrayTuple [one] = one
-mkArrayTuple ls    = T.ArrayTuple ls
+mkArrayTuple ty [one] = one
+mkArrayTuple ty ls    = T.ArrayTuple ty ls
 
 --------------------------------------------------------------------------------
 
