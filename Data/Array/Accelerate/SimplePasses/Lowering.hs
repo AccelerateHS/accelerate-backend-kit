@@ -11,7 +11,9 @@
 
 module Data.Array.Accelerate.SimplePasses.Lowering 
        (
-         liftLets, gatherLets,
+         liftComplexRands,
+         liftLets, 
+         gatherLets,
          removeArrayTuple
          
          -- staticTuples -- Unfinished
@@ -75,6 +77,7 @@ gatherLets prog = (reverse binds, prog')
           do rhs' <- loop rhs -- Important: Collect these bindings first.
              addbind (v,ty,rhs')
              loop bod
+       -- We ALSO treat Apply's as Let bindings:
        T.Apply _ fn ae -> 
           do let S.Lam1 (v,ty) abod = fn 
              rhs' <- loop ae
@@ -462,3 +465,88 @@ staticTuples ae = aexp M.empty ae
        T.EIndexConsDynamic e1 e2 -> T.EIndexConsDynamic (exp tenv e1) (exp tenv e2)
        T.EIndexHeadDynamic ex -> T.EIndexHeadDynamic (exp tenv ex)
        T.EIndexTailDynamic ex -> T.EIndexTailDynamic (exp tenv ex)
+
+
+
+-- | Step one in a program flattening process.
+-- 
+-- The end goal is to flatten all nested array expressions such that
+-- array arguments to all primitive forms are varrefs.  This pass
+-- simply introduces Lets wherever a complex operand occurs.
+-- Subsequent let lifting will achieve full flattening.
+--        
+-- This pass also ensures that the final body of the program is a
+-- varref (i.e. it lifts the body as well).
+liftComplexRands :: TAExp -> TAExp
+liftComplexRands aex = 
+    -- By starting off with 'flat' we lift the body ALSO:
+    evalState (flat aex) 0
+  where  
+   isVar :: TAExp -> Bool
+   isVar aex = 
+     case aex of 
+       T.Vr _ _ -> True
+       _        -> False
+   flat :: TAExp -> State Int TAExp 
+   flat aex | isVar aex = return aex
+   flat (T.Let rt (v,ty,rhs) bod) = do
+     rhs' <- loop rhs
+     bod' <- flat bod
+     return$ T.Let rt (v,ty,rhs') bod'
+   flat (T.Apply rt fn ae) = do -- Let's in disguise.
+     let S.Lam1 (v,ty) abod = fn 
+     rand' <- loop ae
+     abod' <- flat abod
+     return$ T.Apply rt (S.Lam1 (v,ty) abod') rand'
+   -- Otherwise we lift it into a Let:
+   flat aex = 
+     do tmp <- tmpVar
+        let ty = getAnnot aex
+        rhs' <- loop aex
+        return$ T.Let ty (tmp,ty, rhs') (T.Vr ty tmp)
+   
+   tmpVar :: State Int S.Var
+   tmpVar = 
+     do cnt <- get 
+        put (cnt+1)
+        return$ S.var $ "tmp_"++show cnt
+   loop :: TAExp -> State Int TAExp -- Keeps a counter.
+   loop aex = 
+     case aex of 
+       T.Vr _ _              -> return aex
+       T.Unit _ _            -> return aex
+       T.Use _ _             -> return aex
+       T.Generate _ _ _      -> return aex
+       T.Let rt (v,ty,rhs) bod -> 
+          do rhs' <- loop rhs 
+             bod' <- loop bod
+             return$ T.Let rt (v,ty,rhs') bod'
+       T.Apply rt fn ae -> 
+          do let S.Lam1 (v,ty) abod = fn 
+             rand' <- loop ae
+             abod' <- loop abod
+             return$ T.Apply rt (S.Lam1 (v,ty) abod') rand'
+       T.ZipWith a fn ae1 ae2  -> T.ZipWith a fn <$> flat ae1 <*> flat ae2 
+       T.Map     a fn ae       -> T.Map     a fn <$> flat ae
+       T.TupleRefFromRight a ind ae -> T.TupleRefFromRight a ind <$> flat ae
+       T.Cond a ex ae1 ae2     -> T.Cond a ex <$> flat ae1 <*> flat ae2 
+       T.Replicate aty slice ex ae -> T.Replicate aty slice ex <$> flat ae
+       T.Index     a slc ae ex -> (\ ae' -> T.Index a slc ae' ex) <$> flat ae
+       T.Fold  a fn einit ae         -> T.Fold  a fn einit    <$> flat ae
+       T.Fold1 a fn       ae         -> T.Fold1 a fn          <$> flat ae 
+       T.FoldSeg a fn einit ae aeseg -> T.FoldSeg a fn einit  <$> flat ae <*> flat aeseg 
+       T.Fold1Seg a fn      ae aeseg -> T.Fold1Seg a fn       <$> flat ae <*> flat aeseg 
+       T.Scanl    a fn einit ae      -> T.Scanl    a fn einit <$> flat ae  
+       T.Scanl'   a fn einit ae      -> T.Scanl'   a fn einit <$> flat ae  
+       T.Scanl1   a fn       ae      -> T.Scanl1   a fn       <$> flat ae 
+       T.Scanr    a fn einit ae      -> T.Scanr    a fn einit <$> flat ae 
+       T.Scanr'   a fn einit ae      -> T.Scanr'   a fn einit <$> flat ae 
+       T.Scanr1   a fn       ae      -> T.Scanr1   a fn       <$> flat ae
+       T.Permute a fn2 ae1 fn1 ae2 -> (\ x y -> T.Permute a fn2 x fn1 y)
+                                  <$> flat ae1 <*> flat ae2
+       T.Backpermute a ex lam ae -> T.Backpermute a ex lam   <$> flat ae
+       T.Reshape     a ex     ae -> T.Reshape     a ex       <$> flat ae
+       T.Stencil   a fn bndry ae -> T.Stencil     a fn bndry <$> flat ae
+       T.Stencil2  a fn bnd1 ae1 bnd2 ae2 -> (\ x y -> T.Stencil2 a fn bnd1 x bnd2 y) 
+                                        <$> flat ae1 <*> flat ae2
+       T.ArrayTuple a aes -> T.ArrayTuple a <$> mapM flat aes

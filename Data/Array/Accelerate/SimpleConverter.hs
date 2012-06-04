@@ -40,7 +40,7 @@ import qualified Data.Array.Accelerate.SimpleAST   as S
 -- Temporary AST before we get to the final one:
 import qualified Data.Array.Accelerate.SimplePasses.IRTypes as T
 
-import Data.Array.Accelerate.SimplePasses.Lowering (gatherLets, removeArrayTuple)
+import Data.Array.Accelerate.SimplePasses.Lowering (gatherLets, removeArrayTuple, liftComplexRands)
 
 import Debug.Trace(trace)
 tracePrint s x = trace (s ++ show x) x
@@ -55,20 +55,13 @@ type TAExp = T.AExp S.Type
 --   into something very simple for external consumption.
 convertToSimpleAST :: Sug.Arrays a => Sug.Acc a -> TAExp
 convertToSimpleAST = 
---  desugarConverted . 
-#if 1
-  progToAExp . removeArrayTuple . 
-  tracePrint "\nLetsGathered:\n" .
-  gatherLets .
-#else
-  liftLets . 
-#endif
-  runEnvM . convertAcc . 
-  Sug.convertAcc
-
+  progToAExp . -- TEMP, hack:
+  convertToSimpleProg
 
 convertToSimpleProg :: Sug.Arrays a => Sug.Acc a -> S.Prog
-convertToSimpleProg =  removeArrayTuple . gatherLets . convertToSimpleAST
+convertToSimpleProg =  
+  removeArrayTuple . gatherLets . liftComplexRands . 
+  runEnvM . convertAcc . Sug.convertAcc
 
 
 -- Temporary -- convert a Prog back to an AExp.  I haven't refactored
