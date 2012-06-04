@@ -8,8 +8,8 @@
 
 module Data.Array.Accelerate.SimplePasses.IRTypes
    (
-     AExp(..), -- AFun(..), 
-     Exp(..), Fun1(..), Fun2(..),
+     AExp(..), 
+     Exp(..), -- Fun1(..), Fun2(..),
      convertAExps,
      convertExps, 
      convertFun1, convertFun2,
@@ -24,7 +24,7 @@ import           System.IO.Unsafe (unsafePerformIO)
 import qualified Data.Map  as M
 import qualified Data.List as L
 
-import Data.Array.Accelerate.SimpleAST hiding (Exp(..), AExp(..), Fun1(..), Fun2(..), AFun)
+import Data.Array.Accelerate.SimpleAST hiding (Exp(..), AExp(..))
 import qualified Data.Array.Accelerate.SimpleAST as S
 
 --------------------------------------------------------------------------------
@@ -72,22 +72,18 @@ data AExp =
   | Stencil2 (Fun2 Exp) Boundary AExp Boundary AExp -- Two source arrays/boundaries
  deriving (Read,Show,Eq,Generic)
 
--- | Array-level functions.
--- data AFun = ALam (Var,Type) AExp
---  deriving (Read,Show,Eq,Generic)
-
 
 --------------------------------------------------------------------------------
 -- Scalar Expressions and Functions
 --------------------------------------------------------------------------------
 
--- | Scalar functions, arity 1
-data Fun1 a = Lam1 (Var,Type) a
- deriving (Read,Show,Eq,Generic)
+-- -- | Scalar functions, arity 1
+-- data Fun1 a = Lam1 (Var,Type) a
+--  deriving (Read,Show,Eq,Generic)
 
--- | Scalar functions, arity 2
-data Fun2 a = Lam2 (Var,Type) (Var,Type) a
- deriving (Read,Show,Eq,Generic)
+-- -- | Scalar functions, arity 2
+-- data Fun2 a = Lam2 (Var,Type) (Var,Type) a
+--  deriving (Read,Show,Eq,Generic)
 
 -- | Scalar expressions
 data Exp = 
@@ -151,12 +147,11 @@ convertExps expr =
     EIndexHeadDynamic ex    -> S.EIndexHeadDynamic (f ex)
     EIndexTailDynamic ex    -> S.EIndexTailDynamic (f ex)
     
-convertFun1 :: Fun1 Exp -> S.Fun1
-convertFun1 (Lam1 bnd bod) = S.Lam1 bnd $ convertExps bod
+convertFun1 :: S.Fun1 Exp -> S.Fun1 S.Exp
+convertFun1 (Lam1 bnd bod) = Lam1 bnd $ convertExps bod
 
-convertFun2 :: Fun2 Exp -> S.Fun2
-convertFun2 (Lam2 bnd1 bnd2 bod) = S.Lam2 bnd1 bnd2 $ convertExps bod
-
+convertFun2 :: S.Fun2 Exp -> S.Fun2 S.Exp
+convertFun2 (Lam2 bnd1 bnd2 bod) = Lam2 bnd1 bnd2 $ convertExps bod
 
 -- | Convert Array expressions /that meet the restrictions/ to the
 --   final SimpleAST type.
@@ -220,10 +215,10 @@ reverseConvertExps expr =
 
 
 
-reverseConvertFun1 :: S.Fun1 -> Fun1 Exp
+reverseConvertFun1 :: S.Fun1 S.Exp -> S.Fun1 Exp
 reverseConvertFun1 (S.Lam1 bnd bod) = Lam1 bnd $ reverseConvertExps bod
 
-reverseConvertFun2 :: S.Fun2 -> Fun2 Exp 
+reverseConvertFun2 :: S.Fun2 S.Exp -> S.Fun2 Exp 
 reverseConvertFun2 (S.Lam2 bnd1 bnd2 bod) = Lam2 bnd1 bnd2 $ reverseConvertExps bod
 
 -- TEMPORARY!

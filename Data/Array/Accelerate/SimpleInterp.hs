@@ -100,7 +100,7 @@ evalA env ae =
                             ConstVal (B False) -> loop ae3
 
        T.Use _ty arr -> ArrVal arr
-       T.Generate (TArray _dim elty) eSz (T.Lam1 (vr,vty) bodE) ->
+       T.Generate (TArray _dim elty) eSz (S.Lam1 (vr,vty) bodE) ->
          trace ("[dbg] GENERATING: "++ show dims ++" "++ show elty) $ 
          
          -- It's tricky to support elementwise functions that produce
@@ -179,7 +179,7 @@ evalA env ae =
 
            
        --------------------------------------------------------------------------------
-       T.Map (T.Lam1 (v,vty) bod) ae -> 
+       T.Map (S.Lam1 (v,vty) bod) ae -> 
 -- TODO!!! Handle maps that change the tupling...
          
 --         trace ("MAPPING: over input arr "++ show inarr) $ 
@@ -189,7 +189,7 @@ evalA env ae =
            evaluator c = -- tracePrint ("In map, evaluating element "++ show c++" to ")$  
                          valToConst $ evalE env (T.ELet (v,vty, T.EConst c) bod)
          
-       T.ZipWith  (T.Lam2 (v1,vty1) (v2,vty2) bod) ae1 ae2  ->
+       T.ZipWith  (S.Lam2 (v1,vty1) (v2,vty2) bod) ae1 ae2  ->
          if dims1 /= dims2 
          then error$"zipWith: internal error, input arrays not the same dimension: "++ show dims1 ++" "++ show dims2
 -- TODO: Handle the case where the resulting array is an array of tuples:
@@ -210,7 +210,7 @@ evalA env ae =
        --------------------------------------------------------------------------------       
        -- Shave off leftmost dim in 'sh' list 
        -- (the rightmost dim in the user's (Z :. :.) expression):
-       T.Fold (T.Lam2 (v1,_) (v2,_) bodE) ex ae -> 
+       T.Fold (S.Lam2 (v1,_) (v2,_) bodE) ex ae -> 
          -- trace ("FOLDING, shape "++show (innerdim:sh') ++ " lens "++ 
          --        show (alllens, L.group alllens) ++" arr "++show payloads++"\n") $ 
            case payloads of 

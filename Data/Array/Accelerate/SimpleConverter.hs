@@ -187,7 +187,7 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
     Apply (Alam (Abody funAcc)) acc -> 
       do (v,bod) <- withExtendedEnv "a" $ convertAcc funAcc
          let sty = getAccType acc
-         T.Apply (T.Lam1 (v, sty) bod) <$> convertAcc acc
+         T.Apply (S.Lam1 (v, sty) bod) <$> convertAcc acc
 
     Apply _afun _acc -> error "convertAcc: This case is impossible"
 
@@ -681,18 +681,18 @@ convertFun =  loop []
                                           loop ((v,sty) : acc) f2
                                return x 
 
-convertFun1 :: OpenFun e ae t0 -> EnvM (T.Fun1 T.Exp)
+convertFun1 :: OpenFun e ae t0 -> EnvM (S.Fun1 T.Exp)
 convertFun1 fn = do 
   x <- convertFun fn
   case x of 
-    ([(v,ty)], bod) -> return$ T.Lam1 (v,ty) bod
+    ([(v,ty)], bod) -> return$ S.Lam1 (v,ty) bod
     (ls,_) -> error$"convertFun1: expected Accelerate function of arity one, instead arguments were: "++show ls
 
-convertFun2 :: OpenFun e ae t0 -> EnvM (T.Fun2 T.Exp)
+convertFun2 :: OpenFun e ae t0 -> EnvM (S.Fun2 T.Exp)
 convertFun2 fn = do
   x <- convertFun fn
   case x of 
-    ([(v1,ty1),(v2,ty2)], bod) -> return$ T.Lam2 (v1,ty1) (v2,ty2) bod
+    ([(v1,ty1),(v2,ty2)], bod) -> return$ S.Lam2 (v1,ty1) (v2,ty2) bod
     (ls,_) -> error$"convertFun2: expected Accelerate function of arity two, instead arguments were: "++show ls
 
 

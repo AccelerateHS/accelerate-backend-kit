@@ -8,7 +8,7 @@ module Data.Array.Accelerate.SimpleAST
    ( 
      -- * The types making up Accelerate ASTs:
      Prog(..),
-     AExp(..), AFun(..), 
+     AExp(..), -- AFun(..), 
      Exp(..), Fun1(..), Fun2(..),
      Type(..), Const(..),
      Prim(..), NumPrim(..), IntPrim(..), FloatPrim(..), ScalarPrim(..), BoolPrim(..), OtherPrim(..),
@@ -116,41 +116,38 @@ data Prog = Letrec {
 -- others can reduce headaches when consuming the AST for constructs
 -- like Replicate that change the type.
 data AExp = 
-    Vr Var -- Array variable bound by a Let.
-  | Unit Exp -- Turn an element into a singleton array
-    -- Let is used for common subexpression elimination
-  | Let (Var,Type,AExp) AExp    -- Let Var Type RHS Body
---  | ArrayTuple [AExp]           -- Tuple of arrays.
---  | TupleRefFromRight Int AExp 
-    
-  | Cond Exp AExp AExp           -- Array level if statements
-  | Use       Type AccArray      -- A real live ARRAY goes here!
-  | Generate  Type Exp Fun1      -- Generate Function Array, very similar to map
+    Vr Var                            -- Array variable bound by a Let.
+  | Unit Exp                          -- Turn an element into a singleton array
+  | Let (Var,Type,AExp) AExp          -- Let Var Type RHS Body
+                                      -- Let is used for common subexpression elimination
+  | Cond Exp AExp AExp                -- Array level if statements
+  | Use       Type AccArray           -- A real live ARRAY goes here!
+  | Generate  Type Exp (Fun1 Exp)     -- Generate Function Array, very similar to map
   | Replicate Type SliceType Exp AExp -- Replicate array across one or more dimensions.
-  | Index     SliceType AExp Exp -- Index a sub-array (slice).
-                                 -- Index sliceIndex Array SliceDims
-  | Map      Fun1 AExp           -- Map Function Array
-  | ZipWith  Fun2 AExp AExp      -- ZipWith Function Array1 Array2
-  | Fold     Fun2 Exp AExp       -- Fold Function Default Array
-  | Fold1    Fun2 AExp           -- Fold1 Function Array
-  | FoldSeg  Fun2 Exp AExp AExp  -- FoldSeg Function Default Array 'Segment Descriptor'
-  | Fold1Seg Fun2     AExp AExp  -- FoldSeg Function         Array 'Segment Descriptor'
-  | Scanl    Fun2 Exp AExp       -- Scanl  Function InitialValue LinearArray
-  | Scanl'   Fun2 Exp AExp       -- Scanl' Function InitialValue LinearArray
-  | Scanl1   Fun2     AExp       -- Scanl  Function              LinearArray
-  | Scanr    Fun2 Exp AExp       -- Scanr  Function InitialValue LinearArray
-  | Scanr'   Fun2 Exp AExp       -- Scanr' Function InitialValue LinearArray
-  | Scanr1   Fun2     AExp       -- Scanr  Function              LinearArray
-  | Permute  Fun2 AExp Fun1 AExp -- Permute CombineFun DefaultArr PermFun SourceArray
-  | Backpermute Exp Fun1 AExp    -- Backpermute ResultDimension   PermFun SourceArray
-  | Reshape     Exp      AExp    -- Reshape Shape Array
-  | Stencil  Fun1 Boundary AExp
-  | Stencil2 Fun2 Boundary AExp Boundary AExp -- Two source arrays/boundaries
+  | Index     SliceType AExp Exp      -- Index a sub-array (slice).
+                                      --   (Index sliceIndex Array SliceDims)
+  | Map      (Fun1 Exp) AExp          -- Map Function Array
+  | ZipWith  (Fun2 Exp) AExp AExp     -- ZipWith Function Array1 Array2
+  | Fold     (Fun2 Exp) Exp AExp      -- Fold Function Default Array
+  | Fold1    (Fun2 Exp) AExp          -- Fold1 Function Array
+  | FoldSeg  (Fun2 Exp) Exp AExp AExp -- FoldSeg Function Default Array 'Segment Descriptor'
+  | Fold1Seg (Fun2 Exp)     AExp AExp -- FoldSeg Function         Array 'Segment Descriptor'
+  | Scanl    (Fun2 Exp) Exp AExp      -- Scanl  Function InitialValue LinearArray
+  | Scanl'   (Fun2 Exp) Exp AExp      -- Scanl' Function InitialValue LinearArray
+  | Scanl1   (Fun2 Exp)     AExp      -- Scanl  Function              LinearArray
+  | Scanr    (Fun2 Exp) Exp AExp      -- Scanr  Function InitialValue LinearArray
+  | Scanr'   (Fun2 Exp) Exp AExp      -- Scanr' Function InitialValue LinearArray
+  | Scanr1   (Fun2 Exp)     AExp      -- Scanr  Function              LinearArray
+  | Permute  (Fun2 Exp) AExp (Fun1 Exp) AExp -- Permute CombineFun DefaultArr PermFun SourceArray
+  | Backpermute Exp (Fun1 Exp) AExp   -- Backpermute ResultDimension   PermFun SourceArray
+  | Reshape     Exp      AExp         -- Reshape Shape Array
+  | Stencil  (Fun1 Exp) Boundary AExp
+  | Stencil2 (Fun2 Exp) Boundary AExp Boundary AExp -- Two source arrays/boundaries
  deriving (Read,Show,Eq,Generic)
 
--- | Array-level functions.
-data AFun = ALam (Var,Type) AExp
- deriving (Read,Show,Eq,Generic)
+-- -- | Array-level functions.
+-- data AFun = ALam (Var,Type) AExp
+--  deriving (Read,Show,Eq,Generic)
 
 -- | Boundary condition specification for stencil operations.
 data Boundary = Clamp               -- ^clamp coordinates to the extent of the array
@@ -164,14 +161,13 @@ data Boundary = Clamp               -- ^clamp coordinates to the extent of the a
 -- Accelerate Scalar Expressions and Functions
 --------------------------------------------------------------------------------
 
--- | Scalar functions, arity 1
-data Fun1 = Lam1 (Var,Type) Exp
+-- | Functions, arity 1
+data Fun1 a = Lam1 (Var,Type) a
  deriving (Read,Show,Eq,Generic)
 
--- | Scalar functions, arity 2
-data Fun2 = Lam2 (Var,Type) (Var,Type) Exp
+-- | Functions, arity 2
+data Fun2 a = Lam2 (Var,Type) (Var,Type) a
  deriving (Read,Show,Eq,Generic)
-
 
 -- | Scalar expressions
 data Exp = 
@@ -524,11 +520,13 @@ fromConst c =
 
 instance Out Type
 instance Out Prog
-instance Out Fun1
-instance Out Fun2
+-- instance Out Fun1
+-- instance Out Fun2
+instance Out (Fun1 Exp)
+instance Out (Fun2 Exp)
 instance Out Exp
 instance Out AExp
-instance Out AFun
+-- instance Out AFun
 instance Out Const
 instance Out Prim
 instance Out NumPrim

@@ -73,7 +73,7 @@ gatherLets prog = (reverse binds, prog')
              addbind (v,ty,rhs')
              loop bod
        T.Apply fn ae -> 
-          do let T.Lam1 (v,ty) abod = fn 
+          do let S.Lam1 (v,ty) abod = fn 
              rhs' <- loop ae
              addbind (v,ty,rhs')
              loop abod
@@ -368,7 +368,7 @@ staticTuples ae = aexp M.empty ae
        T.Apply fn ae -> 
          T.Let (v,ty, aexp tenv' abod) (aexp tenv ae)
          where tenv' = M.insert v ty tenv         
-               T.Lam1 (v,ty) abod = fn 
+               S.Lam1 (v,ty) abod = fn 
        
        -- TODO: Can we get rid of array tupling entirely?
        T.ArrayTuple aes -> T.ArrayTuple $ L.map (aexp tenv) aes       
@@ -417,10 +417,10 @@ staticTuples ae = aexp M.empty ae
        T.Stencil2  fn bnd1 ae1 bnd2 ae2 ->  T.Stencil2 (lam2 tenv fn) bnd1 (aexp tenv ae1)
                                                                       bnd2 (aexp tenv ae2)
    -- Handle arity 1 lambdas:
-   lam1 tenv (T.Lam1 (v,ty) bod) = T.Lam1 (v,ty) (exp tenv' bod)
+   lam1 tenv (S.Lam1 (v,ty) bod) = S.Lam1 (v,ty) (exp tenv' bod)
      where tenv' = M.insert v ty tenv
    -- Handle arity 2 lambdas:
-   lam2 tenv (T.Lam2 (v1,ty1) (v2,ty2) bod) = T.Lam2 (v1,ty1) (v2,ty2) (exp tenv' bod)
+   lam2 tenv (S.Lam2 (v1,ty1) (v2,ty2) bod) = S.Lam2 (v1,ty1) (v2,ty2) (exp tenv' bod)
      where tenv' = M.insert v1 ty1 $ M.insert v2 ty2 tenv
 
    exp :: M.Map S.Var S.Type -> T.Exp -> T.Exp 
