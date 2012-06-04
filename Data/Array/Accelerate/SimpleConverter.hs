@@ -72,19 +72,17 @@ convertToSimpleProg =  removeArrayTuple . gatherLets . convertToSimpleAST
 -- Temporary -- convert a Prog back to an AExp.  I haven't refactored
 -- the interpreter yet....
 progToAExp :: S.Prog -> T.AExp
-progToAExp = error "progToAExp UNFINISHED"
-{-
+-- progToAExp = error "progToAExp UNFINISHED"
 progToAExp (S.Letrec binds results _ty) = 
   case ebinds of 
-    [] -> T.convertAExps $ loop1 abinds
+    [] -> loop1 abinds
     oth -> error $ "progToAExp: this function is not complete, can't handle these scalar bindings:\n"++show oth
   where 
     (ebinds, abinds) = L.partition isLeft binds
     isLeft (_,_,Left _) = True
     isLeft _            = False
-    loop1 [] = mkArrayTuple results
-    loop1 ((vr,ty,Right rhs):tl) = S.Let (vr,ty,rhs) $ loop1 tl
--}
+    loop1 [] = mkArrayTuple $ L.map T.reverseConvertAExps results
+    loop1 ((vr,ty,Right rhs):tl) = T.Let (vr,ty, T.reverseConvertAExps rhs) $ loop1 tl
 
 --------------------------------------------------------------------------------
 -- Environments

@@ -10,10 +10,17 @@ module Data.Array.Accelerate.SimpleInterp
        )
        where
 
+
 import Data.Array.Accelerate.Smart                   (Acc)
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import Data.Array.Accelerate.SimpleAST             as S
+
+#define ARRAYTUPLE
+#ifdef ARRAYTUPLE
 import Data.Array.Accelerate.SimplePasses.IRTypes  as T
+#else
+import Data.Array.Accelerate.SimpleAST             as T
+#endif
 import Data.Array.Accelerate.SimpleArray           as SA
 import Data.Array.Accelerate.SimpleConverter (convertToSimpleAST, packArray, repackAcc)
 
@@ -85,8 +92,9 @@ evalA env ae =
 
        T.Unit e -> case evalE env e of 
                    ConstVal c -> ArrVal$ SA.replicate [] c
+#ifdef ARRAYTUPLE       
        T.ArrayTuple aes -> TupVal (map loop aes)
-
+#endif
        T.Cond e1 ae2 ae3 -> case evalE env e1 of 
                             ConstVal (B True)  -> loop ae2 
                             ConstVal (B False) -> loop ae3
@@ -237,7 +245,9 @@ evalA env ae =
                         bodE 
        
        T.Index     slcty  ae ex -> error "UNFINISHED: Index"
+#ifdef ARRAYTUPLE
        T.TupleRefFromRight i ae -> error "UNFINISHED: TupleRefFromRight"
+#endif
        T.Apply afun ae          -> error "UNFINISHED: Apply"
 
 

@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 -- | A few different passes for lowering the raw Acc-converted ASTs.
 
@@ -164,23 +165,12 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
    main = do (newbinds,nameMap) <- doBinds [] M.empty binds
              newbod      <- dorhs nameMap bod
              newbinds2   <- dischargeNewScalarBinds
---             let finalbinds = mapBindings convertEither newbinds 
---                              ++ newbinds2
-             let finalbinds = undefined
+             let finalbinds = mapBindings convertLeft (newbinds2 ++ newbinds2)
              return $ S.Letrec finalbinds
---                               (L.map convertAExps $ deepDeTuple nameMap newbod)
---                               (deepDeTuple nameMap newbod)
---                               (deTuple nameMap newbod)
                                (flattenTT newbod)
                                (S.TTuple [])
  
    -- Called on already processed expressions:
---    deepDeTuple :: SubNameMap -> T.AExp -> [T.AExp]
---    deepDeTuple eenv ae = 
---      case ae of      
---        T.ArrayTuple ls   -> concatMap (deepDeTuple eenv) ls
---        oth -> [oth]
-
    flattenTT :: TempTree S.AExp -> [S.AExp]
    flattenTT x = 
      case x of      
@@ -190,8 +180,9 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
     
    mapBindings fn [] = []
    mapBindings fn ((v,t,x):tl) = (v,t,fn x) : mapBindings fn tl
-   convertEither (Left  ex) = Left  $ convertExps  ex
-   convertEither (Right ae) = Right $ convertAExps ae
+
+   convertLeft (Left  ex)  = Left  $ convertExps  ex
+   convertLeft (Right ae) = Right ae
 
    origenv = M.fromList $ L.map (\ (a,b,c) -> (a,c)) binds
 
@@ -333,7 +324,12 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
        T.Stencil   fn bndry ae     -> lf$ S.Stencil     (cF fn) bndry   <$> arrayonly eenv ae
        T.Stencil2  fn bnd1 ae1 bnd2 ae2 -> lf$ (\ a b -> S.Stencil2 (cF2 fn) bnd1 a bnd2 b)
                                         <$> arrayonly eenv ae1 <*> arrayonly eenv ae2
+       
+       T.Let _ _   -> error$ "removeArrayTuple: not expecting Let; should have been removed."
+       T.Apply _ _ -> error$ "removeArrayTuple: not expecting Apply; should have been removed."
      
+
+
 lf x = TLeaf <$> x
 cE = convertExps    
 cF  = convertFun1
