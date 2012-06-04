@@ -172,16 +172,12 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
    main = do (newbinds,nameMap) <- doBinds [] M.empty binds
              newbod      <- dorhs nameMap bod
              newbinds2   <- dischargeNewScalarBinds
-             -- LIFT the body out.  This should be part of a different
-             -- pass.  But because we don't have a
-             -- scrap-your-boilerplate right now, that's too
-             -- inconvenient:
-             -- -- TODO -- LIFT BODY OUT
-             
              let finalbinds = mapBindings convertLeft (newbinds ++ newbinds2)
+                 unVar (S.Vr v) = v
+                 unVar x = error$ "removeArrayTuple: expecting the final result expressions to be varrefs at this point, instead received: "++show x
              return $ S.Letrec finalbinds
-                               (flattenTT newbod)
-                               (S.TTuple [])
+                               (L.map unVar $ flattenTT newbod)
+                               (getAnnot bod)
  
    -- Called on already processed expressions:
    flattenTT :: TempTree S.AExp -> [S.AExp]

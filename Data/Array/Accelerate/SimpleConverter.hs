@@ -55,7 +55,7 @@ type TAExp = T.AExp S.Type
 --   into something very simple for external consumption.
 convertToSimpleAST :: Sug.Arrays a => Sug.Acc a -> TAExp
 convertToSimpleAST = 
-  progToAExp . -- TEMP, hack:
+  progToAExp . -- <- TEMP, hack.
   convertToSimpleProg
 
 convertToSimpleProg :: Sug.Arrays a => Sug.Acc a -> S.Prog
@@ -76,8 +76,10 @@ progToAExp (S.Letrec binds results finalty) =
     (ebinds, abinds) = L.partition isLeft binds
     isLeft (_,_,Left _) = True
     isLeft _            = False
-    loop1 [] = mkArrayTuple finalty $ L.map T.reverseConvertAExps results
+    loop1 [] = mkArrayTuple finalty $ zipWith T.Vr (deTupleTy finalty) results
     loop1 ((vr,ty,Right rhs):tl) = T.Let finalty (vr,ty, T.reverseConvertAExps rhs) $ loop1 tl
+    deTupleTy (S.TTuple ls) = reverse ls
+    deTupleTy oth           = [oth]
 
 --------------------------------------------------------------------------------
 -- Environments

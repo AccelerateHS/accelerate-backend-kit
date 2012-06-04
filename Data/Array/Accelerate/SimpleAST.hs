@@ -96,7 +96,7 @@ var :: String -> Var
 --   Note that because there is no recursion, dependencies form a DAG.
 data Prog = Letrec { 
   progBinds   :: [(Var,Type,Either Exp AExp)],
-  progResults :: [AExp],
+  progResults :: [Var],
   progType    :: Type
 } deriving (Read,Show,Eq,Generic)
 
