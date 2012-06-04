@@ -159,7 +159,7 @@ convertAExps aex =
      Use ty arr                  -> S.Use ty arr
      Generate aty ex fn          -> S.Generate aty (cE ex) (cF fn)
      ZipWith _ fn ae1 ae2        -> S.ZipWith (cF2 fn) (f ae1) (f ae2)
-     Map     _ fn ae             -> S.Map     (cF fn)  (f ae)
+     Map     _ fn (Vr _ v)       -> S.Map     (cF fn)  v
      Replicate aty slice ex ae   -> S.Replicate aty slice (cE ex) (f ae)
      Index     _ slc ae    ex    -> S.Index slc (f ae) (cE ex)
      Fold  _ fn einit ae         -> S.Fold     (cF2 fn) (cE einit) (f ae)
@@ -180,6 +180,7 @@ convertAExps aex =
      Apply _ _ _             -> error$"convertAExps: input doesn't meet constraints, Apply encountered."
      ArrayTuple _  _          -> error$"convertAExps: input doesn't meet constraints, ArrayTuple encountered."
      TupleRefFromRight _ _ _ -> error$"convertAExps: input doesn't meet constraints, TupleRefFromRight encountered."
+     oth -> error$"convertAExps: invariants not matched: "++show oth
 
 -- | Extract the annotation component from an AExp:
 getAnnot :: AExp a -> a 
@@ -243,7 +244,7 @@ reverseConvertFun1 (S.Lam1 bnd bod) = Lam1 bnd $ reverseConvertExps bod
 reverseConvertFun2 :: S.Fun2 S.Exp -> S.Fun2 Exp 
 reverseConvertFun2 (S.Lam2 bnd1 bnd2 bod) = Lam2 bnd1 bnd2 $ reverseConvertExps bod
 
--- TEMPORARY!
+-- TEMPORARY! -- THIS PUTS IN NONSENSE TYPES!
 reverseConvertAExps :: S.AExp -> AExp Type
 reverseConvertAExps aex =
   let cE  = reverseConvertExps
@@ -260,7 +261,7 @@ reverseConvertAExps aex =
      S.Use ty arr                -> Use ty arr
      S.Generate aty ex fn        -> Generate aty (cE ex) (cF fn)
      S.ZipWith fn ae1 ae2        -> ZipWith dt (cF2 fn) (f ae1) (f ae2)
-     S.Map     fn ae             -> Map     dt (cF fn)  (f ae)
+     S.Map     fn v              -> Map     dt (cF fn)  (Vr dt v)
      S.Replicate aty slice ex ae -> Replicate aty slice (cE ex) (f ae)
      S.Index     slc ae    ex    -> Index dt slc (f ae) (cE ex)
      S.Fold  fn einit ae         -> Fold     dt (cF2 fn) (cE einit) (f ae)

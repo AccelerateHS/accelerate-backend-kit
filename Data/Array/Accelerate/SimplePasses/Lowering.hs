@@ -313,8 +313,8 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
        T.Use ty arr                -> return$ TLeaf$ S.Use ty arr
        T.Generate aty ex fn        -> return$ TLeaf$ S.Generate aty (cE ex) (cF fn)
        T.ZipWith ty fn ae1 ae2        -> lf$ S.ZipWith (cF2 fn) <$> arrayonly eenv ae1 <*> arrayonly eenv ae2 
-       T.Map     ty fn ae             -> lf$ S.Map     (cF fn) <$> arrayonly eenv ae
-       T.Replicate aty slice ex ae -> lf$ S.Replicate aty slice (cE ex) <$> arrayonly eenv ae
+       T.Map     ty fn (T.Vr _ v)    -> lf$ return$ S.Map   (cF fn) v
+       T.Replicate aty slice ex ae   -> lf$ S.Replicate aty slice (cE ex) <$> arrayonly eenv ae
        T.Index     _ slc ae    ex    -> lf$ (\ ae' -> S.Index slc ae' (cE ex)) <$> arrayonly eenv ae
        T.Fold  _ fn einit ae         -> lf$ S.Fold  (cF2 fn) (cE einit)    <$> arrayonly eenv ae
        T.Fold1 _ fn       ae         -> lf$ S.Fold1 (cF2 fn)               <$> arrayonly eenv ae 
@@ -336,6 +336,7 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
        T.Let _ _ _   -> error$ "removeArrayTuple: not expecting Let; should have been removed."
        T.Apply _ _ _ -> error$ "removeArrayTuple: not expecting Apply; should have been removed."
      
+       oth -> error$"removeArrayTuple: this expression violated invariants: "++show oth
 
 
 lf x = TLeaf <$> x

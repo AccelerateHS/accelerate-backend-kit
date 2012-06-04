@@ -126,10 +126,10 @@ data AExp =
   | Replicate Type SliceType Exp AExp -- Replicate array across one or more dimensions.
   | Index     SliceType AExp Exp      -- Index a sub-array (slice).
                                       --   (Index sliceIndex Array SliceDims)
-  | Map      (Fun1 Exp) AExp          -- Map Function Array
+  | Map      (Fun1 Exp) Var           -- Map Function Array
   | ZipWith  (Fun2 Exp) AExp AExp     -- ZipWith Function Array1 Array2
   | Fold     (Fun2 Exp) Exp AExp      -- Fold Function Default Array
-  | Fold1    (Fun2 Exp) AExp          -- Fold1 Function Array
+  | Fold1    (Fun2 Exp)     AExp      -- Fold1 Function Array
   | FoldSeg  (Fun2 Exp) Exp AExp AExp -- FoldSeg Function Default Array 'Segment Descriptor'
   | Fold1Seg (Fun2 Exp)     AExp AExp -- FoldSeg Function         Array 'Segment Descriptor'
   | Scanl    (Fun2 Exp) Exp AExp      -- Scanl  Function InitialValue LinearArray
