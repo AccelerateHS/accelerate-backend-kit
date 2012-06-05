@@ -45,6 +45,8 @@ import Data.Array.Accelerate.SimplePasses.Lowering (gatherLets, removeArrayTuple
 import Debug.Trace(trace)
 tracePrint s x = trace (s ++ show x) x
 
+dbg = True
+
 --------------------------------------------------------------------------------
 -- Exposed entrypoints for this module:
 --------------------------------------------------------------------------------
@@ -59,10 +61,21 @@ convertToSimpleAST =
   convertToSimpleProg
 
 convertToSimpleProg :: Sug.Arrays a => Sug.Acc a -> S.Prog
-convertToSimpleProg =  
-  removeArrayTuple . gatherLets . liftComplexRands . 
-  runEnvM . convertAcc . Sug.convertAcc
+convertToSimpleProg prog = 
+  runPass "removeArrayTuple" removeArrayTuple $ 
+  runPass "gatherLets"       gatherLets $  
+  runPass "liftComplexRands" liftComplexRands $  
+  runPass "initalConversion" (runEnvM . convertAcc . Sug.convertAcc) $ 
+  prog
 
+-- Pass composition:
+runPass :: Out a => String -> (t -> a) -> t -> a
+runPass msg pass input =
+  if dbg then trace ("\n" ++ msg ++ ", output was:\n"++
+                     "================================================================================\n"
+                     ++ show (doc x)) x
+         else x
+ where x = pass input              
 
 -- Temporary -- convert a Prog back to an AExp.  I haven't refactored
 -- the interpreter yet....

@@ -377,6 +377,8 @@ evalPrim ty p [x,y] =
     NP Add -> ConstVal (add (valToConst x) (valToConst y))
     NP Mul -> ConstVal (mul (valToConst x) (valToConst y))
     
+    SP Gt -> ConstVal (gt (valToConst x) (valToConst y))
+
     oth -> error$"evalPrim needs to handle "++show oth
 
 evalPrim ty p [x] = 
@@ -466,6 +468,16 @@ sig a = error $ "sig: unsupported value: "++show a
 
 -- data ScalarPrim = Lt | Gt | LtEq | GtEq | Eq | NEq | Max | Min
 
+
+gt :: Const -> Const -> Const
+#define GT(X) gt (X a) (X b) = B (a < b);
+GT(I) GT(I8) GT(I16) GT(I32) GT(I64) 
+GT(W) GT(W8) GT(W16) GT(W32) GT(W64) 
+GT(F) GT(D)  GT(CF)  GT(CD)
+GT(CS)  GT(CI)  GT(CL)  GT(CLL) 
+GT(CUS) GT(CUI) GT(CUL) GT(CULL) 
+GT(CC)  GT(CUC) GT(CSC)
+gt a b = error $ "gt: unsupported combination of values: "++show(a,b)
 
 
 
