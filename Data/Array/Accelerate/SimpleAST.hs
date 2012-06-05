@@ -116,38 +116,35 @@ data Prog = Letrec {
 -- others can reduce headaches when consuming the AST for constructs
 -- like Replicate that change the type.
 data AExp = 
-    Vr Var                            -- Array variable bound by a Let.
-  | Unit Exp                          -- Turn an element into a singleton array
-  | Let (Var,Type,AExp) AExp          -- Let Var Type RHS Body
-                                      -- Let is used for common subexpression elimination
-  | Cond Exp AExp AExp                -- Array level if statements
-  | Use       Type AccArray           -- A real live ARRAY goes here!
-  | Generate  Type Exp (Fun1 Exp)     -- Generate Function Array, very similar to map
-  | Replicate Type SliceType Exp AExp -- Replicate array across one or more dimensions.
-  | Index     SliceType AExp Exp      -- Index a sub-array (slice).
-                                      --   (Index sliceIndex Array SliceDims)
-  | Map      (Fun1 Exp) Var           -- Map Function Array
-  | ZipWith  (Fun2 Exp) AExp AExp     -- ZipWith Function Array1 Array2
-  | Fold     (Fun2 Exp) Exp AExp      -- Fold Function Default Array
-  | Fold1    (Fun2 Exp)     AExp      -- Fold1 Function Array
-  | FoldSeg  (Fun2 Exp) Exp AExp AExp -- FoldSeg Function Default Array 'Segment Descriptor'
-  | Fold1Seg (Fun2 Exp)     AExp AExp -- FoldSeg Function         Array 'Segment Descriptor'
-  | Scanl    (Fun2 Exp) Exp AExp      -- Scanl  Function InitialValue LinearArray
-  | Scanl'   (Fun2 Exp) Exp AExp      -- Scanl' Function InitialValue LinearArray
-  | Scanl1   (Fun2 Exp)     AExp      -- Scanl  Function              LinearArray
-  | Scanr    (Fun2 Exp) Exp AExp      -- Scanr  Function InitialValue LinearArray
-  | Scanr'   (Fun2 Exp) Exp AExp      -- Scanr' Function InitialValue LinearArray
-  | Scanr1   (Fun2 Exp)     AExp      -- Scanr  Function              LinearArray
-  | Permute  (Fun2 Exp) AExp (Fun1 Exp) AExp -- Permute CombineFun DefaultArr PermFun SourceArray
-  | Backpermute Exp (Fun1 Exp) AExp   -- Backpermute ResultDimension   PermFun SourceArray
-  | Reshape     Exp      AExp         -- Reshape Shape Array
-  | Stencil  (Fun1 Exp) Boundary AExp
-  | Stencil2 (Fun2 Exp) Boundary AExp Boundary AExp -- Two source arrays/boundaries
+    Vr Var                           -- Array variable bound by a Let.
+  | Unit Exp                         -- Turn an element into a singleton array
+  | Let (Var,Type,AExp) AExp         -- Let Var Type RHS Body
+                                     -- Let is used for common subexpression elimination
+  | Cond Exp Var Var                 -- Array level if statements
+  | Use       Type AccArray          -- A real live ARRAY goes here!
+  | Generate  Type Exp (Fun1 Exp)    -- Generate Function Array, very similar to map
+  | Replicate Type SliceType Exp Var -- Replicate array across one or more dimensions.
+  | Index     SliceType Var Exp      -- Index a sub-array (slice).
+                                     --   (Index sliceIndex Array SliceDims)
+  | Map      (Fun1 Exp) Var          -- Map Function Array
+  | ZipWith  (Fun2 Exp) Var Var      -- ZipWith Function Array1 Array2
+  | Fold     (Fun2 Exp) Exp Var      -- Fold Function Default Array
+  | Fold1    (Fun2 Exp)     Var      -- Fold1 Function Array
+  | FoldSeg  (Fun2 Exp) Exp Var Var  -- FoldSeg Function Default InArray SegmentDescriptor
+  | Fold1Seg (Fun2 Exp)     Var Var  -- FoldSeg Function         InArray SegmentDescriptor
+  | Scanl    (Fun2 Exp) Exp Var      -- Scanl  Function InitialValue LinearArray
+  | Scanl'   (Fun2 Exp) Exp Var      -- Scanl' Function InitialValue LinearArray
+  | Scanl1   (Fun2 Exp)     Var      -- Scanl  Function              LinearArray
+  | Scanr    (Fun2 Exp) Exp Var      -- Scanr  Function InitialValue LinearArray
+  | Scanr'   (Fun2 Exp) Exp Var      -- Scanr' Function InitialValue LinearArray
+  | Scanr1   (Fun2 Exp)     Var      -- Scanr  Function              LinearArray
+  | Permute  (Fun2 Exp) Var (Fun1 Exp) Var -- Permute CombineFun DefaultArr PermFun SourceArray
+  | Backpermute Exp (Fun1 Exp) Var   -- Backpermute ResultDimension   PermFun SourceArray
+  | Reshape     Exp      Var         -- Reshape Shape Array
+  | Stencil  (Fun1 Exp) Boundary Var
+  | Stencil2 (Fun2 Exp) Boundary Var Boundary Var -- Two source arrays/boundaries
  deriving (Read,Show,Eq,Generic)
 
--- -- | Array-level functions.
--- data AFun = ALam (Var,Type) AExp
---  deriving (Read,Show,Eq,Generic)
 
 -- | Boundary condition specification for stencil operations.
 data Boundary = Clamp               -- ^clamp coordinates to the extent of the array

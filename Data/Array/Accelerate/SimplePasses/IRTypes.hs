@@ -154,29 +154,29 @@ convertAExps aex =
   case aex of 
      Vr _ v                      -> S.Vr v
      Let _ (v,ty,lhs) bod        -> S.Let (v,ty, f lhs) (f bod)
-     Cond _ a b c                -> S.Cond (cE a) (f b) (f c)
+     Cond _ a (Vr _ v1) (Vr _ v2) -> S.Cond (cE a) v1 v2
      Unit _ ex                   -> S.Unit (cE ex)
      Use ty arr                  -> S.Use ty arr
      Generate aty ex fn          -> S.Generate aty (cE ex) (cF fn)
-     ZipWith _ fn ae1 ae2        -> S.ZipWith (cF2 fn) (f ae1) (f ae2)
+     ZipWith _ fn (Vr _ v1) (Vr _ v2) -> S.ZipWith (cF2 fn) v1 v2 
      Map     _ fn (Vr _ v)       -> S.Map     (cF fn)  v
-     Replicate aty slice ex ae   -> S.Replicate aty slice (cE ex) (f ae)
-     Index     _ slc ae    ex    -> S.Index slc (f ae) (cE ex)
-     Fold  _ fn einit ae         -> S.Fold     (cF2 fn) (cE einit) (f ae)
-     Fold1 _ fn       ae         -> S.Fold1    (cF2 fn)            (f ae)
-     FoldSeg _ fn einit ae aeseg -> S.FoldSeg  (cF2 fn) (cE einit) (f ae) (f aeseg)
-     Fold1Seg _ fn      ae aeseg -> S.Fold1Seg (cF2 fn)            (f ae) (f aeseg)
-     Scanl    _ fn einit ae      -> S.Scanl    (cF2 fn) (cE einit) (f ae)
-     Scanl'   _ fn einit ae      -> S.Scanl'   (cF2 fn) (cE einit) (f ae)
-     Scanl1   _ fn       ae      -> S.Scanl1   (cF2 fn)            (f ae)
-     Scanr    _ fn einit ae      -> S.Scanr    (cF2 fn) (cE einit) (f ae)
-     Scanr'   _ fn einit ae      -> S.Scanr'   (cF2 fn) (cE einit) (f ae)
-     Scanr1   _ fn       ae      -> S.Scanr1   (cF2 fn)            (f ae)
-     Permute _ fn2 ae1 fn1 ae2   -> S.Permute (cF2 fn2) (f ae1) (cF fn1) (f ae2)
-     Backpermute _ ex fn  ae     -> S.Backpermute (cE ex) (cF fn) (f ae)
-     Reshape     _ ex     ae     -> S.Reshape     (cE ex)         (f ae)
-     Stencil   _ fn bndry ae     -> S.Stencil     (cF fn) bndry   (f ae)
-     Stencil2  _ fn bnd1 ae1 bnd2 ae2 -> S.Stencil2 (cF2 fn) bnd1 (f ae1) bnd2 (f ae2)
+     Replicate aty slice ex (Vr _ v) -> S.Replicate aty slice (cE ex) v
+     Index     _ slc (Vr _ v)    ex    -> S.Index slc v (cE ex)
+     Fold  _ fn einit (Vr _ v)         -> S.Fold     (cF2 fn) (cE einit) v
+     Fold1 _ fn       (Vr _ v)         -> S.Fold1    (cF2 fn)            v
+     FoldSeg _ fn einit (Vr _ v) (Vr _ v2) -> S.FoldSeg  (cF2 fn) (cE einit) v v2
+     Fold1Seg _ fn      (Vr _ v) (Vr _ v2) -> S.Fold1Seg (cF2 fn)            v v2
+     Scanl    _ fn einit (Vr _ v)      -> S.Scanl    (cF2 fn) (cE einit) v
+     Scanl'   _ fn einit (Vr _ v)      -> S.Scanl'   (cF2 fn) (cE einit) v
+     Scanl1   _ fn       (Vr _ v)      -> S.Scanl1   (cF2 fn)            v
+     Scanr    _ fn einit (Vr _ v)      -> S.Scanr    (cF2 fn) (cE einit) v
+     Scanr'   _ fn einit (Vr _ v)      -> S.Scanr'   (cF2 fn) (cE einit) v
+     Scanr1   _ fn       (Vr _ v)      -> S.Scanr1   (cF2 fn)            v
+     Permute _ fn2 (Vr _ v1) fn1 (Vr _ v2)   -> S.Permute (cF2 fn2) v1 (cF fn1) v2
+     Backpermute _ ex fn  (Vr _ v)     -> S.Backpermute (cE ex) (cF fn) v
+     Reshape     _ ex     (Vr _ v)     -> S.Reshape     (cE ex)         v
+     Stencil   _ fn bndry (Vr _ v)     -> S.Stencil     (cF fn) bndry   v 
+     Stencil2  _ fn bnd1 (Vr _ v1) bnd2 (Vr _ v2) -> S.Stencil2 (cF2 fn) bnd1 v1 bnd2 v2
      Apply _ _ _             -> error$"convertAExps: input doesn't meet constraints, Apply encountered."
      ArrayTuple _  _          -> error$"convertAExps: input doesn't meet constraints, ArrayTuple encountered."
      TupleRefFromRight _ _ _ -> error$"convertAExps: input doesn't meet constraints, TupleRefFromRight encountered."
@@ -256,26 +256,26 @@ reverseConvertAExps aex =
   case aex of 
      S.Vr v                      -> Vr dt v
      S.Let (v,ty,lhs) bod        -> Let dt (v,ty, f lhs) (f bod)
-     S.Cond a b c                -> Cond dt (cE a) (f b) (f c)
+     S.Cond a b c                -> Cond dt (cE a) (Vr dt b) (Vr dt c)
      S.Unit ex                   -> Unit dt (cE ex)
      S.Use ty arr                -> Use ty arr
      S.Generate aty ex fn        -> Generate aty (cE ex) (cF fn)
-     S.ZipWith fn ae1 ae2        -> ZipWith dt (cF2 fn) (f ae1) (f ae2)
+     S.ZipWith fn v1 v2          -> ZipWith dt (cF2 fn) (Vr dt v1) (Vr dt v2)
      S.Map     fn v              -> Map     dt (cF fn)  (Vr dt v)
-     S.Replicate aty slice ex ae -> Replicate aty slice (cE ex) (f ae)
-     S.Index     slc ae    ex    -> Index dt slc (f ae) (cE ex)
-     S.Fold  fn einit ae         -> Fold     dt (cF2 fn) (cE einit) (f ae)
-     S.Fold1 fn       ae         -> Fold1    dt (cF2 fn)            (f ae)
-     S.FoldSeg fn einit ae aeseg -> FoldSeg  dt (cF2 fn) (cE einit) (f ae) (f aeseg)
-     S.Fold1Seg fn      ae aeseg -> Fold1Seg dt (cF2 fn)            (f ae) (f aeseg)
-     S.Scanl    fn einit ae      -> Scanl    dt (cF2 fn) (cE einit) (f ae)
-     S.Scanl'   fn einit ae      -> Scanl'   dt (cF2 fn) (cE einit) (f ae)
-     S.Scanl1   fn       ae      -> Scanl1   dt (cF2 fn)            (f ae)
-     S.Scanr    fn einit ae      -> Scanr    dt (cF2 fn) (cE einit) (f ae)
-     S.Scanr'   fn einit ae      -> Scanr'   dt (cF2 fn) (cE einit) (f ae)
-     S.Scanr1   fn       ae      -> Scanr1   dt (cF2 fn)            (f ae)
-     S.Permute fn2 ae1 fn1 ae2   -> Permute  dt (cF2 fn2) (f ae1) (cF fn1) (f ae2)
-     S.Backpermute ex fn  ae     -> Backpermute dt (cE ex) (cF fn) (f ae)
-     S.Reshape     ex     ae     -> Reshape     dt (cE ex)         (f ae)
-     S.Stencil   fn bndry ae     -> Stencil     dt (cF fn) bndry   (f ae)
-     S.Stencil2  fn bnd1 ae1 bnd2 ae2 -> Stencil2 dt (cF2 fn) bnd1 (f ae1) bnd2 (f ae2)
+     S.Replicate aty slice ex v  -> Replicate aty slice (cE ex) (Vr dt v)
+     S.Index     slc v     ex    -> Index dt slc (Vr dt v) (cE ex)
+     S.Fold  fn einit (v)        -> Fold     dt (cF2 fn) (cE einit) (Vr dt v)
+     S.Fold1 fn       (v)        -> Fold1    dt (cF2 fn)            (Vr dt v)
+     S.FoldSeg fn einit (v) (v2) -> FoldSeg  dt (cF2 fn) (cE einit) (Vr dt v) (Vr dt v2)
+     S.Fold1Seg fn      (v) (v2) -> Fold1Seg dt (cF2 fn)            (Vr dt v) (Vr dt v2)
+     S.Scanl    fn einit (v)     -> Scanl    dt (cF2 fn) (cE einit) (Vr dt v)
+     S.Scanl'   fn einit (v)     -> Scanl'   dt (cF2 fn) (cE einit) (Vr dt v)
+     S.Scanl1   fn       (v)     -> Scanl1   dt (cF2 fn)            (Vr dt v)
+     S.Scanr    fn einit (v)     -> Scanr    dt (cF2 fn) (cE einit) (Vr dt v)
+     S.Scanr'   fn einit (v)     -> Scanr'   dt (cF2 fn) (cE einit) (Vr dt v)
+     S.Scanr1   fn       (v)     -> Scanr1   dt (cF2 fn)            (Vr dt v)
+     S.Permute fn2 (v) fn1 (v2)  -> Permute  dt (cF2 fn2) (Vr dt v) (cF fn1) (Vr dt v2)
+     S.Backpermute ex fn  (v)    -> Backpermute dt (cE ex) (cF fn) (Vr dt v)
+     S.Reshape     ex     (v)    -> Reshape     dt (cE ex)         (Vr dt v)
+     S.Stencil   fn bndry (v)    -> Stencil     dt (cF fn) bndry   (Vr dt v)
+     S.Stencil2  fn bnd1 v bnd2 v2 -> Stencil2 dt (cF2 fn) bnd1 (Vr dt v) bnd2 (Vr dt v2)
