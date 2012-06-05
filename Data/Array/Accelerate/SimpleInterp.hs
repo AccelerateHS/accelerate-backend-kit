@@ -14,15 +14,9 @@ module Data.Array.Accelerate.SimpleInterp
 import Data.Array.Accelerate.Smart                   (Acc)
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import Data.Array.Accelerate.SimpleAST             as S
-
-#define ARRAYTUPLE
-#ifdef ARRAYTUPLE
-import Data.Array.Accelerate.SimplePasses.IRTypes  as T
-#else
 import Data.Array.Accelerate.SimpleAST             as T
-#endif
 import Data.Array.Accelerate.SimpleArray           as SA
-import Data.Array.Accelerate.SimpleConverter (convertToSimpleAST, packArray, repackAcc2)
+import Data.Array.Accelerate.SimpleConverter (convertToSimpleProg, packArray, repackAcc2)
 import qualified Data.Map as M
 import qualified Data.List as L
 
@@ -40,7 +34,7 @@ run :: forall a . Sug.Arrays a => Acc a -> a
 run acc = 
           trace ("[dbg] Repacking AccArray: "++show array) $ 
           repackAcc2 acc array
- where array = evalA M.empty (convertToSimpleAST acc)
+ where array = evalA M.empty (convertToSimpleProg acc)
 
 --------------------------------------------------------------------------------
 -- Values and Environments:
@@ -73,50 +67,48 @@ unArrVal   (ArrVal v)   = v
 --------------------------------------------------------------------------------
 -- Evaluation:
 
-evalA :: Env -> T.AExp S.Type -> [AccArray]
-evalA env ae = 
-    trace ("[dbg] evalA with environment: "++show env++"\n    "++show ae) $
-    L.map unArrVal (untupleVal (loop ae))
---     case loop ae of 
---       ArrVal finalArr -> finalArr
---       oth -> error$ "evalA: did not produce an array as output of Acc computation:\n"++show(doc oth)
+evalA :: Env -> S.Prog -> [AccArray]
+evalA env (S.Letrec binds results progtype) = 
+--    trace ("[dbg] evalA with environment: "++show env++"\n    "++show ae) $
+    error "FINISHME"
+--    L.map unArrVal (untupleVal (loop ae))
   where 
 
-   loop :: T.AExp S.Type -> Value
-   loop aexp =
-     case aexp of 
+   loop :: [(S.Var, S.Type, Either S.Exp S.AExp)] -> Env
+   loop [] = env
+   
+   loop ((vr,ty,Left rhs):rst) =
+     error "do scalar binds!"
+   
+   loop ((vr,ty,Right rhs):rst) =
+     let bind rhs' = M.insert vr rhs' env in
+     case rhs of
        --     Vr Var -- Array variable bound by a Let.
-       T.Vr  _ v             -> envLookup env v
-       T.Let _ (vr,ty,lhs) bod -> tupleVal$ L.map ArrVal $
-                                  evalA (M.insert vr (loop lhs) env) bod
+       S.Vr  v             -> bind$ envLookup env v
+       -- S.Unit e -> case evalE env e of 
+       --              ConstVal c -> ArrVal$ SA.replicate [] c
 
-       T.Unit _ e -> case evalE env e of 
-                   ConstVal c -> ArrVal$ SA.replicate [] c
-#ifdef ARRAYTUPLE       
-       T.ArrayTuple _ aes -> TupVal (map loop aes)
-#endif
-       T.Cond _ e1 ae2 ae3 -> case evalE env e1 of 
-                            ConstVal (B True)  -> loop ae2 
-                            ConstVal (B False) -> loop ae3
+       S.Cond e1 v1 v2 -> case evalE env e1 of 
+                             ConstVal (B True)  -> bind$ envLookup env v1
+                             ConstVal (B False) -> bind$ envLookup env v2
+       S.Use _ty arr -> bind$ ArrVal arr
 
-       T.Use _ty arr -> ArrVal arr
-       T.Generate (TArray _dim elty) eSz (S.Lam1 (vr,vty) bodE) ->
+       S.Generate (TArray _dim elty) eSz (S.Lam1 (vr,vty) bodE) ->
          trace ("[dbg] GENERATING: "++ show dims ++" "++ show elty) $ 
          
          -- It's tricky to support elementwise functions that produce
          -- tuples, which in turn need to be unpacked into a
          -- multi-payload array....
-         ArrVal $ AccArray dims $ payloadsFromList elty $ 
+         bind $ ArrVal $ AccArray dims $ payloadsFromList elty $ 
          map (\ind -> valToConst $ evalE env (T.ELet (vr,vty,T.EConst ind) bodE)) 
              (indexSpace dims)
-                  
          where 
            dims = 
              -- Indices can be arbitrary shapes:
              case evalE env eSz of 
                ConstVal (I n)    -> [n]
                ConstVal (Tup ls) -> map (\ (I i) -> i) ls
-         
+
        --------------------------------------------------------------------------------
                               
        -- One way to think of the slice descriptor fed to replicate is
@@ -127,7 +119,7 @@ evalA env ae =
        -- "Fixed" dimensions on the other hand are the replication
        -- dimensions.  Varying indices in those dimensions will not
        -- change the value contained in the indexed slot in the array.
-       T.Replicate (TArray _dim elty) slcSig ex ae ->          
+       S.Replicate (TArray _dim elty) slcSig ex vr ->          
          trace ("[dbg] REPLICATING to "++show finalElems ++ " elems, newdims "++show newDims ++ " dims in "++show dimsIn) $
          trace ("[dbg]   replicatation index stream: "++show (map (map constToInteger . untuple) allIndices)) $ 
          if length dimsOut /= replicateDims || 
@@ -135,9 +127,9 @@ evalA env ae =
          then error$ "replicate: replicating across "++show slcSig
                   ++ " dimensions whereas the first argument to replicate had dimension "++show dimsOut
          else if replicateDims == 0  -- This isn't a replication at all!
-         then ArrVal $ inArray
+         then bind$ ArrVal $ inArray
          
-         else ArrVal $ AccArray newDims $ 
+         else bind$ ArrVal $ AccArray newDims $ 
               payloadsFromList elty $ 
               map (\ ind -> let intind = map (fromIntegral . constToInteger) (untuple ind) in 
                             indexArray inArray (unliftInd intind))
@@ -154,7 +146,7 @@ evalA env ae =
                         map (fromIntegral . constToInteger) $ 
                         filter isNumConst ls
                       oth -> error $ "replicate: bad first argument to replicate: "++show oth
-           [inArray@(AccArray dimsIn _)] = evalA env ae
+           ArrVal (inArray@(AccArray dimsIn _)) = envLookup env vr
            
            -- The number of final elements is the starting elements times the degree of replication:
            finalElems = foldl (*) 1 dimsIn * 
@@ -176,8 +168,7 @@ evalA env ae =
            unliftLoop (Fixed:ssig) (_:inds) =     unliftLoop ssig inds 
            unliftLoop (All:ssig)   (i:inds) = i : unliftLoop ssig inds
 
-
-           
+{-                
        --------------------------------------------------------------------------------
        T.Map _ (S.Lam1 (v,vty) bod) ae -> 
 -- TODO!!! Handle maps that change the tupling...
@@ -267,6 +258,7 @@ evalA env ae =
        T.Stencil2 _ fn bnd1 ae1 bnd2 ae2 -> error "UNFINISHED: Stencil2"
 
        _ -> error$"Accelerate array expression breaks invariants: "++ show aexp
+-}
 
 evalE :: Env -> T.Exp -> Value
 evalE env expr = 
@@ -280,12 +272,12 @@ evalE env expr =
                             ConstVal (B True)  -> evalE env e2 
                             ConstVal (B False) -> evalE env e3
 
-    T.EIndexScalar ae ex -> ConstVal$ indexArray (head$ evalA env ae) 
-                           (map (fromIntegral . constToInteger) $ 
-                            untuple$ valToConst$ evalE env ex)
+    -- T.EIndexScalar ae ex -> ConstVal$ indexArray (head$ evalA env ae) 
+    --                        (map (fromIntegral . constToInteger) $ 
+    --                         untuple$ valToConst$ evalE env ex)
   
-    T.EShape ae          -> let [AccArray sh _] = evalA env ae 
-                          in ConstVal$ Tup $ map I sh
+    -- T.EShape ae          -> let [AccArray sh _] = evalA env ae 
+    --                       in ConstVal$ Tup $ map I sh
     
     T.EShapeSize ex      -> case evalE env ex of 
                             _ -> error "need more work on shapes"
@@ -315,6 +307,7 @@ evalE env expr =
     T.EIndexTailDynamic ex    -> case evalE env ex of 
                                  ConstVal (Tup ls) -> ConstVal (Tup (tail ls))
                                  oth -> error$ "EIndexTailDynamic, unhandled: "++ show oth
+
 
 --------------------------------------------------------------------------------
 
