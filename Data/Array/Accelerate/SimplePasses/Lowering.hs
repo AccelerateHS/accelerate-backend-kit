@@ -301,10 +301,6 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
                 unVar _ = error "Accelerate backend invariant-broken."
                 ls1 = L.map unVar (flattenTT ae1') -- These must be fully flattened if there are nested tuples.
                 ls2 = L.map unVar (flattenTT ae2')
---                 ls1 = S.Vr v1 
---                 ls2 = S.Vr v2
---                ls1 = (flattenTT ae1') -- These must be fully flattened if there are nested tuples.
---                ls2 = (flattenTT ae2')
                 result = listOfLeaves $ L.map (uncurry $ S.Cond ex') (zip ls1 ls2)
             -- Here we add the new binding, if needed:
             let fakeType = trace "WARNING - REPLACE THIS WITH A REAL TYPE" (S.TTuple [])

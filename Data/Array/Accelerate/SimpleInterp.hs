@@ -22,7 +22,7 @@ import Data.Array.Accelerate.SimplePasses.IRTypes  as T
 import Data.Array.Accelerate.SimpleAST             as T
 #endif
 import Data.Array.Accelerate.SimpleArray           as SA
-import Data.Array.Accelerate.SimpleConverter (convertToSimpleAST, packArray, repackAcc)
+import Data.Array.Accelerate.SimpleConverter (convertToSimpleAST, packArray, repackAcc2)
 import qualified Data.Map as M
 import qualified Data.List as L
 
@@ -39,7 +39,7 @@ tracePrint s x = trace (s++show x) x
 run :: forall a . Sug.Arrays a => Acc a -> a
 run acc = 
           trace ("[dbg] Repacking AccArray: "++show array) $ 
-          repackAcc acc array
+          repackAcc2 acc array
  where array = evalA M.empty (convertToSimpleAST acc)
 
 --------------------------------------------------------------------------------
@@ -67,15 +67,19 @@ valToConst (ConstVal c ) = c
 valToConst (TupVal ls)   = Tup $ map valToConst ls
 valToConst (ArrVal a)    = error$ "cannot convert Array value to Const: "++show a
 
+unConstVal (ConstVal c) = c 
+unArrVal   (ArrVal v)   = v
+
 --------------------------------------------------------------------------------
 -- Evaluation:
 
-evalA :: Env -> T.AExp S.Type -> AccArray
+evalA :: Env -> T.AExp S.Type -> [AccArray]
 evalA env ae = 
     trace ("[dbg] evalA with environment: "++show env++"\n    "++show ae) $
-    case loop ae of 
-      ArrVal finalArr -> finalArr
-      oth -> error$ "evalA: did not produce an array as output of Acc computation:\n"++show(doc oth)
+    L.map unArrVal (untupleVal (loop ae))
+--     case loop ae of 
+--       ArrVal finalArr -> finalArr
+--       oth -> error$ "evalA: did not produce an array as output of Acc computation:\n"++show(doc oth)
   where 
 
    loop :: T.AExp S.Type -> Value
@@ -83,7 +87,8 @@ evalA env ae =
      case aexp of 
        --     Vr Var -- Array variable bound by a Let.
        T.Vr  _ v             -> envLookup env v
-       T.Let _ (vr,ty,lhs) bod -> ArrVal$ evalA (M.insert vr (loop lhs) env) bod
+       T.Let _ (vr,ty,lhs) bod -> tupleVal$ L.map ArrVal $
+                                  evalA (M.insert vr (loop lhs) env) bod
 
        T.Unit _ e -> case evalE env e of 
                    ConstVal c -> ArrVal$ SA.replicate [] c
@@ -149,7 +154,7 @@ evalA env ae =
                         map (fromIntegral . constToInteger) $ 
                         filter isNumConst ls
                       oth -> error $ "replicate: bad first argument to replicate: "++show oth
-           inArray@(AccArray dimsIn _) = evalA env ae
+           [inArray@(AccArray dimsIn _)] = evalA env ae
            
            -- The number of final elements is the starting elements times the degree of replication:
            finalElems = foldl (*) 1 dimsIn * 
@@ -180,7 +185,7 @@ evalA env ae =
 --         trace ("MAPPING: over input arr "++ show inarr) $ 
          ArrVal$ mapArray evaluator inarr
          where  
-           inarr = evalA env ae
+           [inarr] = evalA env ae
            evaluator c = -- tracePrint ("In map, evaluating element "++ show c++" to ")$  
                          valToConst $ evalE env (T.ELet (v,vty, T.EConst c) bod)
          
@@ -190,8 +195,8 @@ evalA env ae =
 -- TODO: Handle the case where the resulting array is an array of tuples:
          else ArrVal$ AccArray dims1 final
          where 
-           a1@(AccArray dims1 pays1) = evalA env ae1
-           a2@(AccArray dims2 pays2) = evalA env ae2
+           [a1@(AccArray dims1 pays1)] = evalA env ae1
+           [a2@(AccArray dims2 pays2)] = evalA env ae2
            final = concatMap payloadsFromList1 $ 
                    L.transpose $ 
                    zipWith evaluator 
@@ -212,7 +217,7 @@ evalA env ae =
              [] -> error "Empty payloads!"
              _  -> ArrVal (AccArray sh' payloads')
          where initacc = evalE env ex
-               AccArray (innerdim:sh') payloads = evalA env ae -- Must be >0 dimensional.
+               [AccArray (innerdim:sh') payloads] = evalA env ae -- Must be >0 dimensional.
                payloads' = map (applyToPayload3 buildFolded) payloads               
                
                alllens = map payloadLength payloads
@@ -275,11 +280,11 @@ evalE env expr =
                             ConstVal (B True)  -> evalE env e2 
                             ConstVal (B False) -> evalE env e3
 
-    T.EIndexScalar ae ex -> ConstVal$ indexArray (evalA env ae) 
+    T.EIndexScalar ae ex -> ConstVal$ indexArray (head$ evalA env ae) 
                            (map (fromIntegral . constToInteger) $ 
                             untuple$ valToConst$ evalE env ex)
   
-    T.EShape ae          -> let AccArray sh _ = evalA env ae 
+    T.EShape ae          -> let [AccArray sh _] = evalA env ae 
                           in ConstVal$ Tup $ map I sh
     
     T.EShapeSize ex      -> case evalE env ex of 
@@ -342,6 +347,10 @@ tuple ls  = Tup ls
 untuple :: Const -> [Const]
 untuple (Tup ls) = concatMap untuple ls
 untuple oth = [oth]
+
+tupleVal :: [Value] -> Value
+tupleVal [x] = x
+tupleVal ls  = TupVal ls
 
 -- This goes inside both types of tuples (Val and Const).
 untupleVal :: Value -> [Value]

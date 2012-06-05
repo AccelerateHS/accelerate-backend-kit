@@ -344,9 +344,9 @@ tests = [ testCase "use/fromList"   (print$ doc t0)
         , testGroup "run p10b" (runBoth p10b)
         , testGroup "run p10c" (runBoth p10c)
         , testGroup "run p11" $ hUnitTestToTests $ I.run p11 ~=? run p11
---        , testGroup "run p11b" $ hUnitTestToTests $ I.run p11b ~=? run p11b
---        , testGroup "run p11c" $ hUnitTestToTests $ I.run p11c ~=? run p11c
---        , testGroup "run p12" $ hUnitTestToTests $ I.run p11 ~=? run p11        
+        , testGroup "run p11b" $ hUnitTestToTests $ I.run p11b ~=? run p11b
+        , testGroup "run p11c" $ hUnitTestToTests $ I.run p11c ~=? run p11c
+        , testGroup "run p12" $ hUnitTestToTests $ I.run p11 ~=? run p11        
         ]
  where
   runBoth p = (hUnitTestToTests$ Sug.toList (I.run p) ~=? Sug.toList (run p))

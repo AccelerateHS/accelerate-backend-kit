@@ -12,7 +12,7 @@
 module Data.Array.Accelerate.SimpleConverter 
        ( 
          convertToSimpleAST,  convertToSimpleProg, 
-         unpackArray, packArray, repackAcc
+         unpackArray, packArray, repackAcc, repackAcc2
        )
        where
 
@@ -874,7 +874,7 @@ packArray orig@(S.AccArray dims payloads) =
   
 
 
--- | Repackage a result in simplified form as an properly typed result
+-- | Repackage a result in simplified form as an properly-typed result
 --   of an Acc computation, i.e. a real Accelerate array.
 repackAcc :: forall a . Sug.Arrays a 
         => {- dummy -} Sug.Acc a -> S.AccArray -> a
@@ -896,6 +896,55 @@ repackAcc dummy simpl = Sug.toArr converted
        Sug.ArraysRarray | (_ :: Sug.ArraysR (Sug.Array sh e)) <- arrR ->
          (packArray simpl) :: (Sug.Array sh e)
 
+-- | Repackage a result in simplified form as an properly-typed result
+--   of an Acc computation, i.e. a real Accelerate array.
+repackAcc2 :: forall a . Sug.Arrays a 
+        => {- dummy -} Sug.Acc a -> [S.AccArray] -> a
+repackAcc2 dummy simpls = 
+      trace ("repackAcc2: ... "++show rep++", given "++show (length simpls)++" arrs:\n"
+              ++ unlines(L.map (("   "++) . show) simpls)) $ 
+      Sug.toArr converted
+  where
+   converted :: Sug.ArrRepr a = cvt rep simpls
+   -- Pull some information out of thin air (from type domain to value domain):
+   rep :: Sug.ArraysR (Sug.ArrRepr a) = 
+     Sug.arrays (error"SimpleInterp.run: this should never be used" :: a)
+
+   cvt :: forall a' . Sug.ArraysR a' -> [S.AccArray] -> a'
+   cvt arrR simpls = 
+     case arrR of 
+       Sug.ArraysRunit       -> ()
+       -- We don't explicitly represent this extra capstone-unit in the AccArray:
+       Sug.ArraysRpair Sug.ArraysRunit r -> ((), cvt r simpls)
+       Sug.ArraysRpair r1 r2 -> 
+           case simpls of
+            a:b:c -> (cvt r1 (init simpls), cvt r2 [last simpls])
+            oth   -> error$"expected ArraysRpair compatible value, got:\n  "++show oth
+--                                error$"Array PAIR: \n"++ unlines (L.map show simpls)
+                                -- let (a1,a2) = SA.splitComponent simpls in 
+                                -- (cvt r1 a1, cvt r2 a2)
+       Sug.ArraysRarray | (_ :: Sug.ArraysR (Sug.Array sh e)) <- arrR ->
+         case simpls of 
+           [hd] -> (packArray hd) :: (Sug.Array sh e)
+           oth  -> error$"repackAcc2: expected single array, got:\n  "++show oth
+
+instance Show (Sug.ArraysR a') where
+  -- show arrR = 
+  --    case arrR of 
+  --      Sug.ArraysRunit       -> "()"
+  --      Sug.ArraysRpair Sug.ArraysRunit r -> "(() "++show r ++")"
+  --      Sug.ArraysRpair r1 r2 -> "("++ show r1 ++", "++ show r2++")"
+  --      Sug.ArraysRarray -> "Array"
+  
+  show arrR = "ArraysR "++loop arrR
+   where 
+    loop :: forall ar .  Sug.ArraysR ar -> String
+    loop arrR =  
+     case arrR of 
+       Sug.ArraysRunit       -> "()"
+--       Sug.ArraysRpair Sug.ArraysRunit r -> "(() "++loop r ++")"
+       Sug.ArraysRpair r1 r2 -> "("++ loop r1 ++", "++ loop r2++")"
+       Sug.ArraysRarray -> "Array"
 
 mkArrayTuple ty [one] = one
 mkArrayTuple ty ls    = T.ArrayTuple ty ls
