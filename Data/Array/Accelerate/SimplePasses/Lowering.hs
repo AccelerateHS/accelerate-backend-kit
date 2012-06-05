@@ -132,10 +132,12 @@ data TempTree a = TT (TempTree a) (TempTree a) [TempTree a] -- Node of degree tw
                 | TLeaf a
   deriving Show                 
 
+listToTT :: [TempTree a] -> TempTree a
 listToTT [] = error "listToTT: We are only representing non-empty tuples of arrays here... looks like that's not good enough"
 listToTT [x] = x 
 listToTT (x:y:tl) = TT x y tl
 
+listOfLeaves :: [a] -> TempTree a
 listOfLeaves = listToTT . L.map TLeaf
 
 -- Index from the right:
@@ -187,32 +189,14 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
        TT a b ls -> flattenTT a ++ flattenTT b ++
                     concatMap flattenTT ls
     
-   mapBindings fn [] = []
+   mapBindings _ [] = []
    mapBindings fn ((v,t,x):tl) = (v,t,fn x) : mapBindings fn tl
 
    convertLeft (Left  ex)  = Left  $ convertExps  ex
    convertLeft (Right ae) = Right ae
 
-   origenv = M.fromList $ L.map (\ (a,b,c) -> (a,c)) binds
-
-   -- Is a variable bound to an ArrayTuple?
-   isTupledVar :: S.Var -> Bool
-   isTupledVar vr = loop (origenv M.! vr)
-     where 
-       strictAnd True  True  = True
-       strictAnd False False = False
-       strictAnd x     y     = error$"isTupledVar: expecting var "++show vr
-                               ++" to be bound to a tuple in both sides of the conditional" 
-       loop x =
-         case x of 
-           T.Vr _ v2          -> isTupledVar v2
-           T.ArrayTuple _ ls  -> True
-           T.Cond _ _ ae1 ae2 -> loop ae1 `strictAnd` loop ae2
-           _                  -> False
-   
-   isTupled (T.ArrayTuple _ _) = True
-   isTupled (T.Vr _ vr)        = isTupledVar vr
-   isTupled  _                 = False
+   isTupledTy (TTuple _) = True
+   isTupledTy _          = False
 
    dischargeNewScalarBinds :: CollectM FlexBindings
    dischargeNewScalarBinds = do 
@@ -245,7 +229,7 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
                let subnames  = freshNames vr (length unpacked)
                    flattened = zip3 subnames (deTupleTy ty) unpacked 
                in (M.insert vr subnames macc, flattened)
-     let acc'  = rhsScalars ++ thisbnd ++ acc
+     let acc'  = thisbnd ++ rhsScalars ++ acc
      doBinds acc' macc' remaining
 
    freshNames vr len = L.map (S.var . ((show vr ++"_")++) . show) [1..len]
@@ -254,14 +238,6 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
    -- deTupleTy (S.TTuple ls) = concatMap deTupleTy (reverse ls)
    deTupleTy (S.TTuple ls) = reverse ls
    deTupleTy oth           = [oth]
-
-   -- For array expressions that we know are not tuples:
-   arrayonly :: SubNameMap -> TAExp -> CollectM S.AExp
-   arrayonly eenv aex = 
-     case aex of 
-       T.ArrayTuple _ ls -> error$"removeArrayTuple: encountered ArrayTuple that was not on the RHS of a Let:\n"++show(doc aex)
-       T.Cond _ ex (T.Vr _ v1) (T.Vr _ v2) -> return$ S.Cond (cE ex) v1 v2
-       oth -> fromLeaf <$> dorhs eenv oth
    
    -- Process the right hand side of a binding, breakup up Conds and
    -- rewriting variable references to their new detupled targets.
@@ -286,38 +262,42 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
          return $ indexTT rhs' ind 
 
        -- Conditionals with tuples underneath need to be broken up:
---       T.Cond ty ex (T.Vr _ v1) (T.Vr _ v2) | isTupled aex ->         
-       T.Cond ty ex ae1 ae2 | isTupled aex ->                  
+       T.Cond ty ex ae1 ae2 | isTupledTy ty -> 
        -- Breaking up the conditional requires possibly let-binding the scalar expression:
          do 
+            -- We split up the child expressions and add new bindings accordingly:
             ae1' <- dorhs eenv ae1
-            ae2' <- dorhs eenv ae2
+            ae2' <- dorhs eenv ae2                        
+            
             (cntr,bnds) <- get
             let triv = isTrivial ex  
-            unless triv $ put (cntr+1, bnds)
-            let fresh = S.var $ "cnd_" ++ show cntr
+                fresh = S.var $ "cnd_" ++ show cntr
+            -- Here we add the new binding, if needed:
+            unless triv $ 
+              put (cntr+1, (fresh,S.TBool,ex) : bnds)
+--              put (cntr+1, [(fresh,S.TBool,ex)])
+--              put (cntr+1, bnds ++ [(fresh,S.TBool,ex)])
+
+            let 
                 ex' = if triv then ex' else S.EVr fresh
                 unVar (S.Vr v) = v
                 unVar _ = error "Accelerate backend invariant-broken."
                 ls1 = L.map unVar (flattenTT ae1') -- These must be fully flattened if there are nested tuples.
                 ls2 = L.map unVar (flattenTT ae2')
                 result = listOfLeaves $ L.map (uncurry $ S.Cond ex') (zip ls1 ls2)
-            -- Here we add the new binding, if needed:
-            let fakeType = trace "WARNING - REPLACE THIS WITH A REAL TYPE" (S.TTuple [])
-            unless triv $ modify (\ (c,ls) -> (c, (fresh,fakeType,ex):ls))
             return result          
 
-       T.Cond ty ex (T.Vr _ v1) (T.Vr _ v2) -> 
+       T.Cond _ty ex (T.Vr _ v1) (T.Vr _ v2) -> 
 --            return$ TLeaf$ S.Cond (cE ex) (fromLeaf (S.Vr v1) (fromLeaf (S.Vr v2)))
               return$ TLeaf$ S.Cond (cE ex) v1 v2
          
        -- The rest is BOILERPLATE:      
        ----------------------------------------      
-       T.Unit ty ex                   -> return$ TLeaf$ S.Unit (cE ex)
+       T.Unit _ty ex               -> return$ TLeaf$ S.Unit (cE ex)
        T.Use ty arr                -> return$ TLeaf$ S.Use ty arr
        T.Generate aty ex fn        -> return$ TLeaf$ S.Generate aty (cE ex) (cF fn)
-       T.ZipWith ty fn (T.Vr _ v1) (T.Vr _ v2) -> lfr$ S.ZipWith (cF2 fn) v1 v2 
-       T.Map     ty fn (T.Vr _ v)              -> lfr$ S.Map     (cF fn)  v
+       T.ZipWith _ fn (T.Vr _ v1) (T.Vr _ v2)  -> lfr$ S.ZipWith (cF2 fn) v1 v2 
+       T.Map     _ fn (T.Vr _ v)               -> lfr$ S.Map     (cF fn)  v
        T.Replicate aty slice ex (T.Vr _ v)     -> lfr$ S.Replicate aty slice (cE ex) v
        T.Index     _ slc (T.Vr _ v) ex         -> lfr$ S.Index slc v (cE ex)
        T.Fold  _ fn einit (T.Vr _ v)           -> lfr$ S.Fold  (cF2 fn) (cE einit) v
@@ -341,6 +321,7 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
        oth -> error$"removeArrayTuple: this expression violated invariants: "++show oth
 
 
+lf :: Functor f => f a -> f (TempTree a)
 lf x = TLeaf <$> x
 lfr = lf . return
 
