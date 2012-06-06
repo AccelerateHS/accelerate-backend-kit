@@ -205,7 +205,6 @@ liftComplexRands aex =
         T.Stencil2  a fn bnd1 ae1 bnd2 ae2 -> T.Stencil2 a <$> cF2 fn <*> return bnd1 <*> flat ae1 <*> return bnd2 <*> flat ae2
         T.ArrayTuple a aes                 -> T.ArrayTuple a <$> mapM flat aes
 
-
 --------------------------------------------------------------------------------
 -- Compiler pass to lift Lets
 --------------------------------------------------------------------------------
@@ -488,7 +487,7 @@ lf :: Functor f => f a -> f (TempTree a)
 lf x = TLeaf <$> x
 lfr = lf . return
 
-cE = convertExps    
+cE  = convertExps    
 cF  = convertFun1
 cF2 = convertFun2
 

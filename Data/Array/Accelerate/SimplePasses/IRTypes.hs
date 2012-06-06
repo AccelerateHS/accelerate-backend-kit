@@ -126,8 +126,6 @@ convertExps expr =
     ETuple es             -> S.ETuple (L.map f es)
     EConst c              -> S.EConst c              
     ECond e1 e2 e3        -> S.ECond (f e1) (f e2) (f e3)
-    EIndexScalar ae ex    -> S.EIndexScalar (convertAExps ae) (f ex)
-    EShape ae             -> S.EShape (convertAExps ae)
     EShapeSize ex         -> S.EShapeSize (f ex)         
     EPrimApp ty p es      -> S.EPrimApp ty p (L.map f es)
     ETupProjectFromRight ind ex -> S.ETupProjectFromRight ind (f ex)
@@ -135,7 +133,11 @@ convertExps expr =
     EIndexConsDynamic e1 e2 -> S.EIndexConsDynamic (f e1) (f e2)
     EIndexHeadDynamic ex    -> S.EIndexHeadDynamic (f ex)
     EIndexTailDynamic ex    -> S.EIndexTailDynamic (f ex)
-    
+    EIndexScalar (Vr _ v) ex -> S.EIndexScalar v (f ex)
+    EShape (Vr _ v)          -> S.EShape v
+    EIndexScalar ae _ -> error$"IRTypes.convertExps: expected EIndexScalar to have plain variable as array input, found: "++show ae
+    EShape       ae   -> error$"IRTypes.convertExps: expected EShape" ++ " to have plain variable as array input, found: "++show ae
+
 convertFun1 :: S.Fun1 Exp -> S.Fun1 S.Exp
 convertFun1 (Lam1 bnd bod) = Lam1 bnd $ convertExps bod
 
@@ -219,15 +221,17 @@ getAnnot ae =
 -- TEMP: shouldn't need this:
 reverseConvertExps :: S.Exp -> Exp
 reverseConvertExps expr = 
-  let f = reverseConvertExps in
+  let f = reverseConvertExps 
+      dt = TTuple [] -- Dummy type
+  in
   case expr of 
     S.EVr  v                -> EVr  v
     S.ELet (vr,_ty,lhs) bod -> ELet (vr, _ty, f lhs) (f bod)
     S.ETuple es             -> ETuple (L.map f es)
     S.EConst c              -> EConst c              
     S.ECond e1 e2 e3        -> ECond (f e1) (f e2) (f e3)
-    S.EIndexScalar ae ex    -> EIndexScalar (reverseConvertAExps ae) (f ex)
-    S.EShape ae             -> EShape (reverseConvertAExps ae)
+    S.EIndexScalar v ex     -> EIndexScalar (Vr dt v) (f ex)
+    S.EShape v              -> EShape (Vr dt v)
     S.EShapeSize ex         -> EShapeSize (f ex)         
     S.EPrimApp ty p es      -> EPrimApp ty p (L.map f es)
     S.ETupProjectFromRight ind ex -> ETupProjectFromRight ind (f ex)

@@ -186,12 +186,12 @@ data Exp =
   | EIndexTailDynamic Exp 
    -- Conditional expression (non-strict in 2nd and 3rd argument):
   | ECond Exp Exp Exp
-   -- Project a single scalar from an array,
+   -- Project a single scalar from an array [variable],
    -- the array expression can not contain any free scalar variables:
-  | EIndexScalar AExp Exp 
-   -- Get the shape of an Array:
+  | EIndexScalar Var Exp 
+   -- Get the shape of an Array [variable]:
    -- The array expression can not contain any free scalar variables
-  | EShape AExp
+  | EShape Var
    -- Number of elements of a shape
   | EShapeSize Exp 
  deriving (Read,Show,Eq,Generic)
