@@ -80,11 +80,9 @@ evalProg origenv (S.Letrec binds results progtype) =
    -- A binding simply extends an environment of values. 
 --   loop :: [(S.Var, S.Type, Either S.Exp S.AExp)] -> Env
    loop env [] = env
-   
-   loop env ((vr,ty,Left rhs):rst) =
-     error "do scalar binds!"
-   
+   loop env ((vr,ty,Left rhs):rst)  = loop (M.insert vr (evalE env rhs) env) rst
    loop env ((vr,ty,Right rhs):rst) = loop (doaexp env vr rhs) rst
+   
    doaexp env vr rhs =   
      let bind rhs' = M.insert vr rhs' env in
      case rhs of
