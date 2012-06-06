@@ -122,7 +122,8 @@ gatherLets prog = (reverse binds, prog')
 
 type SubNameMap = M.Map S.Var [S.Var]
 -- | A binding EITHER for a scalar or array variable:
-type Bindings a = [(S.Var, S.Type, a)]
+type Binding  a = (S.Var, S.Type, a)
+type Bindings a = [Binding a]
 type FlexBindings = Bindings (Either T.Exp S.AExp)
 
 type CollectM = State (Int, Bindings T.Exp)
@@ -492,6 +493,45 @@ liftComplexRands aex =
      do cnt <- get 
         put (cnt+1)
         return$ S.var $ "tmp_"++show cnt
+        
+   tmpVar2 :: State (Int,Bindings TAExp) S.Var
+   tmpVar2 = 
+     do (cnt,ls) <- get 
+        put (cnt+1, ls)
+        return$ S.var $ "tmp_"++show cnt
+
+   -- There are some AExps buried within Exps.  This lifts them out,
+   -- guaranting that only varrefs to array values will remain inside
+   -- scalar expressions.  The AExp's returned are UNPROCESSED.
+   exp :: T.Exp -> State (Int,Bindings TAExp) T.Exp
+   exp e = 
+     let 
+         addbind :: TAExp -> State (Int,Bindings TAExp) S.Var
+         addbind ae = do tmp <- tmpVar2
+                         modify (\ (cnt,binds) -> (cnt, (tmp, getAnnot ae, ae) : binds))
+                         return tmp
+     in     
+     case e of  
+       T.EIndexScalar ae ex -> do tmp <- addbind ae
+                                  T.EIndexScalar (T.Vr (getAnnot ae) tmp) <$> exp ex
+       T.EShape       ae    -> do tmp <- addbind ae
+                                  return$ T.EShape (T.Vr (getAnnot ae) tmp)
+       -- The rest is BOILERPLATE:
+       ------------------------------------------------------------
+       T.EVr vr               -> return$ T.EVr vr
+       T.EConst c             -> return$ T.EConst c 
+       T.ELet (vr,ty,rhs) bod -> do rhs' <- exp rhs
+                                    T.ELet (vr,ty, rhs') <$> exp bod
+       T.EPrimApp ty p args   -> T.EPrimApp ty p <$> mapM exp args
+       T.ECond e1 e2 e3       -> T.ECond      <$> exp e1 <*> exp e2 <*> exp e3 
+       T.EShapeSize ex        -> T.EShapeSize <$> exp ex
+       T.ETuple ls            -> T.ETuple <$> mapM exp ls
+       T.ETupProjectFromRight ind ex -> T.ETupProjectFromRight ind <$> exp ex
+       T.EIndex els                  -> T.EIndex <$> mapM exp els
+       T.EIndexConsDynamic e1 e2     -> T.EIndexConsDynamic <$> exp e1 <*> exp e2         
+       T.EIndexHeadDynamic e         -> T.EIndexHeadDynamic <$> exp e
+       T.EIndexTailDynamic e         -> T.EIndexTailDynamic <$> exp e
+
    loop :: TAExp -> State Int TAExp -- Keeps a counter.
    loop aex = 
      case aex of 
