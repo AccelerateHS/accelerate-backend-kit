@@ -32,9 +32,9 @@ tracePrint s x = trace (s++show x) x
 --   inefficient) interpreter.
 run :: forall a . Sug.Arrays a => Acc a -> a
 run acc = 
-          trace ("[dbg] Repacking AccArray: "++show array) $ 
-          repackAcc2 acc array
- where array = evalA M.empty (convertToSimpleProg acc)
+          trace ("[dbg] Repacking AccArray(s): "++show arrays) $ 
+          repackAcc2 acc arrays
+ where arrays = evalProg M.empty (convertToSimpleProg acc)
 
 --------------------------------------------------------------------------------
 -- Values and Environments:
@@ -67,13 +67,16 @@ unArrVal   (ArrVal v)   = v
 --------------------------------------------------------------------------------
 -- Evaluation:
 
-evalA :: Env -> S.Prog -> [AccArray]
-evalA env (S.Letrec binds results progtype) = 
---    trace ("[dbg] evalA with environment: "++show env++"\n    "++show ae) $
-    error "FINISHME"
---    L.map unArrVal (untupleVal (loop ae))
+-- | Evaluating a complete program creates a FLAT list of arrays as a
+--   result.  Reimposing a nested structure to the resulting
+--   tuple-of-arrays is not the job of this function.
+evalProg :: Env -> S.Prog -> [AccArray]
+evalProg env (S.Letrec binds results progtype) = 
+--    trace ("[dbg] evalProg with environment: "++show env++"\n    "++show ae) $
+    L.map (unArrVal . (envLookup (loop binds))) results
   where 
 
+   -- A binding simply extends an environment of values. 
    loop :: [(S.Var, S.Type, Either S.Exp S.AExp)] -> Env
    loop [] = env
    
@@ -83,16 +86,14 @@ evalA env (S.Letrec binds results progtype) =
    loop ((vr,ty,Right rhs):rst) =
      let bind rhs' = M.insert vr rhs' env in
      case rhs of
-       --     Vr Var -- Array variable bound by a Let.
        S.Vr  v             -> bind$ envLookup env v
-       -- S.Unit e -> case evalE env e of 
-       --              ConstVal c -> ArrVal$ SA.replicate [] c
-
+       S.Unit e -> case evalE env e of 
+                    ConstVal c -> bind$ ArrVal$ SA.replicate [] c
        S.Cond e1 v1 v2 -> case evalE env e1 of 
                              ConstVal (B True)  -> bind$ envLookup env v1
                              ConstVal (B False) -> bind$ envLookup env v2
        S.Use _ty arr -> bind$ ArrVal arr
-
+       --------------------------------------------------------------------------------
        S.Generate (TArray _dim elty) eSz (S.Lam1 (vr,vty) bodE) ->
          trace ("[dbg] GENERATING: "++ show dims ++" "++ show elty) $ 
          
@@ -168,26 +169,25 @@ evalA env (S.Letrec binds results progtype) =
            unliftLoop (Fixed:ssig) (_:inds) =     unliftLoop ssig inds 
            unliftLoop (All:ssig)   (i:inds) = i : unliftLoop ssig inds
 
-{-                
        --------------------------------------------------------------------------------
-       T.Map _ (S.Lam1 (v,vty) bod) ae -> 
--- TODO!!! Handle maps that change the tupling...
-         
+       S.Map (S.Lam1 (v,vty) bod) invr -> 
+-- TODO!!! Handle maps that CHANGE the tupling...
 --         trace ("MAPPING: over input arr "++ show inarr) $ 
-         ArrVal$ mapArray evaluator inarr
+         bind$ ArrVal$ mapArray evaluator inarr
          where  
-           [inarr] = evalA env ae
+           ArrVal inarr = envLookup env invr
            evaluator c = -- tracePrint ("In map, evaluating element "++ show c++" to ")$  
                          valToConst $ evalE env (T.ELet (v,vty, T.EConst c) bod)
-         
-       T.ZipWith _  (S.Lam2 (v1,vty1) (v2,vty2) bod) ae1 ae2  ->
+
+       --------------------------------------------------------------------------------       
+       S.ZipWith  (S.Lam2 (v1,vty1) (v2,vty2) bod) vr1 vr2  ->
          if dims1 /= dims2 
          then error$"zipWith: internal error, input arrays not the same dimension: "++ show dims1 ++" "++ show dims2
 -- TODO: Handle the case where the resulting array is an array of tuples:
-         else ArrVal$ AccArray dims1 final
+         else bind$ ArrVal$ AccArray dims1 final
          where 
-           [a1@(AccArray dims1 pays1)] = evalA env ae1
-           [a2@(AccArray dims2 pays2)] = evalA env ae2
+           ArrVal (a1@(AccArray dims1 pays1)) = envLookup env vr1
+           ArrVal (a2@(AccArray dims2 pays2)) = envLookup env vr2
            final = concatMap payloadsFromList1 $ 
                    L.transpose $ 
                    zipWith evaluator 
@@ -201,14 +201,14 @@ evalA env (S.Letrec binds results progtype) =
        --------------------------------------------------------------------------------       
        -- Shave off leftmost dim in 'sh' list 
        -- (the rightmost dim in the user's (Z :. :.) expression):
-       T.Fold _ (S.Lam2 (v1,_) (v2,_) bodE) ex ae -> 
+       S.Fold (S.Lam2 (v1,_) (v2,_) bodE) ex avr -> 
          -- trace ("FOLDING, shape "++show (innerdim:sh') ++ " lens "++ 
          --        show (alllens, L.group alllens) ++" arr "++show payloads++"\n") $ 
            case payloads of 
              [] -> error "Empty payloads!"
-             _  -> ArrVal (AccArray sh' payloads')
+             _  -> bind$ ArrVal (AccArray sh' payloads')
          where initacc = evalE env ex
-               [AccArray (innerdim:sh') payloads] = evalA env ae -- Must be >0 dimensional.
+               ArrVal (AccArray (innerdim:sh') payloads) = envLookup env avr -- Must be >0 dimensional.
                payloads' = map (applyToPayload3 buildFolded) payloads               
                
                alllens = map payloadLength payloads
@@ -234,31 +234,22 @@ evalA env (S.Letrec binds results progtype) =
                   evalE (M.insert v1 acc $ 
                          M.insert v2 (ConstVal$ lookup offset) env) 
                         bodE 
-       
-       T.Index    _ slcty  ae ex -> error "UNFINISHED: Index"
-#ifdef ARRAYTUPLE
-       T.TupleRefFromRight _ i ae -> error "UNFINISHED: TupleRefFromRight"
-#endif
-       T.Apply _ afun ae          -> error "UNFINISHED: Apply"
-
-
-       T.Fold1    _ fn ae         -> error "UNFINISHED: Foldl1"
-       T.FoldSeg  _ fn ex ae1 ae2 -> error "UNFINISHED: FoldSeg"
-       T.Fold1Seg _ fn    ae1 ae2 -> error "UNFINISHED: Fold1Seg" 
-       T.Scanl    _ fn ex ae      -> error "UNFINISHED: Scanl"
-       T.Scanl'   _ fn ex ae      -> error "UNFINISHED: Scanl'"
-       T.Scanl1   _ fn    ae      -> error "UNFINISHED: Scanl1"       
-       T.Scanr    _ fn ex ae      -> error "UNFINISHED: Scanr"
-       T.Scanr'   _ fn ex ae      -> error "UNFINISHED: Scanr'"
-       T.Scanr1   _ fn    ae      -> error "UNFINISHED: Scanr1"       
-       T.Permute _ fn1 ae1 fn2 ae2 -> error "UNFINISHED: Permute"
-       T.Backpermute _ ex fn ae     -> error "UNFINISHED: Backpermute"
-       T.Reshape     _ ex    ae     -> error "UNFINISHED: Reshape"
-       T.Stencil     _ fn  bnd ae   -> error "UNFINISHED: Stencil"
-       T.Stencil2 _ fn bnd1 ae1 bnd2 ae2 -> error "UNFINISHED: Stencil2"
-
-       _ -> error$"Accelerate array expression breaks invariants: "++ show aexp
--}
+       S.Index     slcty  ae ex  -> error "UNFINISHED: Index"
+       S.Fold1     fn ae         -> error "UNFINISHED: Foldl1"
+       S.FoldSeg   fn ex ae1 ae2 -> error "UNFINISHED: FoldSeg"
+       S.Fold1Seg  fn    ae1 ae2 -> error "UNFINISHED: Fold1Seg" 
+       S.Scanl     fn ex ae      -> error "UNFINISHED: Scanl"
+       S.Scanl'    fn ex ae      -> error "UNFINISHED: Scanl'"
+       S.Scanl1    fn    ae      -> error "UNFINISHED: Scanl1"       
+       S.Scanr     fn ex ae      -> error "UNFINISHED: Scanr"
+       S.Scanr'    fn ex ae      -> error "UNFINISHED: Scanr'"
+       S.Scanr1    fn    ae      -> error "UNFINISHED: Scanr1"       
+       S.Permute  fn1 ae1 fn2 ae2 -> error "UNFINISHED: Permute"
+       S.Backpermute  ex fn ae     -> error "UNFINISHED: Backpermute"
+       S.Reshape      ex    ae     -> error "UNFINISHED: Reshape"
+       S.Stencil      fn  bnd ae   -> error "UNFINISHED: Stencil"
+       S.Stencil2  fn bnd1 ae1 bnd2 ae2 -> error "UNFINISHED: Stencil2"
+       _ -> error$"Accelerate array expression breaks invariants: "++ show rhs
 
 evalE :: Env -> T.Exp -> Value
 evalE env expr = 
@@ -272,12 +263,12 @@ evalE env expr =
                             ConstVal (B True)  -> evalE env e2 
                             ConstVal (B False) -> evalE env e3
 
-    -- T.EIndexScalar ae ex -> ConstVal$ indexArray (head$ evalA env ae) 
-    --                        (map (fromIntegral . constToInteger) $ 
-    --                         untuple$ valToConst$ evalE env ex)
+    T.EIndexScalar vr ex -> ConstVal$ indexArray (unArrVal$ envLookup env vr)
+                             (map (fromIntegral . constToInteger) $ 
+                              untuple$ valToConst$ evalE env ex)
   
-    -- T.EShape ae          -> let [AccArray sh _] = evalA env ae 
-    --                       in ConstVal$ Tup $ map I sh
+    T.EShape vr          -> let ArrVal (AccArray sh _) = envLookup env vr
+                            in ConstVal$ Tup $ map I sh
     
     T.EShapeSize ex      -> case evalE env ex of 
                             _ -> error "need more work on shapes"
