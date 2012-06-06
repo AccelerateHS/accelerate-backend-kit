@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveGeneric, CPP #-}
+{-# LANGUAGE DeriveGeneric, DeriveDataTypeable, CPP #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
@@ -29,7 +29,8 @@ module Data.Array.Accelerate.SimpleAST
  where
 
 -- import Data.Array.Accelerate.SimpleArray (AccArray)
-
+import Data.Generics (Data(..),ConstrRep(..),Typeable,DataType,
+                      mkFloatType,mkRealConstr,mkIntConstr,constrRep,mkIntType)
 import           Debug.Trace
 import           Data.Int
 import           Data.Word
@@ -221,18 +222,18 @@ data Prim = NP NumPrim
           | SP ScalarPrim
           | BP BoolPrim
           | OP OtherPrim
-  deriving (Read,Show,Eq,Ord,Generic)
+  deriving (Read,Show,Eq,Ord,Generic,Data,Typeable)
           
 -- | Primitives that operate on /all/ numeric types.
 --   Neg/Abs/Sig are unary:
 data NumPrim = Add | Sub | Mul | Neg | Abs | Sig
-  deriving (Read,Show,Eq,Ord,Generic)
+  deriving (Read,Show,Eq,Ord,Generic,Data,Typeable)
 
 -- | Primitive integral-only operations.
 -- All binops except BNot, shifts and rotates take an Int constant as second arg:
 data IntPrim = Quot | Rem | IDiv | Mod | 
                BAnd | BOr | BXor | BNot | BShiftL | BShiftR | BRotateL | BRotateR
-  deriving (Read,Show,Eq,Ord,Generic)
+  deriving (Read,Show,Eq,Ord,Generic,Data,Typeable)
 
 -- | Primitive floating point-only operations.
 data FloatPrim = 
@@ -240,17 +241,17 @@ data FloatPrim =
       Recip | Sin | Cos | Tan | Asin | Acos | Atan | Asinh | Acosh | Atanh | ExpFloating | Sqrt | Log |
       -- Binary:                  
       FDiv | FPow | LogBase | Atan2 | Truncate | Round | Floor | Ceiling
-  deriving (Read,Show,Eq,Ord,Generic)
+  deriving (Read,Show,Eq,Ord,Generic,Data,Typeable)
            
 -- | Relational and equality operators
 data ScalarPrim = Lt | Gt | LtEq | GtEq | Eq | NEq | Max | Min
-  deriving (Read,Show,Eq,Ord,Generic)
+  deriving (Read,Show,Eq,Ord,Generic,Data,Typeable)
 
 data BoolPrim = And | Or | Not
-  deriving (Read,Show,Eq,Ord,Generic)
+  deriving (Read,Show,Eq,Ord,Generic,Data,Typeable)
 
 data OtherPrim = Ord | Chr | BoolToInt | FromIntegral
-  deriving (Read,Show,Eq,Ord,Generic)
+  deriving (Read,Show,Eq,Ord,Generic,Data,Typeable)
 
 
 -- | This is a table of primitive arities.
@@ -288,7 +289,7 @@ data Type = TTuple [Type]
           | TCShort  | TCInt   | TCLong  | TCLLong
           | TCUShort | TCUInt  | TCULong | TCULLong
           | TCChar   | TCSChar | TCUChar 
- deriving (Read,Show,Eq,Generic)
+ deriving (Read,Show,Eq,Generic,Data,Typeable)
 
 type Dims = Int
 
@@ -304,7 +305,7 @@ type Dims = Int
 -- in this representation.
 type SliceType      = [SliceComponent]
 data SliceComponent = Fixed | All 
-  deriving (Eq,Show,Read,Generic)
+  deriving (Eq,Show,Read,Generic,Data,Typeable)
 
 -- TEMP / OLD:
 -- They read left-to-right, in the same
@@ -605,3 +606,50 @@ uarrGenerate len fn = unsafePerformIO $
      loop (len-1)
 
 tracePrint s x = trace (s++show x) x    
+
+----------------------------------------------------------------------------------------------------
+-- Missing instances from Foreign.C.Types / Data.Generics
+
+cdoubleType :: DataType
+cdoubleType = mkFloatType "Foreign.C.Types.CDouble"
+instance Data CDouble where
+  toConstr = mkRealConstr cdoubleType
+  gunfold _ z c = case constrRep c of
+                    (FloatConstr x) -> z (realToFrac x)
+                    _ -> error "gunfold"
+  dataTypeOf _ = cdoubleType
+
+cfloatType :: DataType
+cfloatType = mkFloatType "Foreign.C.Types.CFloat"
+instance Data CFloat where
+  toConstr = mkRealConstr cfloatType
+  gunfold _ z c = case constrRep c of
+                    (FloatConstr x) -> z (realToFrac x)
+                    _ -> error "gunfold"
+  dataTypeOf _ = cfloatType
+  
+cintType :: DataType
+cintType = mkIntType "Foreign.C.Types.CInt"
+instance Data CInt where
+  toConstr x = mkIntConstr cintType (fromIntegral x)
+  gunfold _ z c = case constrRep c of
+                    (IntConstr x) -> z (fromIntegral x)
+                    _ -> error "gunfold"
+  dataTypeOf _ = cintType
+
+
+
+
+
+-- TODO: Add the rest
+--      (Data CUChar,
+--        Data CSChar,
+--        Data CChar,
+--        Data CULLong,
+--        Data CULong,
+--        Data CUInt,
+--        Data CUShort,
+--        Data CLLong,
+--        Data CLong,
+--        Data CInt,
+--        Data CShort,
