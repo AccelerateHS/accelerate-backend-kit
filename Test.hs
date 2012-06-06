@@ -8,6 +8,7 @@ import Data.Array.Accelerate.SimpleConverter (convertToSimpleAST, convertToSimpl
 import qualified Data.Array.Accelerate.SimpleAST    as S
 import qualified Data.Array.Accelerate.SimpleInterp as I
 import qualified Data.Array.Accelerate.Smart       as Sm
+import qualified Data.Array.Accelerate.Tuple       as Tu
 -- import qualified Data.Array.Accelerate.Array.Sugar as Sugar
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 
@@ -271,13 +272,15 @@ p13 = unit $
                (Sm.tup2 (constant (3::Int32), constant (4::Int64))))
 
 p13b :: Acc (Scalar (Int8,Int16,Int32))
-p13b = unit $ 
+p13b = unit p13b_
+p13b_ = 
       Sm.tup3 (constant (1::Int8),  
                constant (2::Int16),
                constant (3::Int32))
 
 p13c :: Acc (Scalar ((Int8,Int16),Int32))
-p13c = unit $ 
+p13c = unit p13c_
+p13c_ = 
       Sm.tup2 ((Sm.tup2 (constant (1::Int8),  constant (2::Int16))),
                (constant (5::Int32)))
 
@@ -300,13 +303,51 @@ p13f = unit $
                (Sm.tup2 (constant (3::Int32), constant (4::Int64))),
                (constant (5::Int)))
 
-
 --  Unit (TArray 0 (TTuple [TTuple [TInt64,TInt32],TInt16,TInt8]))
-
 --  ((((), Int8), Int16), Int32):
 --  ((((), Int8), Int16), (((), Int32), Int64)):
 --  Why is it not (((), (((), Int8), Int16)), (((), Int32), Int64)) ??
 --  Why does it appear to follow a different convention for tuples of tuples?
+
+--------------------------------------------------------------------------------
+-- And test projection as well:
+
+p14 = unit $ prj1_2 p13c_
+
+p14b :: Acc (Scalar (Int8,Int16), Scalar Int32)
+p14b = let (a,b) = untup2 p13c_ in
+       lift (unit a, unit b)
+
+p14c = unit $ prj1_3 p13b_
+p14d = A.map prj1_3 p13b
+-- Surface : TTuple [TTuple [TTuple [TTuple [],TInt8],TInt16],TInt32]
+p14e = A.map prj1_2 p13c
+-- Surface : TTuple [TTuple [TTuple [TTuple [],TInt8],TInt16],TInt32]
+
+-- Project the second element from the right:
+prj1_2 :: (Elt a, Elt b) => Sm.Exp (a, b) -> (Sm.Exp a)
+prj1_2 e = Sm.Exp $ Tu.SuccTupIdx Tu.ZeroTupIdx `Sm.Prj` e
+
+prj1_3 :: (Elt a, Elt b, Elt c) => Sm.Exp (a, b, c) -> (Sm.Exp b)
+prj1_3 e = Sm.Exp $ Tu.SuccTupIdx Tu.ZeroTupIdx `Sm.Prj` e
+
+
+tix0 :: Elt s => Tu.TupleIdx (t, s) s
+tix0 = Tu.ZeroTupIdx
+tix1 :: Elt s => Tu.TupleIdx ((t, s), s1) s
+tix1 = Tu.SuccTupIdx tix0
+
+untup2 :: (Elt a, Elt b) => Sm.Exp (a, b) -> (Sm.Exp a, Sm.Exp b)
+untup2 e = (Sm.Exp $ Tu.SuccTupIdx Tu.ZeroTupIdx `Sm.Prj` e, 
+            Sm.Exp $ Tu.ZeroTupIdx `Sm.Prj` e)
+
+{-
+
+untup3 :: (Elt a, Elt b, Elt c) => Exp (a, b, c) -> (Exp a, Exp b, Exp c)
+untup3 e = (Exp $ SuccTupIdx (SuccTupIdx ZeroTupIdx) `Prj` e, 
+            Exp $ SuccTupIdx ZeroTupIdx `Prj` e, 
+            Exp $ ZeroTupIdx `Prj` e)
+-}
 
 --------------------------------------------------------------------------------
 -- Let's print matrices nicely.
@@ -392,7 +433,20 @@ tests = [ testCase "use/fromList"   (print$ doc t0)
         , testGroup "run p11" $ hUnitTestToTests $ I.run p11 ~=? run p11
         , testGroup "run p11b" $ hUnitTestToTests $ I.run p11b ~=? run p11b
         , testGroup "run p11c" $ hUnitTestToTests $ I.run p11c ~=? run p11c
-        , testGroup "run p12" $ hUnitTestToTests $ I.run p11 ~=? run p11        
+        , testGroup "run p12" $ hUnitTestToTests $ I.run p12 ~=? run p12
+          
+        , testGroup "run p13" $ hUnitTestToTests $ I.run p13 ~=? run p13                  
+        , testGroup "run p13b" $ hUnitTestToTests $ I.run p13b ~=? run p13b                   
+        , testGroup "run p13c" $ hUnitTestToTests $ I.run p13c ~=? run p13c  
+        , testGroup "run p13d" $ hUnitTestToTests $ I.run p13d ~=? run p13d   
+        , testGroup "run p13e" $ hUnitTestToTests $ I.run p13e ~=? run p13e   
+        , testGroup "run p13f" $ hUnitTestToTests $ I.run p13f ~=? run p13f    
+        
+        , testGroup "run p14" $ hUnitTestToTests $ I.run p14 ~=? run p14
+        , testGroup "run p14b" $ hUnitTestToTests $ I.run p14b ~=? run p14b        
+        , testGroup "run p14c" $ hUnitTestToTests $ I.run p14c ~=? run p14c        
+        , testGroup "run p14d" $ hUnitTestToTests $ I.run p14d ~=? run p14d        
+        , testGroup "run p14e" $ hUnitTestToTests $ I.run p14e ~=? run p14e
         ]
  where
   runBoth p = (hUnitTestToTests$ Sug.toList (I.run p) ~=? Sug.toList (run p))
