@@ -288,8 +288,14 @@ p13d = unit $
                (Sm.tup2 (constant (3::Int32), constant (4::Int64))),
                (Sm.tup2 (constant (5::Float), constant (6::Double))))
 
-p13e :: Acc (Scalar ((Int8,Int16),(Int32,Int64),Int))
+p13e :: Acc (Scalar (((Int8,Int16),(Int32,Int64)),(Float,Double)))
 p13e = unit $ 
+      Sm.tup2 (Sm.tup2 ((Sm.tup2 (constant (1::Int8),  constant (2::Int16))),
+                        (Sm.tup2 (constant (3::Int32), constant (4::Int64)))),
+               (Sm.tup2 (constant (5::Float), constant (6::Double))))
+
+p13f :: Acc (Scalar ((Int8,Int16),(Int32,Int64),Int))
+p13f = unit $ 
       Sm.tup3 ((Sm.tup2 (constant (1::Int8),  constant (2::Int16))),
                (Sm.tup2 (constant (3::Int32), constant (4::Int64))),
                (constant (5::Int)))

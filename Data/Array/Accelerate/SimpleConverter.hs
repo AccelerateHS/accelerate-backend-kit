@@ -442,11 +442,10 @@ convertExp e =
 convertTuple :: Tuple (PreOpenExp OpenAcc env aenv) t' -> EnvM T.Exp
 convertTuple NilTup = return$ T.ETuple []
 convertTuple (SnocTup tup e) = 
---    trace "convertTuple..."$
     do e' <- convertExp e
        tup' <- convertTuple tup
        case tup' of 
-         T.ETuple ls -> return$ T.ETuple$ ls ++ [e']
+         T.ETuple ls -> return$ T.ETuple$ ls ++ [e'] -- Snoc!
          se -> error$ "convertTuple: expected a tuple expression, received:\n  "++ show se
 
 
@@ -457,57 +456,49 @@ convertTuple (SnocTup tup e) =
 convertType :: TupleType a -> S.Type
 convertType ty = 
   tracePrint ("CONVERTTYPE of "++show ty++":  ") $
-  case ty of 
-    UnitTuple -> S.TTuple []
-    PairTuple ty1 ty0  -> 
-      let ty0' = convertType ty0 in 
-      -- TTuple types are encoded in regular, Haskell left-to-right form:
-      case convertType ty1 of 
-        S.TTuple [] -> ty0'
-        S.TTuple ls -> 
-          case ty0' of 
-            -- Here's what seems like an arbitrary convention.  If the
-            -- right branch is a tuple, then that means the left
-            -- branch is encoded differently!?
-            S.TTuple ls2 -> S.TTuple [S.TTuple ls, ty0']
-            oth          -> S.TTuple (ls ++ [ty0']) -- Otherwise we add to the tuple we're building on the left.
-        oth         -> S.TTuple [oth, ty0']
-    SingleTuple scalar -> 
-     case scalar of 
-       NumScalarType (IntegralNumType typ) -> 
-         case typ of 
-           TypeInt   _  -> S.TInt
-           TypeInt8  _  -> S.TInt8 
-           TypeInt16 _  -> S.TInt16  
-           TypeInt32 _  -> S.TInt32 
-           TypeInt64 _  -> S.TInt64 
-           TypeWord   _ -> S.TWord
-           TypeWord8  _ -> S.TWord8 
-           TypeWord16 _ -> S.TWord16 
-           TypeWord32 _ -> S.TWord32 
-           TypeWord64 _ -> S.TWord64 
-           TypeCShort _ -> S.TCShort 
-           TypeCInt   _ -> S.TCInt 
-           TypeCLong  _ -> S.TCLong 
-           TypeCLLong _ -> S.TCLLong 
-           TypeCUShort _ -> S.TCUShort
-           TypeCUInt   _ -> S.TCUInt
-           TypeCULong  _ -> S.TCULong
-           TypeCULLong _ -> S.TCULLong
-       NumScalarType (FloatingNumType typ) -> 
-         case typ of 
-           TypeFloat _   -> S.TFloat 
-           TypeDouble _  -> S.TDouble 
-           TypeCFloat _  -> S.TCFloat 
-           TypeCDouble _ -> S.TCDouble 
-       NonNumScalarType typ -> 
-         case typ of 
-           TypeBool _   -> S.TBool 
-           TypeChar _   -> S.TChar 
-           TypeCChar _  -> S.TCChar 
-           TypeCSChar _ -> S.TCSChar 
-           TypeCUChar _ -> S.TCUChar 
-
+  tupleTy $ flattenTupTy $ 
+  loop ty
+ where   
+  loop :: TupleType a -> S.Type
+  loop ty =  
+   case ty of 
+     UnitTuple          -> S.TTuple []
+     PairTuple ty1 ty0  -> S.TTuple [loop ty1, loop ty0] -- First, just extract the binary tree.
+     SingleTuple scalar -> 
+      case scalar of 
+        NumScalarType (IntegralNumType typ) -> 
+          case typ of 
+            TypeInt   _  -> S.TInt
+            TypeInt8  _  -> S.TInt8 
+            TypeInt16 _  -> S.TInt16  
+            TypeInt32 _  -> S.TInt32 
+            TypeInt64 _  -> S.TInt64 
+            TypeWord   _ -> S.TWord
+            TypeWord8  _ -> S.TWord8 
+            TypeWord16 _ -> S.TWord16 
+            TypeWord32 _ -> S.TWord32 
+            TypeWord64 _ -> S.TWord64 
+            TypeCShort _ -> S.TCShort 
+            TypeCInt   _ -> S.TCInt 
+            TypeCLong  _ -> S.TCLong 
+            TypeCLLong _ -> S.TCLLong 
+            TypeCUShort _ -> S.TCUShort
+            TypeCUInt   _ -> S.TCUInt
+            TypeCULong  _ -> S.TCULong
+            TypeCULLong _ -> S.TCULLong
+        NumScalarType (FloatingNumType typ) -> 
+          case typ of 
+            TypeFloat _   -> S.TFloat 
+            TypeDouble _  -> S.TDouble 
+            TypeCFloat _  -> S.TCFloat 
+            TypeCDouble _ -> S.TCDouble 
+        NonNumScalarType typ -> 
+          case typ of 
+            TypeBool _   -> S.TBool 
+            TypeChar _   -> S.TChar 
+            TypeCChar _  -> S.TCChar 
+            TypeCSChar _ -> S.TCSChar 
+            TypeCUChar _ -> S.TCUChar 
 
 -- | Convert a reified representation of an Accelerate (front-end)
 --   array type into the simple representation.  By convention this
@@ -516,20 +507,8 @@ convertType ty =
 --   That is, an array of ints will come out as just an array of ints
 --   with no extra fuss.
 convertArrayType :: forall arrs . Sug.ArraysR arrs -> S.Type
-convertArrayType ty = tupleTy $ flatten $ loop ty
+convertArrayType ty = tupleTy $ flattenTupTy $ loop ty
   where 
-    -- Flatten the snoc-list representation of tuples, at the array as well as scalar level
-    flatten (S.TTuple [S.TTuple [], realty]) = [realty] -- Shave off the "endcap" unit.
-    flatten (S.TTuple [deeper, head]) = head : flatten deeper
-    flatten t = 
-      let str = show(doc t) in 
-      case length str of -- Avoid nested exceptions:
-        _ -> error$ "convertArrayType: made invalid assumuptions about array\n"++
-             "       types from Acc frontend, expecting ((),a), received:\n"++str
-
-    tupleTy [ty] = ty
-    tupleTy ls = S.TTuple ls
-
     loop :: forall arrs . Sug.ArraysR arrs -> S.Type
     loop ty = 
       case ty of 
@@ -538,10 +517,33 @@ convertArrayType ty = tupleTy $ flatten $ loop ty
        -- parameters) into a concrete data-representation:
        Sug.ArraysRarray | (_ :: Sug.ArraysR (Sug.Array sh e)) <- ty -> 
           let ety = Sug.eltType ((error"This shouldn't happen (3)")::e) in
---          S.TArray (Sug.dim (error"dimOnly"::sh)) (convertType ety)
           S.TArray (Sug.dim (Sug.ignore :: sh)) (convertType ety)          
                                                  
        Sug.ArraysRpair t0 t1 -> S.TTuple [loop t0, loop t1]
+
+-- Flatten the snoc-list representation of tuples, at the array as well as scalar level
+flattenTupTy :: S.Type -> [S.Type]
+flattenTupTy ty = 
+  loop ty 
+  -- case ty of
+  --   S.TTuple ls -> ls
+  --   oth         -> [oth]
+ where 
+  isClosed (S.TTuple [])    = True
+  isClosed (S.TTuple [l,r]) = isClosed l
+  isClosed _                = False
+  loop (S.TTuple [])        = []
+  -- This means 'left' is a standalone tuple and 'right' does not extend it:
+  loop (S.TTuple [left,right]) | isClosed right = [S.TTuple [tupleTy (loop left), tupleTy (loop right)]]
+                               | otherwise      =  tupleTy (loop right) : loop left
+  loop (S.TTuple ls) = error$"flattenTupTy: expecting binary-tree tuples as input, recieved: "++show(S.TTuple ls)
+  loop oth           = [oth]
+
+tupleTy [ty] = ty
+tupleTy ls = S.TTuple ls
+
+
+
 
 --------------------------------------------------------------------------------
 -- Convert constants    
