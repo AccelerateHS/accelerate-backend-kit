@@ -500,6 +500,17 @@ liftComplexRands aex =
         put (cnt+1, ls)
         return$ S.var $ "tmp_"++show cnt
 
+   -- Traverse Exps:
+   loop2 :: T.Exp -> State Int T.Exp -- Keeps a counter.
+   loop2 ex = do
+     cnt <- get
+     let (ex', (cnt2, binds)) = runState (exp ex) (cnt,[])
+     put cnt2 
+--     let unroll [] = ex'
+     return ex'
+   
+   discharge = undefined
+
    -- There are some AExps buried within Exps.  This lifts them out,
    -- guaranting that only varrefs to array values will remain inside
    -- scalar expressions.  The AExp's returned are UNPROCESSED.
@@ -518,57 +529,62 @@ liftComplexRands aex =
                                   return$ T.EShape (T.Vr (getAnnot ae) tmp)
        -- The rest is BOILERPLATE:
        ------------------------------------------------------------
-       T.EVr vr               -> return$ T.EVr vr
-       T.EConst c             -> return$ T.EConst c 
-       T.ELet (vr,ty,rhs) bod -> do rhs' <- exp rhs
-                                    T.ELet (vr,ty, rhs') <$> exp bod
-       T.EPrimApp ty p args   -> T.EPrimApp ty p <$> mapM exp args
-       T.ECond e1 e2 e3       -> T.ECond      <$> exp e1 <*> exp e2 <*> exp e3 
-       T.EShapeSize ex        -> T.EShapeSize <$> exp ex
-       T.ETuple ls            -> T.ETuple <$> mapM exp ls
+       T.EVr vr                      -> return$ T.EVr vr
+       T.EConst c                    -> return$ T.EConst c 
+       T.ELet (vr,ty,rhs) bod        -> do rhs' <- exp rhs
+                                           T.ELet (vr,ty, rhs') <$> exp bod
+       T.EPrimApp ty p args          -> T.EPrimApp ty p <$> mapM exp args
+       T.ECond e1 e2 e3              -> T.ECond      <$> exp e1 <*> exp e2 <*> exp e3 
+       T.EShapeSize ex               -> T.EShapeSize <$> exp ex
+       T.ETuple ls                   -> T.ETuple <$> mapM exp ls
        T.ETupProjectFromRight ind ex -> T.ETupProjectFromRight ind <$> exp ex
        T.EIndex els                  -> T.EIndex <$> mapM exp els
        T.EIndexConsDynamic e1 e2     -> T.EIndexConsDynamic <$> exp e1 <*> exp e2         
        T.EIndexHeadDynamic e         -> T.EIndexHeadDynamic <$> exp e
        T.EIndexTailDynamic e         -> T.EIndexTailDynamic <$> exp e
 
+   cF  (S.Lam1 (v,ty)          bod) = S.Lam1 (v,ty)          <$> loop2 bod
+   cF2 (S.Lam2 (v1,t1) (v2,t2) bod) = S.Lam2 (v1,t1) (v2,t2) <$> loop2 bod
+
    loop :: TAExp -> State Int TAExp -- Keeps a counter.
-   loop aex = 
-     case aex of 
-       T.Vr _ _              -> return aex
-       T.Unit _ _            -> return aex
-       T.Use _ _             -> return aex
-       T.Generate _ _ _      -> return aex
-       T.Let rt (v,ty,rhs) bod -> 
-          do rhs' <- loop rhs 
-             bod' <- loop bod
-             return$ T.Let rt (v,ty,rhs') bod'
-       T.Apply rt fn ae -> 
-          do let S.Lam1 (v,ty) abod = fn 
-             rand' <- loop ae
-             abod' <- loop abod
-             return$ T.Apply rt (S.Lam1 (v,ty) abod') rand'
-       T.ZipWith a fn ae1 ae2  -> T.ZipWith a fn <$> flat ae1 <*> flat ae2 
-       T.Map     a fn ae       -> T.Map     a fn <$> flat ae
-       T.TupleRefFromRight a ind ae -> T.TupleRefFromRight a ind <$> flat ae
-       T.Cond a ex ae1 ae2     -> T.Cond a ex <$> flat ae1 <*> flat ae2 
-       T.Replicate aty slice ex ae -> T.Replicate aty slice ex <$> flat ae
-       T.Index     a slc ae ex -> (\ ae' -> T.Index a slc ae' ex) <$> flat ae
-       T.Fold  a fn einit ae         -> T.Fold  a fn einit    <$> flat ae
-       T.Fold1 a fn       ae         -> T.Fold1 a fn          <$> flat ae 
-       T.FoldSeg a fn einit ae aeseg -> T.FoldSeg a fn einit  <$> flat ae <*> flat aeseg 
-       T.Fold1Seg a fn      ae aeseg -> T.Fold1Seg a fn       <$> flat ae <*> flat aeseg 
-       T.Scanl    a fn einit ae      -> T.Scanl    a fn einit <$> flat ae  
-       T.Scanl'   a fn einit ae      -> T.Scanl'   a fn einit <$> flat ae  
-       T.Scanl1   a fn       ae      -> T.Scanl1   a fn       <$> flat ae 
-       T.Scanr    a fn einit ae      -> T.Scanr    a fn einit <$> flat ae 
-       T.Scanr'   a fn einit ae      -> T.Scanr'   a fn einit <$> flat ae 
-       T.Scanr1   a fn       ae      -> T.Scanr1   a fn       <$> flat ae
-       T.Permute a fn2 ae1 fn1 ae2 -> (\ x y -> T.Permute a fn2 x fn1 y)
-                                  <$> flat ae1 <*> flat ae2
-       T.Backpermute a ex lam ae -> T.Backpermute a ex lam   <$> flat ae
-       T.Reshape     a ex     ae -> T.Reshape     a ex       <$> flat ae
-       T.Stencil   a fn bndry ae -> T.Stencil     a fn bndry <$> flat ae
-       T.Stencil2  a fn bnd1 ae1 bnd2 ae2 -> (\ x y -> T.Stencil2 a fn bnd1 x bnd2 y) 
-                                        <$> flat ae1 <*> flat ae2
-       T.ArrayTuple a aes -> T.ArrayTuple a <$> mapM flat aes
+   loop aex = discharge result
+    where 
+     result = 
+      -- This is 100% BOILERPLATE, except that we go through `flat` for most recursions.
+      case aex of 
+        T.Vr _ _              -> return aex
+        T.Unit _ _            -> return aex
+        T.Use _ _             -> return aex
+        T.Generate _ _ _      -> return aex
+        T.Let rt (v,ty,rhs) bod -> 
+           do rhs' <- loop rhs 
+              bod' <- loop bod
+              return$ T.Let rt (v,ty,rhs') bod'
+        T.Apply rt fn ae -> 
+           do let S.Lam1 (v,ty) abod = fn 
+              rand' <- loop ae
+              abod' <- loop abod
+              return$ T.Apply rt (S.Lam1 (v,ty) abod') rand'
+        T.TupleRefFromRight a ind ae -> T.TupleRefFromRight a ind <$> flat ae             
+        T.Index     a slc ae ex      -> T.Index a slc <$> flat ae <*> loop2 ex
+--        T.Index     a slc ae ex -> (\ ae' -> T.Index a slc ae' ex) <$> flat ae 
+        T.ZipWith a fn2 ae1 ae2       -> T.ZipWith a <$> cF2 fn2  <*> flat ae1 <*> flat ae2 
+        T.Map     a fn ae             -> T.Map     a <$> cF fn    <*> flat ae
+        T.Cond    a ex ae1 ae2        -> T.Cond    a <$> loop2 ex <*> flat ae1 <*> flat ae2 
+        T.Replicate a slice ex ae     -> T.Replicate a slice     <$> loop2 ex  <*> flat ae
+        T.Fold     a fn ein  ae       -> T.Fold     a <$> cF2 fn <*> loop2 ein <*> flat ae
+        T.FoldSeg  a fn ein  ae aeseg -> T.FoldSeg  a <$> cF2 fn <*> loop2 ein <*> flat ae <*> flat aeseg
+        T.Fold1    a fn      ae       -> T.Fold1    a <$> cF2 fn               <*> flat ae
+        T.Fold1Seg a fn      ae aeseg -> T.Fold1Seg a <$> cF2 fn               <*> flat ae <*> flat aeseg
+        T.Scanl    a fn ein  ae       -> T.Scanl    a <$> cF2 fn <*> loop2 ein <*> flat ae  
+        T.Scanl'   a fn ein  ae       -> T.Scanl'   a <$> cF2 fn <*> loop2 ein <*> flat ae  
+        T.Scanl1   a fn      ae       -> T.Scanl1   a <$> cF2 fn               <*> flat ae 
+        T.Scanr    a fn ein  ae       -> T.Scanr    a <$> cF2 fn <*> loop2 ein <*> flat ae 
+        T.Scanr'   a fn ein  ae       -> T.Scanr'   a <$> cF2 fn <*> loop2 ein <*> flat ae 
+        T.Scanr1   a fn      ae       -> T.Scanr1   a <$> cF2 fn               <*> flat ae
+        T.Permute  a fn ae1 fn1 ae2   -> T.Permute  a <$> cF2 fn <*> flat ae1  <*> cF fn1 <*> flat ae2
+        T.Backpermute a ex lam ae    -> T.Backpermute a <$> loop2 ex <*> cF lam <*> flat ae
+        T.Reshape     a ex     ae    -> T.Reshape     a <$> loop2 ex <*> flat ae
+        T.Stencil   a fn bndry ae    -> T.Stencil     a <$> cF fn    <*> return bndry <*> flat ae
+        T.Stencil2  a fn bnd1 ae1 bnd2 ae2 -> T.Stencil2 a <$> cF2 fn <*> return bnd1 <*> flat ae1 <*> return bnd2 <*> flat ae2
+        T.ArrayTuple a aes                 -> T.ArrayTuple a <$> mapM flat aes
