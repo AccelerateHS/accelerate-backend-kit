@@ -89,6 +89,7 @@ evalProg origenv (S.Letrec binds results progtype) =
        S.Vr  v             -> bind$ envLookup env v
        S.Unit e -> case evalE env e of 
                     ConstVal c -> bind$ ArrVal$ SA.replicate [] c
+                    oth  -> error$"evalProg: expecting ConstVal input to Unit, received: "++show oth
        S.Cond e1 v1 v2 -> case evalE env e1 of 
                              ConstVal (B True)  -> bind$ envLookup env v1
                              ConstVal (B False) -> bind$ envLookup env v2
@@ -256,7 +257,7 @@ evalE env expr =
   case expr of 
     T.EVr  v             -> envLookup env v
     T.ELet (vr,_ty,lhs) bod -> evalE (M.insert vr (evalE env lhs) env) bod
-    T.ETuple es          -> TupVal$ map (evalE env) es
+    T.ETuple es          -> ConstVal$ Tup $ map (unConstVal . evalE env) es
     T.EConst c           -> ConstVal c
 
     T.ECond e1 e2 e3     -> case evalE env e1 of 

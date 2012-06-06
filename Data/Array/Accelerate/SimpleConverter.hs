@@ -456,15 +456,22 @@ convertTuple (SnocTup tup e) =
 
 convertType :: TupleType a -> S.Type
 convertType ty = 
+  tracePrint ("CONVERTTYPE of "++show ty++":  ") $
   case ty of 
     UnitTuple -> S.TTuple []
     PairTuple ty1 ty0  -> 
       let ty0' = convertType ty0 in 
-      -- Convert to Haskell-style tuples here (left-first, no unary tuples):
+      -- TTuple types are encoded in regular, Haskell left-to-right form:
       case convertType ty1 of 
         S.TTuple [] -> ty0'
-        S.TTuple ls -> S.TTuple (ty0' : ls)
-        oth         -> S.TTuple [ty0', oth]
+        S.TTuple ls -> 
+          case ty0' of 
+            -- Here's what seems like an arbitrary convention.  If the
+            -- right branch is a tuple, then that means the left
+            -- branch is encoded differently!?
+            S.TTuple ls2 -> S.TTuple [S.TTuple ls, ty0']
+            oth          -> S.TTuple (ls ++ [ty0']) -- Otherwise we add to the tuple we're building on the left.
+        oth         -> S.TTuple [oth, ty0']
     SingleTuple scalar -> 
      case scalar of 
        NumScalarType (IntegralNumType typ) -> 
@@ -824,7 +831,7 @@ packArray orig@(S.AccArray dims payloads) =
 --   trace ("LOOPING "++show (length payloads)++" tupty:"++show tupTy) $
    let err2 :: String -> (forall a . a)
        err2 msg = error$"packArray: given a SimpleAST.AccArray of the wrong type, expected "++msg++" received: "++paystr
-       paystr = "\n  "++(unlines$ L.map (take 80 . show) payloads) ++ "\n dimension: "++show dims
+       paystr = "\n  "++(unlines$ L.map (take 200 . show) payloads) ++ "\n dimension: "++show dims
    in
    case (tupTy, payloads) of
     (UnitTuple,_)     -> AD_Unit

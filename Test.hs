@@ -7,7 +7,7 @@ module Main where
 import Data.Array.Accelerate.SimpleConverter (convertToSimpleAST, convertToSimpleProg)
 import qualified Data.Array.Accelerate.SimpleAST    as S
 import qualified Data.Array.Accelerate.SimpleInterp as I
--- import qualified Data.Array.Accelerate.Smart       as Sugar
+import qualified Data.Array.Accelerate.Smart       as Sm
 -- import qualified Data.Array.Accelerate.Array.Sugar as Sugar
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 
@@ -261,6 +261,46 @@ p12 = let arr = generate (constant (Z :. (5::Int))) unindex1 in
       cond (arr A.! (index1 2) >* 2)
            (lift (unit 10, unit 20.0))
            (lift (unit 40, unit 30.0))
+
+--------------------------------------------------------------------------------
+-- Let's test tuple type conversion
+
+p13 :: Acc (Scalar ((Int8,Int16),(Int32,Int64)))
+p13 = unit $ 
+      Sm.tup2 ((Sm.tup2 (constant (1::Int8),  constant (2::Int16))),
+               (Sm.tup2 (constant (3::Int32), constant (4::Int64))))
+
+p13b :: Acc (Scalar (Int8,Int16,Int32))
+p13b = unit $ 
+      Sm.tup3 (constant (1::Int8),  
+               constant (2::Int16),
+               constant (3::Int32))
+
+p13c :: Acc (Scalar ((Int8,Int16),Int32))
+p13c = unit $ 
+      Sm.tup2 ((Sm.tup2 (constant (1::Int8),  constant (2::Int16))),
+               (constant (5::Int32)))
+
+
+p13d :: Acc (Scalar ((Int8,Int16),(Int32,Int64),(Float,Double)))
+p13d = unit $ 
+      Sm.tup3 ((Sm.tup2 (constant (1::Int8),  constant (2::Int16))),
+               (Sm.tup2 (constant (3::Int32), constant (4::Int64))),
+               (Sm.tup2 (constant (5::Float), constant (6::Double))))
+
+p13e :: Acc (Scalar ((Int8,Int16),(Int32,Int64),Int))
+p13e = unit $ 
+      Sm.tup3 ((Sm.tup2 (constant (1::Int8),  constant (2::Int16))),
+               (Sm.tup2 (constant (3::Int32), constant (4::Int64))),
+               (constant (5::Int)))
+
+
+--  Unit (TArray 0 (TTuple [TTuple [TInt64,TInt32],TInt16,TInt8]))
+
+--  ((((), Int8), Int16), Int32):
+--  ((((), Int8), Int16), (((), Int32), Int64)):
+--  Why is it not (((), (((), Int8), Int16)), (((), Int32), Int64)) ??
+--  Why does it appear to follow a different convention for tuples of tuples?
 
 --------------------------------------------------------------------------------
 -- Let's print matrices nicely.
