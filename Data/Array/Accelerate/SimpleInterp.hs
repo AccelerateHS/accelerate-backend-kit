@@ -71,19 +71,21 @@ unArrVal   (ArrVal v)   = v
 --   result.  Reimposing a nested structure to the resulting
 --   tuple-of-arrays is not the job of this function.
 evalProg :: Env -> S.Prog -> [AccArray]
-evalProg env (S.Letrec binds results progtype) = 
---    trace ("[dbg] evalProg with environment: "++show env++"\n    "++show ae) $
-    L.map (unArrVal . (envLookup (loop binds))) results
+evalProg origenv (S.Letrec binds results progtype) = 
+    trace ("[dbg] evalProg, initial env "++ show (L.map (\(a,_,_)->a) binds)
+           ++"  yielded environment: "++show (M.keys finalenv)) $
+    L.map (unArrVal . (envLookup finalenv)) results
   where 
-
+   finalenv = loop origenv binds
    -- A binding simply extends an environment of values. 
-   loop :: [(S.Var, S.Type, Either S.Exp S.AExp)] -> Env
-   loop [] = env
+--   loop :: [(S.Var, S.Type, Either S.Exp S.AExp)] -> Env
+   loop env [] = env
    
-   loop ((vr,ty,Left rhs):rst) =
+   loop env ((vr,ty,Left rhs):rst) =
      error "do scalar binds!"
    
-   loop ((vr,ty,Right rhs):rst) =
+   loop env ((vr,ty,Right rhs):rst) = loop (doaexp env vr rhs) rst
+   doaexp env vr rhs =   
      let bind rhs' = M.insert vr rhs' env in
      case rhs of
        S.Vr  v             -> bind$ envLookup env v
