@@ -331,7 +331,7 @@ lf :: Functor f => f a -> f (TempTree a)
 lf x = TLeaf <$> x
 lfr = lf . return
 
-cE = convertExps    
+cE  = convertExps    
 cF  = convertFun1
 cF2 = convertFun2
 
