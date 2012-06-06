@@ -9,6 +9,8 @@
 --   * Add type info to some language forms... 
 --   * Convert boundary
 
+#define SURFACE_TUPLES
+
 module Data.Array.Accelerate.SimpleConverter 
        ( 
          convertToSimpleAST,  convertToSimpleProg, 
@@ -439,6 +441,7 @@ convertExp e =
 
 -- | Convert a tuple expression to our simpler Tuple representation (containing a list):
 --   ASSUMES that the target expression is in fact a tuple construct.
+#ifdef SURFACE_TUPLES                     
 convertTuple :: Tuple (PreOpenExp OpenAcc env aenv) t' -> EnvM T.Exp
 convertTuple NilTup = return$ T.ETuple []
 convertTuple (SnocTup tup e) = 
@@ -447,7 +450,15 @@ convertTuple (SnocTup tup e) =
        case tup' of 
          T.ETuple ls -> return$ T.ETuple$ ls ++ [e'] -- Snoc!
          se -> error$ "convertTuple: expected a tuple expression, received:\n  "++ show se
-
+#else
+-- Option 2: use a tupling that preservers the Acc-internal snoc-tree representation:
+convertTuple :: Tuple (PreOpenExp OpenAcc env aenv) t' -> EnvM T.Exp
+convertTuple NilTup = return$ T.ETuple []
+convertTuple (SnocTup tup e) = 
+    do e' <- convertExp e
+       tup' <- convertTuple tup
+       return (T.ETuple [tup', e'])
+#endif
 
 --------------------------------------------------------------------------------
 -- Convert types
@@ -507,7 +518,11 @@ convertType ty =
 --   That is, an array of ints will come out as just an array of ints
 --   with no extra fuss.
 convertArrayType :: forall arrs . Sug.ArraysR arrs -> S.Type
-convertArrayType ty = tupleTy $ flattenTupTy $ loop ty
+convertArrayType ty = 
+#ifndef SURFACE_TUPLES
+     removeOuterEndcap $ 
+#endif
+     tupleTy $ flattenTupTy $ loop ty
   where 
     loop :: forall arrs . Sug.ArraysR arrs -> S.Type
     loop ty = 
@@ -524,10 +539,14 @@ convertArrayType ty = tupleTy $ flattenTupTy $ loop ty
 -- Flatten the snoc-list representation of tuples, at the array as well as scalar level
 flattenTupTy :: S.Type -> [S.Type]
 flattenTupTy ty = 
+#ifdef SURFACE_TUPLES
   loop ty 
-  -- case ty of
-  --   S.TTuple ls -> ls
-  --   oth         -> [oth]
+#else
+  -- DISABLE flattening  
+  case ty of
+    S.TTuple ls -> ls
+    oth         -> [oth]
+#endif
  where 
   isClosed (S.TTuple [])    = True
   isClosed (S.TTuple [l,r]) = isClosed l
@@ -539,10 +558,11 @@ flattenTupTy ty =
   loop (S.TTuple ls) = error$"flattenTupTy: expecting binary-tree tuples as input, recieved: "++show(S.TTuple ls)
   loop oth           = [oth]
 
+removeOuterEndcap (S.TTuple [S.TTuple [], ty]) = ty
+removeOuterEndcap oth                          = oth
+
 tupleTy [ty] = ty
 tupleTy ls = S.TTuple ls
-
-
 
 
 --------------------------------------------------------------------------------
@@ -832,8 +852,9 @@ packArray orig@(S.AccArray dims payloads) =
   loop tupTy payloads =
 --   trace ("LOOPING "++show (length payloads)++" tupty:"++show tupTy) $
    let err2 :: String -> (forall a . a)
-       err2 msg = error$"packArray: given a SimpleAST.AccArray of the wrong type, expected "++msg++" received: "++paystr
-       paystr = "\n  "++(unlines$ L.map (take 200 . show) payloads) ++ "\n dimension: "++show dims
+       err2 msg = error$"packArray: given a SimpleAST.AccArray of the wrong type, expected "++msg
+                  ++" received "++ show(length payloads) ++ " payloads: "++paystr
+       paystr = "\n"++(unlines$ L.map (take 200 . show) payloads) ++ "\n dimension: "++show dims
    in
    case (tupTy, payloads) of
     (UnitTuple,_)     -> AD_Unit
@@ -939,6 +960,7 @@ repackAcc2 dummy simpls =
        -- We don't explicitly represent this extra capstone-unit in the AccArray:
        Sug.ArraysRpair Sug.ArraysRunit r -> ((), cvt r simpls)
        Sug.ArraysRpair r1 r2 -> 
+--           trace ("\n * REPACKING ... walking past pair ")$
            case simpls of
             a:b:c -> (cvt r1 (init simpls), cvt r2 [last simpls])
             oth   -> error$"expected ArraysRpair compatible value, got:\n  "++show oth
@@ -951,13 +973,6 @@ repackAcc2 dummy simpls =
            oth  -> error$"repackAcc2: expected single array, got:\n  "++show oth
 
 instance Show (Sug.ArraysR a') where
-  -- show arrR = 
-  --    case arrR of 
-  --      Sug.ArraysRunit       -> "()"
-  --      Sug.ArraysRpair Sug.ArraysRunit r -> "(() "++show r ++")"
-  --      Sug.ArraysRpair r1 r2 -> "("++ show r1 ++", "++ show r2++")"
-  --      Sug.ArraysRarray -> "Array"
-  
   show arrR = "ArraysR "++loop arrR
    where 
     loop :: forall ar .  Sug.ArraysR ar -> String
