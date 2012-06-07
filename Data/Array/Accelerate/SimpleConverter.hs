@@ -948,29 +948,30 @@ repackAcc2 dummy simpls =
               ++ unlines(L.map (("   "++) . show) simpls)) $ 
       Sug.toArr converted
   where
-   converted :: Sug.ArrRepr a = cvt rep simpls
+   converted :: Sug.ArrRepr a = fst$ cvt rep (reverse simpls)
    -- Pull some information out of thin air (from type domain to value domain):
    rep :: Sug.ArraysR (Sug.ArrRepr a) = 
      Sug.arrays (error"SimpleInterp.run: this should never be used" :: a)
 
-   cvt :: forall a' . Sug.ArraysR a' -> [S.AccArray] -> a'
+   -- In additon to a result, returns unused input arrays:
+   cvt :: forall a' . Sug.ArraysR a' -> [S.AccArray] -> (a',[S.AccArray])
    cvt arrR simpls = 
      case arrR of 
-       Sug.ArraysRunit       -> ()
+       Sug.ArraysRunit       -> ((),simpls)
        -- We don't explicitly represent this extra capstone-unit in the AccArray:
-       Sug.ArraysRpair Sug.ArraysRunit r -> ((), cvt r simpls)
+       Sug.ArraysRpair Sug.ArraysRunit r -> 
+           let (res,rst) = cvt r simpls in
+           (((), res), rst)
        Sug.ArraysRpair r1 r2 -> 
---           trace ("\n * REPACKING ... walking past pair ")$
-           case simpls of
-            a:b:c -> (cvt r1 (init simpls), cvt r2 [last simpls])
-            oth   -> error$"expected ArraysRpair compatible value, got:\n  "++show oth
---                                error$"Array PAIR: \n"++ unlines (L.map show simpls)
-                                -- let (a1,a2) = SA.splitComponent simpls in 
-                                -- (cvt r1 a1, cvt r2 a2)
+           -- Dole out the available input arrays to cover the
+           -- leaves, filling in the right first:
+           let (res2,rst)  = cvt r2 simpls 
+               (res1,rst') = cvt r1 rst
+           in ((res1,res2), rst')
        Sug.ArraysRarray | (_ :: Sug.ArraysR (Sug.Array sh e)) <- arrR ->
          case simpls of 
-           [hd] -> (packArray hd) :: (Sug.Array sh e)
-           oth  -> error$"repackAcc2: expected single array, got:\n  "++show oth
+           hd:tl -> ((packArray hd) :: (Sug.Array sh e), tl)
+           oth  -> error$"repackAcc2: ran out of input arrays.\n"
 
 instance Show (Sug.ArraysR a') where
   show arrR = "ArraysR "++loop arrR
