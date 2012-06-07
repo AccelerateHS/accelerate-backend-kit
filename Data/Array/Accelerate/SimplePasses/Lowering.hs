@@ -389,7 +389,13 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
              [ae] -> (macc, [(vr,ty,ae)]) -- No fresh names.
              unpacked -> 
                let subnames  = freshNames vr (length unpacked)
-                   flattened = zip3 subnames (deTupleTy ty) unpacked 
+                   types     = deepDetupleTy ty
+                   flattened = 
+                     if length subnames == length types && 
+                        length types    == length unpacked 
+                     then zip3 subnames types unpacked 
+                     else error$"Expected these to be the same length:\n"++
+                          " Fresh names: "++show subnames++", types "++show types++" unpacked, "++show unpacked
                in (M.insert vr subnames macc, flattened)
      let acc'  = thisbnd ++ rhsScalars ++ acc
      doBinds acc' macc' remaining
@@ -397,9 +403,10 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
    freshNames vr len = L.map (S.var . ((show vr ++"_")++) . show) [1..len]
 
    -- Types are stored in reverse order from natural Accelerate textual order:
-   -- deTupleTy (S.TTuple ls) = concatMap deTupleTy (reverse ls)
    deTupleTy (S.TTuple ls) = reverse ls
    deTupleTy oth           = [oth]
+   deepDetupleTy (S.TTuple ls) = concatMap deTupleTy (reverse ls)
+   deepDetupleTy oth           = [oth]   
    
    -- Process the right hand side of a binding, breakup up Conds and
    -- rewriting variable references to their new detupled targets.
