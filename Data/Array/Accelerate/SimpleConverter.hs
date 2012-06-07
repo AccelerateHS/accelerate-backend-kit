@@ -13,7 +13,7 @@
 
 module Data.Array.Accelerate.SimpleConverter 
        ( 
-         convertToSimpleAST,  convertToSimpleProg, 
+         convertToSimpleProg, 
          unpackArray, packArray, repackAcc, repackAcc2
        )
        where
@@ -53,15 +53,8 @@ dbg = True
 -- Exposed entrypoints for this module:
 --------------------------------------------------------------------------------
 
-type TAExp = T.AExp S.Type
-
 -- | Convert the sophisticate Accelerate-internal AST representation
 --   into something very simple for external consumption.
-convertToSimpleAST :: Sug.Arrays a => Sug.Acc a -> TAExp
-convertToSimpleAST = 
-  progToAExp . -- <- TEMP, hack.
-  convertToSimpleProg
-
 convertToSimpleProg :: Sug.Arrays a => Sug.Acc a -> S.Prog
 convertToSimpleProg prog = 
   runPass "removeArrayTuple" removeArrayTuple $ 
@@ -79,22 +72,24 @@ runPass msg pass input =
          else x
  where x = pass input              
 
+type TAExp = T.AExp S.Type
+
 -- Temporary -- convert a Prog back to an AExp.  I haven't refactored
 -- the interpreter yet....
-progToAExp :: S.Prog -> TAExp
--- progToAExp = error "progToAExp UNFINISHED"
-progToAExp (S.Letrec binds results finalty) = 
-  case ebinds of 
-    [] -> loop1 abinds
-    oth -> error $ "progToAExp: this function is not complete, can't handle these scalar bindings:\n"++show oth
-  where 
-    (ebinds, abinds) = L.partition isLeft binds
-    isLeft (_,_,Left _) = True
-    isLeft _            = False
-    loop1 [] = mkArrayTuple finalty $ zipWith T.Vr (deTupleTy finalty) results
-    loop1 ((vr,ty,Right rhs):tl) = T.Let finalty (vr,ty, T.reverseConvertAExps rhs) $ loop1 tl
-    deTupleTy (S.TTuple ls) = reverse ls
-    deTupleTy oth           = [oth]
+-- progToAExp :: S.Prog -> TAExp
+-- -- progToAExp = error "progToAExp UNFINISHED"
+-- progToAExp (S.Letrec binds results finalty) = 
+--   case ebinds of 
+--     [] -> loop1 abinds
+--     oth -> error $ "progToAExp: this function is not complete, can't handle these scalar bindings:\n"++show oth
+--   where 
+--     (ebinds, abinds) = L.partition isLeft binds
+--     isLeft (_,_,Left _) = True
+--     isLeft _            = False
+--     loop1 [] = mkArrayTuple finalty $ zipWith T.Vr (deTupleTy finalty) results
+--     loop1 ((vr,ty,Right rhs):tl) = T.Let finalty (vr,ty, T.reverseConvertAExps rhs) $ loop1 tl
+--     deTupleTy (S.TTuple ls) = reverse ls
+--     deTupleTy oth           = [oth]
 
 --------------------------------------------------------------------------------
 -- Environments
@@ -540,21 +535,27 @@ convertArrayType ty =
 flattenTupTy :: S.Type -> [S.Type]
 flattenTupTy ty = 
 #ifdef SURFACE_TUPLES
+  -- reverse $ 
   loop ty 
+ where 
+  -- When using the surface representation we reverse (cons instead of snoc):
+  mkTup = S.TTuple -- . reverse
 #else
   -- DISABLE flattening  
   case ty of
     S.TTuple ls -> ls
     oth         -> [oth]
-#endif
  where 
+  mkTup = S.TTuple 
+#endif
   isClosed (S.TTuple [])    = True
   isClosed (S.TTuple [l,r]) = isClosed l
   isClosed _                = False
   loop (S.TTuple [])        = []
-  -- This means 'left' is a standalone tuple and 'right' does not extend it:
-  loop (S.TTuple [left,right]) | isClosed right = [S.TTuple [tupleTy (loop left), tupleTy (loop right)]]
-                               | otherwise      =  tupleTy (loop right) : loop left
+  -- isClosed means 'left' is a standalone tuple and 'right' does not extend it:
+  loop (S.TTuple [left,right]) | isClosed right = [mkTup [tupleTy (loop left), tupleTy (loop right)]]
+--                               | otherwise      =  tupleTy (loop right) : loop left
+                               | otherwise      =  loop left ++ [tupleTy (loop right)]
   loop (S.TTuple ls) = error$"flattenTupTy: expecting binary-tree tuples as input, recieved: "++show(S.TTuple ls)
   loop oth           = [oth]
 

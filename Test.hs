@@ -4,7 +4,7 @@
 
 module Main where
 
-import Data.Array.Accelerate.SimpleConverter (convertToSimpleAST, convertToSimpleProg)
+import Data.Array.Accelerate.SimpleConverter (convertToSimpleProg)
 import qualified Data.Array.Accelerate.SimpleAST    as S
 import qualified Data.Array.Accelerate.SimpleInterp as I
 import qualified Data.Array.Accelerate.Smart       as Sm

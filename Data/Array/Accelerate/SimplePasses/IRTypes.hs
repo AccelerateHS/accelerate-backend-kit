@@ -14,7 +14,7 @@ module Data.Array.Accelerate.SimplePasses.IRTypes
      convertExps, 
      convertFun1, convertFun2,
                   
-     reverseConvertExps, reverseConvertFun1, reverseConvertFun2, reverseConvertAExps -- TEMP                  
+     -- reverseConvertExps, reverseConvertFun1, reverseConvertFun2, reverseConvertAExps -- TEMP                  
                   
    )
        where
