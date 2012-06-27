@@ -97,7 +97,7 @@ var :: String -> Var
 data Prog = Letrec { 
   progBinds   :: [(Var,Type,Either Exp AExp)],
   progResults :: [Var],
-  progType    :: Type
+  progType    :: Type -- Final, pre-flattened type, can be an array-tuple.
 } deriving (Read,Show,Eq,Generic)
 
 

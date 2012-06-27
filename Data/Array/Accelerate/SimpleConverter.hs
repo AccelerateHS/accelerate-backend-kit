@@ -548,8 +548,8 @@ flattenTupTy ty =
  where 
   mkTup = S.TTuple 
 #endif
-  isClosed (S.TTuple [])    = True
-  isClosed (S.TTuple [l,r]) = isClosed l
+  isClosed (S.TTuple [S.TTuple [],_r]) = True
+  isClosed (S.TTuple [l,_r]) = isClosed l       
   isClosed _                = False
   loop (S.TTuple [])        = []
   -- isClosed means 'left' is a standalone tuple and 'right' does not extend it:
@@ -763,8 +763,9 @@ convertFun2 fn = do
 -- | Used only for communicating type information.
 data Phantom a = Phantom
 
--- | This converts Accelerate Array data.  It has an odd return type
---   to avoid type-family related type errors.
+-- | This converts Accelerate Array data to the simplified
+--   representation.  `unpackArray` has an odd return type to avoid
+--   type-family related type errors.
 unpackArray :: forall a . (Sug.Arrays a) => Sug.ArrRepr a -> (S.Type, S.AccArray, Phantom a)
 unpackArray arrrepr = (ty, S.AccArray shp payloads, 
                         Phantom :: Phantom a)
@@ -827,16 +828,10 @@ unpackArray arrrepr = (ty, S.AccArray shp payloads,
        useR ArrayEltRchar   (AD_Char   x) = [S.ArrayPayloadChar   x]            
 
 
--- | Almost an inverse of the previous function -- repack the simplified data
--- representation with the type information necessary to form a proper
--- Accelerate array.
+-- | Almost an inverse of `unpackArray` -- repack the simplified data
+--   representation with the type information necessary to form a proper
+--   Accelerate array.
 packArray :: forall sh e . (Sug.Elt e, Sug.Shape sh) => S.AccArray -> Sug.Array sh e
-
--- packArray (S.AccArray dims []) = 
---   if all (== 0) dims
---   then Sug.Array (Sug.fromElt (Sug.listToShape dims :: sh)) (error "UNFINISHED: packArray")
---   else error$ "packArray: corrupt input AccArray is empty, but stated dimensions are: "++ show dims
-
 packArray orig@(S.AccArray dims payloads) = 
   if length dims == length dims' -- Is the expected rank correct?
   then Sug.Array shpVal (packit (typeOnlyErr "packArray1"::Sug.Array sh e) payloads)
@@ -846,68 +841,71 @@ packArray orig@(S.AccArray dims payloads) =
   dims' :: [Int] = Sug.shapeToList (Sug.ignore::sh)
 
   packit :: forall sh e . (Sug.Shape sh, Sug.Elt e) => Sug.Array sh e -> [S.ArrayPayload] -> (ArrayData (Sug.EltRepr e))
-  packit _ pays = loop eTy pays
+  packit _ pays = fst $ loop eTy pays
      where eTy = Sug.eltType (typeOnlyErr"packArray2"::e) 
 
-  loop :: forall e . TupleType e -> [S.ArrayPayload] -> (ArrayData e)
+  -- This consumes from a list of payloads and returns what is left in addition to the return value.
+  loop :: forall e . TupleType e -> [S.ArrayPayload] -> (ArrayData e, [S.ArrayPayload])
   loop tupTy payloads =
---   trace ("LOOPING "++show (length payloads)++" tupty:"++show tupTy) $
+   trace ("packArray: LOOPING "++show (length payloads)++" payload(s), tupty: "++show tupTy) $
    let err2 :: String -> (forall a . a)
        err2 msg = error$"packArray: given a SimpleAST.AccArray of the wrong type, expected "++msg
                   ++" received "++ show(length payloads) ++ " payloads: "++paystr
        paystr = "\n"++(unlines$ L.map (take 200 . show) payloads) ++ "\n dimension: "++show dims
    in
    case (tupTy, payloads) of
-    (UnitTuple,_)     -> AD_Unit
+    (UnitTuple,ls)     -> (AD_Unit,ls)
 
-    -- Tuples are nested ON THE LEFT in Accelerate currently:
+    -- Tuples are trees of SNOC operations in Accelerate currently:
     -- In SimpleAST we ignore the extra unit on the end in the AccArray representation:
-    (PairTuple UnitTuple (r::TupleType b),_)  -> AD_Pair AD_Unit (loop r payloads) 
+--    (PairTuple UnitTuple (r::TupleType b),_)  -> AD_Pair AD_Unit (loop r payloads) 
     -- This might occur given our representation of `All` in slice descriptors:
     -- But these units DON'T have a physical representation in the payloads:
-    (PairTuple (r::TupleType b) UnitTuple, _) -> AD_Pair (loop r payloads) AD_Unit 
-    (PairTuple t1 t2, ls)  -> AD_Pair (loop t1 (init ls)) (loop t2 [last ls])
+--    (PairTuple (r::TupleType b) UnitTuple, _) -> AD_Pair (loop r payloads) AD_Unit 
+    (PairTuple t1 t2, ls)  -> 
+       let (res2,rst)  = loop t2 ls 
+           (res1,rst') = loop t1 rst
+       in (AD_Pair res1 res2, rst')
 
-    (SingleTuple (NumScalarType (FloatingNumType (TypeFloat _))),  [S.ArrayPayloadFloat uarr])  -> AD_Float uarr
-    (SingleTuple (NumScalarType (FloatingNumType (TypeDouble _))), [S.ArrayPayloadDouble uarr]) -> AD_Double uarr
+    (SingleTuple (NumScalarType (FloatingNumType (TypeFloat  _))), S.ArrayPayloadFloat  uarr :rst) -> (AD_Float uarr, rst)
+    (SingleTuple (NumScalarType (FloatingNumType (TypeDouble _))), S.ArrayPayloadDouble uarr :rst) -> (AD_Double uarr, rst)
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt    _))), S.ArrayPayloadInt    uarr :rst) -> (AD_Int    uarr,rst)
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt8   _))), S.ArrayPayloadInt8   uarr :rst) -> (AD_Int8   uarr,rst)
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt16  _))), S.ArrayPayloadInt16  uarr :rst) -> (AD_Int16  uarr,rst)
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt32  _))), S.ArrayPayloadInt32  uarr :rst) -> (AD_Int32  uarr,rst)
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt64  _))), S.ArrayPayloadInt64  uarr :rst) -> (AD_Int64  uarr,rst)
+    (SingleTuple (NumScalarType (IntegralNumType (TypeWord   _))), S.ArrayPayloadWord   uarr :rst) -> (AD_Word   uarr,rst)
+    (SingleTuple (NumScalarType (IntegralNumType (TypeWord8  _))), S.ArrayPayloadWord8  uarr :rst) -> (AD_Word8  uarr,rst)
+    (SingleTuple (NumScalarType (IntegralNumType (TypeWord16 _))), S.ArrayPayloadWord16 uarr :rst) -> (AD_Word16 uarr,rst)
+    (SingleTuple (NumScalarType (IntegralNumType (TypeWord32 _))), S.ArrayPayloadWord32 uarr :rst) -> (AD_Word32 uarr,rst)
+    (SingleTuple (NumScalarType (IntegralNumType (TypeWord64 _))), S.ArrayPayloadWord64 uarr :rst) -> (AD_Word64 uarr,rst)
 
-    (SingleTuple (NumScalarType (IntegralNumType (TypeInt   _))), [S.ArrayPayloadInt   uarr]) -> AD_Int uarr
-    (SingleTuple (NumScalarType (IntegralNumType (TypeInt8  _))), [S.ArrayPayloadInt8  uarr]) -> AD_Int8 uarr
-    (SingleTuple (NumScalarType (IntegralNumType (TypeInt16 _))), [S.ArrayPayloadInt16 uarr]) -> AD_Int16 uarr
-    (SingleTuple (NumScalarType (IntegralNumType (TypeInt32 _))), [S.ArrayPayloadInt32 uarr]) -> AD_Int32 uarr
-    (SingleTuple (NumScalarType (IntegralNumType (TypeInt64 _))), [S.ArrayPayloadInt64 uarr]) -> AD_Int64 uarr
-    (SingleTuple (NumScalarType (IntegralNumType (TypeWord   _))), [S.ArrayPayloadWord   uarr]) -> AD_Word uarr
-    (SingleTuple (NumScalarType (IntegralNumType (TypeWord8  _))), [S.ArrayPayloadWord8  uarr]) -> AD_Word8 uarr
-    (SingleTuple (NumScalarType (IntegralNumType (TypeWord16 _))), [S.ArrayPayloadWord16 uarr]) -> AD_Word16 uarr
-    (SingleTuple (NumScalarType (IntegralNumType (TypeWord32 _))), [S.ArrayPayloadWord32 uarr]) -> AD_Word32 uarr
-    (SingleTuple (NumScalarType (IntegralNumType (TypeWord64 _))), [S.ArrayPayloadWord64 uarr]) -> AD_Word64 uarr
+    (SingleTuple (NonNumScalarType (TypeBool _)), S.ArrayPayloadBool uarr :rst) -> (AD_Bool uarr,rst)
+    (SingleTuple (NonNumScalarType (TypeChar _)), S.ArrayPayloadChar uarr :rst) -> (AD_Char uarr,rst)
 
-    (SingleTuple (NonNumScalarType (TypeBool _)), [S.ArrayPayloadBool uarr]) -> AD_Bool uarr
-    (SingleTuple (NonNumScalarType (TypeChar _)), [S.ArrayPayloadChar uarr]) -> AD_Char uarr
-
-    (SingleTuple (NumScalarType (FloatingNumType (TypeCFloat _))),  _)  -> error "not supported yet: array of CFloat"
-    (SingleTuple (NumScalarType (FloatingNumType (TypeCDouble _))), _)  -> error "not supported yet: array of CDouble"
+    (SingleTuple (NumScalarType (FloatingNumType (TypeCFloat   _))), _) -> error "not supported yet: array of CFloat"
+    (SingleTuple (NumScalarType (FloatingNumType (TypeCDouble  _))), _) -> error "not supported yet: array of CDouble"
     (SingleTuple (NumScalarType (IntegralNumType (TypeCShort   _))), _) -> error "not supported yet: array of CShort"
     (SingleTuple (NumScalarType (IntegralNumType (TypeCUShort  _))), _) -> error "not supported yet: array of CUShort"
-    (SingleTuple (NumScalarType (IntegralNumType (TypeCInt    _))), _)  -> error "not supported yet: array of CInt"
-    (SingleTuple (NumScalarType (IntegralNumType (TypeCUInt _))), _)    -> error "not supported yet: array of CUInt"
-    (SingleTuple (NumScalarType (IntegralNumType (TypeCLong _))), _)    -> error "not supported yet: array of CLong"
-    (SingleTuple (NumScalarType (IntegralNumType (TypeCULong _))), _)   -> error "not supported yet: array of CULong"
-    (SingleTuple (NumScalarType (IntegralNumType (TypeCLLong _))), _)   -> error "not supported yet: array of CLLong"
-    (SingleTuple (NumScalarType (IntegralNumType (TypeCULLong _))), _)  -> error "not supported yet: array of CULLong"
+    (SingleTuple (NumScalarType (IntegralNumType (TypeCInt     _))), _) -> error "not supported yet: array of CInt"
+    (SingleTuple (NumScalarType (IntegralNumType (TypeCUInt    _))), _) -> error "not supported yet: array of CUInt"
+    (SingleTuple (NumScalarType (IntegralNumType (TypeCLong    _))), _) -> error "not supported yet: array of CLong"
+    (SingleTuple (NumScalarType (IntegralNumType (TypeCULong   _))), _) -> error "not supported yet: array of CULong"
+    (SingleTuple (NumScalarType (IntegralNumType (TypeCLLong   _))), _) -> error "not supported yet: array of CLLong"
+    (SingleTuple (NumScalarType (IntegralNumType (TypeCULLong  _))), _) -> error "not supported yet: array of CULLong"
     (SingleTuple (NonNumScalarType (TypeCChar _)), _)  -> error "not supported yet: array of CChar"
     (SingleTuple (NonNumScalarType (TypeCSChar _)), _) -> error "not supported yet: array of CSChar"
     (SingleTuple (NonNumScalarType (TypeCUChar _)), _) -> error "not supported yet: array of CUChar"
 
     -- We could have a single catch-all cases here, but blowing it up
     -- like this allows meaningful feedback from -fwarn-incomplete-patterns:
-    (SingleTuple (NumScalarType (FloatingNumType (TypeFloat _))),  _) -> err2 "Float"
+    (SingleTuple (NumScalarType (FloatingNumType (TypeFloat  _))), _) -> err2 "Float"
     (SingleTuple (NumScalarType (FloatingNumType (TypeDouble _))), _) -> err2 "Double"
-    (SingleTuple (NumScalarType (IntegralNumType (TypeInt   _))), _) -> err2 "Int"
-    (SingleTuple (NumScalarType (IntegralNumType (TypeInt8  _))), _) -> err2 "Int8"
-    (SingleTuple (NumScalarType (IntegralNumType (TypeInt16 _))), _) -> err2 "Int16"
-    (SingleTuple (NumScalarType (IntegralNumType (TypeInt32 _))), _) -> err2 "Int32"
-    (SingleTuple (NumScalarType (IntegralNumType (TypeInt64 _))), _) -> err2 "Int64"
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt    _))), _) -> err2 "Int"
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt8   _))), _) -> err2 "Int8"
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt16  _))), _) -> err2 "Int16"
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt32  _))), _) -> err2 "Int32"
+    (SingleTuple (NumScalarType (IntegralNumType (TypeInt64  _))), _) -> err2 "Int64"
     (SingleTuple (NumScalarType (IntegralNumType (TypeWord   _))), _) -> err2 "Word"
     (SingleTuple (NumScalarType (IntegralNumType (TypeWord8  _))), _) -> err2 "Word8"
     (SingleTuple (NumScalarType (IntegralNumType (TypeWord16 _))), _) -> err2 "Word16"
@@ -915,7 +913,6 @@ packArray orig@(S.AccArray dims payloads) =
     (SingleTuple (NumScalarType (IntegralNumType (TypeWord64 _))), _) -> err2 "Word64"
     (SingleTuple (NonNumScalarType (TypeBool _)), _) -> err2 "Bool"
     (SingleTuple (NonNumScalarType (TypeChar _)), _) -> err2  "Char"
-  
 
 
 -- | Repackage a result in simplified form as an properly-typed result

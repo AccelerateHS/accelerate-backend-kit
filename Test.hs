@@ -314,6 +314,7 @@ p13f = unit $
 
 p14 = unit $ prj1_2 p13c_
 
+-- Hmm [2012.06.27] 
 p14b :: Acc (Scalar (Int8,Int16), Scalar Int32)
 p14b = let (a,b) = untup2 p13c_ in
        lift (unit a, unit b)
