@@ -366,7 +366,7 @@ instance Show a => NiceShow (Array DIM1 a) where
     P.map (padleft maxpad) ls 
    where 
          ls   = P.map show $ toList arr
-         maxpad = maximum$ P.map length ls
+         maxpad = P.maximum$ P.map length ls
 
 capends x = "| "++x++" |"
 
@@ -381,7 +381,7 @@ instance Show a => NiceShow (Array DIM2 a) where
             rowls
    where (Z :. rows :. cols) = arrayShape arr
          ls   = P.map show $ toList arr
-         maxpad = maximum$ P.map length ls
+         maxpad = P.maximum$ P.map length ls
          rowls = splitEvery cols ls
 
 
@@ -428,7 +428,7 @@ tests = [ testCase "use/fromList"   (print$ doc t0)
         , testGroup "run p9" (runBoth p9)
         , testGroup "run p9b" (runBoth p9b)
           
-        , testGroup "run p10" (runBoth p10)          
+        , testGroup "run p140" (runBoth p10)          
         , testGroup "run p10b" (runBoth p10b)
         , testGroup "run p10c" (runBoth p10c)
         , testGroup "run p11" $ hUnitTestToTests $ I.run p11 ~=? run p11

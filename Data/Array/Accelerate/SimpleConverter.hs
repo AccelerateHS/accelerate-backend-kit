@@ -1,4 +1,4 @@
-{-# LANGUAGE BangPatterns, GADTs, ScopedTypeVariables, CPP, TupleSections  #-}
+{-# LANGUAGE BangPatterns, GADTs, ScopedTypeVariables, CPP, TupleSections, PatternGuards #-}
 
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 -- {-# ANN module "HLint: ignore Eta reduce" #-}
@@ -9,12 +9,15 @@
 --   * Add type info to some language forms... 
 --   * Convert boundary
 
+-- Toggle this to try to match the source tuple format rather than the
+-- Snoc-list accelerate internal format.
 #define SURFACE_TUPLES
 
 module Data.Array.Accelerate.SimpleConverter 
        ( 
          convertToSimpleProg, 
-         unpackArray, packArray, repackAcc, repackAcc2
+         unpackArray, packArray, repackAcc2
+         -- repackAcc, 
        )
        where
 
@@ -832,9 +835,9 @@ unpackArray arrrepr = (ty, S.AccArray shp payloads,
 --   representation with the type information necessary to form a proper
 --   Accelerate array.
 packArray :: forall sh e . (Sug.Elt e, Sug.Shape sh) => S.AccArray -> Sug.Array sh e
-packArray orig@(S.AccArray dims payloads) = 
+packArray orig@(S.AccArray dims origPayloads) = 
   if length dims == length dims' -- Is the expected rank correct?
-  then Sug.Array shpVal (packit (typeOnlyErr "packArray1"::Sug.Array sh e) payloads)
+  then Sug.Array shpVal (packit (typeOnlyErr "packArray1"::Sug.Array sh e) (reverse origPayloads))
   else error$"SimpleConverter.packArray: array does not have the expected dimensions: "++show dims++" expected "++show dims'
  where 
   shpVal :: Sug.EltRepr sh = Sug.fromElt (Sug.listToShape dims :: sh)
@@ -847,7 +850,7 @@ packArray orig@(S.AccArray dims payloads) =
   -- This consumes from a list of payloads and returns what is left in addition to the return value.
   loop :: forall e . TupleType e -> [S.ArrayPayload] -> (ArrayData e, [S.ArrayPayload])
   loop tupTy payloads =
-   trace ("packArray: LOOPING "++show (length payloads)++" payload(s), tupty: "++show tupTy) $
+--   trace ("packArray: LOOPING "++show (length payloads)++" payload(s), tupty: "++show tupTy ++"\n   "++show payloads) $
    let err2 :: String -> (forall a . a)
        err2 msg = error$"packArray: given a SimpleAST.AccArray of the wrong type, expected "++msg
                   ++" received "++ show(length payloads) ++ " payloads: "++paystr
@@ -915,35 +918,35 @@ packArray orig@(S.AccArray dims payloads) =
     (SingleTuple (NonNumScalarType (TypeChar _)), _) -> err2  "Char"
 
 
--- | Repackage a result in simplified form as an properly-typed result
---   of an Acc computation, i.e. a real Accelerate array.
-repackAcc :: forall a . Sug.Arrays a 
-        => {- dummy -} Sug.Acc a -> S.AccArray -> a
-repackAcc dummy simpl = Sug.toArr converted
-  where
-   converted :: Sug.ArrRepr a = cvt rep simpl 
-   -- Pull some information out of thin air (from type domain to value domain):
-   rep :: Sug.ArraysR (Sug.ArrRepr a) = 
-     Sug.arrays (error"SimpleInterp.run: this should never be used" :: a)
+-- -- | Repackage a result in simplified form as an properly-typed result
+-- --   of an Acc computation, i.e. a real Accelerate array.
+-- repackAcc :: forall a . Sug.Arrays a 
+--         => {- dummy -} Sug.Acc a -> S.AccArray -> a
+-- repackAcc dummy simpl = Sug.toArr converted
+--   where
+--    converted :: Sug.ArrRepr a = cvt rep simpl 
+--    -- Pull some information out of thin air (from type domain to value domain):
+--    rep :: Sug.ArraysR (Sug.ArrRepr a) = 
+--      Sug.arrays (error"SimpleInterp.run: this should never be used" :: a)
 
-   cvt :: forall a' . Sug.ArraysR a' -> S.AccArray -> a'
-   cvt arrR simpl = 
-     case arrR of 
-       Sug.ArraysRunit       -> ()
-       -- We don't explicitly represent this extra capstone-unit in the AccArray:
-       Sug.ArraysRpair Sug.ArraysRunit r -> ((), cvt r simpl)
-       Sug.ArraysRpair r1 r2 -> let (a1,a2) = SA.splitComponent simpl in 
-                                (cvt r1 a1, cvt r2 a2)
-       Sug.ArraysRarray | (_ :: Sug.ArraysR (Sug.Array sh e)) <- arrR ->
-         (packArray simpl) :: (Sug.Array sh e)
+--    cvt :: forall a' . Sug.ArraysR a' -> S.AccArray -> a'
+--    cvt arrR simpl = 
+--      case arrR of 
+--        Sug.ArraysRunit       -> ()
+--        -- We don't explicitly represent this extra capstone-unit in the AccArray:
+--        Sug.ArraysRpair Sug.ArraysRunit r -> ((), cvt r simpl)
+--        Sug.ArraysRpair r1 r2 -> let (a1,a2) = SA.splitComponent simpl in 
+--                                 (cvt r1 a1, cvt r2 a2)
+--        Sug.ArraysRarray | (_ :: Sug.ArraysR (Sug.Array sh e)) <- arrR ->
+--          (packArray simpl) :: (Sug.Array sh e)
 
 -- | Repackage a result in simplified form as an properly-typed result
 --   of an Acc computation, i.e. a real Accelerate array.
 repackAcc2 :: forall a . Sug.Arrays a 
         => {- dummy -} Sug.Acc a -> [S.AccArray] -> a
 repackAcc2 dummy simpls = 
-      trace ("repackAcc2: ... "++show rep++", given "++show (length simpls)++" arrs:\n"
-              ++ unlines(L.map (("   "++) . show) simpls)) $ 
+      -- trace ("repackAcc2: ... "++show rep++", given "++show (length simpls)++" arrs:\n"
+      --         ++ unlines(L.map (("   "++) . show) simpls)) $ 
       Sug.toArr converted
   where
    converted :: Sug.ArrRepr a = fst$ cvt rep (reverse simpls)
