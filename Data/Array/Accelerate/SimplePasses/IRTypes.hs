@@ -131,13 +131,14 @@ convertExps expr =
     EPrimApp ty p es      -> S.EPrimApp ty p (L.map f es)
     ETupProject ind len ex -> S.ETupProject ind len (f ex)
     EIndex indls            -> S.EIndex (L.map f indls)
-    EIndexConsDynamic e1 e2 -> S.EIndexConsDynamic (f e1) (f e2)
-    EIndexHeadDynamic ex    -> S.EIndexHeadDynamic (f ex)
-    EIndexTailDynamic ex    -> S.EIndexTailDynamic (f ex)
     EIndexScalar (Vr _ v) ex -> S.EIndexScalar v (f ex)
     EShape (Vr _ v)          -> S.EShape v
     EIndexScalar ae _ -> error$"IRTypes.convertExps: expected EIndexScalar to have plain variable as array input, found: "++show ae
     EShape       ae   -> error$"IRTypes.convertExps: expected EShape" ++ " to have plain variable as array input, found: "++show ae
+
+    EIndexConsDynamic e1 e2 -> error "dynamic index manipulation not permitted in final SimpleAST"
+    EIndexHeadDynamic ex    -> error "dynamic index manipulation not permitted in final SimpleAST"
+    EIndexTailDynamic ex    -> error "dynamic index manipulation not permitted in final SimpleAST"
 
 convertFun1 :: S.Fun1 Exp -> S.Fun1 S.Exp
 convertFun1 (Lam1 bnd bod) = Lam1 bnd $ convertExps bod
@@ -237,11 +238,6 @@ reverseConvertExps expr =
     S.EPrimApp ty p es      -> EPrimApp ty p (L.map f es)
     S.ETupProject ind len ex -> ETupProject ind len (f ex)
     S.EIndex indls          -> EIndex (L.map f indls)
-    S.EIndexConsDynamic e1 e2 -> EIndexConsDynamic (f e1) (f e2)
-    S.EIndexHeadDynamic ex    -> EIndexHeadDynamic (f ex)
-    S.EIndexTailDynamic ex    -> EIndexTailDynamic (f ex)
-
-
 
 reverseConvertFun1 :: S.Fun1 S.Exp -> S.Fun1 Exp
 reverseConvertFun1 (S.Lam1 bnd bod) = Lam1 bnd $ reverseConvertExps bod

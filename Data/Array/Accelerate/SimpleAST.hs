@@ -168,35 +168,23 @@ data Fun2 a = Lam2 (Var,Type) (Var,Type) a
 
 -- | Scalar expressions
 data Exp = 
-    EVr Var -- Variable bound by a Let.
-  | ELet (Var,Type,Exp) Exp    -- ELet Var Type RHS Body
-  -- ELet is used for common subexpression elimination
+    EVr Var                   -- Variable bound by a Let.
+  | ELet (Var,Type,Exp) Exp   -- ELet Var Type RHS Body,
+                              -- used for common subexpression elimination
   | EPrimApp Type Prim [Exp]  -- *Any* primitive scalar function, including type of return value.
-  | ETuple [Exp]
-  | EConst Const
-   -- [2012.04.02] I can't presently compute the length from the TupleIdx.
-   --  | EPrj Int Int Exp  -- n m e : Project the nth field of an m-length tuple.
-  | ETupProject {  -- Project a consecutive series of fields from a tuple: 
-      indexFromRight :: Int , -- Where to start the slice.
-      len            :: Int , -- How many scalars to extract.
+  | ETuple [Exp]              -- Build a tuple.
+  | EConst Const              -- Constant.
+  | ETupProject {             -- Project a consecutive series of fields from a tuple.
+      indexFromRight :: Int , -- < where to start the slice
+      len            :: Int , -- < how many scalars to extract
       tupexpr        :: Exp }
-  | EIndex [Exp] -- An index into a multi-dimensional array:
---  | EIndexAny  
-  -- Accelerate allows run-time CONSING of indices:
-  -- (In a staged model like this shouldn't we be able to get rid of that at metaprogram eval time?)
-  | EIndexConsDynamic Exp Exp
-  | EIndexHeadDynamic Exp 
-  | EIndexTailDynamic Exp 
-   -- Conditional expression (non-strict in 2nd and 3rd argument):
-  | ECond Exp Exp Exp
-   -- Project a single scalar from an array [variable],
-   -- the array expression can not contain any free scalar variables:
-  | EIndexScalar Var Exp 
-   -- Get the shape of an Array [variable]:
-   -- The array expression can not contain any free scalar variables
-  | EShape Var
-   -- Number of elements of a shape
-  | EShapeSize Exp 
+  | EIndex [Exp]         -- An index into a multi-dimensional array.
+  | ECond Exp Exp Exp    -- Conditional expression (non-strict in 2nd and 3rd argument).
+  | EIndexScalar Var Exp -- Project a single scalar from an array [variable],
+                         -- the array expression can not contain any free scalar variables.
+  | EShape Var           -- Get the shape of an Array [variable];
+                         -- the array expression can not contain any free scalar variables.
+  | EShapeSize Exp       -- Number of elements of a shape
  deriving (Read,Show,Eq,Generic)
 
 

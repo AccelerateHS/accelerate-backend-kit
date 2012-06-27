@@ -292,19 +292,6 @@ evalE env expr =
     -- This is our chosen representation for index values:
     T.EIndex indls       -> let ls = map (valToConst . evalE env) indls in
                           ConstVal$ tuple ls
-    
---    EIndexAny          -> error "UNFINISHED: evalE of EIndexAny - not implemented"
-    T.EIndexConsDynamic e1 e2 -> case (evalE env e1, evalE env e2) of
-                                 (ConstVal c1, ConstVal c2) -> ConstVal (Tup (c1 : untuple c2))
-                                   
-    T.EIndexHeadDynamic ex    -> case evalE env ex of 
-                                 ConstVal (Tup ls) -> ConstVal (head ls)
-                                 ConstVal c        -> ConstVal c 
-                                 oth -> error$ "EIndexHeadDynamic, unhandled: "++ show oth
-    T.EIndexTailDynamic ex    -> case evalE env ex of 
-                                 ConstVal (Tup ls) -> ConstVal (Tup (tail ls))
-                                 oth -> error$ "EIndexTailDynamic, unhandled: "++ show oth
-
 
 --------------------------------------------------------------------------------
 
