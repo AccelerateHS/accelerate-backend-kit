@@ -176,7 +176,10 @@ data Exp =
   | EConst Const
    -- [2012.04.02] I can't presently compute the length from the TupleIdx.
    --  | EPrj Int Int Exp  -- n m e : Project the nth field of an m-length tuple.
-  | ETupProjectFromRight Int Exp  -- Project the nth field FROM THE RIGHT end of the tuple.  
+  | ETupProject {  -- Project a consecutive series of fields from a tuple: 
+      indexFromRight :: Int , -- Where to start the slice.
+      len            :: Int , -- How many scalars to extract.
+      tupexpr        :: Exp }
   | EIndex [Exp] -- An index into a multi-dimensional array:
 --  | EIndexAny  
   -- Accelerate allows run-time CONSING of indices:

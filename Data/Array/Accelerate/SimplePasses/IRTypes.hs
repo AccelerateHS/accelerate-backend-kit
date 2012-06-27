@@ -96,7 +96,7 @@ data Exp =
   | EPrimApp Type Prim [Exp]
   | ETuple [Exp]
   | EConst Const
-  | ETupProjectFromRight Int Exp
+  | ETupProject Int Int Exp
   | ECond Exp Exp Exp
   | EIndexScalar (AExp Type) Exp 
   | EShape (AExp Type)
@@ -129,7 +129,7 @@ convertExps expr =
     ECond e1 e2 e3        -> S.ECond (f e1) (f e2) (f e3)
     EShapeSize ex         -> S.EShapeSize (f ex)         
     EPrimApp ty p es      -> S.EPrimApp ty p (L.map f es)
-    ETupProjectFromRight ind ex -> S.ETupProjectFromRight ind (f ex)
+    ETupProject ind len ex -> S.ETupProject ind len (f ex)
     EIndex indls            -> S.EIndex (L.map f indls)
     EIndexConsDynamic e1 e2 -> S.EIndexConsDynamic (f e1) (f e2)
     EIndexHeadDynamic ex    -> S.EIndexHeadDynamic (f ex)
@@ -235,7 +235,7 @@ reverseConvertExps expr =
     S.EShape v              -> EShape (Vr dt v)
     S.EShapeSize ex         -> EShapeSize (f ex)         
     S.EPrimApp ty p es      -> EPrimApp ty p (L.map f es)
-    S.ETupProjectFromRight ind ex -> ETupProjectFromRight ind (f ex)
+    S.ETupProject ind len ex -> ETupProject ind len (f ex)
     S.EIndex indls          -> EIndex (L.map f indls)
     S.EIndexConsDynamic e1 e2 -> EIndexConsDynamic (f e1) (f e2)
     S.EIndexHeadDynamic ex    -> EIndexHeadDynamic (f ex)

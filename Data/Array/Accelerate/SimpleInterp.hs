@@ -256,7 +256,9 @@ evalE :: Env -> T.Exp -> Value
 evalE env expr = 
   case expr of 
     T.EVr  v             -> envLookup env v
-    T.ELet (vr,_ty,lhs) bod -> evalE (M.insert vr (evalE env lhs) env) bod
+    T.ELet (vr,_ty,rhs) bod -> trace ("  ELet: bound "++show vr++" to "++show rhs') $
+                               evalE (M.insert vr rhs' env) bod
+                               where rhs' = (evalE env rhs)
     T.ETuple es          -> ConstVal$ Tup $ map (unConstVal . evalE env) es
     T.EConst c           -> ConstVal c
 
@@ -276,13 +278,16 @@ evalE env expr =
 
     T.EPrimApp ty p es  -> evalPrim ty p (map (evalE env) es)
 
-    T.ETupProjectFromRight ind ex -> 
-      case (ind, evalE env ex) of 
-        (_,ConstVal (Tup ls)) -> ConstVal$ reverse ls !! ind
-        (ind,TupVal ls)       -> reverse ls !! ind
-        (0,ConstVal scalar)   -> ConstVal$ scalar 
-        (ind,const) -> error$ "ETupProjectFromRight: could not index position "
+    T.ETupProject ind len ex -> 
+      tracePrint ("  ETupProject: "++show ind++" "++show len++": ") $
+      case (ind, len, evalE env ex) of 
+        (_,_,ConstVal (Tup ls)) -> ConstVal$ tuple$  slice ls 
+        -- TODO -- check if this makes sense ... how can we run into this kind of tuple?:
+        (ind,_,TupVal ls)       -> tupleVal$ slice ls
+        (0,1,ConstVal scalar)   -> ConstVal$ scalar 
+        (_,_,const) -> error$ "ETupProjectFromRight: could not index "++show len++" elements at position "
                        ++ show ind ++ " in tuple " ++ show const
+      where slice ls = reverse $ take len $ drop ind $ reverse ls
 
     -- This is our chosen representation for index values:
     T.EIndex indls       -> let ls = map (valToConst . evalE env) indls in

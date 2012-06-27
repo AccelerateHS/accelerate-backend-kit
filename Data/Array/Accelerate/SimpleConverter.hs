@@ -341,12 +341,12 @@ convertExp e =
                  convertConst (Sug.eltType (typeOnlyErr "convertExp" ::ans)) c
 
     -- NOTE: The incoming AST indexes tuples FROM THE RIGHT:
-    Prj idx ex -> 
-                 -- If I could get access to the IsTuple dict I could do something here:
-                 -- The problem is the type function EltRepr....
-                 let n = convertTupleIdx idx in 
---                 T.EPrj n m <$> convertExp e
-                 T.ETupProjectFromRight n <$> convertExp ex
+    Prj idx ex -> let n = convertTupleIdx idx 
+                      ty = getExpType e
+                      len = tupleNumLeaves ty
+                  in 
+                   trace ("TUPLE NUM LEAVES: "++show ty++" "++show len) $
+                   T.ETupProject n len <$> convertExp ex
 
     -- This would seem to force indices to be LISTS at runtime??
     IndexNil       -> return$ T.EIndex []
@@ -459,6 +459,11 @@ convertTuple (SnocTup tup e) =
        tup' <- convertTuple tup
        return (T.ETuple [tup', e'])
 #endif
+
+
+tupleNumLeaves :: S.Type -> Int
+tupleNumLeaves (S.TTuple ls) = L.sum $ L.map tupleNumLeaves ls
+tupleNumLeaves _             = 1
 
 --------------------------------------------------------------------------------
 -- Convert types
