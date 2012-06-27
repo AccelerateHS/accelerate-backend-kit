@@ -3,8 +3,9 @@
 
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
--- | We don't go straight from Data.Array.Accelerate.AST to the SimpleAST.
---   This file contains intermediate representation(s).
+-- | We don't go straight from Data.Array.Accelerate.AST to the
+--   SimpleAST.  This file contains intermediate representation(s)
+--   used by other passes found in this directory.
 
 module Data.Array.Accelerate.SimplePasses.IRTypes
    (

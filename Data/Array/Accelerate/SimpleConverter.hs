@@ -44,7 +44,10 @@ import qualified Data.Array.Accelerate.SimpleAST   as S
 -- Temporary AST before we get to the final one:
 import qualified Data.Array.Accelerate.SimplePasses.IRTypes as T
 
-import Data.Array.Accelerate.SimplePasses.Lowering (gatherLets, removeArrayTuple, liftComplexRands)
+-- Lowering passes:
+import Data.Array.Accelerate.SimplePasses.LiftLets         (gatherLets) 
+import Data.Array.Accelerate.SimplePasses.LiftComplexRands (liftComplexRands)
+import Data.Array.Accelerate.SimplePasses.RemoveArrayTuple (removeArrayTuple)
 
 import Debug.Trace(trace)
 tracePrint s x = trace (s ++ show x) x
@@ -957,7 +960,6 @@ instance Show (Sug.ArraysR a') where
     loop arrR =  
      case arrR of 
        Sug.ArraysRunit       -> "()"
-
 --       Sug.ArraysRpair Sug.ArraysRunit r -> "(() "++loop r ++")"
        Sug.ArraysRpair r1 r2 -> "("++ loop r1 ++", "++ loop r2++")"
        Sug.ArraysRarray -> "Array"
