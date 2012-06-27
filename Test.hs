@@ -121,6 +121,13 @@ p2h :: Acc (Array DIM3 (Int,Int))
 p2h = replicate (constant$ Z :. All :. (2::Int) :. All) p2g
 
 
+-- There isn't really much support for non-Int indices... I think we
+-- should force them to be Ints:
+--     No instance for (Shape (Z :. Word32))
+-- p2i :: Acc (Array (Z :. Word32) Int8)
+-- p2i = replicate (constant (Z :. (4::Word32))) (unit 44)
+-- p2i = use $ fromList (Z :. (4::Word32)) [1..4]
+
 --------------------------------------------------------------------------------
 
 p3 :: Acc (Array DIM3 Int32)

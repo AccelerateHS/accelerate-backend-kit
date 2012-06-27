@@ -48,6 +48,7 @@ import qualified Data.Array.Accelerate.SimplePasses.IRTypes as T
 import Data.Array.Accelerate.SimplePasses.LiftLets         (gatherLets) 
 import Data.Array.Accelerate.SimplePasses.LiftComplexRands (liftComplexRands)
 import Data.Array.Accelerate.SimplePasses.RemoveArrayTuple (removeArrayTuple)
+import Data.Array.Accelerate.SimplePasses.StaticTuples     (staticTuples)
 
 import Debug.Trace(trace)
 tracePrint s x = trace (s ++ show x) x
@@ -62,9 +63,11 @@ dbg = True
 --   into something very simple for external consumption.
 convertToSimpleProg :: Sug.Arrays a => Sug.Acc a -> S.Prog
 convertToSimpleProg prog = 
-  runPass "removeArrayTuple" removeArrayTuple $ 
+  runPass "removeArrayTuple" removeArrayTuple $     
   runPass "gatherLets"       gatherLets $  
   runPass "liftComplexRands" liftComplexRands $  
+  
+  runPass "staticTuples"     staticTuples     $   
   runPass "initalConversion" (runEnvM . convertAcc . Sug.convertAcc) $ 
   prog
 

@@ -24,7 +24,8 @@ module Data.Array.Accelerate.SimpleAST
      -- * Helper routines and predicates:
      var, primArity, constToInteger, fromConst, 
      isIntType, isFloatType, isNumType, 
-     isIntConst, isFloatConst, isNumConst
+     isIntConst, isFloatConst, isNumConst,
+     constToType
     )   
  where
 
@@ -501,6 +502,17 @@ fromConst c =
     B    _  -> error "fromConst: cannot convert TBool Const to a Num"
     Tup  _  -> error "fromConst: cannot convert tuple Const to a Num"
     
+constToType :: Const -> Type
+constToType c = 
+  case c of {
+    I _ ->TInt;       I8  _ ->TInt8;  I16 _  ->TInt16;  I32 _ ->TInt32;  I64 _ ->TInt64; 
+    W _ ->TWord;      W8  _ ->TWord8; W16 _  ->TWord16; W32 _ ->TWord32; W64 _ ->TWord64;
+    CS _ ->TCShort;   CI  _ ->TCInt;  CL  _  ->TCLong;  CLL _ ->TCLLong; 
+    CUS _ ->TCUShort; CUI _ ->TCUInt; CUL _  ->TCULong; CULL _ ->TCULLong;
+    CF _ -> TCFloat;  CD _ -> TCDouble; CC _ -> TCChar; CSC _ -> TCSChar; CUC _ -> TCUChar;
+    F _ -> TFloat; D _ -> TDouble; C _ -> TChar; B _ -> TBool;
+    Tup ls -> TTuple $ map constToType ls
+  }
 
 
 --------------------------------------------------------------------------------

@@ -11,9 +11,7 @@
 -- UNFINISHED UNFINISHED UNFINISHED UNFINISHED UNFINISHED UNFINISHED UNFINISHED 
 
 module Data.Array.Accelerate.SimplePasses.StaticTuples
-       (         
-         -- staticTuples -- Unfinished
-       )
+       ( staticTuples )
        where 
 
 -- standard libraries
@@ -30,6 +28,11 @@ import Data.Array.Accelerate.SimplePasses.IRTypes as T
 import Debug.Trace(trace)
 tracePrint s x = trace (s ++ show x) x
 
+-- Shorthands:
+type TAExp = T.AExp S.Type
+type TEnv  = M.Map S.Var S.Type
+
+--------------------------------------------------------------------------------
 
 -- | This removes dynamic cons/head/tail on indices.  Indices are
 --   plain tuples after this pass.
@@ -110,37 +113,90 @@ staticTuples ae = aexp M.empty ae
    lam2 tenv (S.Lam2 (v1,ty1) (v2,ty2) bod) = S.Lam2 (v1,ty1) (v2,ty2) (exp tenv' bod)
      where tenv' = M.insert v1 ty1 $ M.insert v2 ty2 tenv
 
-   exp :: M.Map S.Var S.Type -> T.Exp -> T.Exp 
+   exp :: TEnv -> T.Exp -> T.Exp 
    exp tenv e = 
      case e of  
-       -- T.EIndex els -> error "staticTupleIndices: EIndex is slated to be removed"
 
-       -- -- TODO: Eliminate
-       -- T.EIndexConsDynamic e1 e2 -> 
-       --   -- This is potentially inefficient.
-       --   error$"IndexCons - finish me"
+       T.EIndexConsDynamic e1 e2 -> 
+         error$"IndexCons - finish me"
          
-       -- T.EIndexHeadDynamic e -> error "unimplemented: eliminate indexheaddynamic"
-       -- T.EIndexTailDynamic e -> error "unimplemented: eliminate indextaildynamic"
+       T.EIndexHeadDynamic e -> 
+         let e'  = exp tenv e
+             ty  = retrieveTy tenv e'
+             len = tupleNumLeaves ty
+         in mkProject (len-1) 1 e' ty
 
-       
+       T.EIndexTailDynamic e -> 
+         let e'  = exp tenv e
+             ty  = retrieveTy tenv e'
+             len = tupleNumLeaves ty
+         in mkProject 0 (len-1) e' ty
+         
        -- The rest is BOILERPLATE:
        ------------------------------------------------------------
-       T.EVr vr -> T.EVr vr       
-       T.ELet (vr,ty,rhs) bod -> T.ELet (vr,ty, exp tenv' rhs) (exp tenv bod)
-         where tenv' = M.insert vr ty tenv
-       T.EPrimApp ty p args -> T.EPrimApp ty p (L.map (exp tenv) args)
-       T.ECond e1 e2 e3 -> T.ECond (exp tenv e1) (exp tenv e2) (exp tenv e3)
-       T.EIndexScalar ae ex -> T.EIndexScalar (aexp tenv ae) (exp tenv ex)
-       T.EShapeSize ex -> T.EShapeSize (exp  tenv ex)
-       T.EShape     ae -> T.EShape     (aexp tenv ae)
+       T.EVr vr               -> T.EVr vr       
+       T.ELet (vr,ty,rhs) bod -> T.ELet (vr,ty, exp tenv rhs) (exp tenv' bod)
+                                 where tenv' = M.insert vr ty tenv
+       T.EPrimApp ty p args   -> T.EPrimApp ty p (L.map (exp tenv) args)
+       T.ECond e1 e2 e3       -> T.ECond (exp tenv e1) (exp tenv e2) (exp tenv e3)
+       T.EIndexScalar ae ex   -> T.EIndexScalar (aexp tenv ae) (exp tenv ex)
+       T.EShapeSize ex        -> T.EShapeSize (exp  tenv ex)
+       T.EShape     ae        -> T.EShape     (aexp tenv ae)
 
        T.EConst c  -> T.EConst c 
        T.ETuple ls -> T.ETuple (L.map (exp tenv) ls)
-       T.ETupProjectFromRight ind ex -> T.ETupProjectFromRight ind (exp tenv ex)
+       T.ETupProject ind len ex -> mkProject ind len (exp tenv ex) (retrieveTy tenv ex)
        
        T.EIndex els -> T.EIndex (L.map (exp tenv) els)
-       T.EIndexConsDynamic e1 e2 -> T.EIndexConsDynamic (exp tenv e1) (exp tenv e2)
-       T.EIndexHeadDynamic ex -> T.EIndexHeadDynamic (exp tenv ex)
-       T.EIndexTailDynamic ex -> T.EIndexTailDynamic (exp tenv ex)
+       
+       -- T.EIndexConsDynamic e1 e2 -> T.EIndexConsDynamic (exp tenv e1) (exp tenv e2)
+       -- T.EIndexHeadDynamic ex -> T.EIndexHeadDynamic (exp tenv ex)
+       -- T.EIndexTailDynamic ex -> T.EIndexTailDynamic (exp tenv ex)
 
+
+--------------------------------------------------------------------------------
+-- Helper functions:
+       
+tupleNumLeaves :: S.Type -> Int
+tupleNumLeaves (S.TTuple ls) = L.sum $ L.map tupleNumLeaves ls
+tupleNumLeaves _             = 1
+
+-- TODO: move into SimpleAST.hs perhaps:
+retrieveTy :: TEnv -> T.Exp -> S.Type
+retrieveTy tenv e =
+  tracePrint (" * Retrieving type for "++show e++" in tenv "++show (M.keys tenv) ++ " --> ") $
+  case e of  
+    T.EVr vr -> case M.lookup vr tenv of 
+                  Nothing  -> error$"retrieveTy: no binding in type environment for var "++show vr++" in tenv "++show (M.keys tenv)
+                  Just x   -> x
+    T.EConst c             -> constToType c
+    T.EPrimApp ty p args   -> ty    
+    T.ELet (vr,ty,rhs) bod -> retrieveTy (M.insert vr ty tenv) bod
+    T.ECond _e1 e2 _e3     -> retrieveTy tenv e2
+    T.EIndexScalar ae ex   -> let TArray _ elt = getAnnot ae in elt
+    T.EShapeSize ex        -> TInt
+    T.EShape  ae           -> let TArray dim _ = getAnnot ae
+                              in mkTupleTy$ take dim $ repeat TInt
+    T.EIndex ls            -> mkTupleTy$ L.map (retrieveTy tenv) ls
+    T.ETuple ls            -> mkTupleTy$ L.map (retrieveTy tenv) ls
+    
+    T.ETupProject ind len ex -> 
+      case (ind,len,retrieveTy tenv ex) of 
+        (_,_,S.TTuple ls) -> mkTupleTy$ reverse$ take len $ drop ind $ reverse ls
+        (0,1,oth)         -> oth
+        _                 -> error "retrieveTy: mismatch between indices and tuple type"
+
+    T.EIndexConsDynamic e1 e2 -> error "EIndexConsDynamic should have been desugared before calling retrieveTy"
+    T.EIndexHeadDynamic ex    -> error "EIndexHeadDynamic should have been desugared before calling retrieveTy"
+    T.EIndexTailDynamic ex    -> error "EIndexTailDynamic should have been desugared before calling retrieveTy"
+
+-- Create an ETupProject but avoid creating spurious ones.
+mkProject :: Int -> Int -> T.Exp -> Type -> T.Exp
+mkProject ind len ex (S.TTuple ty) = T.ETupProject ind len ex
+mkProject 0 1 ex oth = ex  -- Eliminate silly ETupProject.
+mkProject ind len ex ty = error$"internal error: should not have this project on non-tuple type: "++show ty
+
+mkTupleTy [one] = one
+mkTupleTy ls    = S.TTuple ls
+  
+  
