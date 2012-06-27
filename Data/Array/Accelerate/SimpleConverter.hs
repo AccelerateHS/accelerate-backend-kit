@@ -16,8 +16,7 @@
 module Data.Array.Accelerate.SimpleConverter 
        ( 
          convertToSimpleProg, 
-         unpackArray, packArray, repackAcc2
-         -- repackAcc, 
+         unpackArray, packArray, repackAcc
        )
        where
 
@@ -918,33 +917,10 @@ packArray orig@(S.AccArray dims origPayloads) =
     (SingleTuple (NonNumScalarType (TypeChar _)), _) -> err2  "Char"
 
 
--- -- | Repackage a result in simplified form as an properly-typed result
--- --   of an Acc computation, i.e. a real Accelerate array.
--- repackAcc :: forall a . Sug.Arrays a 
---         => {- dummy -} Sug.Acc a -> S.AccArray -> a
--- repackAcc dummy simpl = Sug.toArr converted
---   where
---    converted :: Sug.ArrRepr a = cvt rep simpl 
---    -- Pull some information out of thin air (from type domain to value domain):
---    rep :: Sug.ArraysR (Sug.ArrRepr a) = 
---      Sug.arrays (error"SimpleInterp.run: this should never be used" :: a)
-
---    cvt :: forall a' . Sug.ArraysR a' -> S.AccArray -> a'
---    cvt arrR simpl = 
---      case arrR of 
---        Sug.ArraysRunit       -> ()
---        -- We don't explicitly represent this extra capstone-unit in the AccArray:
---        Sug.ArraysRpair Sug.ArraysRunit r -> ((), cvt r simpl)
---        Sug.ArraysRpair r1 r2 -> let (a1,a2) = SA.splitComponent simpl in 
---                                 (cvt r1 a1, cvt r2 a2)
---        Sug.ArraysRarray | (_ :: Sug.ArraysR (Sug.Array sh e)) <- arrR ->
---          (packArray simpl) :: (Sug.Array sh e)
-
 -- | Repackage a result in simplified form as an properly-typed result
 --   of an Acc computation, i.e. a real Accelerate array.
-repackAcc2 :: forall a . Sug.Arrays a 
-        => {- dummy -} Sug.Acc a -> [S.AccArray] -> a
-repackAcc2 dummy simpls = 
+repackAcc :: forall a . Sug.Arrays a => Sug.Acc a -> [S.AccArray] -> a
+repackAcc dummy simpls = 
       -- trace ("repackAcc2: ... "++show rep++", given "++show (length simpls)++" arrs:\n"
       --         ++ unlines(L.map (("   "++) . show) simpls)) $ 
       Sug.toArr converted

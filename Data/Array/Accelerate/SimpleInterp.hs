@@ -16,7 +16,7 @@ import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import Data.Array.Accelerate.SimpleAST             as S
 import Data.Array.Accelerate.SimpleAST             as T
 import Data.Array.Accelerate.SimpleArray           as SA
-import Data.Array.Accelerate.SimpleConverter (convertToSimpleProg, packArray, repackAcc2)
+import Data.Array.Accelerate.SimpleConverter (convertToSimpleProg, packArray, repackAcc)
 import qualified Data.Map as M
 import qualified Data.List as L
 
@@ -33,7 +33,7 @@ tracePrint s x = trace (s++show x) x
 run :: forall a . Sug.Arrays a => Acc a -> a
 run acc = 
           trace ("[dbg] Repacking AccArray(s): "++show arrays) $ 
-          repackAcc2 acc arrays
+          repackAcc acc arrays
  where arrays = evalProg M.empty (convertToSimpleProg acc)
 
 --------------------------------------------------------------------------------
