@@ -447,7 +447,7 @@ tests = [ testCase "use/fromList"   (print$ doc t0)
         , testGroup "run p14b" $ hUnitTestToTests $ I.run p14b ~=? run p14b        
         , testGroup "run p14c" $ hUnitTestToTests $ I.run p14c ~=? run p14c        
         , testGroup "run p14d" $ hUnitTestToTests $ I.run p14d ~=? run p14d        
---        , testGroup "run p14e" $ hUnitTestToTests $ I.run p14e ~=? run p14e  -- Won't work until we fix tuple-type ambiguity.
+        , testGroup "run p14e" $ hUnitTestToTests $ I.run p14e ~=? run p14e  -- Won't work until we fix tuple-type ambiguity.
         ]
  where
   runBoth p = (hUnitTestToTests$ Sug.toList (I.run p) ~=? Sug.toList (run p))
