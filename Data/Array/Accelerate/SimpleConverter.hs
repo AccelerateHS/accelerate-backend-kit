@@ -957,6 +957,7 @@ instance Show (Sug.ArraysR a') where
     loop arrR =  
      case arrR of 
        Sug.ArraysRunit       -> "()"
+
 --       Sug.ArraysRpair Sug.ArraysRunit r -> "(() "++loop r ++")"
        Sug.ArraysRpair r1 r2 -> "("++ loop r1 ++", "++ loop r2++")"
        Sug.ArraysRarray -> "Array"

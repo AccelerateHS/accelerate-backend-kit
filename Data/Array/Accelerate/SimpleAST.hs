@@ -94,7 +94,7 @@ var :: String -> Var
 --   thus be evaluated in order.
 -- 
 --   Note that because there is no recursion, dependencies form a DAG.
-data Prog = Letrec { 
+data Prog = Prog { 
   progBinds   :: [(Var,Type,Either Exp AExp)],
   progResults :: [Var],
   progType    :: Type -- Final, pre-flattened type, can be an array-tuple.

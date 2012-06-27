@@ -13,8 +13,7 @@
 module Data.Array.Accelerate.SimplePasses.Lowering 
        (
          liftComplexRands,
-         liftLets, 
-         gatherLets,
+         liftLets, gatherLets,
          removeArrayTuple
          
          -- staticTuples -- Unfinished
@@ -226,6 +225,9 @@ liftLets x =
 
 type TAExp = T.AExp S.Type
 
+-- | This is an alternative version of `liftLets` that extracts out
+--   the let bindings but does not reinsert them as outer Let
+--   expressions.  Rather, it returns the lifted bindings directly.
 gatherLets :: TAExp -> ([(S.Var, S.Type, TAExp)], TAExp)
 gatherLets prog = (reverse binds, prog')
  where 
@@ -339,9 +341,9 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
              let finalbinds = mapBindings convertLeft (newbinds ++ newbinds2)
                  unVar (S.Vr v) = v
                  unVar x = error$ "removeArrayTuple: expecting the final result expressions to be varrefs at this point, instead received: "++show x
-             return $ S.Letrec finalbinds
-                               (L.map unVar $ flattenTT newbod)
-                               (getAnnot bod)
+             return $ S.Prog finalbinds
+                             (L.map unVar $ flattenTT newbod)
+                             (getAnnot bod)
  
    -- Called on already processed expressions:
    flattenTT :: TempTree S.AExp -> [S.AExp]
