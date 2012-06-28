@@ -123,16 +123,17 @@ convertExps expr =
   let f = convertExps in
   case expr of 
     EVr  v                -> S.EVr  v
-    ELet (vr,_ty,lhs) bod -> S.ELet (vr, _ty, f lhs) (f bod)
-    ETuple es             -> S.ETuple (L.map f es)
+--    ELet (vr,_ty,lhs) bod -> S.ELet (vr, _ty, f lhs) (f bod)
+--    ETuple es             -> S.ETuple (L.map f es)
     EConst c              -> S.EConst c              
-    ECond e1 e2 e3        -> S.ECond (f e1) (f e2) (f e3)
-    EShapeSize ex         -> S.EShapeSize (f ex)         
+--    ECond e1 e2 e3        -> S.ECond (f e1) (f e2) (f e3)
+    ECond (EVr vr) e2 e3        -> S.ECond vr (f e2) (f e3)    
+--    EShapeSize ex         -> S.EShapeSize (f ex)         
     EPrimApp ty p es      -> S.EPrimApp ty p (L.map f es)
-    ETupProject ind len ex -> S.ETupProject ind len (f ex)
-    EIndex indls            -> S.EIndex (L.map f indls)
-    EIndexScalar (Vr _ v) ex -> S.EIndexScalar v (f ex)
-    EShape (Vr _ v)          -> S.EShape v
+--    ETupProject ind len ex -> S.ETupProject ind len (f ex)
+--    EIndex indls            -> S.EIndex (L.map f indls)
+--    EIndexScalar (Vr _ v) ex -> S.EIndexScalar v (f ex)
+--    EShape (Vr _ v)          -> S.EShape v
     EIndexScalar ae _ -> error$"IRTypes.convertExps: expected EIndexScalar to have plain variable as array input, found: "++show ae
     EShape       ae   -> error$"IRTypes.convertExps: expected EShape" ++ " to have plain variable as array input, found: "++show ae
 
@@ -150,35 +151,38 @@ convertFun2 (Lam2 bnd1 bnd2 bod) = Lam2 bnd1 bnd2 $ convertExps bod
 --   final SimpleAST type.
 convertAExps :: AExp Type -> S.AExp
 convertAExps aex =
-  let cE  = convertExps 
-      cF  = convertFun1
-      cF2 = convertFun2
+  let -- cE  = convertExps 
+      cB  = error$ "UNFINISHED - update convert functions"
+      cF  = error$ "UNFINISHED - update convert functions"
+      cF2 = error$ "UNFINISHED - update convert functions"
+--      cF  = convertFun1
+--      cF2 = convertFun2
       f   = convertAExps
   in
   case aex of 
      Vr _ v                      -> S.Vr v
      Let _ (v,ty,lhs) bod        -> S.Let (v,ty, f lhs) (f bod)
-     Cond _ a (Vr _ v1) (Vr _ v2) -> S.Cond (cE a) v1 v2
-     Unit _ ex                   -> S.Unit (cE ex)
+     Cond _ a (Vr _ v1) (Vr _ v2) -> S.Cond (cB a) v1 v2
+     Unit _ ex                   -> S.Unit (cB ex)
      Use ty arr                  -> S.Use ty arr
-     Generate aty ex fn          -> S.Generate aty (cE ex) (cF fn)
+     Generate aty ex fn          -> S.Generate aty (cB ex) (cF fn)
      ZipWith _ fn (Vr _ v1) (Vr _ v2) -> S.ZipWith (cF2 fn) v1 v2 
      Map     _ fn (Vr _ v)       -> S.Map     (cF fn)  v
-     Replicate aty slice ex (Vr _ v) -> S.Replicate aty slice (cE ex) v
-     Index     _ slc (Vr _ v)    ex    -> S.Index slc v (cE ex)
-     Fold  _ fn einit (Vr _ v)         -> S.Fold     (cF2 fn) (cE einit) v
+     Replicate aty slice ex (Vr _ v) -> S.Replicate aty slice (cB ex) v
+     Index     _ slc (Vr _ v)    ex    -> S.Index slc v (cB ex)
+     Fold  _ fn einit (Vr _ v)         -> S.Fold     (cF2 fn) (cB einit) v
      Fold1 _ fn       (Vr _ v)         -> S.Fold1    (cF2 fn)            v
-     FoldSeg _ fn einit (Vr _ v) (Vr _ v2) -> S.FoldSeg  (cF2 fn) (cE einit) v v2
+     FoldSeg _ fn einit (Vr _ v) (Vr _ v2) -> S.FoldSeg  (cF2 fn) (cB einit) v v2
      Fold1Seg _ fn      (Vr _ v) (Vr _ v2) -> S.Fold1Seg (cF2 fn)            v v2
-     Scanl    _ fn einit (Vr _ v)      -> S.Scanl    (cF2 fn) (cE einit) v
-     Scanl'   _ fn einit (Vr _ v)      -> S.Scanl'   (cF2 fn) (cE einit) v
+     Scanl    _ fn einit (Vr _ v)      -> S.Scanl    (cF2 fn) (cB einit) v
+     Scanl'   _ fn einit (Vr _ v)      -> S.Scanl'   (cF2 fn) (cB einit) v
      Scanl1   _ fn       (Vr _ v)      -> S.Scanl1   (cF2 fn)            v
-     Scanr    _ fn einit (Vr _ v)      -> S.Scanr    (cF2 fn) (cE einit) v
-     Scanr'   _ fn einit (Vr _ v)      -> S.Scanr'   (cF2 fn) (cE einit) v
+     Scanr    _ fn einit (Vr _ v)      -> S.Scanr    (cF2 fn) (cB einit) v
+     Scanr'   _ fn einit (Vr _ v)      -> S.Scanr'   (cF2 fn) (cB einit) v
      Scanr1   _ fn       (Vr _ v)      -> S.Scanr1   (cF2 fn)            v
      Permute _ fn2 (Vr _ v1) fn1 (Vr _ v2)   -> S.Permute (cF2 fn2) v1 (cF fn1) v2
-     Backpermute _ ex fn  (Vr _ v)     -> S.Backpermute (cE ex) (cF fn) v
-     Reshape     _ ex     (Vr _ v)     -> S.Reshape     (cE ex)         v
+     Backpermute _ ex fn  (Vr _ v)     -> S.Backpermute (cB ex) (cF fn) v
+     Reshape     _ ex     (Vr _ v)     -> S.Reshape     (cB ex)         v
      Stencil   _ fn bndry (Vr _ v)     -> S.Stencil     (cF fn) bndry   v 
      Stencil2  _ fn bnd1 (Vr _ v1) bnd2 (Vr _ v2) -> S.Stencil2 (cF2 fn) bnd1 v1 bnd2 v2
      Apply _ _ _             -> error$"convertAExps: input doesn't meet constraints, Apply encountered."
@@ -228,16 +232,16 @@ reverseConvertExps expr =
   in
   case expr of 
     S.EVr  v                -> EVr  v
-    S.ELet (vr,_ty,lhs) bod -> ELet (vr, _ty, f lhs) (f bod)
-    S.ETuple es             -> ETuple (L.map f es)
+--    S.ELet (vr,_ty,lhs) bod -> ELet (vr, _ty, f lhs) (f bod)
+--    S.ETuple es             -> ETuple (L.map f es)
     S.EConst c              -> EConst c              
-    S.ECond e1 e2 e3        -> ECond (f e1) (f e2) (f e3)
-    S.EIndexScalar v ex     -> EIndexScalar (Vr dt v) (f ex)
-    S.EShape v              -> EShape (Vr dt v)
-    S.EShapeSize ex         -> EShapeSize (f ex)         
+    S.ECond vr e2 e3        -> ECond (EVr vr) (f e2) (f e3)
+    S.EIndexScalar v exs    -> EIndexScalar (Vr dt v) (ETuple $ L.map f exs)
+--    S.EShape v              -> EShape (Vr dt v)
+--    S.EShapeSize ex         -> EShapeSize (f ex)         
     S.EPrimApp ty p es      -> EPrimApp ty p (L.map f es)
-    S.ETupProject ind len ex -> ETupProject ind len (f ex)
-    S.EIndex indls          -> EIndex (L.map f indls)
+--    S.ETupProject ind len ex -> ETupProject ind len (f ex)
+--    S.EIndex indls          -> EIndex (L.map f indls)
 
 reverseConvertFun1 :: S.Fun1 S.Exp -> S.Fun1 Exp
 reverseConvertFun1 (S.Lam1 bnd bod) = Lam1 bnd $ reverseConvertExps bod
@@ -248,9 +252,14 @@ reverseConvertFun2 (S.Lam2 bnd1 bnd2 bod) = Lam2 bnd1 bnd2 $ reverseConvertExps 
 -- TEMPORARY! -- THIS PUTS IN NONSENSE TYPES!
 reverseConvertAExps :: S.AExp -> AExp Type
 reverseConvertAExps aex =
-  let cE  = reverseConvertExps
-      cF  = reverseConvertFun1
-      cF2 = reverseConvertFun2
+  let 
+--       cE  = reverseConvertExps
+--       cF  = reverseConvertFun1
+--       cF2 = reverseConvertFun2
+      cE  = error$ "UNFINISHED - update convert functions"
+      cF  = error$ "UNFINISHED - update convert functions"
+      cF2 = error$ "UNFINISHED - update convert functions"
+      
       f   = reverseConvertAExps
       dt  = TTuple [] -- Dummy type
   in

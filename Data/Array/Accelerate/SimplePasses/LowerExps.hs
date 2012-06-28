@@ -1,12 +1,13 @@
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}       
 
 module Data.Array.Accelerate.SimplePasses.LowerExps
-       (removeScalarTuple)
+       (liftELets, removeScalarTuple)
        where
 
 -- import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
-import qualified Data.Array.Accelerate.SimpleAST as S
-import qualified Data.Array.Accelerate.FinalAST  as T
+import Data.Array.Accelerate.SimplePasses.IRTypes as S
+import qualified Data.Array.Accelerate.SimpleAST  as T
+import qualified Data.Array.Accelerate.SimpleAST  as C
 import           Data.Map                        as M
 import           Data.List                       as L
 
@@ -14,12 +15,12 @@ import Control.Monad.State.Strict (State, runState, get, put)
 import Control.Monad (mapM)
 import Control.Applicative ((<$>))
 
-type Binding  a = (S.Var, S.Type, a)
+type Binding  a = (C.Var, C.Type, a)
 type Bindings a = [Binding a]
 
 -- We map each identifier onto both a type and a list of finer-grained (post-detupling) names.
-type Env  = M.Map S.Var [S.Var]
-type TEnv = M.Map S.Var S.Type
+type Env  = M.Map C.Var [C.Var]
+type TEnv = M.Map C.Var C.Type
 
 ----------------------------------------------------------------------------------------------------
 -- First, a let-lifting pass that also lifts out conditional tests.
@@ -49,12 +50,12 @@ liftELets orig = discharge $ loop orig
        
        -- Introduce a temporary for the test expression:
        S.ECond e1 e2 e3 -> do e1' <- loop e1
-                              addbind (tmp,S.TBool, e1)
+                              addbind (tmp,C.TBool, e1)
                               return $ S.ECond (S.EVr tmp)
                                       -- Don't lift Let out of conditional:
                                       (discharge$ loop e2) 
                                       (discharge$ loop e3)
-          where tmp = S.var "TMP_FIXME"
+          where tmp = C.var "TMP_FIXME"
 
        -- The rest is BOILERPLATE:      
        ----------------------------------------      
@@ -102,7 +103,7 @@ removeScalarTuple tenv expr =
        S.ELet (vr,ty,rhs) bod -> error$ "removeScalarTuple: Invariants violated.  Should not encounter ELet here (should have been lifted)."
        
        S.EVr vr | Just ls <- M.lookup vr env -> L.map T.EVr ls
-       S.EConst (S.Tup ls)  -> L.map T.EConst ls
+       S.EConst (C.Tup ls)  -> L.map T.EConst ls
        S.EConst c           -> [T.EConst c]
        
        -- ASSUMPTION - no primitives accept or return tuples currently:
@@ -118,34 +119,29 @@ removeScalarTuple tenv expr =
        S.ETupProject ind len ex -> reverse$ take len $ drop ind $ reverse $ 
                                    loop ex
                                    
-       S.EIndexScalar avr ex -> [T.EIndexScalar avr (loop ex)]
+       S.EIndexScalar (S.Vr _ avr) ex -> [T.EIndexScalar avr (loop ex)]
 
        -- We know the dimensionality of arrays; further, shapes are just tuples so they are unpacked here:
-       S.EShape avr | Just ty <- M.lookup avr tenv -> 
+       S.EShape (S.Vr _ avr) | Just ty <- M.lookup avr tenv -> 
          L.map (`T.EProjFromShape` avr) $ 
          L.take (tupleNumLeaves ty) [0..]
                 
        S.EShapeSize ex -> 
          -- To compute the size we simply generate a '+'-expression over all dimensions:
-         [L.foldl1 (\ a b -> T.EPrimApp S.TInt (S.NP S.Add) [a,b]) (loop ex)]
+         [L.foldl1 (\ a b -> T.EPrimApp C.TInt (C.NP C.Add) [a,b]) (loop ex)]
          
-       S.EVr vr     -> error$"removeScalarTuple: unbound variable "++show vr
-       S.EShape avr -> error$ "removeScalarTuple: unbound Array variable."
+       S.EVr vr       -> error$"removeScalarTuple: unbound variable "++show vr
+       S.EShape avr   -> error$"removeScalarTuple: unbound Array variable."
        S.ECond e1 _ _ -> error$"removeScalarTuple: invariant violated. ECond test not a var: "++show e1
    where 
       loop = exp env tenv
       loop1 e = case loop e of 
                  [x] -> x
                  ls  -> error$"removeScalarTuple: Expecting one value in this context, received: "++show ls
-      isVar (S.EVr _) = True
-      isVar _         = False
-      isTupleVar vr = case M.lookup vr env of 
-                        Nothing  -> error$"unbound variable!: "++show vr
-                        Just [x] -> False
-                        Just []  -> False
-                        _        -> True
 
-
-tupleNumLeaves :: S.Type -> Int
-tupleNumLeaves (S.TTuple ls) = L.sum $ L.map tupleNumLeaves ls
+----------------------------------------------------------------------------------------------------
+-- Helpers
+                        
+tupleNumLeaves :: C.Type -> Int
+tupleNumLeaves (C.TTuple ls) = L.sum $ L.map tupleNumLeaves ls
 tupleNumLeaves _             = 1

@@ -9,7 +9,7 @@ module Data.Array.Accelerate.SimpleAST
      -- * The types making up Accelerate ASTs:
      Prog(..),
      AExp(..), -- AFun(..), 
-     Exp(..), Fun1(..), Fun2(..),
+     Block(..), Exp(..), Fun1(..), Fun2(..),
      Type(..), Const(..),
      Prim(..), NumPrim(..), IntPrim(..), FloatPrim(..), ScalarPrim(..), BoolPrim(..), OtherPrim(..),
      Boundary(..),
@@ -96,7 +96,7 @@ var :: String -> Var
 -- 
 --   Note that because there is no recursion, dependencies form a DAG.
 data Prog = Prog { 
-  progBinds   :: [(Var,Type,Either Exp AExp)],
+  progBinds   :: [(Var,Type,Either Block AExp)],
   progResults :: [Var],
   progType    :: Type -- Final, pre-flattened type, can be an array-tuple.
 } deriving (Read,Show,Eq,Generic)
@@ -117,33 +117,33 @@ data Prog = Prog {
 -- others can reduce headaches when consuming the AST for constructs
 -- like Replicate that change the type.
 data AExp = 
-    Vr Var                           -- Array variable bound by a Let.
-  | Unit Exp                         -- Turn an element into a singleton array
-  | Let (Var,Type,AExp) AExp         -- Let Var Type RHS Body
-                                     -- Let is used for common subexpression elimination
-  | Cond Exp Var Var                 -- Array level if statements
-  | Use       Type AccArray          -- A real live ARRAY goes here!
-  | Generate  Type Exp (Fun1 Exp)    -- Generate Function Array, very similar to map
-  | Replicate Type SliceType Exp Var -- Replicate array across one or more dimensions.
-  | Index     SliceType Var Exp      -- Index a sub-array (slice).
-                                     --   (Index sliceIndex Array SliceDims)
-  | Map      (Fun1 Exp) Var          -- Map Function Array
-  | ZipWith  (Fun2 Exp) Var Var      -- ZipWith Function Array1 Array2
-  | Fold     (Fun2 Exp) Exp Var      -- Fold Function Default Array
-  | Fold1    (Fun2 Exp)     Var      -- Fold1 Function Array
-  | FoldSeg  (Fun2 Exp) Exp Var Var  -- FoldSeg Function Default InArray SegmentDescriptor
-  | Fold1Seg (Fun2 Exp)     Var Var  -- FoldSeg Function         InArray SegmentDescriptor
-  | Scanl    (Fun2 Exp) Exp Var      -- Scanl  Function InitialValue LinearArray
-  | Scanl'   (Fun2 Exp) Exp Var      -- Scanl' Function InitialValue LinearArray
-  | Scanl1   (Fun2 Exp)     Var      -- Scanl  Function              LinearArray
-  | Scanr    (Fun2 Exp) Exp Var      -- Scanr  Function InitialValue LinearArray
-  | Scanr'   (Fun2 Exp) Exp Var      -- Scanr' Function InitialValue LinearArray
-  | Scanr1   (Fun2 Exp)     Var      -- Scanr  Function              LinearArray
-  | Permute  (Fun2 Exp) Var (Fun1 Exp) Var -- Permute CombineFun DefaultArr PermFun SourceArray
-  | Backpermute Exp (Fun1 Exp) Var   -- Backpermute ResultDimension   PermFun SourceArray
-  | Reshape     Exp      Var         -- Reshape Shape Array
-  | Stencil  (Fun1 Exp) Boundary Var
-  | Stencil2 (Fun2 Exp) Boundary Var Boundary Var -- Two source arrays/boundaries
+    Vr Var                              -- Array variable bound by a Let.
+  | Unit Block                          -- Turn an element into a singleton array
+  | Let (Var,Type,AExp) AExp            -- Let Var Type RHS Body
+                                        -- Let is used for common subexpression elimination
+  | Cond Block Var Var                  -- Array level if statements
+  | Use       Type AccArray             -- A real live ARRAY goes here!
+  | Generate  Type Block (Fun1 Block)   -- Generate Function Array, very similar to map
+  | Replicate Type SliceType Block Var  -- Replicate array across one or more dimensions.
+  | Index     SliceType Var Block       -- Index a sub-array (slice).
+                                        --   (Index sliceIndex Array SliceDims)
+  | Map      (Fun1 Block) Var           -- Map Function Array
+  | ZipWith  (Fun2 Block) Var Var       -- ZipWith Function Array1 Array2
+  | Fold     (Fun2 Block) Block Var     -- Fold Function Default Array
+  | Fold1    (Fun2 Block)     Var       -- Fold1 Function Array
+  | FoldSeg  (Fun2 Block) Block Var Var -- FoldSeg Function Default InArray SegmentDescriptor
+  | Fold1Seg (Fun2 Block)     Var Var   -- FoldSeg Function         InArray SegmentDescriptor
+  | Scanl    (Fun2 Block) Block Var     -- Scanl  Function InitialValue LinearArray
+  | Scanl'   (Fun2 Block) Block Var     -- Scanl' Function InitialValue LinearArray
+  | Scanl1   (Fun2 Block)     Var       -- Scanl  Function              LinearArray
+  | Scanr    (Fun2 Block) Block Var     -- Scanr  Function InitialValue LinearArray
+  | Scanr'   (Fun2 Block) Block Var     -- Scanr' Function InitialValue LinearArray
+  | Scanr1   (Fun2 Block)     Var       -- Scanr  Function              LinearArray
+  | Permute  (Fun2 Block) Var (Fun1 Block) Var -- Permute CombineFun DefaultArr PermFun SourceArray
+  | Backpermute Block (Fun1 Block) Var  -- Backpermute ResultDimension   PermFun SourceArray
+  | Reshape     Block      Var          -- Reshape Shape Array
+  | Stencil  (Fun1 Block) Boundary Var
+  | Stencil2 (Fun2 Block) Boundary Var Boundary Var -- Two source arrays/boundaries
  deriving (Read,Show,Eq,Generic)
 
 
@@ -167,25 +167,43 @@ data Fun1 a = Lam1 (Var,Type) a
 data Fun2 a = Lam2 (Var,Type) (Var,Type) a
  deriving (Read,Show,Eq,Generic)
 
--- | Scalar expressions
-data Exp = 
-    EConst Const              -- Constant.        
-  | EVr Var                   -- Variable bound by a Let.
-  | ELet (Var,Type,Exp) Exp   -- @ELet var type rhs body@,
-                              -- used for common subexpression elimination
-  | EPrimApp Type Prim [Exp]  -- *Any* primitive scalar function, including type of return value.
-  | ECond Exp Exp Exp         -- Conditional expression (non-strict in 2nd and 3rd argument).
-  | EIndexScalar Var Exp      -- Project a single scalar from an array [variable],
-                              -- the array expression can not contain any free scalar variables.
-  | EShape Var                -- Get the shape of an Array [variable].
-  | EShapeSize Exp            -- Number of elements of a shape
-  | EIndex [Exp]              -- An index into a multi-dimensional array.
-  | ETuple [Exp]              -- Build a tuple.
-  | ETupProject {             -- Project a consecutive series of fields from a tuple.
-      indexFromRight :: Int , --  * where to start the slice
-      len            :: Int , --  * how many scalars to extract
-      tupexpr        :: Exp }
+-- | A block of statements representing scalar computation that returns multiple values.
+data Block = 
+    BBlock [(Var, Type, Exp)] [Exp] -- A series of bindings and then final return value(s).
+  | BCond    Var Block Block        -- Conditional execution with nested lexical scopes.
+                                    -- INVARIANT: all branches must return the same # of values.
  deriving (Read,Show,Eq,Generic)
+
+-- | Scalar expressions
+data Exp =  
+    EConst   Const            -- Constant.        
+  | EVr      Var              -- Variable reference.
+  | ECond    Var  Exp Exp     -- Conditional expression.
+  | EPrimApp Type Prim [Exp]  -- Apply a primitive scalar function, includes type of return value.
+  | EIndexScalar Var [Exp]    -- Project a single scalar from an array variable, takes index argument(s).
+  | EProjFromShape Int Var    -- Get ONE component of the shape of an Array variable.
+ deriving (Read,Show,Eq,Generic)
+
+
+-- -- | Scalar expressions
+-- data Exp = 
+--     EConst Const              -- Constant.        
+--   | EVr Var                   -- Variable bound by a Let.
+--   | ELet (Var,Type,Exp) Exp   -- @ELet var type rhs body@,
+--                               -- used for common subexpression elimination
+--   | EPrimApp Type Prim [Exp]  -- *Any* primitive scalar function, including type of return value.
+--   | ECond Exp Exp Exp         -- Conditional expression (non-strict in 2nd and 3rd argument).
+--   | EIndexScalar Var Exp      -- Project a single scalar from an array [variable],
+--                               -- the array expression can not contain any free scalar variables.
+--   | EShape Var                -- Get the shape of an Array [variable].
+--   | EShapeSize Exp            -- Number of elements of a shape
+--   | EIndex [Exp]              -- An index into a multi-dimensional array.
+--   | ETuple [Exp]              -- Build a tuple.
+--   | ETupProject {             -- Project a consecutive series of fields from a tuple.
+--       indexFromRight :: Int , --  * where to start the slice
+--       len            :: Int , --  * how many scalars to extract
+--       tupexpr        :: Exp }
+--  deriving (Read,Show,Eq,Generic)
 
 
 -- | Constants embedded within Accelerate programs (i.e. in the AST).
@@ -521,9 +539,14 @@ instance Out Type
 instance Out Prog
 -- instance Out Fun1
 -- instance Out Fun2
-instance Out (Fun1 Exp)
-instance Out (Fun2 Exp)
+-- instance Out (Fun1 Exp)
+-- instance Out (Fun2 Exp)
+instance Out (Fun1 Block)
+instance Out (Fun2 Block)
+
+
 instance Out Exp
+instance Out Block
 instance Out AExp
 -- instance Out AFun
 instance Out Const

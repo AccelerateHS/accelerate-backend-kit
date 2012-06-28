@@ -1,3 +1,4 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 --------------------------------------------------------------------------------
@@ -17,8 +18,9 @@ import Prelude                                     hiding (sum)
 import Control.Monad.State.Strict (State, evalState, get, put)
 import Data.Map as M
 import Data.List as L
-import Data.Array.Accelerate.SimpleAST   as S
+import Data.Array.Accelerate.SimpleAST            as S
 import Data.Array.Accelerate.SimplePasses.IRTypes as T
+import Data.Array.Accelerate.SimplePasses.LowerExps (liftELets, removeScalarTuple)
 
 import Debug.Trace(trace)
 -- tracePrint s x = trace (s ++ show x) x
@@ -32,9 +34,10 @@ type SubNameMap = M.Map S.Var [S.Var]
 -- | A binding EITHER for a scalar or array variable:
 type Binding  a = (S.Var, S.Type, a)
 type Bindings a = [Binding a]
-type FlexBindings = Bindings (Either T.Exp S.AExp)
+type FlexBindings = Bindings (Either S.Block S.AExp)
 
-type CollectM = State (Int, Bindings T.Exp)
+--type CollectM = State (Int, Bindings T.Exp)
+type CollectM = State (Int, Bindings S.Block)
 
 -- A temporary tree datatype.  This is used internally in `removeArrayTuple`.
 data TempTree a = TT (TempTree a) (TempTree a) [TempTree a] -- Node of degree two or more 
@@ -65,10 +68,11 @@ data TempTree a = TT (TempTree a) (TempTree a) [TempTree a] -- Node of degree tw
 removeArrayTuple :: ([(S.Var, S.Type, TAExp)], TAExp) -> S.Prog
 removeArrayTuple (binds, bod) = evalState main (0,[])
   where    
-   main = do (newbinds,nameMap) <- doBinds [] M.empty binds
-             newbod      <- dorhs nameMap bod
-             newbinds2   <- dischargeNewScalarBinds
-             let finalbinds = mapBindings convertLeft (newbinds ++ newbinds2)
+   main = do (newbinds::FlexBindings,nameMap) <- doBinds [] M.empty binds
+             newbod :: TempTree S.AExp <- dorhs nameMap bod 
+             newbinds2 :: FlexBindings <- dischargeNewScalarBinds
+--             let finalbinds :: FlexBindings = mapBindings convertLeft (newbinds ++ newbinds2)
+             let finalbinds :: FlexBindings = (newbinds ++ newbinds2)
                  unVar (S.Vr v) = v
                  unVar x = error$ "removeArrayTuple: expecting the final result expressions to be varrefs at this point, instead received: "++show x
              return $ S.Prog finalbinds
@@ -83,10 +87,12 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
        TT a b ls -> flattenTT a ++ flattenTT b ++
                     concatMap flattenTT ls
     
+   mapBindings :: (a -> b) -> Bindings a -> Bindings b
    mapBindings _ [] = []
    mapBindings fn ((v,t,x):tl) = (v,t,fn x) : mapBindings fn tl
 
-   convertLeft (Left  ex)  = Left  $ convertExps  ex
+   convertLeft :: Either T.Exp a -> Either S.Block a 
+   convertLeft (Left  ex) = Left $ cE ex
    convertLeft (Right ae) = Right ae
 
    isTupledTy (TTuple _) = True
@@ -172,24 +178,22 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
             
             (cntr,bnds) <- get
             let triv = isTrivial ex  
+                ex2  = cE ex :: S.Block
                 fresh = S.var $ "cnd_" ++ show cntr
             -- Here we add the new binding, if needed:
             unless triv $ 
-              put (cntr+1, (fresh,S.TBool,ex) : bnds)
---              put (cntr+1, [(fresh,S.TBool,ex)])
---              put (cntr+1, bnds ++ [(fresh,S.TBool,ex)])
-
+              put (cntr+1, (fresh,S.TBool,ex2) : bnds)
             let 
-                ex' = if triv then ex' else S.EVr fresh
+                trivBlock x = S.BBlock [] [x]
+                ex3 = if triv then ex2 else trivBlock$ S.EVr fresh
                 unVar (S.Vr v) = v
                 unVar _ = error "Accelerate backend invariant-broken."
                 ls1 = L.map unVar (flattenTT ae1') -- These must be fully flattened if there are nested tuples.
                 ls2 = L.map unVar (flattenTT ae2')
-                result = listOfLeaves $ L.map (uncurry $ S.Cond ex') (zip ls1 ls2)
+                result = listOfLeaves $ L.map (uncurry $ S.Cond ex3) (zip ls1 ls2)
             return result          
 
        T.Cond _ty ex (T.Vr _ v1) (T.Vr _ v2) -> 
---            return$ TLeaf$ S.Cond (cE ex) (fromLeaf (S.Vr v1) (fromLeaf (S.Vr v2)))
               return$ TLeaf$ S.Cond (cE ex) v1 v2
          
        -- The rest is BOILERPLATE:      
@@ -254,7 +258,13 @@ lf :: Functor f => f a -> f (TempTree a)
 lf x = TLeaf <$> x
 lfr = lf . return
 
-cE  = convertExps    
-cF  = convertFun1
-cF2 = convertFun2
+
+-- cE  = convertExps    
+cE :: T.Exp -> S.Block
+cE = removeScalarTuple tenv . liftELets 
+  where tenv = undefined
+-- cF  = convertFun1
+-- cF2 = convertFun2
+cF  = error "TODO - convertFun1..."
+cF2 = error "TODO - convertFun2..."
 

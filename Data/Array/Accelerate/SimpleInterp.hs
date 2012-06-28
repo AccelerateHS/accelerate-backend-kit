@@ -64,6 +64,11 @@ valToConst (ArrVal a)    = error$ "cannot convert Array value to Const: "++show 
 unConstVal (ConstVal c) = c 
 unArrVal   (ArrVal v)   = v
 
+addBlockBind :: (Var,Type,Exp) -> T.Block -> T.Block
+addBlockBind bnd (T.BBlock ls x)   = T.BBlock (bnd:ls) x 
+-- addBlockBind bnd x@(T.BCond _ _ _) = T.BBlock [bnd] [x]
+-- FINISH ME
+
 --------------------------------------------------------------------------------
 -- Evaluation:
 
@@ -80,17 +85,17 @@ evalProg origenv (S.Prog binds results progtype) =
    -- A binding simply extends an environment of values. 
 --   loop :: [(S.Var, S.Type, Either S.Exp S.AExp)] -> Env
    loop env [] = env
-   loop env ((vr,ty,Left rhs):rst)  = loop (M.insert vr (evalE env rhs) env) rst
+   loop env ((vr,ty,Left rhs):rst)  = loop (M.insert vr (evalB env rhs) env) rst
    loop env ((vr,ty,Right rhs):rst) = loop (doaexp env vr rhs) rst
    
    doaexp env vr rhs =   
      let bind rhs' = M.insert vr rhs' env in
      case rhs of
        S.Vr  v             -> bind$ envLookup env v
-       S.Unit e -> case evalE env e of 
+       S.Unit e -> case evalB env e of 
                     ConstVal c -> bind$ ArrVal$ SA.replicate [] c
                     oth  -> error$"evalProg: expecting ConstVal input to Unit, received: "++show oth
-       S.Cond e1 v1 v2 -> case evalE env e1 of 
+       S.Cond e1 v1 v2 -> case evalB env e1 of 
                              ConstVal (B True)  -> bind$ envLookup env v1
                              ConstVal (B False) -> bind$ envLookup env v2
        S.Use _ty arr -> bind$ ArrVal arr
@@ -102,12 +107,12 @@ evalProg origenv (S.Prog binds results progtype) =
          -- tuples, which in turn need to be unpacked into a
          -- multi-payload array....
          bind $ ArrVal $ AccArray dims $ payloadsFromList elty $ 
-         map (\ind -> valToConst $ evalE env (T.ELet (vr,vty,T.EConst ind) bodE)) 
+         map (\ind -> valToConst $ evalB env (addBlockBind (vr,vty,T.EConst ind) bodE)) 
              (indexSpace dims)
          where 
            dims = 
              -- Indices can be arbitrary shapes:
-             case evalE env eSz of 
+             case evalB env eSz of 
                ConstVal (I n)    -> [n]
                ConstVal (Tup ls) -> map (\ (I i) -> i) ls
 
@@ -142,7 +147,7 @@ evalProg origenv (S.Prog binds results progtype) =
            replicateDims = length $ filter (== Fixed) slcSig
            retainDims    = length $ filter (== All)   slcSig
            -- These are ONLY the new replicated dimensions (excluding All fields):
-           dimsOut = case evalE env ex of 
+           dimsOut = case evalB env ex of 
                       ConstVal s | isIntConst s -> [fromIntegral$ constToInteger s]
                       ConstVal (Tup ls) -> 
                         map (fromIntegral . constToInteger) $ 
@@ -178,7 +183,7 @@ evalProg origenv (S.Prog binds results progtype) =
          where  
            ArrVal inarr = envLookup env invr
            evaluator c = -- tracePrint ("In map, evaluating element "++ show c++" to ")$  
-                         valToConst $ evalE env (T.ELet (v,vty, T.EConst c) bod)
+                         valToConst $ evalB env (addBlockBind (v,vty, T.EConst c) bod)
 
        --------------------------------------------------------------------------------       
        S.ZipWith  (S.Lam2 (v1,vty1) (v2,vty2) bod) vr1 vr2  ->
@@ -195,9 +200,9 @@ evalProg origenv (S.Prog binds results progtype) =
                            (L.transpose$ map payloadToList pays1)
                            (L.transpose$ map payloadToList pays2)
 -- INCORRECT - we need to reassemble tuples here:
-           evaluator cls1 cls2 = map valToConst $ untupleVal $ evalE env 
-                                 (T.ELet (v1,vty1, T.EConst$ tuple cls1) $  
-                                  T.ELet (v2,vty2, T.EConst$ tuple cls2) bod)
+           evaluator cls1 cls2 = map valToConst $ untupleVal $ evalB env 
+                                 (addBlockBind (v1,vty1, T.EConst$ tuple cls1) $  
+                                  addBlockBind (v2,vty2, T.EConst$ tuple cls2) bod)
 
        --------------------------------------------------------------------------------       
        -- Shave off leftmost dim in 'sh' list 
@@ -208,7 +213,7 @@ evalProg origenv (S.Prog binds results progtype) =
            case payloads of 
              [] -> error "Empty payloads!"
              _  -> bind$ ArrVal (AccArray sh' payloads')
-         where initacc = evalE env ex
+         where initacc = evalB env ex
                ArrVal (AccArray (innerdim:sh') payloads) = envLookup env avr -- Must be >0 dimensional.
                payloads' = map (applyToPayload3 buildFolded) payloads               
                
@@ -232,7 +237,7 @@ evalProg origenv (S.Prog binds results progtype) =
                innerloop lookup offset count acc = 
 --                 trace ("Inner looping "++show(offset,count,acc))$ 
                  innerloop lookup (offset+1) (count-1) $ 
-                  evalE (M.insert v1 acc $ 
+                  evalB (M.insert v1 acc $ 
                          M.insert v2 (ConstVal$ lookup offset) env) 
                         bodE 
        S.Index     slcty  ae ex  -> error "UNFINISHED: Index"
@@ -252,46 +257,50 @@ evalProg origenv (S.Prog binds results progtype) =
        S.Stencil2  fn bnd1 ae1 bnd2 ae2 -> error "UNFINISHED: Stencil2"
        _ -> error$"Accelerate array expression breaks invariants: "++ show rhs
 
+evalB :: Env -> T.Block -> Value
+evalB = undefined
+--     T.ELet (vr,_ty,rhs) bod -> trace ("  ELet: bound "++show vr++" to "++show rhs') $
+--                                evalE (M.insert vr rhs' env) bod
+--                                where rhs' = (evalE env rhs)
+
 evalE :: Env -> T.Exp -> Value
 evalE env expr = 
   case expr of 
     T.EVr  v             -> envLookup env v
-    T.ELet (vr,_ty,rhs) bod -> trace ("  ELet: bound "++show vr++" to "++show rhs') $
-                               evalE (M.insert vr rhs' env) bod
-                               where rhs' = (evalE env rhs)
-    T.ETuple es          -> ConstVal$ Tup $ map (unConstVal . evalE env) es
+
+--    T.ETuple es          -> ConstVal$ Tup $ map (unConstVal . evalB env) es
     T.EConst c           -> ConstVal c
 
-    T.ECond e1 e2 e3     -> case evalE env e1 of 
-                            ConstVal (B True)  -> evalE env e2 
-                            ConstVal (B False) -> evalE env e3
+    T.ECond vr e2 e3     -> case M.lookup vr env of 
+                             Just (ConstVal (B True))  -> evalE env e2 
+                             Just (ConstVal (B False)) -> evalE env e3
 
-    T.EIndexScalar vr ex -> ConstVal$ indexArray (unArrVal$ envLookup env vr)
-                             (map (fromIntegral . constToInteger) $ 
-                              untuple$ valToConst$ evalE env ex)
+--     T.EIndexScalar vr ex -> ConstVal$ indexArray (unArrVal$ envLookup env vr)
+--                              (map (fromIntegral . constToInteger) $ 
+--                               untuple$ valToConst$ evalE env ex)
   
-    T.EShape vr          -> let ArrVal (AccArray sh _) = envLookup env vr
-                            in ConstVal$ Tup $ map I sh
+--     T.EShape vr          -> let ArrVal (AccArray sh _) = envLookup env vr
+--                             in ConstVal$ Tup $ map I sh
     
-    T.EShapeSize ex      -> case evalE env ex of 
-                            _ -> error "need more work on shapes"
+--     T.EShapeSize ex      -> case evalE env ex of 
+--                             _ -> error "need more work on shapes"
 
     T.EPrimApp ty p es  -> evalPrim ty p (map (evalE env) es)
 
-    T.ETupProject ind len ex -> 
-      tracePrint ("  ETupProject: "++show ind++" "++show len++": ") $
-      case (ind, len, evalE env ex) of 
-        (_,_,ConstVal (Tup ls)) -> ConstVal$ tuple$  slice ls 
-        -- TODO -- check if this makes sense ... how can we run into this kind of tuple?:
-        (ind,_,TupVal ls)       -> tupleVal$ slice ls
-        (0,1,ConstVal scalar)   -> ConstVal$ scalar 
-        (_,_,const) -> error$ "ETupProjectFromRight: could not index "++show len++" elements at position "
-                       ++ show ind ++ " in tuple " ++ show const
-      where slice ls = reverse $ take len $ drop ind $ reverse ls
+--     T.ETupProject ind len ex -> 
+--       tracePrint ("  ETupProject: "++show ind++" "++show len++": ") $
+--       case (ind, len, evalE env ex) of 
+--         (_,_,ConstVal (Tup ls)) -> ConstVal$ tuple$  slice ls 
+--         -- TODO -- check if this makes sense ... how can we run into this kind of tuple?:
+--         (ind,_,TupVal ls)       -> tupleVal$ slice ls
+--         (0,1,ConstVal scalar)   -> ConstVal$ scalar 
+--         (_,_,const) -> error$ "ETupProjectFromRight: could not index "++show len++" elements at position "
+--                        ++ show ind ++ " in tuple " ++ show const
+--       where slice ls = reverse $ take len $ drop ind $ reverse ls
 
-    -- This is our chosen representation for index values:
-    T.EIndex indls       -> let ls = map (valToConst . evalE env) indls in
-                          ConstVal$ tuple ls
+--     -- This is our chosen representation for index values:
+--     T.EIndex indls       -> let ls = map (valToConst . evalE env) indls in
+--                           ConstVal$ tuple ls
 
 --------------------------------------------------------------------------------
 
