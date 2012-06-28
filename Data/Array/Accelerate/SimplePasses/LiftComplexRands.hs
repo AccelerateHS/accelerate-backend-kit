@@ -1,4 +1,5 @@
 {-# LANGUAGE TupleSections #-}
+{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 --------------------------------------------------------------------------------
 -- | Compiler pass to complex operands into let bindings

@@ -1,4 +1,4 @@
-       
+{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}       
 
 module Data.Array.Accelerate.SimplePasses.LowerExps
        (removeScalarTuple)
@@ -10,86 +10,67 @@ import qualified Data.Array.Accelerate.FinalAST  as T
 import           Data.Map                        as M
 import           Data.List                       as L
 
-
-----------------------------------------------------------------------------------------------------
-----------------------------------------------------------------------------------------------------
+import Control.Monad.State.Strict (State, runState, get, put)
+import Control.Monad (mapM)
+import Control.Applicative ((<$>))
 
 type Binding  a = (S.Var, S.Type, a)
 type Bindings a = [Binding a]
 
--- TODO - lifting pass
-
-{-
-
-liftLets :: T.AExp S.Type -> T.AExp S.Type
-liftLets x = 
-     if L.null binds then loop binds else
-     trace ("[dbg] Lifted out "++show (length binds)++" Lets ...") $ loop binds
-  where (binds, bod) = gatherLets x
-        finalTy = getAnnot bod
-        loop [] = bod
-        loop (hd:tl) = T.Let finalTy hd $ loop tl
-
-
--- | Lift Let's upward, stopping only at conditionals.
-gatherLets :: TAExp -> ([(S.Var, S.Type, TAExp)], TAExp)
-gatherLets prog = (reverse binds, prog')
- where 
-   (prog',binds) = runState (loop prog) [] 
-   addbind bnd = do ls <- get; put (bnd:ls)
-   
-   loop :: TAExp -> State (Bindings TAExp) TAExp
-   loop aex = 
-     case aex of 
-       T.Let _ (v,ty,rhs) bod -> 
-          do rhs' <- loop rhs -- Important: Collect these bindings first.
-             addbind (v,ty,rhs')
-             loop bod
-       -- We ALSO treat Apply's as Let bindings:
-       T.Apply _ fn ae -> 
-          do let S.Lam1 (v,ty) abod = fn 
-             rhs' <- loop ae
-             addbind (v,ty,rhs')
-             loop abod
-       -- The rest is BOILERPLATE:      
-       ----------------------------------------      
-       T.Vr _ _              -> return aex
-       T.Unit _ _            -> return aex
-       T.Use _ _             -> return aex
-       T.Generate _ _ _      -> return aex
-       T.ZipWith a fn ae1 ae2  -> T.ZipWith a fn <$> loop ae1 <*> loop ae2 
-       T.Map     a fn ae       -> T.Map     a fn <$> loop ae
-       T.TupleRefFromRight a ind ae -> T.TupleRefFromRight a ind <$> loop ae
-       T.Cond a ex ae1 ae2     -> T.Cond a ex <$> loop ae1 <*> loop ae2 
-       T.Replicate aty slice ex ae -> T.Replicate aty slice ex <$> loop ae
-       T.Index     a slc ae ex -> (\ ae' -> T.Index a slc ae' ex) <$> loop ae
-       T.Fold  a fn einit ae         -> T.Fold  a fn einit    <$> loop ae
-       T.Fold1 a fn       ae         -> T.Fold1 a fn          <$> loop ae 
-       T.FoldSeg a fn einit ae aeseg -> T.FoldSeg a fn einit  <$> loop ae <*> loop aeseg 
-       T.Fold1Seg a fn      ae aeseg -> T.Fold1Seg a fn       <$> loop ae <*> loop aeseg 
-       T.Scanl    a fn einit ae      -> T.Scanl    a fn einit <$> loop ae  
-       T.Scanl'   a fn einit ae      -> T.Scanl'   a fn einit <$> loop ae  
-       T.Scanl1   a fn       ae      -> T.Scanl1   a fn       <$> loop ae 
-       T.Scanr    a fn einit ae      -> T.Scanr    a fn einit <$> loop ae 
-       T.Scanr'   a fn einit ae      -> T.Scanr'   a fn einit <$> loop ae 
-       T.Scanr1   a fn       ae      -> T.Scanr1   a fn       <$> loop ae
-       T.Permute a fn2 ae1 fn1 ae2 -> (\ x y -> T.Permute a fn2 x fn1 y)
-                                 <$> loop ae1 <*> loop ae2
-       T.Backpermute a ex lam ae -> T.Backpermute a ex lam   <$> loop ae
-       T.Reshape     a ex     ae -> T.Reshape     a ex       <$> loop ae
-       T.Stencil   a fn bndry ae -> T.Stencil     a fn bndry <$> loop ae
-       T.Stencil2  a fn bnd1 ae1 bnd2 ae2 -> (\ x y -> T.Stencil2 a fn bnd1 x bnd2 y) 
-                                        <$> loop ae1 <*> loop ae2
-       T.ArrayTuple a aes -> T.ArrayTuple a <$> mapM loop aes
--}
-
-----------------------------------------------------------------------------------------------------
-
-
 -- We map each identifier onto both a type and a list of finer-grained (post-detupling) names.
--- type Env = M.Map S.Var (S.Type, [S.Var])
 type Env  = M.Map S.Var [S.Var]
 type TEnv = M.Map S.Var S.Type
+
+----------------------------------------------------------------------------------------------------
+-- First, a let-lifting pass that also lifts out conditional tests.
+----------------------------------------------------------------------------------------------------
+
+-- TODO: Use a better approach for coining fresh temporaries.  It
+-- would help to form a Set of all existing variables, or to simply
+-- keep a Map that freshens ids on the way down.
+
+liftELets :: S.Exp -> S.Exp
+liftELets orig = discharge $ loop orig
+ where
+   addbind bnd = do ls <- get; put (bnd:ls)   
+   discharge m = let (x,bnds) = runState m [] in
+                 (unpack (reverse bnds) x)
+   unpack [] x = x
+   unpack (bnd:rst) x = S.ELet bnd (unpack rst x)
+   
+   loop :: S.Exp -> State (Bindings S.Exp) (S.Exp)
+   loop ex = 
+     case ex of 
+
+       S.ELet (v,ty,rhs) bod -> 
+          do rhs' <- loop rhs -- Important: Collect these bindings first.
+             addbind (v,ty,rhs')
+             loop bod       
+       
+       -- Introduce a temporary for the test expression:
+       S.ECond e1 e2 e3 -> do e1' <- loop e1
+                              addbind (tmp,S.TBool, e1)
+                              return $ S.ECond (S.EVr tmp)
+                                      -- Don't lift Let out of conditional:
+                                      (discharge$ loop e2) 
+                                      (discharge$ loop e3)
+          where tmp = S.var "TMP_FIXME"
+
+       -- The rest is BOILERPLATE:      
+       ----------------------------------------      
+       S.EVr    _   -> return ex
+       S.EConst _   -> return ex
+       S.EShape avr -> return ex
+       S.EShapeSize ex          -> S.EShapeSize <$> loop ex
+       S.ETuple ls              -> S.ETuple <$> mapM loop ls
+       S.EIndex ls              -> S.EIndex <$> mapM loop ls
+       S.EPrimApp ty p args     -> S.EPrimApp ty p <$> mapM loop args
+       S.ETupProject ind len ex -> S.ETupProject ind len <$> loop ex
+       S.EIndexScalar avr ex    -> S.EIndexScalar avr    <$> loop ex
+
+----------------------------------------------------------------------------------------------------
+-- After lifting this pass can remove tuples and make shape representations explicit.
+----------------------------------------------------------------------------------------------------
 
 -- | This is not a full pass, rather just a function for converting expressions.
 --   This is currently [2012.06.27] used by removeArrayTuple.
@@ -147,6 +128,10 @@ removeScalarTuple tenv expr =
        S.EShapeSize ex -> 
          -- To compute the size we simply generate a '+'-expression over all dimensions:
          [L.foldl1 (\ a b -> T.EPrimApp S.TInt (S.NP S.Add) [a,b]) (loop ex)]
+         
+       S.EVr vr     -> error$"removeScalarTuple: unbound variable "++show vr
+       S.EShape avr -> error$ "removeScalarTuple: unbound Array variable."
+       S.ECond e1 _ _ -> error$"removeScalarTuple: invariant violated. ECond test not a var: "++show e1
    where 
       loop = exp env tenv
       loop1 e = case loop e of 

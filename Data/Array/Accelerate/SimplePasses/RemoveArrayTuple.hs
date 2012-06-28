@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 --------------------------------------------------------------------------------
 -- | Compiler pass to remove Array tuples

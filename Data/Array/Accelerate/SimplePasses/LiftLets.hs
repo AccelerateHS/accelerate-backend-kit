@@ -1,4 +1,4 @@
-
+{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 --------------------------------------------------------------------------------
 -- | Compiler pass to lift Lets in array expressions
