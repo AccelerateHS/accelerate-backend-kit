@@ -169,23 +169,22 @@ data Fun2 a = Lam2 (Var,Type) (Var,Type) a
 
 -- | Scalar expressions
 data Exp = 
-    EVr Var                   -- Variable bound by a Let.
-  | ELet (Var,Type,Exp) Exp   -- ELet Var Type RHS Body,
+    EConst Const              -- Constant.        
+  | EVr Var                   -- Variable bound by a Let.
+  | ELet (Var,Type,Exp) Exp   -- @ELet var type rhs body@,
                               -- used for common subexpression elimination
   | EPrimApp Type Prim [Exp]  -- *Any* primitive scalar function, including type of return value.
+  | ECond Exp Exp Exp         -- Conditional expression (non-strict in 2nd and 3rd argument).
+  | EIndexScalar Var Exp      -- Project a single scalar from an array [variable],
+                              -- the array expression can not contain any free scalar variables.
+  | EShape Var                -- Get the shape of an Array [variable].
+  | EShapeSize Exp            -- Number of elements of a shape
+  | EIndex [Exp]              -- An index into a multi-dimensional array.
   | ETuple [Exp]              -- Build a tuple.
-  | EConst Const              -- Constant.
   | ETupProject {             -- Project a consecutive series of fields from a tuple.
-      indexFromRight :: Int , -- < where to start the slice
-      len            :: Int , -- < how many scalars to extract
+      indexFromRight :: Int , --  * where to start the slice
+      len            :: Int , --  * how many scalars to extract
       tupexpr        :: Exp }
-  | EIndex [Exp]         -- An index into a multi-dimensional array.
-  | ECond Exp Exp Exp    -- Conditional expression (non-strict in 2nd and 3rd argument).
-  | EIndexScalar Var Exp -- Project a single scalar from an array [variable],
-                         -- the array expression can not contain any free scalar variables.
-  | EShape Var           -- Get the shape of an Array [variable];
-                         -- the array expression can not contain any free scalar variables.
-  | EShapeSize Exp       -- Number of elements of a shape
  deriving (Read,Show,Eq,Generic)
 
 
