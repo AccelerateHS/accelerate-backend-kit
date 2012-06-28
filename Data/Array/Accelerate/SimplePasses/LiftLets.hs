@@ -1,7 +1,7 @@
 
 
 --------------------------------------------------------------------------------
--- | Compiler pass to lift Lets
+-- | Compiler pass to lift Lets in array expressions
 --------------------------------------------------------------------------------
 
 module Data.Array.Accelerate.SimplePasses.LiftLets
