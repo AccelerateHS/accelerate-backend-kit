@@ -130,7 +130,7 @@ countVars ex = exp ex
 --   This is currently [2012.06.27] used by removeArrayTuple.
 removeScalarTuple :: Env -> S.Exp -> T.Block
 removeScalarTuple eenv expr = 
-  stmt [] eenv expr
+  stmt eenv expr
  where 
   -- We do NOT aim for global uniqueness here.  This will only give us
   -- uniqueness the expression expr.
@@ -142,24 +142,23 @@ removeScalarTuple eenv expr =
   -- Here we touch the outer parts of the expression tree,
   -- transforming it into statement blocks.  This depends critically
   -- on Let's having been lifted.
-  stmt :: Bindings T.Exp -> Env -> S.Exp -> T.Block
-  stmt acc env e = 
+  stmt :: Env -> S.Exp -> T.Block
+  stmt env e = 
      case e of  
        -- Here's where we need to split up a binding into a number of new temporaries:
        S.ELet (vr,ty, S.ECond a b c) bod ->          
               -- Uh oh, we need temporaries here:
              T.BMultiLet (tmps, error "split tuptype here", T.BCond vr conseq altern) $ 
-             stmt acc' env' bod
+             stmt env' bod
          where tmps = take (tupleNumLeaves ty) (repeat vr) -- FIXME FIXME
                S.EVr vr = a
                env'  = M.insert vr (error"FINISHMEEE") env -- ty 
-               acc'  = error "finish acc1" -- (vr,ty, exp env tenv rhs) : acc
-               conseq = stmt (error "NO acc") env b 
-               altern = stmt (error "NO acc2") env c 
+               conseq = stmt env b 
+               altern = stmt env c 
        
        -- Here we need to know that Let's have already been lifted out of the RHS to call exp:
        S.ELet (vr,ty,rhs) bod -> 
-           L.foldr T.BLet (stmt acc' env' bod)
+           L.foldr T.BLet (stmt env' bod)
            (zip3 vrs tys rhs')
          where vrs   = case tys of 
                          [_] -> [vr]
@@ -167,9 +166,8 @@ removeScalarTuple eenv expr =
                tys   = C.flattenTupleTy ty
                env'  = M.insert vr (error"FINISHMEEE2") env  -- ty
                rhs'  = exp env rhs
-               acc'  = error "finish acc2" -- (vr,ty, exp env tenv rhs) : acc
        oth -> T.BResults (exp env oth)
-    where loop = stmt acc env
+    where loop = stmt env
 
   -- Here we traverse the expression to remove tuples.
   exp :: Env -> S.Exp -> [T.Exp]
