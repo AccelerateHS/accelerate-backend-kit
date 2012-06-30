@@ -177,14 +177,14 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
             ae2' <- dorhs eenv ae2                        
             
             (cntr,bnds) <- get
-            let triv = isTrivial ex  
+            let triv = T.isTrivial ex  
                 ex2  = cE ex :: S.Block
                 fresh = S.var $ "cnd_" ++ show cntr
             -- Here we add the new binding, if needed:
             unless triv $ 
               put (cntr+1, (fresh,S.TBool,ex2) : bnds)
             let 
-                trivBlock x = S.BBlock [] [x]
+                trivBlock x = S.BResults [x]
                 ex3 = if triv then ex2 else trivBlock$ S.EVr fresh
                 unVar (S.Vr v) = v
                 unVar _ = error "Accelerate backend invariant-broken."
@@ -248,12 +248,6 @@ fromLeaf oth = error$"fromLeaf: was expecting a TLeaf! "++show oth
 
 -- TODO : Finish this.  
 
--- Trivial expressions can be duplicated and don't warrant introducing let bindings.
-isTrivial (T.EVr _)    = True
-isTrivial (T.EConst _) = True                     
-isTrivial _            = False
--- This will pretty much always be false for any realistic Cond condition...
-
 lf :: Functor f => f a -> f (TempTree a)
 lf x = TLeaf <$> x
 lfr = lf . return
@@ -262,9 +256,13 @@ lfr = lf . return
 -- cE  = convertExps    
 cE :: T.Exp -> S.Block
 cE = removeScalarTuple tenv . liftELets 
-  where tenv = undefined
+  where tenv = error "Need a tenv here..."
 -- cF  = convertFun1
 -- cF2 = convertFun2
-cF  = error "TODO - convertFun1..."
-cF2 = error "TODO - convertFun2..."
+
+-- cF :: S.Fun1 T.Exp-> S.Fun1 S.Exp
+cF (Lam1 bnd bod) = Lam1 bnd $ cE bod
+
+-- cF2 :: S.Fun2 Exp -> S.Fun2 S.Exp
+cF2 (Lam2 bnd1 bnd2 bod) = Lam2 bnd1 bnd2 $ cE bod
 

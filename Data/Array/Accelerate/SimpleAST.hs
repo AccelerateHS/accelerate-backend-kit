@@ -9,7 +9,8 @@ module Data.Array.Accelerate.SimpleAST
      -- * The types making up Accelerate ASTs:
      Prog(..),
      AExp(..), -- AFun(..), 
-     Block(..), Exp(..), Fun1(..), Fun2(..),
+     Block(..), CondBlock(..),
+     Exp(..), Fun1(..), Fun2(..),
      Type(..), Const(..),
      Prim(..), NumPrim(..), IntPrim(..), FloatPrim(..), ScalarPrim(..), BoolPrim(..), OtherPrim(..),
      Boundary(..),
@@ -23,6 +24,7 @@ module Data.Array.Accelerate.SimpleAST
            
      -- * Helper routines and predicates:
      var, primArity, constToInteger, fromConst, 
+     isTrivial,
      isIntType, isFloatType, isNumType, 
      isIntConst, isFloatConst, isNumConst,
      constToType
@@ -169,10 +171,16 @@ data Fun2 a = Lam2 (Var,Type) (Var,Type) a
 
 -- | A block of statements representing scalar computation that returns multiple values.
 data Block = 
-    BBlock [(Var, Type, Exp)] [Exp] -- A series of bindings and then final return value(s).
-  | BCond    Var Block Block        -- Conditional execution with nested lexical scopes.
-                                    -- INVARIANT: all branches must return the same # of values.
+    BMultiLet ([Var], [Type], CondBlock) Block -- A multi-binding to a conditional RHS.
+  | BLet      (Var, Type, Exp)                 -- A single binding
+  | BResults [Exp]                             -- Return value(s)
  deriving (Read,Show,Eq,Generic)
+
+-- Conditional execution with nested lexical scopes.
+-- INVARIANT: all branches must return the same # of values.
+data CondBlock = BCond Var Block Block        
+ deriving (Read,Show,Eq,Generic)
+
 
 -- | Scalar expressions
 data Exp =  
@@ -184,26 +192,11 @@ data Exp =
   | EProjFromShape Int Var    -- Get ONE component of the shape of an Array variable.
  deriving (Read,Show,Eq,Generic)
 
-
--- -- | Scalar expressions
--- data Exp = 
---     EConst Const              -- Constant.        
---   | EVr Var                   -- Variable bound by a Let.
---   | ELet (Var,Type,Exp) Exp   -- @ELet var type rhs body@,
---                               -- used for common subexpression elimination
---   | EPrimApp Type Prim [Exp]  -- *Any* primitive scalar function, including type of return value.
---   | ECond Exp Exp Exp         -- Conditional expression (non-strict in 2nd and 3rd argument).
---   | EIndexScalar Var Exp      -- Project a single scalar from an array [variable],
---                               -- the array expression can not contain any free scalar variables.
---   | EShape Var                -- Get the shape of an Array [variable].
---   | EShapeSize Exp            -- Number of elements of a shape
---   | EIndex [Exp]              -- An index into a multi-dimensional array.
---   | ETuple [Exp]              -- Build a tuple.
---   | ETupProject {             -- Project a consecutive series of fields from a tuple.
---       indexFromRight :: Int , --  * where to start the slice
---       len            :: Int , --  * how many scalars to extract
---       tupexpr        :: Exp }
---  deriving (Read,Show,Eq,Generic)
+-- | Trivial expressions are defined as those that we should not mind duplicating.
+isTrivial (EVr _)    = True
+isTrivial (EConst _) = True                     
+isTrivial _          = False
+-- This will pretty much always be false for any realistic Cond condition...
 
 
 -- | Constants embedded within Accelerate programs (i.e. in the AST).
@@ -544,9 +537,9 @@ instance Out Prog
 instance Out (Fun1 Block)
 instance Out (Fun2 Block)
 
-
 instance Out Exp
 instance Out Block
+instance Out CondBlock
 instance Out AExp
 -- instance Out AFun
 instance Out Const

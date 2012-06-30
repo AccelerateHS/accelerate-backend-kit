@@ -14,9 +14,9 @@ module Data.Array.Accelerate.SimplePasses.IRTypes
      convertAExps,
      convertExps, 
      convertFun1, convertFun2,
+     Data.Array.Accelerate.SimplePasses.IRTypes.isTrivial
                   
      -- reverseConvertExps, reverseConvertFun1, reverseConvertFun2, reverseConvertAExps -- TEMP                  
-                  
    )
        where
 
@@ -102,6 +102,11 @@ data Exp =
   | EShape (AExp Type)
   | EShapeSize Exp 
  deriving (Read,Show,Eq,Generic)
+
+-- | Trivial expressions are defined as those that we should not mind duplicating.
+isTrivial (EVr _)    = True
+isTrivial (EConst _) = True                     
+isTrivial _          = False
 
 --------------------------------------------------------------------------------
 

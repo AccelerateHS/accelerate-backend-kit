@@ -12,7 +12,7 @@ import           Data.Map                        as M
 import           Data.List                       as L
 
 import Control.Monad.State.Strict (State, runState, get, put)
-import Control.Monad (mapM)
+import Control.Monad (mapM, (=<<))
 import Control.Applicative ((<$>))
 
 type Binding  a = (C.Var, C.Type, a)
@@ -39,35 +39,86 @@ liftELets orig = discharge $ loop orig
    unpack [] x = x
    unpack (bnd:rst) x = S.ELet bnd (unpack rst x)
    
+   isLet (S.ELet _ _) = True
+   isLet _            = False
+
+   -- TODO: Do real temporary generation:
+   mkTmp = return$ C.var "TMP_FIXME"
+
+   liftOut ty rhs = do
+     tmp <- mkTmp 
+     addbind (tmp,ty,rhs)
+     return (S.EVr tmp)
+
+   -- The rules are different for what is allowed in a Let-RHS:
+   loopRHS :: S.Exp -> State (Bindings S.Exp) (S.Exp)
+   loopRHS ex = 
+     case ex of
+       -- Introduce a temporary for the test expression:
+       S.ECond e1 e2 e3 -> do 
+         let e2' = (discharge$ loop e2) 
+             e3' = (discharge$ loop e3)
+         -- Lift the test expression out only if necessary:           
+         e1' <- if S.isTrivial e1 
+                then return e1
+                else liftOut C.TBool =<< loop e1
+         return $ S.ECond e1' e2' e3'
+       
+       oth -> loop ex
+     
    loop :: S.Exp -> State (Bindings S.Exp) (S.Exp)
    loop ex = 
      case ex of 
 
        S.ELet (v,ty,rhs) bod -> 
-          do rhs' <- loop rhs -- Important: Collect these bindings first.
+          do rhs' <- loopRHS rhs -- Important: Collect these bindings first.
              addbind (v,ty,rhs')
              loop bod       
        
-       -- Introduce a temporary for the test expression:
-       S.ECond e1 e2 e3 -> do e1' <- loop e1
-                              addbind (tmp,C.TBool, e1)
-                              return $ S.ECond (S.EVr tmp)
-                                      -- Don't lift Let out of conditional:
-                                      (discharge$ loop e2) 
-                                      (discharge$ loop e3)
-          where tmp = C.var "TMP_FIXME"
-
+       S.ECond _ _ _ -> do 
+         rhs@(S.ECond _ e2 e3) <- loopRHS ex
+         -- If either of the branches is a let this conditional must itself occur in a Let-RHS.
+         if isLet e2 || isLet e3 
+           then liftOut (error"FIXME-SETTHISTYPE") rhs
+           else return rhs
+         
        -- The rest is BOILERPLATE:      
        ----------------------------------------      
-       S.EVr    _   -> return ex
-       S.EConst _   -> return ex
-       S.EShape avr -> return ex
+       S.EVr    _               -> return ex
+       S.EConst _               -> return ex
+       S.EShape avr             -> return ex
        S.EShapeSize ex          -> S.EShapeSize <$> loop ex
        S.ETuple ls              -> S.ETuple <$> mapM loop ls
        S.EIndex ls              -> S.EIndex <$> mapM loop ls
        S.EPrimApp ty p args     -> S.EPrimApp ty p <$> mapM loop args
        S.ETupProject ind len ex -> S.ETupProject ind len <$> loop ex
        S.EIndexScalar avr ex    -> S.EIndexScalar avr    <$> loop ex
+       
+       S.EIndexConsDynamic _ _ -> error$"liftELets: no dynamic indexing at this point"
+       S.EIndexHeadDynamic _   -> error$"liftELets: no dynamic indexing at this point"
+       S.EIndexTailDynamic _   -> error$"liftELets: no dynamic indexing at this point"
+
+
+-- Count the number of total variables in an expression.  This is used
+-- as the basis for coining new unique identifiers.  IDEALLY ASTs
+-- would keep this information around so that it doesn't need to be
+-- recomputed.
+countVars ex =
+  case ex of
+    S.ELet (_,_,rhs) bod     -> 1 + countVars rhs + countVars bod
+    S.EVr    _               -> 0
+    S.EConst _               -> 0
+    S.EShape avr             -> 0
+    S.EShapeSize ex          -> countVars ex
+    S.ETuple ls              -> sum $ L.map countVars ls
+    S.EIndex ls              -> sum $ L.map countVars ls
+    S.EPrimApp ty p args     -> sum $ L.map countVars args
+    S.ETupProject ind len ex -> countVars ex
+    S.EIndexScalar avr ex    -> countVars ex
+    S.EIndexConsDynamic e1 e2 -> countVars e1 + countVars e2
+    S.EIndexHeadDynamic e     -> countVars e
+    S.EIndexTailDynamic e     -> countVars e
+    S.ECond a b c             -> countVars a + countVars b + countVars c
 
 ----------------------------------------------------------------------------------------------------
 -- After lifting this pass can remove tuples and make shape representations explicit.
@@ -79,28 +130,44 @@ removeScalarTuple :: TEnv -> S.Exp -> T.Block
 removeScalarTuple tenv expr = 
   stmt [] M.empty  M.empty expr
  where 
-
+  -- We do NOT aim for global uniqueness here.  This will only give us
+  -- uniqueness the expression expr.
+  -- numVars = countVars expr
+  tmproot = "tmpRST"
+   
   -- Here we touch the outer parts of the expression tree,
   -- transforming it into statement blocks.  This depends critically
   -- on Let's having been lifted.
   stmt :: Bindings T.Exp -> Env -> TEnv -> S.Exp -> T.Block
   stmt acc env tenv e = 
      case e of  
-       -- Here we need to know that Let's have already been lifted out of the RHS:
+       -- Here's where we need to split up a binding into a number of new temporaries:
+       S.ELet (vr,ty, S.ECond a b c) bod ->          
+              -- Uh oh, we need temporaries here:
+             T.BMultiLet (tmps, error "split tuptype here", T.BCond vr conseq altern) $ 
+             stmt acc' env' tenv' bod
+         where tmps = take (tupleNumLeaves ty) (repeat vr) -- FIXME FIXME
+               S.EVr vr = a
+               tenv' = M.insert vr ty tenv       
+               env'  = M.insert vr (error"FINISHMEEE") env 
+               acc'  = error "finish acc1" -- (vr,ty, exp env tenv rhs) : acc
+               conseq = stmt undefined env tenv b 
+               altern = stmt undefined env tenv c 
+       
+       -- Here we need to know that Let's have already been lifted out of the RHS to call exp:
        S.ELet (vr,ty,rhs) bod -> stmt acc' env' tenv' bod
-                                 where tenv' = M.insert vr ty tenv       
-                                       env'  = M.insert vr (error"FINISHMEEE") env 
-                                       acc'  = undefined -- (vr,ty, exp env tenv rhs) : acc
-       S.ECond (S.EVr vr) e2 e3 -> T.BCond vr (loop e2) (loop e3)
+         where tenv' = M.insert vr ty tenv       
+               env'  = M.insert vr (error"FINISHMEEE2") env 
+               acc'  = error "finish acc2" -- (vr,ty, exp env tenv rhs) : acc
+--       S.ECond (S.EVr vr) e2 e3 -> T.BCond vr (loop e2) (loop e3)
        S.ECond tst        _  _  -> error$ "removeScalarTuple: test expression in conditional was not a plain variable: "++show tst
-       oth                      -> T.BBlock (acc++[]) (exp env tenv oth)
+       oth                      -> T.BResults (exp env tenv oth)
     where loop = stmt acc env tenv 
 
   -- Here we traverse the expression to remove tuples.
   exp :: Env -> TEnv -> S.Exp -> [T.Exp]
   exp env tenv e = 
      case e of  
-       S.ELet (vr,ty,rhs) bod -> error$ "removeScalarTuple: Invariants violated.  Should not encounter ELet here (should have been lifted)."
        
        S.EVr vr | Just ls <- M.lookup vr env -> L.map T.EVr ls
        S.EConst (C.Tup ls)  -> L.map T.EConst ls
@@ -133,6 +200,12 @@ removeScalarTuple tenv expr =
        S.EVr vr       -> error$"removeScalarTuple: unbound variable "++show vr
        S.EShape avr   -> error$"removeScalarTuple: unbound Array variable."
        S.ECond e1 _ _ -> error$"removeScalarTuple: invariant violated. ECond test not a var: "++show e1
+       S.EIndexScalar ae _ -> error$"removeScalarTuple: invariant broken: non-varref arg to EIndexScalar"
+       S.EIndexConsDynamic _ _ -> error$"removeScalarTuple: no dynamic indexing at this point"
+       S.EIndexHeadDynamic _   -> error$"removeScalarTuple: no dynamic indexing at this point"
+       S.EIndexTailDynamic _   -> error$"removeScalarTuple: no dynamic indexing at this point"         
+       S.ELet (vr,ty,rhs) bod -> 
+         error$ "removeScalarTuple: Invariants violated.  Should not encounter ELet here (should have been lifted)."
    where 
       loop = exp env tenv
       loop1 e = case loop e of 

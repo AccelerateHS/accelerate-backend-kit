@@ -65,7 +65,8 @@ unConstVal (ConstVal c) = c
 unArrVal   (ArrVal v)   = v
 
 addBlockBind :: (Var,Type,Exp) -> T.Block -> T.Block
-addBlockBind bnd (T.BBlock ls x)   = T.BBlock (bnd:ls) x 
+addBlockBind = error "FINISH ME ..."
+-- addBlockBind bnd (T.BBlock ls x)   = T.BBlock (bnd:ls) x 
 -- addBlockBind bnd x@(T.BCond _ _ _) = T.BBlock [bnd] [x]
 -- FINISH ME
 
