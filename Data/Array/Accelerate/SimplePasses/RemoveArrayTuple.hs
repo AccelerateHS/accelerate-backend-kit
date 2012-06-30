@@ -30,10 +30,12 @@ import Debug.Trace(trace)
                  
 type TAExp = T.AExp S.Type
 
-type SubNameMap = M.Map S.Var [S.Var]
--- | A binding EITHER for a scalar or array variable:
+-- The information that we keep on each identifier during this pass:
+type SubNameMap = M.Map S.Var ([S.Var], S.Type)
+
 type Binding  a = (S.Var, S.Type, a)
 type Bindings a = [Binding a]
+-- | A binding EITHER for a scalar or array variable:
 type FlexBindings = Bindings (Either S.Block S.AExp)
 
 --type CollectM = State (Int, Bindings T.Exp)
@@ -91,10 +93,6 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
    mapBindings _ [] = []
    mapBindings fn ((v,t,x):tl) = (v,t,fn x) : mapBindings fn tl
 
-   convertLeft :: Either T.Exp a -> Either S.Block a 
-   convertLeft (Left  ex) = Left $ cE ex
-   convertLeft (Right ae) = Right ae
-
    isTupledTy (TTuple _) = True
    isTupledTy _          = False
 
@@ -134,7 +132,7 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
                      then zip3 subnames types unpacked 
                      else error$"Expected these to be the same length:\n"++
                           " Fresh names: "++show subnames++", types "++show types++" unpacked, "++show unpacked
-               in (M.insert vr subnames macc, flattened)
+               in (M.insert vr (subnames,ty) macc, flattened)
      let acc'  = thisbnd ++ rhsScalars ++ acc
      doBinds acc' macc' remaining
 
@@ -148,7 +146,7 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
    
    -- Process the right hand side of a binding, breakup up Conds and
    -- rewriting variable references to their new detupled targets.
-   dorhs :: M.Map S.Var [S.Var] -> TAExp -> CollectM (TempTree S.AExp)
+   dorhs :: SubNameMap -> TAExp -> CollectM (TempTree S.AExp)
    -- The eenv here maps old names onto a list of new "subnames" for
    -- tuple components.  
    dorhs eenv aex = 
@@ -157,8 +155,8 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
        -- Variable references to tuples need to be deconstructed.
        -- The original variable will disappear.
        T.Vr _ vr -> case M.lookup vr eenv of  
-                     Just names -> return $ listToTT (L.map (TLeaf . S.Vr) names)
-                     Nothing    -> return $ TLeaf (S.Vr vr)
+                     Just (names,_) -> return $ listToTT (L.map (TLeaf . S.Vr) names)
+                     Nothing        -> return $ TLeaf (S.Vr vr)
 
        -- Have to consider flattening of nested array tuples here:
        -- T.ArrayTuple ls -> concatMap (dorhs eenv) $ ls
@@ -224,6 +222,20 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
        T.Apply _ _ _ -> error$ "removeArrayTuple: not expecting Apply; should have been removed."
      
        oth -> error$"removeArrayTuple: this expression violated invariants: "++show oth
+    where
+     convertLeft :: Either T.Exp a -> Either S.Block a 
+     convertLeft (Left  ex) = Left $ cE ex
+     convertLeft (Right ae) = Right ae
+
+     cE :: T.Exp -> S.Block
+     cE = removeScalarTuple tenv . liftELets 
+       where tenv = M.map snd eenv
+
+     -- cF :: S.Fun1 T.Exp -> S.Fun1 S.Exp
+     cF (Lam1 bnd bod) = Lam1 bnd $ cE bod
+
+     -- cF2 :: S.Fun2 Exp -> S.Fun2 S.Exp
+     cF2 (Lam2 bnd1 bnd2 bod) = Lam2 bnd1 bnd2 $ cE bod
 
 
 ----------------------------------------------------------------------------------------------------
@@ -254,15 +266,8 @@ lfr = lf . return
 
 
 -- cE  = convertExps    
-cE :: T.Exp -> S.Block
-cE = removeScalarTuple tenv . liftELets 
-  where tenv = error "Need a tenv here..."
 -- cF  = convertFun1
 -- cF2 = convertFun2
 
--- cF :: S.Fun1 T.Exp-> S.Fun1 S.Exp
-cF (Lam1 bnd bod) = Lam1 bnd $ cE bod
 
--- cF2 :: S.Fun2 Exp -> S.Fun2 S.Exp
-cF2 (Lam2 bnd1 bnd2 bod) = Lam2 bnd1 bnd2 $ cE bod
 

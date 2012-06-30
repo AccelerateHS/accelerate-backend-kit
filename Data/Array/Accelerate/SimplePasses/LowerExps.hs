@@ -103,22 +103,24 @@ liftELets orig = discharge $ loop orig
 -- as the basis for coining new unique identifiers.  IDEALLY ASTs
 -- would keep this information around so that it doesn't need to be
 -- recomputed.
-countVars ex =
-  case ex of
-    S.ELet (_,_,rhs) bod     -> 1 + countVars rhs + countVars bod
-    S.EVr    _               -> 0
-    S.EConst _               -> 0
-    S.EShape avr             -> 0
-    S.EShapeSize ex          -> countVars ex
-    S.ETuple ls              -> sum $ L.map countVars ls
-    S.EIndex ls              -> sum $ L.map countVars ls
-    S.EPrimApp ty p args     -> sum $ L.map countVars args
-    S.ETupProject ind len ex -> countVars ex
-    S.EIndexScalar avr ex    -> countVars ex
-    S.EIndexConsDynamic e1 e2 -> countVars e1 + countVars e2
-    S.EIndexHeadDynamic e     -> countVars e
-    S.EIndexTailDynamic e     -> countVars e
-    S.ECond a b c             -> countVars a + countVars b + countVars c
+countVars ex = exp ex
+ where 
+   exp ex = 
+    case ex of
+      S.ELet (_,_,rhs) bod     -> 1 + exp rhs + exp bod
+      S.EVr    _               -> 0
+      S.EConst _               -> 0
+      S.EShape avr             -> 0
+      S.EShapeSize ex          -> exp ex
+      S.ETuple ls              -> sum $ L.map exp ls
+      S.EIndex ls              -> sum $ L.map exp ls
+      S.EPrimApp ty p args     -> sum $ L.map exp args
+      S.ETupProject ind len ex -> exp ex
+      S.EIndexScalar avr ex    -> exp ex
+      S.EIndexConsDynamic e1 e2 -> exp e1 + exp e2
+      S.EIndexHeadDynamic e     -> exp e
+      S.EIndexTailDynamic e     -> exp e
+      S.ECond a b c             -> exp a + exp b + exp c
 
 ----------------------------------------------------------------------------------------------------
 -- After lifting this pass can remove tuples and make shape representations explicit.
@@ -133,8 +135,10 @@ removeScalarTuple tenv expr =
   -- We do NOT aim for global uniqueness here.  This will only give us
   -- uniqueness the expression expr.
   -- numVars = countVars expr
-  tmproot = "tmpRST"
+  tmproot = C.var "tmpRST"
    
+  mkTmp _ = tmproot -- FIXME!!
+
   -- Here we touch the outer parts of the expression tree,
   -- transforming it into statement blocks.  This depends critically
   -- on Let's having been lifted.
@@ -155,13 +159,18 @@ removeScalarTuple tenv expr =
                altern = stmt undefined env tenv c 
        
        -- Here we need to know that Let's have already been lifted out of the RHS to call exp:
-       S.ELet (vr,ty,rhs) bod -> stmt acc' env' tenv' bod
-         where tenv' = M.insert vr ty tenv       
+       S.ELet (vr,ty,rhs) bod -> 
+           L.foldr T.BLet (stmt acc' env' tenv' bod)
+           (zip3 vrs tys rhs')
+         where vrs   = case tys of 
+                         [_] -> [vr]
+                         _   -> L.map mkTmp tys
+               tys   = C.flattenTupleTy ty
+               tenv' = M.insert vr ty tenv       
                env'  = M.insert vr (error"FINISHMEEE2") env 
+               rhs'  = exp env tenv rhs
                acc'  = error "finish acc2" -- (vr,ty, exp env tenv rhs) : acc
---       S.ECond (S.EVr vr) e2 e3 -> T.BCond vr (loop e2) (loop e3)
-       S.ECond tst        _  _  -> error$ "removeScalarTuple: test expression in conditional was not a plain variable: "++show tst
-       oth                      -> T.BResults (exp env tenv oth)
+       oth -> T.BResults (exp env tenv oth)
     where loop = stmt acc env tenv 
 
   -- Here we traverse the expression to remove tuples.
@@ -188,7 +197,9 @@ removeScalarTuple tenv expr =
                                    
        S.EIndexScalar (S.Vr _ avr) ex -> [T.EIndexScalar avr (loop ex)]
 
-       -- We know the dimensionality of arrays; further, shapes are just tuples so they are unpacked here:
+       -- (1) we know the dimensionality of arrays, and 
+       -- (2) shapes are just tuples in our encoding.
+       -- Therefore we can unpack them here:
        S.EShape (S.Vr _ avr) | Just ty <- M.lookup avr tenv -> 
          L.map (`T.EProjFromShape` avr) $ 
          L.take (tupleNumLeaves ty) [0..]

@@ -27,7 +27,8 @@ module Data.Array.Accelerate.SimpleAST
      isTrivial,
      isIntType, isFloatType, isNumType, 
      isIntConst, isFloatConst, isNumConst,
-     constToType
+     constToType,
+     flattenTupleTy
     )   
  where
 
@@ -172,7 +173,7 @@ data Fun2 a = Lam2 (Var,Type) (Var,Type) a
 -- | A block of statements representing scalar computation that returns multiple values.
 data Block = 
     BMultiLet ([Var], [Type], CondBlock) Block -- A multi-binding to a conditional RHS.
-  | BLet      (Var, Type, Exp)                 -- A single binding
+  | BLet      (Var, Type, Exp)           Block -- A single binding
   | BResults [Exp]                             -- Return value(s)
  deriving (Read,Show,Eq,Generic)
 
@@ -308,10 +309,10 @@ type SliceType      = [SliceComponent]
 data SliceComponent = Fixed | All 
   deriving (Eq,Show,Read,Generic)
 
--- TEMP / OLD:
--- They read left-to-right, in the same
--- order that one would write `(Z :. 3 :. 4 :. All)` in the source code.
--- That particular example would translate to `[Fixed, Fixed, All]`.
+flattenTupleTy :: Type -> [Type]
+flattenTupleTy (TTuple ls) = concatMap flattenTupleTy ls
+flattenTupleTy oth         = [oth]
+
 
 -------------------------------------------------------------------------------
 -- Accelerate Runtime Array Data
