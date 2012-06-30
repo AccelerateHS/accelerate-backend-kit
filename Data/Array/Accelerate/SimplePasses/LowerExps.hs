@@ -103,8 +103,10 @@ liftELets orig = discharge $ loop orig
 -- as the basis for coining new unique identifiers.  IDEALLY ASTs
 -- would keep this information around so that it doesn't need to be
 -- recomputed.
-countVars ex = exp ex
+countVars :: S.AExp C.Type -> Int
+countVars orig = aexp orig
  where 
+   exp :: S.Exp -> Int
    exp ex = 
     case ex of
       S.ELet (_,_,rhs) bod     -> 1 + exp rhs + exp bod
@@ -122,6 +124,42 @@ countVars ex = exp ex
       S.EIndexTailDynamic e     -> exp e
       S.ECond a b c             -> exp a + exp b + exp c
 
+   fn1 (C.Lam1 _   bod) = exp bod
+   fn2 (C.Lam2 _ _ bod) = exp bod
+
+   aexp :: S.AExp C.Type -> Int
+   aexp ae = 
+     case ae of 
+       S.Let _ (v,ty,rhs) bod -> aexp rhs + aexp bod
+       S.Apply _ (C.Lam1 (v,ty) abod) ae -> aexp abod + aexp ae
+       S.Vr _ _              -> 0
+       S.Unit _ _            -> 0
+       S.Use _ _             -> 0
+       S.Generate _ _ _      -> 0
+       S.ZipWith _ fn ae1 ae2 -> fn2 fn + aexp ae1 + aexp ae2
+       S.Map     _ fn ae      -> fn1 fn + aexp ae
+       S.TupleRefFromRight _ _ ae -> aexp ae
+       S.Cond _ ex ae1 ae2        -> exp ex + aexp ae1 + aexp ae2
+       S.Replicate _ _ ex ae -> exp ex + aexp ae
+       S.Index     _ _ ae ex -> exp ex + aexp ae
+       S.Fold  a fn einit ae         -> fn2 fn + exp einit + aexp ae
+       S.Fold1 a fn       ae         -> fn2 fn +             aexp ae
+       S.FoldSeg a fn einit ae aeseg -> fn2 fn + exp einit + aexp ae + aexp aeseg
+       S.Fold1Seg a fn      ae aeseg -> fn2 fn +             aexp ae + aexp aeseg
+       S.Scanl    a fn einit ae      -> fn2 fn + exp einit + aexp ae
+       S.Scanl'   a fn einit ae      -> fn2 fn + exp einit + aexp ae
+       S.Scanl1   a fn       ae      -> fn2 fn +             aexp ae
+       S.Scanr    a fn einit ae      -> fn2 fn + exp einit + aexp ae
+       S.Scanr'   a fn einit ae      -> fn2 fn + exp einit + aexp ae
+       S.Scanr1   a fn       ae      -> fn2 fn +             aexp ae
+       S.Permute a f2 ae1 f1 ae2 -> fn2 f2 + fn1 f1  + aexp ae1 + aexp ae2
+       S.Backpermute a ex lam ae -> exp ex + fn1 lam + aexp ae
+       S.Reshape     a ex     ae -> exp ex + aexp ae
+       S.Stencil   a fn bndry ae -> fn1 fn + aexp ae
+       S.Stencil2  a fn bnd1 ae1 bnd2 ae2 -> fn2 fn + aexp ae1 + aexp ae2
+       S.ArrayTuple a aes -> sum $ L.map aexp aes
+       
+
 ----------------------------------------------------------------------------------------------------
 -- After lifting this pass can remove tuples and make shape representations explicit.
 ----------------------------------------------------------------------------------------------------
@@ -137,7 +175,7 @@ removeScalarTuple eenv expr =
   -- numVars = countVars expr
   tmproot = C.var "tmpRST"
    
-  mkTmp _ = tmproot -- FIXME!!
+  mkTmp _ = tmproot -- FIXME!! Do real temporary generation.
 
   -- Here we touch the outer parts of the expression tree,
   -- transforming it into statement blocks.  This depends critically
