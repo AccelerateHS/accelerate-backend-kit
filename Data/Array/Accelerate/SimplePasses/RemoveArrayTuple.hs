@@ -227,15 +227,23 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
      convertLeft (Left  ex) = Left $ cE ex
      convertLeft (Right ae) = Right ae
 
+--     convertedEnv = M.map (\(nms,ty) -> (L.map S.Vr nms,ty)) eenv
+     convertedEnv = M.map snd eenv
+
      cE :: T.Exp -> S.Block
-     cE = removeScalarTuple tenv . liftELets 
-       where tenv = M.map snd eenv
+     cE = cE_helper convertedEnv
+     cE_helper tenv = removeScalarTuple tenv . liftELets 
 
      -- cF :: S.Fun1 T.Exp -> S.Fun1 S.Exp
-     cF (Lam1 bnd bod) = Lam1 bnd $ cE bod
+     cF (Lam1 (vr,ty) bod) = Lam1 (vr,ty) $ cE_helper tenv bod
+      where tenv = M.insert vr ty 
+                   convertedEnv
 
      -- cF2 :: S.Fun2 Exp -> S.Fun2 S.Exp
-     cF2 (Lam2 bnd1 bnd2 bod) = Lam2 bnd1 bnd2 $ cE bod
+     cF2 (Lam2 (v1,t1) (v2,t2) bod) = Lam2 (v1,t1) (v2,t2) $ cE_helper tenv bod
+      where tenv = M.insert v1 t1 $ 
+                   M.insert v2 t2 
+                   convertedEnv
 
 
 ----------------------------------------------------------------------------------------------------
