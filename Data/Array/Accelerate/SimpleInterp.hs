@@ -65,7 +65,7 @@ unConstVal (ConstVal c) = c
 unArrVal   (ArrVal v)   = v
 
 addBlockBind :: (Var,Type,Exp) -> T.Block -> T.Block
-addBlockBind = error "FINISH ME ..."
+addBlockBind = S.BLet 
 -- addBlockBind bnd (T.BBlock ls x)   = T.BBlock (bnd:ls) x 
 -- addBlockBind bnd x@(T.BCond _ _ _) = T.BBlock [bnd] [x]
 -- FINISH ME
@@ -116,6 +116,7 @@ evalProg origenv (S.Prog binds results progtype) =
              case evalB env eSz of 
                ConstVal (I n)    -> [n]
                ConstVal (Tup ls) -> map (\ (I i) -> i) ls
+               TupVal   ls       -> map (\ (ConstVal (I i)) -> i) ls
 
        --------------------------------------------------------------------------------
                               
@@ -259,10 +260,21 @@ evalProg origenv (S.Prog binds results progtype) =
        _ -> error$"Accelerate array expression breaks invariants: "++ show rhs
 
 evalB :: Env -> T.Block -> Value
-evalB = undefined
---     T.ELet (vr,_ty,rhs) bod -> trace ("  ELet: bound "++show vr++" to "++show rhs') $
---                                evalE (M.insert vr rhs' env) bod
---                                where rhs' = (evalE env rhs)
+evalB env b = 
+  case b of 
+    BResults ls           -> TupVal $ L.map (evalE env) ls
+    BLet (vr,_ty,rhs) bod ->
+      trace ("  BLet: bound "++show vr++" to "++show rhs') $
+      evalB (M.insert vr rhs' env) bod
+      where rhs' = (evalE env rhs)
+    BMultiLet (vrs,tys, BCond a b c) bod -> 
+      let -- TupVal ls = evalB env rhs 
+          Just (ConstVal (B bool)) = M.lookup a env
+          next = if bool then b else c
+          TupVal ls = evalB env next
+          env' = L.foldr (uncurry M.insert) env (zip vrs ls)
+      in evalB env' bod
+      
 
 evalE :: Env -> T.Exp -> Value
 evalE env expr = 

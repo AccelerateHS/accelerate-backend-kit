@@ -19,8 +19,8 @@ type Binding  a = (C.Var, C.Type, a)
 type Bindings a = [Binding a]
 
 -- We map each identifier onto both a type and a list of finer-grained (post-detupling) names.
-type Env  = M.Map C.Var [C.Var]
-type TEnv = M.Map C.Var C.Type
+type Env  = M.Map C.Var ([C.Var], C.Type)
+--type TEnv = M.Map C.Var C.Type
 
 ----------------------------------------------------------------------------------------------------
 -- First, a let-lifting pass that also lifts out conditional tests.
@@ -128,9 +128,9 @@ countVars ex = exp ex
 
 -- | This is not a full pass, rather just a function for converting expressions.
 --   This is currently [2012.06.27] used by removeArrayTuple.
-removeScalarTuple :: TEnv -> S.Exp -> T.Block
-removeScalarTuple tenv expr = 
-  stmt [] M.empty  M.empty expr
+removeScalarTuple :: Env -> S.Exp -> T.Block
+removeScalarTuple eenv expr = 
+  stmt [] eenv expr
  where 
   -- We do NOT aim for global uniqueness here.  This will only give us
   -- uniqueness the expression expr.
@@ -142,43 +142,41 @@ removeScalarTuple tenv expr =
   -- Here we touch the outer parts of the expression tree,
   -- transforming it into statement blocks.  This depends critically
   -- on Let's having been lifted.
-  stmt :: Bindings T.Exp -> Env -> TEnv -> S.Exp -> T.Block
-  stmt acc env tenv e = 
+  stmt :: Bindings T.Exp -> Env -> S.Exp -> T.Block
+  stmt acc env e = 
      case e of  
        -- Here's where we need to split up a binding into a number of new temporaries:
        S.ELet (vr,ty, S.ECond a b c) bod ->          
               -- Uh oh, we need temporaries here:
              T.BMultiLet (tmps, error "split tuptype here", T.BCond vr conseq altern) $ 
-             stmt acc' env' tenv' bod
+             stmt acc' env' bod
          where tmps = take (tupleNumLeaves ty) (repeat vr) -- FIXME FIXME
                S.EVr vr = a
-               tenv' = M.insert vr ty tenv       
-               env'  = M.insert vr (error"FINISHMEEE") env 
+               env'  = M.insert vr (error"FINISHMEEE") env -- ty 
                acc'  = error "finish acc1" -- (vr,ty, exp env tenv rhs) : acc
-               conseq = stmt undefined env tenv b 
-               altern = stmt undefined env tenv c 
+               conseq = stmt (error "NO acc") env b 
+               altern = stmt (error "NO acc2") env c 
        
        -- Here we need to know that Let's have already been lifted out of the RHS to call exp:
        S.ELet (vr,ty,rhs) bod -> 
-           L.foldr T.BLet (stmt acc' env' tenv' bod)
+           L.foldr T.BLet (stmt acc' env' bod)
            (zip3 vrs tys rhs')
          where vrs   = case tys of 
                          [_] -> [vr]
                          _   -> L.map mkTmp tys
                tys   = C.flattenTupleTy ty
-               tenv' = M.insert vr ty tenv       
-               env'  = M.insert vr (error"FINISHMEEE2") env 
-               rhs'  = exp env tenv rhs
+               env'  = M.insert vr (error"FINISHMEEE2") env  -- ty
+               rhs'  = exp env rhs
                acc'  = error "finish acc2" -- (vr,ty, exp env tenv rhs) : acc
-       oth -> T.BResults (exp env tenv oth)
-    where loop = stmt acc env tenv 
+       oth -> T.BResults (exp env oth)
+    where loop = stmt acc env
 
   -- Here we traverse the expression to remove tuples.
-  exp :: Env -> TEnv -> S.Exp -> [T.Exp]
-  exp env tenv e = 
+  exp :: Env -> S.Exp -> [T.Exp]
+  exp env e = 
      case e of  
        
-       S.EVr vr | Just ls <- M.lookup vr env -> L.map T.EVr ls
+       S.EVr vr | Just (ls,_) <- M.lookup vr env -> L.map T.EVr ls
        S.EConst (C.Tup ls)  -> L.map T.EConst ls
        S.EConst c           -> [T.EConst c]
        
@@ -200,7 +198,7 @@ removeScalarTuple tenv expr =
        -- (1) we know the dimensionality of arrays, and 
        -- (2) shapes are just tuples in our encoding.
        -- Therefore we can unpack them here:
-       S.EShape (S.Vr _ avr) | Just ty <- M.lookup avr tenv -> 
+       S.EShape (S.Vr _ avr) | Just (_,ty) <- M.lookup avr env -> 
          L.map (`T.EProjFromShape` avr) $ 
          L.take (tupleNumLeaves ty) [0..]
                 
@@ -218,7 +216,7 @@ removeScalarTuple tenv expr =
        S.ELet (vr,ty,rhs) bod -> 
          error$ "removeScalarTuple: Invariants violated.  Should not encounter ELet here (should have been lifted)."
    where 
-      loop = exp env tenv
+      loop = exp env 
       loop1 e = case loop e of 
                  [x] -> x
                  ls  -> error$"removeScalarTuple: Expecting one value in this context, received: "++show ls
