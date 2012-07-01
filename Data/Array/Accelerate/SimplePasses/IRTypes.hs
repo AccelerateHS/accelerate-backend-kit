@@ -16,7 +16,7 @@ module Data.Array.Accelerate.SimplePasses.IRTypes
      Data.Array.Accelerate.SimplePasses.IRTypes.isTrivial,
                   
      -- reverseConvertExps, reverseConvertFun1, reverseConvertFun2, reverseConvertAExps -- TEMP                  
-     retrieveExpType
+     retrieveExpType, countVars
    )
        where
 
@@ -335,3 +335,66 @@ retrieveExpType tenv e =
 
 mkTupleTy [one] = one
 mkTupleTy ls    = S.TTuple ls
+
+
+-- Count the number of total variables in an expression.  This is used
+-- as the basis for coining new unique identifiers.  IDEALLY ASTs
+-- would keep this information around so that it doesn't need to be
+-- recomputed.
+countVars :: AExp S.Type -> Int
+countVars orig = aexp orig
+ where 
+   exp :: Exp -> Int
+   exp ex = 
+    case ex of
+      ELet (_,_,rhs) bod     -> 1 + exp rhs + exp bod
+      EVr    _               -> 0
+      EConst _               -> 0
+      EShape avr             -> 0
+      EShapeSize ex          -> exp ex
+      ETuple ls              -> sum $ L.map exp ls
+      EIndex ls              -> sum $ L.map exp ls
+      EPrimApp ty p args     -> sum $ L.map exp args
+      ETupProject ind len ex -> exp ex
+      EIndexScalar avr ex    -> exp ex
+      EIndexConsDynamic e1 e2 -> exp e1 + exp e2
+      EIndexHeadDynamic e     -> exp e
+      EIndexTailDynamic e     -> exp e
+      ECond a b c             -> exp a + exp b + exp c
+
+   fn1 (S.Lam1 _   bod) = exp bod
+   fn2 (S.Lam2 _ _ bod) = exp bod
+
+   aexp :: AExp S.Type -> Int
+   aexp ae = 
+     case ae of 
+       Let _ (v,ty,rhs) bod -> aexp rhs + aexp bod
+       Apply _ (S.Lam1 (v,ty) abod) ae -> aexp abod + aexp ae
+       Vr _ _              -> 0
+       Unit _ _            -> 0
+       Use _ _             -> 0
+       Generate _ _ _      -> 0
+       ZipWith _ fn ae1 ae2 -> fn2 fn + aexp ae1 + aexp ae2
+       Map     _ fn ae      -> fn1 fn + aexp ae
+       TupleRefFromRight _ _ ae -> aexp ae
+       Cond _ ex ae1 ae2        -> exp ex + aexp ae1 + aexp ae2
+       Replicate _ _ ex ae -> exp ex + aexp ae
+       Index     _ _ ae ex -> exp ex + aexp ae
+       Fold  a fn einit ae         -> fn2 fn + exp einit + aexp ae
+       Fold1 a fn       ae         -> fn2 fn +             aexp ae
+       FoldSeg a fn einit ae aeseg -> fn2 fn + exp einit + aexp ae + aexp aeseg
+       Fold1Seg a fn      ae aeseg -> fn2 fn +             aexp ae + aexp aeseg
+       Scanl    a fn einit ae      -> fn2 fn + exp einit + aexp ae
+       Scanl'   a fn einit ae      -> fn2 fn + exp einit + aexp ae
+       Scanl1   a fn       ae      -> fn2 fn +             aexp ae
+       Scanr    a fn einit ae      -> fn2 fn + exp einit + aexp ae
+       Scanr'   a fn einit ae      -> fn2 fn + exp einit + aexp ae
+       Scanr1   a fn       ae      -> fn2 fn +             aexp ae
+       Permute a f2 ae1 f1 ae2 -> fn2 f2 + fn1 f1  + aexp ae1 + aexp ae2
+       Backpermute a ex lam ae -> exp ex + fn1 lam + aexp ae
+       Reshape     a ex     ae -> exp ex + aexp ae
+       Stencil   a fn bndry ae -> fn1 fn + aexp ae
+       Stencil2  a fn bnd1 ae1 bnd2 ae2 -> fn2 fn + aexp ae1 + aexp ae2
+       ArrayTuple a aes -> sum $ L.map aexp aes
+
+

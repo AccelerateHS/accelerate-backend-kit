@@ -8,10 +8,10 @@ module Data.Array.Accelerate.SimplePasses.LowerExps
 import Data.Array.Accelerate.SimplePasses.IRTypes as S
 import qualified Data.Array.Accelerate.SimpleAST  as T
 import qualified Data.Array.Accelerate.SimpleAST  as C
-import           Data.Map                        as M
-import           Data.List                       as L
+import           Data.Map                         as M
+import           Data.List                        as L
 
-import Control.Monad.State.Strict (State, runState, get, put)
+import Control.Monad.State.Strict (StateT, State, runStateT, runState, get, put, lift)
 import Control.Monad (mapM, (=<<))
 import Control.Applicative ((<$>))
 
@@ -32,37 +32,39 @@ type TEnv = M.Map C.Var C.Type
 -- would help to form a Set of all existing variables, or to simply
 -- keep a Map that freshens ids on the way down.
 
+-- type BindingAccM a = State (Bindings S.Exp) a
+-- type BindingAccM a = StateT (Bindings S.Exp) (Identity) a
+type BindingAccM a = StateT (Bindings S.Exp) (State Int) a
+
 liftELets :: Env -> S.Exp -> State Int S.Exp
 liftELets outerEnv orig = 
-   return$ discharge $ loop plainTenv orig
+   discharge $ loop plainTenv orig
  where
    plainTenv = M.map snd outerEnv   
    
    addbind bnd = do ls <- get; put (bnd:ls)   
-   discharge m = let (x,bnds) = runState m [] in
-                 (unpack (reverse bnds) x)
+   discharge m = do (x,bnds) <- runStateT m []
+                    return (unpack (reverse bnds) x)
    unpack [] x = x
    unpack (bnd:rst) x = S.ELet bnd (unpack rst x)
    
    isLet (S.ELet _ _) = True
    isLet _            = False
 
-   -- TODO: Do real temporary generation:
-   mkTmp = return$ C.var "TMP_FIXME"
-
+   liftOut :: C.Type -> S.Exp -> BindingAccM (S.Exp)
    liftOut ty rhs = do
-     tmp <- mkTmp 
+     tmp <- lift $ mkTmp "tmpLEL"
      addbind (tmp,ty,rhs)
      return (S.EVr tmp)
 
    -- The rules are different for what is allowed in a Let-RHS:
-   loopRHS :: TEnv -> S.Exp -> State (Bindings S.Exp) (S.Exp)
+   loopRHS :: TEnv -> S.Exp -> BindingAccM (S.Exp)
    loopRHS tenv ex = 
      case ex of
        -- Introduce a temporary for the test expression:
        S.ECond e1 e2 e3 -> do 
-         let e2' = (discharge$ loop tenv e2) 
-             e3' = (discharge$ loop tenv e3)
+         e2' <- lift (discharge$ loop tenv e2) 
+         e3' <- lift (discharge$ loop tenv e3)
          -- Lift the test expression out only if necessary:           
          e1' <- if S.isTrivial e1 
                 then return e1
@@ -71,7 +73,7 @@ liftELets outerEnv orig =
        
        oth -> loop tenv ex
      
-   loop ::TEnv -> S.Exp -> State (Bindings S.Exp) (S.Exp)
+   loop ::TEnv -> S.Exp -> BindingAccM (S.Exp)
    loop tenv ex = 
      case ex of 
 
@@ -102,67 +104,6 @@ liftELets outerEnv orig =
        S.EIndexConsDynamic _ _ -> error$"liftELets: no dynamic indexing at this point"
        S.EIndexHeadDynamic _   -> error$"liftELets: no dynamic indexing at this point"
        S.EIndexTailDynamic _   -> error$"liftELets: no dynamic indexing at this point"
-
-
--- Count the number of total variables in an expression.  This is used
--- as the basis for coining new unique identifiers.  IDEALLY ASTs
--- would keep this information around so that it doesn't need to be
--- recomputed.
-countVars :: S.AExp C.Type -> Int
-countVars orig = aexp orig
- where 
-   exp :: S.Exp -> Int
-   exp ex = 
-    case ex of
-      S.ELet (_,_,rhs) bod     -> 1 + exp rhs + exp bod
-      S.EVr    _               -> 0
-      S.EConst _               -> 0
-      S.EShape avr             -> 0
-      S.EShapeSize ex          -> exp ex
-      S.ETuple ls              -> sum $ L.map exp ls
-      S.EIndex ls              -> sum $ L.map exp ls
-      S.EPrimApp ty p args     -> sum $ L.map exp args
-      S.ETupProject ind len ex -> exp ex
-      S.EIndexScalar avr ex    -> exp ex
-      S.EIndexConsDynamic e1 e2 -> exp e1 + exp e2
-      S.EIndexHeadDynamic e     -> exp e
-      S.EIndexTailDynamic e     -> exp e
-      S.ECond a b c             -> exp a + exp b + exp c
-
-   fn1 (C.Lam1 _   bod) = exp bod
-   fn2 (C.Lam2 _ _ bod) = exp bod
-
-   aexp :: S.AExp C.Type -> Int
-   aexp ae = 
-     case ae of 
-       S.Let _ (v,ty,rhs) bod -> aexp rhs + aexp bod
-       S.Apply _ (C.Lam1 (v,ty) abod) ae -> aexp abod + aexp ae
-       S.Vr _ _              -> 0
-       S.Unit _ _            -> 0
-       S.Use _ _             -> 0
-       S.Generate _ _ _      -> 0
-       S.ZipWith _ fn ae1 ae2 -> fn2 fn + aexp ae1 + aexp ae2
-       S.Map     _ fn ae      -> fn1 fn + aexp ae
-       S.TupleRefFromRight _ _ ae -> aexp ae
-       S.Cond _ ex ae1 ae2        -> exp ex + aexp ae1 + aexp ae2
-       S.Replicate _ _ ex ae -> exp ex + aexp ae
-       S.Index     _ _ ae ex -> exp ex + aexp ae
-       S.Fold  a fn einit ae         -> fn2 fn + exp einit + aexp ae
-       S.Fold1 a fn       ae         -> fn2 fn +             aexp ae
-       S.FoldSeg a fn einit ae aeseg -> fn2 fn + exp einit + aexp ae + aexp aeseg
-       S.Fold1Seg a fn      ae aeseg -> fn2 fn +             aexp ae + aexp aeseg
-       S.Scanl    a fn einit ae      -> fn2 fn + exp einit + aexp ae
-       S.Scanl'   a fn einit ae      -> fn2 fn + exp einit + aexp ae
-       S.Scanl1   a fn       ae      -> fn2 fn +             aexp ae
-       S.Scanr    a fn einit ae      -> fn2 fn + exp einit + aexp ae
-       S.Scanr'   a fn einit ae      -> fn2 fn + exp einit + aexp ae
-       S.Scanr1   a fn       ae      -> fn2 fn +             aexp ae
-       S.Permute a f2 ae1 f1 ae2 -> fn2 f2 + fn1 f1  + aexp ae1 + aexp ae2
-       S.Backpermute a ex lam ae -> exp ex + fn1 lam + aexp ae
-       S.Reshape     a ex     ae -> exp ex + aexp ae
-       S.Stencil   a fn bndry ae -> fn1 fn + aexp ae
-       S.Stencil2  a fn bnd1 ae1 bnd2 ae2 -> fn2 fn + aexp ae1 + aexp ae2
-       S.ArrayTuple a aes -> sum $ L.map aexp aes
        
 
 ----------------------------------------------------------------------------------------------------
@@ -181,7 +122,7 @@ mkTmp root = do n <- get; put (n+1)
 --       
 --   This pass takes a type environment as argument.
 --   It uses a state monad to access a counter for unique variable generation.
-removeScalarTuple :: Env -> S.Exp -> State Int T.Block
+removeScalarTuple :: Env -> S.Exp -> TmpM T.Block
 removeScalarTuple eenv expr = 
   stmt eenv expr
  where 

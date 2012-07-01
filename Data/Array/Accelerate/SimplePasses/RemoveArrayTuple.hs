@@ -103,6 +103,9 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
      return$ L.map (\(v,t,r) -> (v,t, Left (r))) 
              newbinds
 
+   totalVars = L.foldl (+) (T.countVars bod) $ 
+               L.map (\ (_,_,e) -> T.countVars e) binds
+
    -- This iterates over the bindings from top to bottom.  It ASSUMES
    -- that they are topologically sorted.  This way it can break up
    -- Conds as it goes, and rely on those results subsequently.
@@ -232,7 +235,7 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
 
      cE :: T.Exp -> S.Block
      cE = cE_helper convertedEnv
-     cE_helper tenv ex = evalState m 0
+     cE_helper tenv ex = evalState m totalVars
          where m = removeScalarTuple tenv =<<
                    liftELets tenv (ex :: T.Exp)
 
@@ -276,10 +279,6 @@ lf :: Functor f => f a -> f (TempTree a)
 lf x = TLeaf <$> x
 lfr = lf . return
 
-
--- cE  = convertExps    
--- cF  = convertFun1
--- cF2 = convertFun2
 
 
 
