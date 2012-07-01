@@ -23,6 +23,7 @@ type Env  = M.Map C.Var ([C.Var], C.Type)
 
 type TEnv = M.Map C.Var C.Type
 
+
 ----------------------------------------------------------------------------------------------------
 -- First, a let-lifting pass that also lifts out conditional tests.
 ----------------------------------------------------------------------------------------------------
@@ -168,6 +169,13 @@ countVars orig = aexp orig
 -- After lifting this pass can remove tuples and make shape representations explicit.
 ----------------------------------------------------------------------------------------------------
 
+type TmpM a = State Int a 
+
+mkTmp :: Show a => a -> TmpM C.Var
+mkTmp root = do n <- get; put (n+1)
+                return $ C.var (show root ++"_"++ show n)
+
+
 -- | This is not a full pass, rather just a function for converting expressions.
 --   This is currently [2012.06.27] used by removeArrayTuple.
 --       
@@ -175,45 +183,35 @@ countVars orig = aexp orig
 --   It uses a state monad to access a counter for unique variable generation.
 removeScalarTuple :: Env -> S.Exp -> State Int T.Block
 removeScalarTuple eenv expr = 
-  return$ stmt eenv expr
+  stmt eenv expr
  where 
-  -- We do NOT aim for global uniqueness here.  This will only give us
-  -- uniqueness the expression expr.
-  -- numVars = countVars expr
-  tmproot = C.var "tmpRST"
-   
-  mkTmp _ = tmproot -- FIXME!! Do real temporary generation.
-
   -- Here we touch the outer parts of the expression tree,
   -- transforming it into statement blocks.  This depends critically
   -- on Let's having been lifted.
-  stmt :: Env -> S.Exp -> T.Block
+  stmt :: Env -> S.Exp -> State Int T.Block
   stmt env e = 
      case e of  
        -- Here's where we need to split up a binding into a number of new temporaries:
-       S.ELet (vr,ty,rhs) bod -> 
-           case rhs of 
-             S.ECond a b c -> 
-                -- Uh oh, we need temporaries here:
-               T.BMultiLet (tmps, tys, T.BCond vr conseq altern) $ 
-               stmt env' bod
-               where
-                 S.EVr vr = a
-                 conseq = stmt env b 
-                 altern = stmt env c 
-
-             _ -> L.foldr T.BLet (stmt env' bod)
-                  (zip3 tmps tys rhs')
-
-         where tmps  = case tys of 
-                         [_] -> [vr]
-                         _   -> L.map mkTmp tys
-               tys   = C.flattenTupleTy ty
-               env'  = M.insert vr (tmps,ty) env
+       S.ELet (vr,ty,rhs) bod -> do
+           let tys   = C.flattenTupleTy ty
+           tmps <- case tys of 
+                     [_] -> return [vr]
+                     _   -> mapM (mkTmp . const vr) tys
+           let env'  = M.insert vr (tmps,ty) env
                -- Here we need to know that Let's have already been lifted out of the RHS to call exp:
-               rhs'  = exp env rhs         
+               rhs'  = exp env rhs 
+           case rhs of 
+             S.ECond a b c -> do
+               conseq <- stmt env b 
+               altern <- stmt env c 
+               let S.EVr vr = a               
+               T.BMultiLet (tmps, tys, T.BCond vr conseq altern) <$>
+                 stmt env' bod
+
+             _ -> do bod' <- stmt env' bod
+                     return $ L.foldr T.BLet bod' (zip3 tmps tys rhs')
        
-       oth -> T.BResults (exp env oth)
+       oth -> return $ T.BResults (exp env oth)
     where loop = stmt env
 
   -- Here we traverse the expression to remove tuples.
