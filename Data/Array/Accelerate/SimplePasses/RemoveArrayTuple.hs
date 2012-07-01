@@ -232,7 +232,9 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
 
      cE :: T.Exp -> S.Block
      cE = cE_helper convertedEnv
-     cE_helper tenv = removeScalarTuple tenv . liftELets tenv
+     cE_helper tenv ex = evalState m 0
+         where m = removeScalarTuple tenv =<<
+                   liftELets tenv (ex :: T.Exp)
 
      expand vr ty = [vr] -- FIXME -- may be a tuple type
 

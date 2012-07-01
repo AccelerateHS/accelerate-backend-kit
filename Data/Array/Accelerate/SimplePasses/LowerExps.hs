@@ -31,8 +31,9 @@ type TEnv = M.Map C.Var C.Type
 -- would help to form a Set of all existing variables, or to simply
 -- keep a Map that freshens ids on the way down.
 
-liftELets :: Env -> S.Exp -> S.Exp
-liftELets outerEnv orig = discharge $ loop plainTenv orig
+liftELets :: Env -> S.Exp -> State Int S.Exp
+liftELets outerEnv orig = 
+   return$ discharge $ loop plainTenv orig
  where
    plainTenv = M.map snd outerEnv   
    
@@ -169,9 +170,12 @@ countVars orig = aexp orig
 
 -- | This is not a full pass, rather just a function for converting expressions.
 --   This is currently [2012.06.27] used by removeArrayTuple.
-removeScalarTuple :: Env -> S.Exp -> T.Block
+--       
+--   This pass takes a type environment as argument.
+--   It uses a state monad to access a counter for unique variable generation.
+removeScalarTuple :: Env -> S.Exp -> State Int T.Block
 removeScalarTuple eenv expr = 
-  stmt eenv expr
+  return$ stmt eenv expr
  where 
   -- We do NOT aim for global uniqueness here.  This will only give us
   -- uniqueness the expression expr.
@@ -187,30 +191,28 @@ removeScalarTuple eenv expr =
   stmt env e = 
      case e of  
        -- Here's where we need to split up a binding into a number of new temporaries:
-       S.ELet (vr,ty, S.ECond a b c) bod ->          
-              -- Uh oh, we need temporaries here:
-             T.BMultiLet (tmps, tys, T.BCond vr conseq altern) $ 
-             stmt env' bod
-         where tmps = take (tupleNumLeaves ty) (repeat vr) -- FIXME FIXME - real temporaries
-               tys  = C.flattenTupleTy ty
-               S.EVr vr = a
-               env'  = M.insert vr (tmps,ty) env
---                env'  = L.foldr (uncurry M.insert) 
---                                env (zipWith (\v t -> (v, ([v],t))) tmps tys)
-               
-               conseq = stmt env b 
-               altern = stmt env c 
-       
-       -- Here we need to know that Let's have already been lifted out of the RHS to call exp:
        S.ELet (vr,ty,rhs) bod -> 
-           L.foldr T.BLet (stmt env' bod)
-           (zip3 tmps tys rhs')
+           case rhs of 
+             S.ECond a b c -> 
+                -- Uh oh, we need temporaries here:
+               T.BMultiLet (tmps, tys, T.BCond vr conseq altern) $ 
+               stmt env' bod
+               where
+                 S.EVr vr = a
+                 conseq = stmt env b 
+                 altern = stmt env c 
+
+             _ -> L.foldr T.BLet (stmt env' bod)
+                  (zip3 tmps tys rhs')
+
          where tmps  = case tys of 
                          [_] -> [vr]
                          _   -> L.map mkTmp tys
                tys   = C.flattenTupleTy ty
                env'  = M.insert vr (tmps,ty) env
-               rhs'  = exp env rhs
+               -- Here we need to know that Let's have already been lifted out of the RHS to call exp:
+               rhs'  = exp env rhs         
+       
        oth -> T.BResults (exp env oth)
     where loop = stmt env
 
