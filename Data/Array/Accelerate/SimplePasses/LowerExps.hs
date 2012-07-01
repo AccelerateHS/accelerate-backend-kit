@@ -20,7 +20,8 @@ type Bindings a = [Binding a]
 
 -- We map each identifier onto both a type and a list of finer-grained (post-detupling) names.
 type Env  = M.Map C.Var ([C.Var], C.Type)
---type TEnv = M.Map C.Var C.Type
+
+type TEnv = M.Map C.Var C.Type
 
 ----------------------------------------------------------------------------------------------------
 -- First, a let-lifting pass that also lifts out conditional tests.
@@ -30,9 +31,11 @@ type Env  = M.Map C.Var ([C.Var], C.Type)
 -- would help to form a Set of all existing variables, or to simply
 -- keep a Map that freshens ids on the way down.
 
-liftELets :: S.Exp -> S.Exp
-liftELets orig = discharge $ loop orig
+liftELets :: Env -> S.Exp -> S.Exp
+liftELets outerEnv orig = discharge $ loop plainTenv orig
  where
+   plainTenv = M.map snd outerEnv   
+   
    addbind bnd = do ls <- get; put (bnd:ls)   
    discharge m = let (x,bnds) = runState m [] in
                  (unpack (reverse bnds) x)
@@ -51,33 +54,32 @@ liftELets orig = discharge $ loop orig
      return (S.EVr tmp)
 
    -- The rules are different for what is allowed in a Let-RHS:
-   loopRHS :: S.Exp -> State (Bindings S.Exp) (S.Exp)
-   loopRHS ex = 
+   loopRHS :: TEnv -> S.Exp -> State (Bindings S.Exp) (S.Exp)
+   loopRHS tenv ex = 
      case ex of
        -- Introduce a temporary for the test expression:
        S.ECond e1 e2 e3 -> do 
-         let e2' = (discharge$ loop e2) 
-             e3' = (discharge$ loop e3)
+         let e2' = (discharge$ loop tenv e2) 
+             e3' = (discharge$ loop tenv e3)
          -- Lift the test expression out only if necessary:           
          e1' <- if S.isTrivial e1 
                 then return e1
-                else liftOut C.TBool =<< loop e1
+                else liftOut C.TBool =<< loop tenv e1
          return $ S.ECond e1' e2' e3'
        
-       oth -> loop ex
+       oth -> loop tenv ex
      
-   loop :: S.Exp -> State (Bindings S.Exp) (S.Exp)
-   loop ex = 
-     let tenv = error "TODO - refactor me to pass tenv" in
+   loop ::TEnv -> S.Exp -> State (Bindings S.Exp) (S.Exp)
+   loop tenv ex = 
      case ex of 
 
        S.ELet (v,ty,rhs) bod -> 
-          do rhs' <- loopRHS rhs -- Important: Collect these bindings first.
+          do rhs' <- loopRHS tenv rhs -- Important: Collect these bindings first.
              addbind (v,ty,rhs')
-             loop bod       
+             loop (M.insert v ty tenv) bod       
        
        S.ECond _ _ _ -> do 
-         rhs@(S.ECond _ e2 e3) <- loopRHS ex
+         rhs@(S.ECond _ e2 e3) <- loopRHS tenv ex
          -- If either of the branches is a let this conditional must itself occur in a Let-RHS.
          if isLet e2 || isLet e3 
            then liftOut (retrieveExpType tenv rhs) rhs
@@ -88,12 +90,12 @@ liftELets orig = discharge $ loop orig
        S.EVr    _               -> return ex
        S.EConst _               -> return ex
        S.EShape avr             -> return ex
-       S.EShapeSize ex          -> S.EShapeSize <$> loop ex
-       S.ETuple ls              -> S.ETuple <$> mapM loop ls
-       S.EIndex ls              -> S.EIndex <$> mapM loop ls
-       S.EPrimApp ty p args     -> S.EPrimApp ty p <$> mapM loop args
-       S.ETupProject ind len ex -> S.ETupProject ind len <$> loop ex
-       S.EIndexScalar avr ex    -> S.EIndexScalar avr    <$> loop ex
+       S.EShapeSize ex          -> S.EShapeSize <$> loop tenv ex
+       S.ETuple ls              -> S.ETuple <$> mapM (loop tenv) ls
+       S.EIndex ls              -> S.EIndex <$> mapM (loop tenv) ls
+       S.EPrimApp ty p args     -> S.EPrimApp ty p <$> mapM (loop tenv) args
+       S.ETupProject ind len ex -> S.ETupProject ind len <$> loop tenv ex
+       S.EIndexScalar avr ex    -> S.EIndexScalar avr    <$> loop tenv ex
        
        S.EIndexConsDynamic _ _ -> error$"liftELets: no dynamic indexing at this point"
        S.EIndexHeadDynamic _   -> error$"liftELets: no dynamic indexing at this point"
