@@ -189,23 +189,27 @@ removeScalarTuple eenv expr =
        -- Here's where we need to split up a binding into a number of new temporaries:
        S.ELet (vr,ty, S.ECond a b c) bod ->          
               -- Uh oh, we need temporaries here:
-             T.BMultiLet (tmps, error "split tuptype here", T.BCond vr conseq altern) $ 
+             T.BMultiLet (tmps, tys, T.BCond vr conseq altern) $ 
              stmt env' bod
-         where tmps = take (tupleNumLeaves ty) (repeat vr) -- FIXME FIXME
+         where tmps = take (tupleNumLeaves ty) (repeat vr) -- FIXME FIXME - real temporaries
+               tys  = C.flattenTupleTy ty
                S.EVr vr = a
-               env'  = M.insert vr (error"FINISHMEEE") env -- ty 
+               env'  = M.insert vr (tmps,ty) env
+--                env'  = L.foldr (uncurry M.insert) 
+--                                env (zipWith (\v t -> (v, ([v],t))) tmps tys)
+               
                conseq = stmt env b 
                altern = stmt env c 
        
        -- Here we need to know that Let's have already been lifted out of the RHS to call exp:
        S.ELet (vr,ty,rhs) bod -> 
            L.foldr T.BLet (stmt env' bod)
-           (zip3 vrs tys rhs')
-         where vrs   = case tys of 
+           (zip3 tmps tys rhs')
+         where tmps  = case tys of 
                          [_] -> [vr]
                          _   -> L.map mkTmp tys
                tys   = C.flattenTupleTy ty
-               env'  = M.insert vr (error"FINISHMEEE2") env  -- ty
+               env'  = M.insert vr (tmps,ty) env
                rhs'  = exp env rhs
        oth -> T.BResults (exp env oth)
     where loop = stmt env
