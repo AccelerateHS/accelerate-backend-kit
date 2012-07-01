@@ -8,8 +8,6 @@
 -- | Compiler pass to remove dynamic cons/head/tail on indices.
 --------------------------------------------------------------------------------
 
--- UNFINISHED UNFINISHED UNFINISHED UNFINISHED UNFINISHED UNFINISHED UNFINISHED 
-
 module Data.Array.Accelerate.SimplePasses.StaticTuples
        ( staticTuples )
        where 
@@ -25,8 +23,6 @@ import Text.PrettyPrint.GenericPretty (Out(doc), Generic)
 import Data.Array.Accelerate.SimpleAST   as S
 import Data.Array.Accelerate.SimplePasses.IRTypes as T
 
-import Debug.Trace(trace)
-tracePrint s x = trace (s ++ show x) x
 
 -- Shorthands:
 type TAExp = T.AExp S.Type
@@ -122,13 +118,13 @@ staticTuples ae = aexp M.empty ae
          
        T.EIndexHeadDynamic e -> 
          let e'  = exp tenv e
-             ty  = retrieveTy tenv e'
+             ty  = retrieveExpType tenv e'
              len = tupleNumLeaves ty
          in mkProject (len-1) 1 e' ty
 
        T.EIndexTailDynamic e -> 
          let e'  = exp tenv e
-             ty  = retrieveTy tenv e'
+             ty  = retrieveExpType tenv e'
              len = tupleNumLeaves ty
          in mkProject 0 (len-1) e' ty
          
@@ -145,7 +141,7 @@ staticTuples ae = aexp M.empty ae
 
        T.EConst c  -> T.EConst c 
        T.ETuple ls -> T.ETuple (L.map (exp tenv) ls)
-       T.ETupProject ind len ex -> mkProject ind len (exp tenv ex) (retrieveTy tenv ex)
+       T.ETupProject ind len ex -> mkProject ind len (exp tenv ex) (retrieveExpType tenv ex)
        
        T.EIndex els -> T.EIndex (L.map (exp tenv) els)
        
@@ -161,34 +157,6 @@ tupleNumLeaves :: S.Type -> Int
 tupleNumLeaves (S.TTuple ls) = L.sum $ L.map tupleNumLeaves ls
 tupleNumLeaves _             = 1
 
--- TODO: move into SimpleAST.hs perhaps:
-retrieveTy :: TEnv -> T.Exp -> S.Type
-retrieveTy tenv e =
-  tracePrint (" * Retrieving type for "++show e++" in tenv "++show (M.keys tenv) ++ " --> ") $
-  case e of  
-    T.EVr vr -> case M.lookup vr tenv of 
-                  Nothing  -> error$"retrieveTy: no binding in type environment for var "++show vr++" in tenv "++show (M.keys tenv)
-                  Just x   -> x
-    T.EConst c             -> constToType c
-    T.EPrimApp ty p args   -> ty    
-    T.ELet (vr,ty,rhs) bod -> retrieveTy (M.insert vr ty tenv) bod
-    T.ECond _e1 e2 _e3     -> retrieveTy tenv e2
-    T.EIndexScalar ae ex   -> let TArray _ elt = getAnnot ae in elt
-    T.EShapeSize ex        -> TInt
-    T.EShape  ae           -> let TArray dim _ = getAnnot ae
-                              in mkTupleTy$ take dim $ repeat TInt
-    T.EIndex ls            -> mkTupleTy$ L.map (retrieveTy tenv) ls
-    T.ETuple ls            -> mkTupleTy$ L.map (retrieveTy tenv) ls
-    
-    T.ETupProject ind len ex -> 
-      case (ind,len,retrieveTy tenv ex) of 
-        (_,_,S.TTuple ls) -> mkTupleTy$ reverse$ take len $ drop ind $ reverse ls
-        (0,1,oth)         -> oth
-        _                 -> error "retrieveTy: mismatch between indices and tuple type"
-
-    T.EIndexConsDynamic e1 e2 -> error "EIndexConsDynamic should have been desugared before calling retrieveTy"
-    T.EIndexHeadDynamic ex    -> error "EIndexHeadDynamic should have been desugared before calling retrieveTy"
-    T.EIndexTailDynamic ex    -> error "EIndexTailDynamic should have been desugared before calling retrieveTy"
 
 -- Create an ETupProject but avoid creating spurious ones.
 mkProject :: Int -> Int -> T.Exp -> Type -> T.Exp
@@ -196,7 +164,5 @@ mkProject ind len ex (S.TTuple ty) = T.ETupProject ind len ex
 mkProject 0 1 ex oth = ex  -- Eliminate silly ETupProject.
 mkProject ind len ex ty = error$"internal error: should not have this project on non-tuple type: "++show ty
 
-mkTupleTy [one] = one
-mkTupleTy ls    = S.TTuple ls
   
   

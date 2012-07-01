@@ -11,12 +11,12 @@ module Data.Array.Accelerate.SimplePasses.IRTypes
    (
      AExp(..), getAnnot, 
      Exp(..), -- Fun1(..), Fun2(..),
-     convertAExps,
-     convertExps, 
+     convertAExps,  convertExps, 
      convertFun1, convertFun2,
-     Data.Array.Accelerate.SimplePasses.IRTypes.isTrivial
+     Data.Array.Accelerate.SimplePasses.IRTypes.isTrivial,
                   
      -- reverseConvertExps, reverseConvertFun1, reverseConvertFun2, reverseConvertAExps -- TEMP                  
+     retrieveExpType
    )
        where
 
@@ -27,6 +27,9 @@ import qualified Data.List as L
 
 import Data.Array.Accelerate.SimpleAST hiding (Exp(..), AExp(..))
 import qualified Data.Array.Accelerate.SimpleAST as S
+
+import Debug.Trace(trace)
+tracePrint s x = trace (s ++ show x) x
 
 --------------------------------------------------------------------------------
 
@@ -294,3 +297,41 @@ reverseConvertAExps aex =
      S.Reshape     ex     (v)    -> Reshape     dt (cE ex)         (Vr dt v)
      S.Stencil   fn bndry (v)    -> Stencil     dt (cF fn) bndry   (Vr dt v)
      S.Stencil2  fn bnd1 v bnd2 v2 -> Stencil2 dt (cF2 fn) bnd1 (Vr dt v) bnd2 (Vr dt v2)
+
+
+--------------------------------------------------------------------------------
+
+-- | Retrieve the type of an expression.  This is necessary because
+-- scalar expressions are not currently decorated by type the way
+-- array-expressions are.  The input expression must either be closed,
+-- or have all unbound variables bound by the provided type-environment.
+retrieveExpType :: (M.Map Var Type) -> Exp -> S.Type
+retrieveExpType tenv e =
+  tracePrint (" * Retrieving type for "++show e++" in tenv "++show (M.keys tenv) ++ " --> ") $
+  case e of  
+    EVr vr -> case M.lookup vr tenv of 
+                  Nothing  -> error$"retrieveExpType: no binding in type environment for var "++show vr++" in tenv "++show (M.keys tenv)
+                  Just x   -> x
+    EConst c             -> constToType c
+    EPrimApp ty p args   -> ty    
+    ELet (vr,ty,rhs) bod -> retrieveExpType (M.insert vr ty tenv) bod
+    ECond _e1 e2 _e3     -> retrieveExpType tenv e2
+    EIndexScalar ae ex   -> let TArray _ elt = getAnnot ae in elt
+    EShapeSize ex        -> TInt
+    EShape  ae           -> let TArray dim _ = getAnnot ae
+                              in mkTupleTy$ take dim $ repeat TInt
+    EIndex ls            -> mkTupleTy$ L.map (retrieveExpType tenv) ls
+    ETuple ls            -> mkTupleTy$ L.map (retrieveExpType tenv) ls
+    
+    ETupProject ind len ex -> 
+      case (ind,len,retrieveExpType tenv ex) of 
+        (_,_,S.TTuple ls) -> mkTupleTy$ reverse$ take len $ drop ind $ reverse ls
+        (0,1,oth)         -> oth
+        _                 -> error "retrieveExpType: mismatch between indices and tuple type"
+
+    EIndexConsDynamic e1 e2 -> error "EIndexConsDynamic should have been desugared before calling retrieveExpType"
+    EIndexHeadDynamic ex    -> error "EIndexHeadDynamic should have been desugared before calling retrieveExpType"
+    EIndexTailDynamic ex    -> error "EIndexTailDynamic should have been desugared before calling retrieveExpType"
+
+mkTupleTy [one] = one
+mkTupleTy ls    = S.TTuple ls

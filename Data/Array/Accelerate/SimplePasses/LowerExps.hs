@@ -68,6 +68,7 @@ liftELets orig = discharge $ loop orig
      
    loop :: S.Exp -> State (Bindings S.Exp) (S.Exp)
    loop ex = 
+     let tenv = error "TODO - refactor me to pass tenv" in
      case ex of 
 
        S.ELet (v,ty,rhs) bod -> 
@@ -79,7 +80,7 @@ liftELets orig = discharge $ loop orig
          rhs@(S.ECond _ e2 e3) <- loopRHS ex
          -- If either of the branches is a let this conditional must itself occur in a Let-RHS.
          if isLet e2 || isLet e3 
-           then liftOut (error"FIXME-SETTHISTYPE") rhs
+           then liftOut (retrieveExpType tenv rhs) rhs
            else return rhs
          
        -- The rest is BOILERPLATE:      
