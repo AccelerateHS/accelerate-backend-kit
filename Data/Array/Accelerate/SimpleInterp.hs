@@ -151,7 +151,8 @@ evalProg origenv (S.Prog binds results progtype) =
            -- These are ONLY the new replicated dimensions (excluding All fields):
            dimsOut = case evalB env ex of 
                       ConstVal s | isIntConst s -> [fromIntegral$ constToInteger s]
-                      ConstVal (Tup ls) -> 
+                      x | isTuple x -> 
+                        let ls = untupleVal x in 
                         map (fromIntegral . constToInteger) $ 
                         filter isNumConst ls
                       oth -> error $ "replicate: bad first argument to replicate: "++show oth
@@ -262,7 +263,7 @@ evalProg origenv (S.Prog binds results progtype) =
 evalB :: Env -> T.Block -> Value
 evalB env b = 
   case b of 
-    BResults ls           -> TupVal $ L.map (evalE env) ls
+    BResults ls           -> tupleVal $ L.map (evalE env) ls
     BLet (vr,_ty,rhs) bod ->
       trace ("  BLet: bound "++show vr++" to "++show rhs') $
       evalB (M.insert vr rhs' env) bod
