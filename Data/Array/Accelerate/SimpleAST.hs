@@ -4,6 +4,11 @@
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 -- TEMP: for UArray Read instance:
 {-# LANGUAGE ScopedTypeVariables, FlexibleInstances #-}
+
+-- | This module defines the abstract syntax datatypes produced by the
+--   simplified Accelerate backend-kit.  These datatypes are the
+--   /starting point/ for any subsequent code generation performed by
+--   a concrete backend.
 module Data.Array.Accelerate.SimpleAST  
    ( 
      -- * The types making up Accelerate ASTs:
@@ -353,8 +358,8 @@ data ArrayPayload =
 -- to make all arrays canonicalized to a data buffer of Word8's:
  deriving (Show, Read, Eq)
   
--- | This is our Haskell representation of raw, contiguous data.
--- Subject to change in the future depending on what internal
+-- | This is our Haskell representation of raw, contiguous data (arrays).
+-- It is subject to change in the future depending on what internal
 -- representation the Accelerate front-end uses.
 type RawData e = UArray Int e
    
@@ -376,20 +381,24 @@ type RawData e = UArray Int e
 -- | Is the type numeric, rather than, for example, an array, tuple,
 -- boolean or character.  Note that C characters are considered
 -- numeric.
+isNumType :: Type -> Bool
 isNumType ty = isIntType ty || isFloatType ty
 
 -- | Is the scalar type integral?  This includes words as well as
 -- signed ints as well as C types.
+isIntType :: Type -> Bool
 isIntType ty =
   case ty of {
     TInt  ->t;     TInt8 ->t;    TInt16  ->t;  TInt32  ->t;  TInt64 ->t; 
     TWord  ->t;    TWord8 ->t;   TWord16  ->t; TWord32  ->t; TWord64 ->t; 
     TCShort  ->t;  TCInt   ->t;  TCLong  ->t;  TCLLong ->t; 
     TCUShort ->t;  TCUInt  ->t;  TCULong ->t;  TCULLong ->t;
+    TCChar -> t; TCSChar -> t; TCUChar -> t; -- C character types.
      _ -> False
   }
  where t = True
 
+isFloatType :: Type -> Bool
 isFloatType ty = 
   case ty of {
     TFloat  ->t; TDouble ->t; 
@@ -400,17 +409,20 @@ isFloatType ty =
 
 -- | Is it a numeric constant representing an exact integer?  This
 -- includes words as well as signed ints as well as C types.
+isIntConst :: Const -> Bool
 isIntConst c =
   case c of {
     I _ ->t;    I8 _ ->t;    I16 _  ->t;  I32 _  ->t;  I64 _ ->t; 
     W _ ->t;    W8 _ ->t;    W16 _  ->t;  W32 _  ->t;  W64 _ ->t;     
     CS _ ->t;  CI _ ->t;  CL _ ->t;  CLL _ ->t; 
     CUS _ ->t;  CUI _ ->t;  CUL _ ->t;  CULL _ ->t;
+    CC _ -> t; CSC _ -> t; CUC _ -> t; -- C char types count as ints.
      _ -> False
   }
  where t = True
 
 -- | Is the constant an inexact floating point number (of any precision)?
+isFloatConst :: Const -> Bool
 isFloatConst c = 
   case c of {
     F _ ->t;  D _ ->t; 
@@ -421,7 +433,8 @@ isFloatConst c =
 
 -- | Is the constant numeric, rather than a tuple, boolean or
 -- character.  Note that C characters are considered numeric.
-isNumConst ty = isIntConst ty || isFloatConst ty
+isNumConst :: Const -> Bool
+isNumConst cnst = isIntConst cnst || isFloatConst cnst
 
 
 -- | Convert any const satisfying `isIntConst` into a Haskell

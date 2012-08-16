@@ -170,6 +170,7 @@ p6 = map go (use xs)
 t6 = convertToSimpleProg p6
 r6 = I.run p6
 
+-- | Transpose a matrix.
 transposeAcc :: Array DIM2 Float -> Acc (Array DIM2 Float)
 transposeAcc mat =
   let mat' = use mat

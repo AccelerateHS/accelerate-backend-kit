@@ -2,8 +2,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 -- {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
--- An example interpreter for the simplified AST.
-
+-- | An example interpreter for the simplified AST defined in "Data.Array.Accelerate.SimpleAST".
 module Data.Array.Accelerate.SimpleInterp
        (
        run 
@@ -16,11 +15,11 @@ import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import Data.Array.Accelerate.SimpleAST             as S
 import Data.Array.Accelerate.SimpleAST             as T
 import Data.Array.Accelerate.SimpleArray           as SA
-import Data.Array.Accelerate.SimpleConverter (convertToSimpleProg, packArray, repackAcc)
+import Data.Array.Accelerate.SimpleConverter (convertToSimpleProg, repackAcc)
 import qualified Data.Map as M
 import qualified Data.List as L
 
-import Text.PrettyPrint.GenericPretty (Out(doc), Generic)
+-- import Text.PrettyPrint.GenericPretty (Generic)
 
 import Debug.Trace (trace)
 tracePrint s x = trace (s++show x) x
