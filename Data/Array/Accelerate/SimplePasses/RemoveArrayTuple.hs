@@ -1,6 +1,6 @@
 
 --------------------------------------------------------------------------------
--- | Compiler pass to remove Array tuples
+-- | Compiler pass to remove Array-level tuples entirely.
 --------------------------------------------------------------------------------
 
 -- TODO:
@@ -43,9 +43,10 @@ data TempTree a = TT (TempTree a) (TempTree a) [TempTree a] -- Node of degree tw
 ----------------------------------------------------------------------------------------------------
 -- The pass itself:
 
--- | This removes ArrayTuple and TupleRefFromRight.  However, the
---   final body may return more than one array (i.e. an ArrayTuple),
---   so the output must no longer be an expression but a `Prog`.
+-- | This removes the ArrayTuple and TupleRefFromRight syntactic
+--   forms.  However, the final body may return more than one array
+--   (i.e. an ArrayTuple), so the output must no longer be an expression
+--   but a `Prog`.
 -- 
 --   This pass introduces new variable names and thus makes
 --   assumptions about the naming convention.  It assumes that adding
@@ -59,7 +60,7 @@ data TempTree a = TT (TempTree a) (TempTree a) [TempTree a] -- Node of degree tw
 --   top-level bindings) form rather than an expression form.  The
 --   output is a final `S.Prog` value, which at this point becomes
 --   /mandatory/ as a result of the added scalar bindings, which are
---   not representable in the `AExp` types.
+--   not representable within array expressions.
 -- 
 removeArrayTuple :: ([(S.Var, S.Type, TAExp)], TAExp) -> S.Prog
 removeArrayTuple (binds, bod) = evalState main (0,[])
@@ -69,7 +70,8 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
              newbinds2   <- dischargeNewScalarBinds
              let finalbinds = mapBindings convertLeft (newbinds ++ newbinds2)
                  unVar (S.Vr v) = v
-                 unVar x = error$ "removeArrayTuple: expecting the final result expressions to be varrefs at this point, instead received: "++show x
+                 unVar x = error$ "removeArrayTuple: expecting the final result expressions "++
+                                  "to be varrefs at this point, instead received: "++show x
              return $ S.Prog finalbinds
                              (L.map unVar $ flattenTT newbod)
                              (getAnnot bod)
@@ -102,7 +104,7 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
    -- that they are topologically sorted.  This way it can break up
    -- Conds as it goes, and rely on those results subsequently.
    -- 
-   -- The resulting bindings bind the finer granularity,
+   -- The resulting bindings bind finer granularity,
    -- post-detupling, "subnames".
    -- 
    -- We keep two accumulators: 
@@ -112,7 +114,7 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
            -> CollectM (FlexBindings,SubNameMap)
    doBinds acc macc [] = return (reverse acc, macc)
    doBinds acc macc ((vr,ty,rhs) :remaining) = do 
-     rhs' <- dorhs macc rhs     
+     rhs'       <- dorhs macc rhs     
      rhsScalars <- dischargeNewScalarBinds 
      
      let (macc',thisbnd) = 
@@ -233,17 +235,20 @@ listOfLeaves :: [a] -> TempTree a
 listOfLeaves = listToTT . L.map TLeaf
 
 -- Index from the right:
+indexTT :: TempTree a -> Int -> TempTree a
 indexTT _ i | i < 0 = error "indexTT: negative index not allowed"
 indexTT (TLeaf x) 0 = TLeaf x 
 indexTT (TLeaf x) i = error$"cannot index singleton tuple with index: "++show i
 indexTT (TT a b rest) i = reverse (a:b:rest) !! i
 
+fromLeaf :: Show t => TempTree t -> t
 fromLeaf (TLeaf x) = x
 fromLeaf oth = error$"fromLeaf: was expecting a TLeaf! "++show oth
 
 -- TODO : Finish this.  
 
 -- Trivial expressions can be duplicated and don't warrant introducing let bindings.
+isTrivial :: T.Exp -> Bool
 isTrivial (T.EVr _)    = True
 isTrivial (T.EConst _) = True                     
 isTrivial _            = False
@@ -251,6 +256,8 @@ isTrivial _            = False
 
 lf :: Functor f => f a -> f (TempTree a)
 lf x = TLeaf <$> x
+
+cE :: T.Exp -> S.Exp
 lfr = lf . return
 
 cE  = convertExps    

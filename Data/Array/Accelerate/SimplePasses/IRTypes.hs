@@ -3,12 +3,15 @@
 
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
--- | We don't go straight from Data.Array.Accelerate.AST to the
---   SimpleAST.  This file contains intermediate representation(s)
---   used by other passes found in this directory.
+-- | In the process of Accelerate AST simplification, we don't go
+-- straight from Data.Array.Accelerate.AST to the final SimpleAST.
+-- Rather, there are intermediate steps.  This module contains
+-- intermediate representation(s) used by other passes found in this
+-- directory.
 
 module Data.Array.Accelerate.SimplePasses.IRTypes
    (
+     -- * Intermediate representations.
      AExp(..), getAnnot, 
      Exp(..), -- Fun1(..), Fun2(..),
      convertAExps,
@@ -36,7 +39,7 @@ import qualified Data.Array.Accelerate.SimpleAST as S
 --   This is an intermediate datatype that is isomorphic to the the
 --   Accelerate frontend AST type ("Data.Array.Accelerate.AST")
 --   enabling direct translation.  It is also used as the IR for
---   subsequent lowerings ("Data.Array.Accelerate.SimplePasses.Lowering").
+--   subsequent lowerings (e.g. staticTuples or liftComplexRands).
 -- 
 --   See documentation for SimpleAST.  Not reproducing it here.
 --   This type differs by including ArrayTuple, TupleRefFromRight, and Apply.
@@ -118,19 +121,22 @@ instance Out a => Out (AExp a)
 -- Conversion functions
 --------------------------------------------------------------------------------
 
+-- | Convert scalar expressions /that meet the restrictions/ to the
+-- final SimpleAST type.
 convertExps :: Exp -> S.Exp
 convertExps expr = 
   let f = convertExps in
-  case expr of 
-    EVr  v                -> S.EVr  v
-    ELet (vr,_ty,lhs) bod -> S.ELet (vr, _ty, f lhs) (f bod)
-    ETuple es             -> S.ETuple (L.map f es)
-    EConst c              -> S.EConst c              
-    ECond e1 e2 e3        -> S.ECond (f e1) (f e2) (f e3)
-    EShapeSize ex         -> S.EShapeSize (f ex)         
-    EPrimApp ty p es      -> S.EPrimApp ty p (L.map f es)
-    ETupProject ind len ex -> S.ETupProject ind len (f ex)
-    EIndex indls            -> S.EIndex (L.map f indls)
+  case expr of
+    -- Good old boilerplate:
+    EVr  v                   -> S.EVr  v
+    ELet (vr,_ty,lhs) bod    -> S.ELet (vr, _ty, f lhs) (f bod)
+    ETuple es                -> S.ETuple (L.map f es)
+    EConst c                 -> S.EConst c              
+    ECond e1 e2 e3           -> S.ECond (f e1) (f e2) (f e3)
+    EShapeSize ex            -> S.EShapeSize (f ex)         
+    EPrimApp ty p es         -> S.EPrimApp ty p (L.map f es)
+    ETupProject ind len ex   -> S.ETupProject ind len (f ex)
+    EIndex indls             -> S.EIndex (L.map f indls)
     EIndexScalar (Vr _ v) ex -> S.EIndexScalar v (f ex)
     EShape (Vr _ v)          -> S.EShape v
     EIndexScalar ae _ -> error$"IRTypes.convertExps: expected EIndexScalar to have plain variable as array input, found: "++show ae

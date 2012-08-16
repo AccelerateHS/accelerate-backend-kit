@@ -186,7 +186,7 @@ data Exp =
   | ETuple [Exp]              -- Build a tuple.
   | ETupProject {             -- Project a consecutive series of fields from a tuple.
       indexFromRight :: Int , --  * where to start the slice
-      len            :: Int , --  * how many scalars to extract
+      projlen        :: Int , --  * how many scalars to extract
       tupexpr        :: Exp }
  deriving (Read,Show,Eq,Generic)
 

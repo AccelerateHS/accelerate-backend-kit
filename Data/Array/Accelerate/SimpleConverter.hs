@@ -20,37 +20,35 @@ module Data.Array.Accelerate.SimpleConverter
        )
        where
 
--- standard libraries
-import Control.Monad
-import Control.Applicative ((<$>),(<*>))
-import Prelude                                     hiding (sum)
-import Control.Monad.State.Strict (State, evalState, runState, get, put, modify)
-import Data.Map as M
+-- standard libraries:
+import           Control.Monad
+import           Control.Applicative        ((<$>),(<*>))
+import           Prelude                    hiding (sum)
+import           Control.Monad.State.Strict (State, evalState, runState, get, put, modify)
+import           Data.Map  as M
 import qualified Data.List as L
-import Text.PrettyPrint.GenericPretty (Out(doc), Generic)
+import           Text.PrettyPrint.GenericPretty (Out(doc), Generic)
 
--- friends
-import Data.Array.Accelerate.Type                  
-import Data.Array.Accelerate.Array.Data            
-import Data.Array.Accelerate.Array.Representation  hiding (sliceIndex)
-import Data.Array.Accelerate.AST
-import Data.Array.Accelerate.Tuple
--- import Data.Array.Accelerate.Analysis.Shape (accDim)
+-- friends:
+import           Data.Array.Accelerate.Type
+import           Data.Array.Accelerate.Array.Data
+import           Data.Array.Accelerate.Array.Representation  hiding (sliceIndex)
+import           Data.Array.Accelerate.AST
+import           Data.Array.Accelerate.Tuple
 import qualified Data.Array.Accelerate.Smart       as Sug
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import qualified Data.Array.Accelerate.SimpleArray as SA
-
 import qualified Data.Array.Accelerate.SimpleAST   as S
--- Temporary AST before we get to the final one:
+  -- Temporary AST before we get to the final one:
 import qualified Data.Array.Accelerate.SimplePasses.IRTypes as T
 
 -- Lowering passes:
-import Data.Array.Accelerate.SimplePasses.LiftLets         (gatherLets) 
-import Data.Array.Accelerate.SimplePasses.LiftComplexRands (liftComplexRands)
-import Data.Array.Accelerate.SimplePasses.RemoveArrayTuple (removeArrayTuple)
-import Data.Array.Accelerate.SimplePasses.StaticTuples     (staticTuples)
+import           Data.Array.Accelerate.SimplePasses.LiftLets         (gatherLets)
+import           Data.Array.Accelerate.SimplePasses.LiftComplexRands (liftComplexRands)
+import           Data.Array.Accelerate.SimplePasses.RemoveArrayTuple (removeArrayTuple)
+import           Data.Array.Accelerate.SimplePasses.StaticTuples     (staticTuples)
 
-import Debug.Trace(trace)
+import           Debug.Trace (trace)
 tracePrint s x = trace (s ++ show x) x
 
 dbg = True
@@ -60,7 +58,8 @@ dbg = True
 --------------------------------------------------------------------------------
 
 -- | Convert the sophisticate Accelerate-internal AST representation
---   into something very simple for external consumption.
+--   into something very simple for external consumption.  Note: this
+--   involves applying a number of lowering compiler passes.
 convertToSimpleProg :: Sug.Arrays a => Sug.Acc a -> S.Prog
 convertToSimpleProg prog = 
   runPass "removeArrayTuple" removeArrayTuple $     
@@ -68,7 +67,7 @@ convertToSimpleProg prog =
   runPass "liftComplexRands" liftComplexRands $  
   
   runPass "staticTuples"     staticTuples     $   
-  runPass "initalConversion" (runEnvM . convertAcc . Sug.convertAcc) $ 
+  runPass "initialConversion" (runEnvM . convertAcc . Sug.convertAcc) $ 
   prog
 
 -- Pass composition:

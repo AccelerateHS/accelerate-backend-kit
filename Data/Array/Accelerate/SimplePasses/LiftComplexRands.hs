@@ -1,26 +1,25 @@
 {-# LANGUAGE TupleSections #-}
 
 --------------------------------------------------------------------------------
--- | Compiler pass to complex operands into let bindings
+-- | Compiler pass to lift complex operands into let bindings
 --------------------------------------------------------------------------------
 
 module Data.Array.Accelerate.SimplePasses.LiftComplexRands
        ( liftComplexRands )
        where 
 
-
-import Control.Monad
-import Control.Applicative ((<$>),(<*>))
-import Prelude                                     hiding (sum)
+import Control.Applicative        ((<$>),(<*>))
 import Control.Monad.State.Strict (State, evalState, runState, get, put, modify)
-import Data.Array.Accelerate.SimpleAST   as S
+import Data.Array.Accelerate.SimpleAST            as S
 import Data.Array.Accelerate.SimplePasses.IRTypes as T
+import Prelude                                    hiding (sum, exp)
 
 -- Shorthands:
 type TAExp = T.AExp S.Type
 type Binding  a = (S.Var, S.Type, a)
 type Bindings a = [Binding a]
 
+isAVar :: T.AExp t -> Bool
 isAVar (T.Vr _ _)  = True
 isAVar _           = False
 
@@ -36,10 +35,10 @@ isAVar _           = False
 -- This pass also ensures that the final body of the program is a
 -- varref (i.e. it lifts the body as well).
 liftComplexRands :: TAExp -> TAExp
-liftComplexRands aex = 
+liftComplexRands orig_aex = 
     -- By starting off with 'flat' we ALSO lift the body of the whole program
     -- evalState (flat aex) (0,[])
-    evalState (discharge (flat aex)) 0
+    evalState (discharge (flat orig_aex)) 0
   where  
    isVar :: TAExp -> Bool
    isVar aex = 
