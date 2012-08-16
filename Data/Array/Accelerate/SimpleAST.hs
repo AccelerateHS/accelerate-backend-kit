@@ -471,7 +471,6 @@ constToInteger c =
     Tup  _  -> error "constToInteger: cannot convert tuple Const to Integer"
 
 -- TODO: we could go this route in the future:
-
 -- instance Num  Const where 
 -- instance Real Const where 
 -- instance Ord  Const where 
@@ -481,7 +480,10 @@ constToInteger c =
 -- -- some Consts and combinations of Consts certainly lead to errors.
 -- instance Integral Const where 
 --   toInteger x = 
-  
+
+-- | Unwrap a SimpleAST `Const` into a raw Haskell number.  Note that
+--   this function may perform a size conversion IF the type of the
+--   Const does not match the destination Haskell type.
 fromConst :: Num a => Const -> a 
 fromConst c = 
   case c of 
@@ -513,7 +515,8 @@ fromConst c =
     C    _  -> error "fromConst: cannot convert TChar Const to a Num"
     B    _  -> error "fromConst: cannot convert TBool Const to a Num"
     Tup  _  -> error "fromConst: cannot convert tuple Const to a Num"
-    
+
+-- | What is the type of a `Const`?
 constToType :: Const -> Type
 constToType c = 
   case c of {
