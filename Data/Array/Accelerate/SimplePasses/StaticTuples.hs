@@ -1,27 +1,24 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 --------------------------------------------------------------------------------
 -- | Compiler pass to remove dynamic cons/head/tail on indices.
 --------------------------------------------------------------------------------
 
--- UNFINISHED UNFINISHED UNFINISHED UNFINISHED UNFINISHED UNFINISHED UNFINISHED 
-
 module Data.Array.Accelerate.SimplePasses.StaticTuples
        ( staticTuples )
        where 
 
--- standard libraries
+import Control.Applicative        ((<$>),(<*>))
 import Control.Monad
-import Control.Applicative ((<$>),(<*>))
-import Prelude                                     hiding (sum)
 import Control.Monad.State.Strict (State, evalState, runState, get, put, modify)
-import Data.Map as M
 import Data.List as L
-import Text.PrettyPrint.GenericPretty (Out(doc), Generic)
+import Data.Map  as M
+import Prelude   hiding (sum)
+import Text.PrettyPrint.GenericPretty   (Out(doc), Generic)
+
 import Data.Array.Accelerate.SimpleAST   as S
 import Data.Array.Accelerate.SimplePasses.IRTypes as T
 

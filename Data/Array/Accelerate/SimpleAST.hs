@@ -34,20 +34,18 @@ module Data.Array.Accelerate.SimpleAST
     )   
  where
 
--- import Data.Array.Accelerate.SimpleArray (AccArray)
-
-import           Debug.Trace
-import           Data.Int
-import           Data.Word
+import qualified Data.Array.IO     as IA
+import qualified Data.Array.MArray as MA
 import           Data.Array.Unboxed as U
 import qualified Data.Array.Unsafe as Un
-import qualified Data.Array.MArray as MA
-import qualified Data.Array.IO     as IA
-import           Foreign.C.Types 
-import           Pretty (text) -- ghc api
-import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
-import           System.IO.Unsafe (unsafePerformIO)
+import           Data.Int
 import qualified Data.Map          as M
+import           Data.Word
+import           Debug.Trace
+import           Foreign.C.Types 
+import           Pretty            (text) -- ghc api
+import           System.IO.Unsafe  (unsafePerformIO)
+import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
 --------------------------------------------------------------------------------
 -- Prelude: Pick a simple representation of variables (interned symbols)
 --------------------------------------------------------------------------------

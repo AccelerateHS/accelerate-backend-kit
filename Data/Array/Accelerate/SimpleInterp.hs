@@ -9,19 +9,18 @@ module Data.Array.Accelerate.SimpleInterp
        )
        where
 
-
-import Data.Array.Accelerate.Smart                   (Acc)
-import qualified Data.Array.Accelerate.Array.Sugar as Sug
-import Data.Array.Accelerate.SimpleAST             as S
-import Data.Array.Accelerate.SimpleAST             as T
-import Data.Array.Accelerate.SimpleArray           as SA
-import Data.Array.Accelerate.SimpleConverter (convertToSimpleProg, repackAcc)
-import qualified Data.Map as M
+import qualified Data.Array.Accelerate.Array.Sugar           as Sug
+import           Data.Array.Accelerate.SimpleAST             as S
+import           Data.Array.Accelerate.SimpleAST             as T
+import           Data.Array.Accelerate.SimpleArray           as SA
+import           Data.Array.Accelerate.SimpleConverter (convertToSimpleProg, repackAcc)
+import           Data.Array.Accelerate.Smart           (Acc)
 import qualified Data.List as L
+import qualified Data.Map  as M
 
 -- import Text.PrettyPrint.GenericPretty (Generic)
 
-import Debug.Trace (trace)
+import           Debug.Trace (trace)
 tracePrint s x = trace (s++show x) x
 
 --------------------------------------------------------------------------------
