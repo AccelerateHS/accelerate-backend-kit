@@ -87,19 +87,20 @@ data AExp a =
 --   This differs from `SimpleAST` in that it includes dynamic
 --   list-like treatment of indices.
 -- 
-data Exp = 
+data Exp =
+  -- All four of the following forms evaluate to an "Index":
     EIndex [Exp] -- An index into a multi-dimensional array:
-  | EIndexConsDynamic Exp Exp
-  | EIndexHeadDynamic Exp 
-  | EIndexTailDynamic Exp   
---  | EIndexAny    
+  | EIndexConsDynamic Exp Exp -- Add to the front of an index expression.
+  | EIndexHeadDynamic Exp     -- Project just the first dimension of an index.
+  | EIndexTailDynamic Exp     -- Retain all dimensions but the first.
   -----------------------------------
+  | ETuple [Exp]            -- Build a tuple.
+  | ETupProject Int Int Exp -- Project a consecutive series of fields from a tuple.
   | EVr Var
   | ELet (Var,Type,Exp) Exp
   | EPrimApp Type Prim [Exp]
-  | ETuple [Exp]
   | EConst Const
-  | ETupProject Int Int Exp
+  | ETupProject {             
   | ECond Exp Exp Exp
   | EIndexScalar (AExp Type) Exp 
   | EShape (AExp Type)

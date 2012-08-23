@@ -55,6 +55,8 @@ staticTuples origae = aexp M.empty origae
              ty  = retrieveTy tenv e'
              len = tupleNumLeaves ty
          in mkProject 0 (len-1) e' ty
+
+       T.ETupProject ind ln ex -> mkProject ind ln (exp tenv ex) (retrieveTy tenv ex)
          
        -- The rest is BOILERPLATE:
        ------------------------------------------------------------
@@ -69,7 +71,6 @@ staticTuples origae = aexp M.empty origae
        T.EConst c             -> T.EConst c 
        T.ETuple ls            -> T.ETuple (L.map (exp tenv) ls)
        T.EIndex els           -> T.EIndex (L.map (exp tenv) els)
-       T.ETupProject ind ln ex -> mkProject ind ln (exp tenv ex) (retrieveTy tenv ex)
 
    -- | The real action happens at the expression level, so this
    --   array-expression traversal in this case is mostly boilerplate:

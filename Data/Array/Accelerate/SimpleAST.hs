@@ -70,8 +70,8 @@ type Var = Symbol
 import Data.Symbol
 var = intern
 type Var = Symbol 
-instance Show Symbol where 
- show = unintern
+-- instance Show Symbol where 
+--  show = unintern
 instance Read Symbol where 
 -- NOTE - this package would seem to be unsafe because the Symbol type
 -- constructor is exported.
