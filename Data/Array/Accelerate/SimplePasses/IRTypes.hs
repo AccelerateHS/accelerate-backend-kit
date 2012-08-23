@@ -100,7 +100,6 @@ data Exp =
   | ELet (Var,Type,Exp) Exp
   | EPrimApp Type Prim [Exp]
   | EConst Const
-  | ETupProject {             
   | ECond Exp Exp Exp
   | EIndexScalar (AExp Type) Exp 
   | EShape (AExp Type)

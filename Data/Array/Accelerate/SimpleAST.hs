@@ -43,7 +43,8 @@ import qualified Data.Map          as M
 import           Data.Word
 import           Debug.Trace
 import           Foreign.C.Types 
-import           Pretty            (text) -- ghc api
+-- import           Pretty            (text) -- ghc api
+import           Text.PrettyPrint.HughesPJ (text, Doc)
 import           System.IO.Unsafe  (unsafePerformIO)
 import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
 --------------------------------------------------------------------------------
