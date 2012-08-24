@@ -44,7 +44,7 @@ import qualified Data.Array.Unsafe as Un
 import qualified Data.Array.MArray as MA
 import qualified Data.Array.IO     as IA
 import           Foreign.C.Types 
-import           Pretty (text) -- ghc api
+-- import           Pretty (text) -- ghc api
 import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
 import           System.IO.Unsafe (unsafePerformIO)
 import qualified Data.Map          as M

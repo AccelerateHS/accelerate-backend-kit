@@ -24,11 +24,17 @@ Cabal-version:       >=1.2
 
 Library
   Exposed-modules:   Data.Array.Accelerate.SimpleAST, 
-                     Data.Array.Accelerate.SimpleConverter
+                     Data.Array.Accelerate.SimpleArray,
+                     Data.Array.Accelerate.SimpleConverter,
+                     Data.Array.Accelerate.SimpleInterp
   
   -- Modules not exported by this package.
-  -- Other-modules:       
-  -- Other-files:       
+  Other-modules:       
+                     Data.Array.Accelerate.SimplePasses.LiftLets,
+                     Data.Array.Accelerate.SimplePasses.LiftComplexRands,
+                     Data.Array.Accelerate.SimplePasses.RemoveArrayTuple,
+                     Data.Array.Accelerate.SimplePasses.StaticTuples,
+                     Data.Array.Accelerate.SimplePasses.IRTypes
 
   Build-depends:
                         array           >= 0.3 && < 0.5,

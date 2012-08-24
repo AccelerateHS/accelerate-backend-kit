@@ -17,8 +17,7 @@ import           Data.Array.Accelerate.SimpleConverter (convertToSimpleProg, rep
 import           Data.Array.Accelerate.Smart           (Acc)
 import qualified Data.List as L
 import qualified Data.Map  as M
-
--- import Text.PrettyPrint.GenericPretty (Generic)
+import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
 
 import           Debug.Trace (trace)
 tracePrint s x = trace (s++show x) x
