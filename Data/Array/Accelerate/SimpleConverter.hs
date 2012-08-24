@@ -51,7 +51,7 @@ import           Data.Array.Accelerate.SimplePasses.StaticTuples     (staticTupl
 import           Debug.Trace (trace)
 tracePrint s x = trace (s ++ show x) x
 
-dbg = True
+dbg = False
 
 --------------------------------------------------------------------------------
 -- Exposed entrypoints for this module:
@@ -473,7 +473,7 @@ tupleNumLeaves _             = 1
 
 convertType :: TupleType a -> S.Type
 convertType ty = 
-  tracePrint ("CONVERTTYPE of "++show ty++":  ") $
+--  tracePrint ("CONVERTTYPE of "++show ty++":  ") $
   tupleTy $ flattenTupTy $ 
   loop ty
  where   
