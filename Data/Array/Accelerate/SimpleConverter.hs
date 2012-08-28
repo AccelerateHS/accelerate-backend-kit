@@ -16,7 +16,7 @@
 module Data.Array.Accelerate.SimpleConverter 
        ( 
          convertToSimpleProg, 
-         unpackArray, packArray, repackAcc
+         unpackArray, packArray, repackAcc, Phantom
        )
        where
 

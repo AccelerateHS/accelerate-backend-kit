@@ -5,7 +5,7 @@
 -- | An example interpreter for the simplified AST defined in "Data.Array.Accelerate.SimpleAST".
 module Data.Array.Accelerate.SimpleInterp
        (
-       run 
+       run, evalSimpleAST
        )
        where
 
@@ -29,7 +29,7 @@ run :: forall a . Sug.Arrays a => Acc a -> a
 run acc = 
           maybtrace ("[dbg] Repacking AccArray(s): "++show arrays) $ 
           repackAcc acc arrays
- where arrays = evalProg M.empty (convertToSimpleProg acc)
+ where arrays = evalSimpleAST (convertToSimpleProg acc)
 
 --------------------------------------------------------------------------------
 -- Values and Environments:
@@ -65,13 +65,14 @@ unArrVal   (ArrVal v)   = v
 -- | Evaluating a complete program creates a FLAT list of arrays as a
 --   result.  Reimposing a nested structure to the resulting
 --   tuple-of-arrays is not the job of this function.
-evalProg :: Env -> S.Prog -> [AccArray]
-evalProg origenv (S.Prog binds results progtype) = 
-    maybtrace ("[dbg] evalProg, initial env "++ show (L.map (\(a,_,_)->a) binds)
+evalSimpleAST :: S.Prog -> [AccArray]
+evalSimpleAST (S.Prog binds results progtype) = 
+--    concatArrays $ 
+    maybtrace ("[dbg] evalSimpleAST, initial env "++ show (L.map (\(a,_,_)->a) binds)
            ++"  yielded environment: "++show (M.keys finalenv)) $
     L.map (unArrVal . (envLookup finalenv)) results
   where 
-   finalenv = loop origenv binds
+   finalenv = loop M.empty binds
    -- A binding simply extends an environment of values. 
 --   loop :: [(S.Var, S.Type, Either S.Exp S.AExp)] -> Env
    loop env [] = env
@@ -84,7 +85,7 @@ evalProg origenv (S.Prog binds results progtype) =
        S.Vr  v             -> bind$ envLookup env v
        S.Unit e -> case evalE env e of 
                     ConstVal c -> bind$ ArrVal$ SA.replicate [] c
-                    oth  -> error$"evalProg: expecting ConstVal input to Unit, received: "++show oth
+                    oth  -> error$"evalSimpleAST: expecting ConstVal input to Unit, received: "++show oth
        S.Cond e1 v1 v2 -> case evalE env e1 of 
                              ConstVal (B True)  -> bind$ envLookup env v1
                              ConstVal (B False) -> bind$ envLookup env v2
