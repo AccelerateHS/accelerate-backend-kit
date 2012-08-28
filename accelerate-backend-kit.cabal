@@ -62,3 +62,4 @@ Test-Suite test-accelerate-backend-kit
 --                 , binary
 --                 , QuickCheck, HUnit, time
                  , test-framework, test-framework-hunit, HUnit
+                 , split >= 0.2

@@ -22,7 +22,7 @@ import Test.Framework (testGroup, defaultMain)
 import Test.Framework.Providers.HUnit
 import Test.HUnit      ((~=?))
 import Data.List       (intersperse)
-import Data.List.Split (splitEvery)
+import Data.List.Split (chunksOf)
 
 -- TEMP:
 -- import qualified Data.Array.Accelerate.Language as Lang
@@ -49,8 +49,12 @@ p1aa = generate (constant (Z :. (10::Int)))
 
 -- | Also exercise fromIntegral:
 p1a :: Acc (Vector Float)
-p1a = generate (constant (Z :. (10::Int))) 
-       (A.fromIntegral . unindex1) 
+p1a = generate (constant (Z :. (10::Int))) (A.fromIntegral . unindex1_int) 
+   
+
+
+index1_int   a = (unindex1 (a :: Exp DIM1)) :: Exp Int
+unindex1_int a = (unindex1 a) :: Exp Int
 
 
 -- | And again with a 2D array:
@@ -140,7 +144,7 @@ r3 = I.run p3
 -- Test 4, a program that creates an IndexScalar:
 p4 :: Acc (Scalar Int64)
 p4 = let arr = generate (constant (Z :. (5::Int))) (\_ -> 33) in
-     unit $ arr ! (index1 2)
+     unit $ arr ! (index1 (2::Exp Int))
         -- (Lang.constant (Z :. (3::Int)))  
 t4 = convertToSimpleProg p4         
 r4 = I.run p4
@@ -149,7 +153,7 @@ p4b :: Acc (Scalar Int64)
 p4b = let arr = generate (constant (Z :. (3::Int) :. (3::Int))) (\_ -> 33) 
               :: Acc (Array DIM2 Int64)
       in
-     unit $ arr ! (index2 1 2)
+     unit $ arr ! (index2 (1::Exp Int) (2::Exp Int))
 t4b = convertToSimpleProg p4b
 
 
@@ -266,8 +270,8 @@ p11c = lift (p11b,p11b)
 --       in lift (new,new)
 
 p12 :: Acc (Scalar Word32, Scalar Float)
-p12 = let arr = generate (constant (Z :. (5::Int))) unindex1 in 
-      cond (arr A.! (index1 2) >* 2)
+p12 = let arr = generate (constant (Z :. (5::Int))) unindex1_int in 
+      cond (arr A.! (index1 (2::Exp Int)) >* 2)
            (lift (unit 10, unit 20.0))
            (lift (unit 40, unit 30.0))
 
@@ -390,7 +394,7 @@ instance Show a => NiceShow (Array DIM2 a) where
    where (Z :. rows :. cols) = arrayShape arr
          ls   = P.map show $ toList arr
          maxpad = P.maximum$ P.map length ls
-         rowls = splitEvery cols ls
+         rowls = chunksOf cols ls
 
 
 --------------------------------------------------------------------------------
