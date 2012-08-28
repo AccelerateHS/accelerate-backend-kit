@@ -47,7 +47,7 @@ Library
                         containers,
                         accelerate      == 0.13.*,
                         GenericPretty   >= 1.0,
-                        symbol          >= 0.1,
+                        symbol          >= 0.1.2,
                         vector          >= 0.9,
                         ghc             >= 7.2
 
