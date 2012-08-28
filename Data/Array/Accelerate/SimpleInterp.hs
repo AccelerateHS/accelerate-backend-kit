@@ -359,18 +359,12 @@ evalPrim ty p [x] =
     NP Neg -> ConstVal (neg  $ valToConst x)
     NP Abs -> ConstVal (absv $ valToConst x)
     NP Sig -> ConstVal (sig  $ valToConst x)
-
 --           | IP IntPrim
 --           | FP FloatPrim
 --           | SP ScalarPrim
 --           | BP BoolPrim
 --           | OP OtherPrim
-    OP FromIntegral -> ConstVal $       
-      case ty of 
-        TFloat  -> F$ fromConst (valToConst x)
-        TDouble -> D$ fromConst (valToConst x)
---      error "evalPrim: Need more type information to implement this..."
-
+    OP FromIntegral -> ConstVal $ (valToConst x)
     _ -> error$"UNFINISHED: evalPrim needs to be extended to handle all primitives: "++show p
 
 

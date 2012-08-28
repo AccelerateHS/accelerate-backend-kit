@@ -33,30 +33,36 @@ import Text.PrettyPrint.GenericPretty (doc)
 --   the reference Accelerate interpreter, and THEN flattened/printed as an S.AccArray.
 simpleProgs :: [(String, S.Prog, String)]
 simpleProgs = [
-  go p0,                
-  go p1, go p1aa, go p1a, go p1b, go p1c, go p1d,
-  go p2, go p2a, go p2b, go p2c, go p2cc, go p2d, go p2e, go p2f, go p2g, go p2h,  
-  go p3, go p4, go p2b,
-  go p5, go p6, go p7, go p8, go p9, go p9b,
-  go p10, go p10b, go p10c, 
-  go p11, go p11b, go p11c,
-  go p12, 
-  go p13, go p13b, go p13c, go p13d, go p13e, go p13f,
-  go p14, 
-  go p14b, 
-  go p14c, go p14d, go p14e
+  go "p0" p0,                
+  go "p1" p1, go "p1aa" p1aa, go "p1a" p1a, go "p1b" p1b, go "p1c" p1c, go "p1d" p1d,
+  go "p2" p2, go "p2a" p2a, go "p2b" p2b, go "p2c" p2c, go "p2cc" p2cc, 
+  go "p2d" p2d, go "p2e" p2e, go "p2f" p2f, go "p2g" p2g, go "p2h" p2h,  
+  go "p3" p3, 
+  go "p4" p4, go "p2b" p2b,
+  go "p5" p5, 
+  go "p6" p6, 
+  go "p7" p7, 
+  go "p8" p8, 
+  go "p9" p9, go "p9b" p9b,
+  go "p10" p10, go "p10b" p10b, go "p10c" p10c, 
+  go "p11" p11, go "p11b" p11b, go "p11c" p11c,
+  go "p12" p12, 
+  go "p13" p13, go "p13b" p13b, go "p13c" p13c, go "p13d" p13d, go "p13e" p13e, go "p13f" p13f,
+  go "p14" p14, go "p14b" p14b, 
+  go "p14c" p14c, go "p14d" p14d, go "p14e" p14e
   ]
  where 
-   go :: forall a . (Arrays a) => Acc a -> (String, S.Prog, String)
-   go p =      
+   go :: forall a . (Arrays a) => String -> Acc a -> (String, S.Prog, String)
+   go name p =
      let arr = run p 
          -- Array typing nonsense:
          (repr :: Sug.ArrRepr a) = Sug.fromArr arr
          (_ty, arr2, _phantom :: Phantom a) = unpackArray repr
          payloads = S.arrPayloads arr2
          -- Compare flat list of payloads only for now:
-     in ("", convertToSimpleProg p, show payloads)
+     in (name, convertToSimpleProg p, show payloads)
        
+
 -- | Construct a list of `test-framework` tests for a backend.
 makeTests :: (S.Prog -> [S.AccArray]) -> [Test]
 makeTests eval = P.map mk (P.zip [0..] simpleProgs)
@@ -65,7 +71,7 @@ makeTests eval = P.map mk (P.zip [0..] simpleProgs)
      let payloads = concatMap S.arrPayloads (eval prg) in 
      -- let [t] = hUnitTestToTests $ (show (eval prg)) ~=? ans in
      -- testCase ("run test "++show i) t 
-     testGroup ("run test "++show i++": "++name) $
+     testGroup ("run test "++show i++" "++name) $
      hUnitTestToTests $ 
      ans ~=? (show payloads) -- EXPECTED goes on the left.
           
