@@ -34,14 +34,16 @@ import Text.PrettyPrint.GenericPretty (doc)
 simpleProgs :: [(String, S.Prog, String)]
 simpleProgs = [
   go "p0" p0,                
-  go "p1" p1, go "p1aa" p1aa, go "p1a" p1a, go "p1b" p1b, go "p1c" p1c, go "p1d" p1d,
+  go "p1" p1, go "p1aa" p1aa, 
+  -- go "p1a" p1a, 
+  go "p1b" p1b, go "p1c" p1c, go "p1d" p1d,
   go "p2" p2, go "p2a" p2a, go "p2b" p2b, go "p2c" p2c, go "p2cc" p2cc, 
   go "p2d" p2d, go "p2e" p2e, go "p2f" p2f, go "p2g" p2g, go "p2h" p2h,  
   go "p3" p3, 
   go "p4" p4, go "p2b" p2b,
   go "p5" p5, 
   go "p6" p6, 
-  go "p7" p7, 
+--  go "p7" p7, 
   go "p8" p8, 
   go "p9" p9, go "p9b" p9b,
   go "p10" p10, go "p10b" p10b, go "p10c" p10c, 

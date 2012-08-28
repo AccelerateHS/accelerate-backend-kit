@@ -171,6 +171,7 @@ unW16 (W16 x) = x
 unW32 (W32 x) = x
 unW64 (W64 x) = x
 unF (F x) = x
+unF oth = error$"unF, expected float, received: "++show oth
 unD (D x) = x
 unC (C x) = x
 unB (B x) = x
