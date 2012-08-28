@@ -26,7 +26,8 @@ Library
   Exposed-modules:   Data.Array.Accelerate.SimpleAST, 
                      Data.Array.Accelerate.SimpleArray,
                      Data.Array.Accelerate.SimpleConverter,
-                     Data.Array.Accelerate.SimpleInterp
+                     Data.Array.Accelerate.SimpleInterp,
+                     Data.Array.Accelerate.SimpleTests
   
   -- Modules not exported by this package.
   Other-modules:       
@@ -49,8 +50,9 @@ Library
                         GenericPretty   >= 1.0,
                         symbol          >= 0.1.2,
                         vector          >= 0.9,
-                        ghc             >= 7.2
-
+--                        ghc             >= 7.2
+                        test-framework, test-framework-hunit, HUnit,
+                        split >= 0.2
 
 Test-Suite test-accelerate-backend-kit
     type:       exitcode-stdio-1.0
