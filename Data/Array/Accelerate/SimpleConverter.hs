@@ -25,6 +25,7 @@ import           Control.Monad
 import           Control.Applicative        ((<$>),(<*>))
 import           Prelude                    hiding (sum)
 import           Control.Monad.State.Strict (State, evalState, runState, get, put, modify)
+import           Debug.Trace                (trace)
 import           Data.Map  as M
 import qualified Data.List as L
 import           Text.PrettyPrint.GenericPretty (Out(doc), Generic)
@@ -48,11 +49,6 @@ import           Data.Array.Accelerate.SimplePasses.LiftComplexRands (liftComple
 import           Data.Array.Accelerate.SimplePasses.RemoveArrayTuple (removeArrayTuple)
 import           Data.Array.Accelerate.SimplePasses.StaticTuples     (staticTuples)
 
-import           Debug.Trace (trace)
-tracePrint s x = trace (s ++ show x) x
-
-dbg = False
-
 --------------------------------------------------------------------------------
 -- Exposed entrypoints for this module:
 --------------------------------------------------------------------------------
@@ -73,10 +69,10 @@ convertToSimpleProg prog =
 -- Pass composition:
 runPass :: Out a => String -> (t -> a) -> t -> a
 runPass msg pass input =
-  if dbg then trace ("\n" ++ msg ++ ", output was:\n"++
-                     "================================================================================\n"
-                     ++ show (doc x)) x
-         else x
+  S.maybtrace ("\n" ++ msg ++ ", output was:\n"++
+                       "================================================================================\n"
+                       ++ show (doc x)) 
+  x
  where x = pass input              
 
 type TAExp = T.AExp S.Type
@@ -347,7 +343,7 @@ convertExp e =
                       ty = getExpType e
                       len = tupleNumLeaves ty
                   in 
-                   trace ("TUPLE NUM LEAVES: "++show ty++" "++show len) $
+                   S.maybtrace ("TUPLE NUM LEAVES: "++show ty++" "++show len) $
                    T.ETupProject n len <$> convertExp ex
 
     -- This would seem to force indices to be LISTS at runtime??

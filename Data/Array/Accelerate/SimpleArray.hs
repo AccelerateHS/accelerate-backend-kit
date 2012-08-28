@@ -393,8 +393,8 @@ indexArray (AccArray dims payloads) ind | length ind /= length dims =
   error$"indexArray: array dimensions were "++show dims++" but index was of different length: "++ show ind
 indexArray (AccArray []   payloads) []  = tuple $ map (`indexPayload` 0)        payloads
 indexArray (AccArray dims payloads) ind = 
-     trace ("[dbg] Indexing array "++show ind++" multipliers "++show multipliers++" pos "++show position
-            ++" array:\n          "++show (AccArray dims payloads)) $ 
+     maybtrace ("[dbg] Indexing array "++show ind++" multipliers "++show multipliers++" pos "++show position
+                ++" array:\n          "++show (AccArray dims payloads)) $ 
      tuple $ map (`indexPayload` position) payloads
   where 
     -- How many elements do we per increment of this dimension?  Rightmost is fastest changing.

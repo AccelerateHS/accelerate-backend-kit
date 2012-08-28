@@ -19,8 +19,6 @@ import qualified Data.List as L
 import qualified Data.Map  as M
 import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
 
-import           Debug.Trace (trace)
-tracePrint s x = trace (s++show x) x
 
 --------------------------------------------------------------------------------
 -- Exposing a standard Accelerate `run` interface.
@@ -29,7 +27,7 @@ tracePrint s x = trace (s++show x) x
 --   inefficient) interpreter.
 run :: forall a . Sug.Arrays a => Acc a -> a
 run acc = 
-          trace ("[dbg] Repacking AccArray(s): "++show arrays) $ 
+          maybtrace ("[dbg] Repacking AccArray(s): "++show arrays) $ 
           repackAcc acc arrays
  where arrays = evalProg M.empty (convertToSimpleProg acc)
 
@@ -69,7 +67,7 @@ unArrVal   (ArrVal v)   = v
 --   tuple-of-arrays is not the job of this function.
 evalProg :: Env -> S.Prog -> [AccArray]
 evalProg origenv (S.Prog binds results progtype) = 
-    trace ("[dbg] evalProg, initial env "++ show (L.map (\(a,_,_)->a) binds)
+    maybtrace ("[dbg] evalProg, initial env "++ show (L.map (\(a,_,_)->a) binds)
            ++"  yielded environment: "++show (M.keys finalenv)) $
     L.map (unArrVal . (envLookup finalenv)) results
   where 
@@ -93,7 +91,7 @@ evalProg origenv (S.Prog binds results progtype) =
        S.Use _ty arr -> bind$ ArrVal arr
        --------------------------------------------------------------------------------
        S.Generate (TArray _dim elty) eSz (S.Lam1 (vr,vty) bodE) ->
-         trace ("[dbg] GENERATING: "++ show dims ++" "++ show elty) $ 
+         maybtrace ("[dbg] GENERATING: "++ show dims ++" "++ show elty) $ 
          
          -- It's tricky to support elementwise functions that produce
          -- tuples, which in turn need to be unpacked into a
@@ -119,8 +117,8 @@ evalProg origenv (S.Prog binds results progtype) =
        -- dimensions.  Varying indices in those dimensions will not
        -- change the value contained in the indexed slot in the array.
        S.Replicate (TArray _dim elty) slcSig ex vr ->          
-         trace ("[dbg] REPLICATING to "++show finalElems ++ " elems, newdims "++show newDims ++ " dims in "++show dimsIn) $
-         trace ("[dbg]   replicatation index stream: "++show (map (map constToInteger . untuple) allIndices)) $ 
+         maybtrace ("[dbg] REPLICATING to "++show finalElems ++ " elems, newdims "++show newDims ++ " dims in "++show dimsIn) $
+         maybtrace ("[dbg]   replicatation index stream: "++show (map (map constToInteger . untuple) allIndices)) $ 
          if length dimsOut /= replicateDims || 
             length dimsIn  /= retainDims
          then error$ "replicate: replicating across "++show slcSig
@@ -253,7 +251,7 @@ evalE :: Env -> T.Exp -> Value
 evalE env expr = 
   case expr of 
     T.EVr  v             -> envLookup env v
-    T.ELet (vr,_ty,rhs) bod -> trace ("  ELet: bound "++show vr++" to "++show rhs') $
+    T.ELet (vr,_ty,rhs) bod -> maybtrace ("  ELet: bound "++show vr++" to "++show rhs') $
                                evalE (M.insert vr rhs' env) bod
                                where rhs' = (evalE env rhs)
     T.ETuple es          -> ConstVal$ Tup $ map (unConstVal . evalE env) es
@@ -262,7 +260,7 @@ evalE env expr =
     T.ECond e1 e2 e3     -> case evalE env e1 of 
                             ConstVal (B True)  -> evalE env e2 
                             ConstVal (B False) -> evalE env e3
-
+                            
     T.EIndexScalar vr ex -> ConstVal$ indexArray (unArrVal$ envLookup env vr)
                              (map (fromIntegral . constToInteger) $ 
                               untuple$ valToConst$ evalE env ex)

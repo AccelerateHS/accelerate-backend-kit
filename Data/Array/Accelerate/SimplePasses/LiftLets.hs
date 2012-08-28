@@ -33,7 +33,7 @@ type Bindings a = [Binding a]
 liftLets :: T.AExp S.Type -> T.AExp S.Type
 liftLets x = 
      if L.null binds then loop binds else
-     trace ("[dbg] Lifted out "++show (length binds)++" Lets ...") $ loop binds
+     S.maybtrace ("[dbg] Lifted out "++show (length binds)++" Lets ...") $ loop binds
   where (binds, bod) = gatherLets x
         finalTy = getAnnot bod
         loop [] = bod

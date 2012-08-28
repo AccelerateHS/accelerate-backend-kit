@@ -19,9 +19,6 @@ import Data.List as L
 import Data.Map  as M
 import Prelude   hiding (sum)
 
-import Debug.Trace(trace)
-tracePrint s x = trace (s ++ show x) x
-
 -- Shorthands:
 type TAExp = T.AExp S.Type
 type TEnv  = M.Map S.Var S.Type
@@ -132,7 +129,7 @@ tupleNumLeaves _             = 1
 -- TODO: move into SimpleAST.hs perhaps:
 retrieveTy :: TEnv -> T.Exp -> S.Type
 retrieveTy tenv e =
-  tracePrint (" * Retrieving type for "++show e++" in tenv "++show (M.keys tenv) ++ " --> ") $
+  S.tracePrint (" * Retrieving type for "++show e++" in tenv "++show (M.keys tenv) ++ " --> ") $
   case e of  
     T.EVr vr -> case M.lookup vr tenv of 
                   Nothing  -> error$"retrieveTy: no binding in type environment for var "++show vr++" in tenv "++show (M.keys tenv)

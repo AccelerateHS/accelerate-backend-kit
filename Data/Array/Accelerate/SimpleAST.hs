@@ -30,7 +30,9 @@ module Data.Array.Accelerate.SimpleAST
      var, primArity, constToInteger, fromConst, 
      isIntType, isFloatType, isNumType, 
      isIntConst, isFloatConst, isNumConst,
-     constToType
+     constToType,
+     
+     maybtrace, tracePrint, dbg -- Flag for debugging output.
     )   
  where
 
@@ -41,7 +43,7 @@ import qualified Data.Array.Unsafe as Un
 import           Data.Int
 import qualified Data.Map          as M
 import           Data.Word
-import           Debug.Trace
+import           Debug.Trace       (trace)
 import           Foreign.C.Types 
 -- import           Pretty            (text) -- ghc api
 import           Text.PrettyPrint.HughesPJ (text, Doc)
@@ -79,6 +81,15 @@ instance Read Symbol where
 var :: String -> Var
 --------------------------------------------------------------------------------
 
+dbg :: Bool
+dbg = False
+
+tracePrint :: Show a => String -> a -> a
+tracePrint s x = 
+  if dbg then (trace (s ++ show x) x)
+         else x
+
+maybtrace = if dbg then trace else \_ -> id 
 
 --------------------------------------------------------------------------------
 -- Complete Accelerate Programs
@@ -618,5 +629,3 @@ uarrGenerate len fn = unsafePerformIO $
          loop i = do MA.writeArray marr i (fn i)
                      loop (i-1)
      loop (len-1)
-
-tracePrint s x = trace (s++show x) x    
