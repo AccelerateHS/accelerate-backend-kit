@@ -54,7 +54,7 @@ import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
 --------------------------------------------------------------------------------
 -- Several modules offer this, with varying problems:
 ----------------------------
-#define USE_SYMBOL
+#define USE_STRING_VARIABLES
 #ifdef USE_STRINGTABLE
 -- 'stringtable-atom' package:
 -- I'm getting some segfaults here [2012.05.19];
@@ -76,6 +76,16 @@ type Var = Symbol
 instance Read Symbol where 
 -- NOTE - this package would seem to be unsafe because the Symbol type
 -- constructor is exported.
+#elif defined(USE_STRING_VARIABLES)
+var = Var 
+newtype Var = Var String
+  deriving (Eq, Ord)
+instance Show Var where
+  show (Var s) = s
+instance Read Var where
+  readsPrec i s = map (\ (a,b) -> (Var a,b)) (readsPrec i s)
+#else
+#error "Need to define some symbol representation for SimpleAST.hs"
 #endif
   
 var :: String -> Var
@@ -186,10 +196,9 @@ data Exp =
   | EVr Var                   -- Variable bound by a Let.
   | ELet (Var,Type,Exp) Exp   -- @ELet var type rhs body@,
                               -- used for common subexpression elimination
-  | EPrimApp Type Prim [Exp]  -- *Any* primitive scalar function, including type of return value.
+  | EPrimApp Type Prim [Exp]  -- /Any/ primitive scalar function, including type of return value.
   | ECond Exp Exp Exp         -- Conditional expression (non-strict in 2nd and 3rd argument).
-  | EIndexScalar Var Exp      -- Project a single scalar from an array [variable],
-                              -- the array expression can not contain any free scalar variables.
+  | EIndexScalar Var Exp      -- Project a single scalar from an array [variable].
   | EShape Var                -- Get the shape of an Array [variable].
   | EShapeSize Exp            -- Number of elements of a shape
   | EIndex [Exp]              -- An index into a multi-dimensional array.
