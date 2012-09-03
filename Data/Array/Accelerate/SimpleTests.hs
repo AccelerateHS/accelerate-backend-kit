@@ -5,7 +5,9 @@
 -- | A battery of simple tests for any new SimpleAST-based  backend.
 
 module Data.Array.Accelerate.SimpleTests 
-   (simpleProgs, makeTests)  
+   (testCompiler,
+    allProgs, 
+    generateOnlyProgs, otherProgs)  
    where 
 
 import           Data.Array.Accelerate.SimpleConverter (convertToSimpleProg, unpackArray, Phantom)
@@ -29,13 +31,18 @@ import Test.Framework.Providers.HUnit
 import Test.HUnit      ((~=?))
 import Text.PrettyPrint.GenericPretty (doc)
 
+type TestEntry = (String, S.Prog, String)
+
 -- | A pair of AST and the printed result produced by evaluating under
 --   the reference Accelerate interpreter, and THEN flattened/printed as an S.AccArray.
-simpleProgs :: [(String, S.Prog, String)]
-simpleProgs = [
+allProgs :: [TestEntry]
+allProgs = generateOnlyProgs ++ otherProgs
+
+otherProgs :: [TestEntry]
+otherProgs = 
+  [
   go "p0" p0,                
-  go "p1" p1, go "p1aa" p1aa, 
-  -- go "p1a" p1a, 
+  go "p1" p1, 
   go "p1b" p1b, go "p1c" p1c, go "p1d" p1d,
   go "p2" p2, go "p2a" p2a, go "p2b" p2b, go "p2c" p2c, go "p2cc" p2cc, 
   go "p2d" p2d, go "p2e" p2e, go "p2f" p2f, go "p2g" p2g, go "p2h" p2h,  
@@ -53,21 +60,28 @@ simpleProgs = [
   go "p14" p14, go "p14b" p14b, 
   go "p14c" p14c, go "p14d" p14d, go "p14e" p14e
   ]
- where 
-   go :: forall a . (Arrays a) => String -> Acc a -> (String, S.Prog, String)
-   go name p =
-     let arr = run p 
-         -- Array typing nonsense:
-         (repr :: Sug.ArrRepr a) = Sug.fromArr arr
-         (_ty, arr2, _phantom :: Phantom a) = unpackArray repr
-         payloads = S.arrPayloads arr2
-         -- Compare flat list of payloads only for now:
-     in (name, convertToSimpleProg p, show payloads)
+      
+-- | These tests only use 
+generateOnlyProgs :: [TestEntry]
+generateOnlyProgs = [ 
+  go "p1aa" p1aa
+  -- go "p1a" p1a, 
+  ]
+
+go :: forall a . (Arrays a) => String -> Acc a -> (String, S.Prog, String)
+go name p =
+  let arr = run p 
+      -- Array typing nonsense:
+      (repr :: Sug.ArrRepr a) = Sug.fromArr arr
+      (_ty, arr2, _phantom :: Phantom a) = unpackArray repr
+      payloads = S.arrPayloads arr2
+      -- Compare flat list of payloads only for now:
+  in (name, convertToSimpleProg p, show payloads)
        
 
 -- | Construct a list of `test-framework` tests for a backend.
-makeTests :: (S.Prog -> [S.AccArray]) -> [Test]
-makeTests eval = P.map mk (P.zip [0..] simpleProgs)
+testCompiler :: (S.Prog -> [S.AccArray]) -> [S.Prog] -> [Test]
+testCompiler eval progs = P.map mk (P.zip [0..] progs)
  where 
    mk (i, (name, prg, ans)) = 
      let payloads = concatMap S.arrPayloads (eval prg) in 
@@ -97,7 +111,7 @@ p1aa = generate (constant (Z :. (10::Int)))
 
 -- | Also exercise fromIntegral:
 p1a :: Acc (Vector Float)
-p1a = generate (constant (Z :. (10::Int))) (A.fromIntegral . unindex1_int) 
+p1a = generate (constant (Z :. (10::Int))) (A.fromIntegral . unindex1_int)
    
 
 

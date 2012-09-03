@@ -250,7 +250,7 @@ data IntPrim = Quot | Rem | IDiv | Mod |
 -- | Primitive floating point-only operations.
 data FloatPrim = 
       -- Unary:
-      Recip | Sin | Cos | Tan | Asin | Acos | Atan | Asinh | Acosh | Atanh | ExpFloating | Sqrt | Log |
+      Recip | Sin | Cos | Tan | Asin | Acos | Atan | Asinh | Acosh | Atanh | ExpFloating | Sqrt | Llog |
       -- Binary:                  
       FDiv | FPow | LogBase | Atan2 | Truncate | Round | Floor | Ceiling
   deriving (Read,Show,Eq,Ord,Generic)
