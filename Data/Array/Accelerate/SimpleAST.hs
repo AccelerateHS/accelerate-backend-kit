@@ -1,6 +1,6 @@
 {-# LANGUAGE DeriveGeneric, CPP #-}
-{-# LANGUAGE Rank2Types #-}
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE Rank2Types, FlexibleContexts #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 -- TEMP: for UArray Read instance:
 {-# LANGUAGE ScopedTypeVariables, FlexibleInstances #-}
@@ -30,7 +30,7 @@ module Data.Array.Accelerate.SimpleAST
      var, primArity, constToInteger, fromConst, 
      isIntType, isFloatType, isNumType, 
      isIntConst, isFloatConst, isNumConst,
-     constToType,
+     constToType, recoverExpType, topLevelExpType,
      
      maybtrace, tracePrint, dbg -- Flag for debugging output.
     )   
@@ -545,6 +545,47 @@ constToType c =
     F _ -> TFloat; D _ -> TDouble; C _ -> TChar; B _ -> TBool;
     Tup ls -> TTuple $ map constToType ls
   }
+
+-- | Recover the type of a /top-level/ `Exp` occuring within a `Prog`.
+-- The important distinction here is that the `Exp` may not have free
+-- variables other than those bound at top-level (i.e. it may not be
+-- inside a `ELet`).
+topLevelExpType :: Prog -> Exp -> Type
+topLevelExpType Prog{progBinds} exp = recoverExpType origenv exp 
+  where
+    origenv = M.fromList$ map (\(v,ty,_) -> (v,ty)) progBinds 
+
+-- | Recover the type of an expression, given an environment.  The
+-- environment must include bindings for any free scalar AND array
+-- variables.
+recoverExpType :: M.Map Var Type -> Exp -> Type
+recoverExpType env exp = 
+      case exp of
+        EVr  v                -> case M.lookup v env of 
+                                  Nothing -> error$"toplevelExpType: unbound scalar variable: "++show v
+                                  Just ty -> ty
+        EConst c              -> constToType c
+        ELet (vr,ty,_) bod    -> recoverExpType (M.insert vr ty env) bod
+        ETuple es             -> TTuple$  map (recoverExpType env) es
+        ECond _e1 e2 _e3      -> recoverExpType env e2
+        EPrimApp ty _ _       -> ty
+        EShapeSize _ex        -> TInt
+        -- Shapes are represented as Tuples of Ints.  But we need to know how long:
+        EShape vr             -> let (dim,_) = arrayType vr in 
+                                 TTuple$ take dim (repeat TInt)          
+        EIndexScalar vr _ex   -> snd (arrayType vr)
+        ETupProject indR len ex -> let TTuple ls = recoverExpType env ex in 
+                                   mkTTuple$ reverse $ take len $ drop indR $ reverse ls
+        -- Indices are represented as Tuples:
+        EIndex es             -> TTuple $ map (recoverExpType env) es
+ where 
+   mkTTuple [ty] = ty
+   mkTTuple ls = TTuple ls
+   arrayType vr = 
+     case M.lookup vr env of 
+       Nothing -> error$"recoverExpType:: unbound array variable: "++show vr
+       Just (TArray dim elt) -> (dim,elt)
+       Just _ -> error$"recoverExpType: internal error, array var has non-array type"++show vr
 
 
 --------------------------------------------------------------------------------
