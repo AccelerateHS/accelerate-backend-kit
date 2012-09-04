@@ -80,7 +80,7 @@ go name p =
        
 
 -- | Construct a list of `test-framework` tests for a backend.
-testCompiler :: (S.Prog -> [S.AccArray]) -> [S.Prog] -> [Test]
+testCompiler :: (S.Prog -> [S.AccArray]) -> [TestEntry] -> [Test]
 testCompiler eval progs = P.map mk (P.zip [0..] progs)
  where 
    mk (i, (name, prg, ans)) = 

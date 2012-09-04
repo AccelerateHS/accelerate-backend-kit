@@ -1,10 +1,10 @@
 
 module Main where
 
-import Data.Array.Accelerate.SimpleTests (makeTests)
+import Data.Array.Accelerate.SimpleTests (testCompiler, allProgs)
 import Test.Framework (testGroup, defaultMain)
 
 import qualified Data.Array.Accelerate.SimpleInterp as I
 
 main  = defaultMain tests
-tests = makeTests I.evalSimpleAST
+tests = testCompiler I.evalSimpleAST allProgs
