@@ -5,7 +5,7 @@
 -- | A battery of simple tests for any new SimpleAST-based  backend.
 
 module Data.Array.Accelerate.SimpleTests 
-   (testCompiler,
+   (testCompiler, testPartialCompiler,
     allProgs, 
     generateOnlyProgs, unitProgs, otherProgs)  
    where 
@@ -28,16 +28,35 @@ import Prelude hiding (zipWith,replicate,map)
 import Test.Framework (testGroup, defaultMain, Test)
 -- import qualified Test.Framework as TF
 import Test.Framework.Providers.HUnit
-import Test.HUnit      ((~=?))
+import Test.HUnit      ((~=?), (~?))
 import Text.PrettyPrint.GenericPretty (doc)
 
+-- | A tuple containing name, AST, and the printed result produced by evaluating under
+--   the reference Accelerate interpreter, and THEN flattened/printed as an S.AccArray.
 type TestEntry = (String, S.Prog, String)
 
--- | A pair of AST and the printed result produced by evaluating under
---   the reference Accelerate interpreter, and THEN flattened/printed as an S.AccArray.
+-- | ALL test programs.
 allProgs :: [TestEntry]
 allProgs = generateOnlyProgs ++ unitProgs ++ otherProgs
+      
+-- | These tests only use 
+generateOnlyProgs :: [TestEntry]
+generateOnlyProgs = [ 
+  go "p1aa" p1aa,
+  -- go "p1a" p1a,
+  go "p1ab" p1ab,
+  go "p1ac" p1ac
+  ]
 
+-- | Programs that use Unit.
+unitProgs :: [TestEntry]
+unitProgs = [
+  go "p2a" p2a, go "p2f" p2f,
+  go "p4" p4, go "p4b" p4,
+  go "p5" p5
+ ]
+
+-- | Every test program that does not fall into the above categories.
 otherProgs :: [TestEntry]
 otherProgs = 
   [
@@ -59,24 +78,6 @@ otherProgs =
   go "p14" p14, go "p14b" p14b, 
   go "p14c" p14c, go "p14d" p14d, go "p14e" p14e
   ]
-      
--- | These tests only use 
-generateOnlyProgs :: [TestEntry]
-generateOnlyProgs = [ 
-  go "p1aa" p1aa,
-  -- go "p1a" p1a,
-  go "p1ab" p1ab,
-  go "p1ac" p1ac
-  ]
-
-
--- | Programs that use Unit.
-unitProgs :: [TestEntry]
-unitProgs = [
-  go "p2a" p2a, go "p2f" p2f,
-  go "p4" p4, go "p4b" p4,
-  go "p5" p5
- ]
 
 go :: forall a . (Arrays a) => String -> Acc a -> (String, S.Prog, String)
 go name p =
@@ -89,7 +90,8 @@ go name p =
   in (name, convertToSimpleProg p, show payloads)
        
 
--- | Construct a list of `test-framework` tests for a backend.
+-- | Test a complete compiler backend.  Construct a list of
+-- `test-framework` tests for a backend.
 testCompiler :: (S.Prog -> [S.AccArray]) -> [TestEntry] -> [Test]
 testCompiler eval progs = P.map mk (P.zip [0..] progs)
  where 
@@ -100,7 +102,17 @@ testCompiler eval progs = P.map mk (P.zip [0..] progs)
      testGroup ("run test "++show i++" "++name) $
      hUnitTestToTests $ 
      ans ~=? (show payloads) -- EXPECTED goes on the left.
-          
+
+-- | Test a compiler which does some passes but doesn't compute a
+-- final answer.  This requires an oracle function to determine
+-- whether the output is good.
+testPartialCompiler :: (S.Prog -> a -> Bool) -> (S.Prog -> a) -> [TestEntry] -> [Test]
+testPartialCompiler oracle eval tests = P.map mk (P.zip [0..] tests)
+  where
+   mk (i, (name, prg, ans)) =
+     testGroup ("run test "++show i++" "++name) $
+     hUnitTestToTests $ 
+      (True ~=? oracle prg (eval prg))
 ----------------------------------------------------------------------------------------------------
 
 p0 :: Acc (Array DIM2 Int64)
@@ -339,7 +351,6 @@ p11b = let (a,b,c) = unlift p11
                      -- Is there no way to further constrain the mechanism here?
                      -- Are there really other viable intermediate types here?
        in lift (a,c)
-
 
 p11c :: Acc ((Scalar Int, Scalar Int32),(Scalar Int, Scalar Int32))
 p11c = lift (p11b,p11b)
