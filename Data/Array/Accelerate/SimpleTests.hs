@@ -6,7 +6,7 @@
 
 module Data.Array.Accelerate.SimpleTests 
    (testCompiler, testPartialCompiler,
-    allProgs, 
+    allProgs, allProgsMap,
     generateOnlyProgs, unitProgs, otherProgs)  
    where 
 
@@ -23,7 +23,8 @@ import Data.Array.Accelerate.Interpreter
 import Data.Int
 import Data.List       (intersperse)
 import Data.List.Split (chunksOf)
-import qualified Prelude as P
+import qualified Data.Map as M
+import qualified Prelude  as P
 import Prelude hiding (zipWith,replicate,map)
 import Test.Framework (testGroup, defaultMain, Test)
 -- import qualified Test.Framework as TF
@@ -38,7 +39,13 @@ type TestEntry = (String, S.Prog, String)
 -- | ALL test programs.
 allProgs :: [TestEntry]
 allProgs = generateOnlyProgs ++ unitProgs ++ otherProgs
-      
+
+-- | `allProgs` organized by name for easy lookup.
+allProgsMap :: M.Map String TestEntry
+allProgsMap = M.fromList $ P.map fn allProgs
+ where
+   fn x@(name,_,_) = (name,x)
+  
 -- | These tests only use 
 generateOnlyProgs :: [TestEntry]
 generateOnlyProgs = [ 
