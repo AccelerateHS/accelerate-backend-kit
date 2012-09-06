@@ -7,7 +7,7 @@
 module Data.Array.Accelerate.SimpleTests 
    (testCompiler,
     allProgs, 
-    generateOnlyProgs, otherProgs)  
+    generateOnlyProgs, unitProgs, otherProgs)  
    where 
 
 import           Data.Array.Accelerate.SimpleConverter (convertToSimpleProg, unpackArray, Phantom)
@@ -36,7 +36,7 @@ type TestEntry = (String, S.Prog, String)
 -- | A pair of AST and the printed result produced by evaluating under
 --   the reference Accelerate interpreter, and THEN flattened/printed as an S.AccArray.
 allProgs :: [TestEntry]
-allProgs = generateOnlyProgs ++ otherProgs
+allProgs = generateOnlyProgs ++ unitProgs ++ otherProgs
 
 otherProgs :: [TestEntry]
 otherProgs = 
@@ -44,11 +44,10 @@ otherProgs =
   go "p0" p0,                
   go "p1" p1, 
   go "p1b" p1b, go "p1c" p1c, go "p1d" p1d,
-  go "p2" p2, go "p2a" p2a, go "p2b" p2b, go "p2c" p2c, go "p2cc" p2cc, 
-  go "p2d" p2d, go "p2e" p2e, go "p2f" p2f, go "p2g" p2g, go "p2h" p2h,  
+  go "p2" p2, go "p2b" p2b, go "p2c" p2c, go "p2cc" p2cc, 
+  go "p2d" p2d, go "p2e" p2e, go "p2g" p2g, go "p2h" p2h,  
   go "p3" p3, 
-  go "p4" p4, go "p2b" p2b,
-  go "p5" p5, 
+  go "p2b" p2b,
   go "p6" p6, 
 --  go "p7" p7, 
   go "p8" p8, 
@@ -69,6 +68,15 @@ generateOnlyProgs = [
   go "p1ab" p1ab,
   go "p1ac" p1ac
   ]
+
+
+-- | Programs that use Unit.
+unitProgs :: [TestEntry]
+unitProgs = [
+  go "p2a" p2a, go "p2f" p2f,
+  go "p4" p4, go "p4b" p4,
+  go "p5" p5
+ ]
 
 go :: forall a . (Arrays a) => String -> Acc a -> (String, S.Prog, String)
 go name p =
