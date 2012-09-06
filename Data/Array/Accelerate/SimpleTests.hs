@@ -64,8 +64,10 @@ otherProgs =
 -- | These tests only use 
 generateOnlyProgs :: [TestEntry]
 generateOnlyProgs = [ 
-  go "p1aa" p1aa
-  -- go "p1a" p1a, 
+  go "p1aa" p1aa,
+  -- go "p1a" p1a,
+  go "p1ab" p1ab,
+  go "p1ac" p1ac
   ]
 
 go :: forall a . (Arrays a) => String -> Acc a -> (String, S.Prog, String)
@@ -112,7 +114,14 @@ p1aa = generate (constant (Z :. (10::Int)))
 -- | Also exercise fromIntegral:
 p1a :: Acc (Vector Float)
 p1a = generate (constant (Z :. (10::Int))) (A.fromIntegral . unindex1_int)
-   
+
+p1ab :: Acc (Vector Float)
+p1ab = generate (constant (Z :. (10::Int)))
+                (\ ind -> A.fromIntegral (unindex1_int ind) + 3.3)
+
+p1ac :: Acc (Scalar Double)
+p1ac = generate (constant Z)
+                (\ _ind -> 4.4 / 2.0)
 
 
 index1_int   a = (unindex1 (a :: Exp DIM1)) :: Exp Int

@@ -9,16 +9,15 @@
 --   simplified Accelerate backend-kit.  These datatypes are the
 --   /starting point/ for any subsequent code generation performed by
 --   a concrete backend.
-module Data.Array.Accelerate.SimpleAST  
+module Data.Array.Accelerate.SimpleAST 
    ( 
      -- * The types making up Accelerate ASTs:
      Prog(..),
      AExp(..), -- AFun(..), 
-     Exp(..), Fun1(..), Fun2(..),
+     Exp(..), Fun1(Lam1), Fun2(..),
      Type(..), Const(..),
      Prim(..), NumPrim(..), IntPrim(..), FloatPrim(..), ScalarPrim(..), BoolPrim(..), OtherPrim(..),
-     Boundary(..),
-     Var,
+     Boundary(..), Var,
           
      -- * Runtime Array data representation.
      AccArray(..), ArrayPayload(..), 
@@ -27,13 +26,13 @@ module Data.Array.Accelerate.SimpleAST
      SliceType(..), SliceComponent(..),
            
      -- * Helper routines and predicates:
-     var, primArity, constToInteger, fromConst, 
+     var, primArity, constToInteger, constToRational, constToNum, 
      isIntType, isFloatType, isNumType, 
      isIntConst, isFloatConst, isNumConst,
      constToType, recoverExpType, topLevelExpType,
      
      maybtrace, tracePrint, dbg -- Flag for debugging output.
-    )   
+    )
  where
 
 import qualified Data.Array.IO     as IA
@@ -144,9 +143,9 @@ data AExp =
   | Unit Exp                         -- Turn an element into a singleton array
   | Let (Var,Type,AExp) AExp         -- Let Var Type RHS Body
                                      -- Let is used for common subexpression elimination
-  | Cond Exp Var Var                 -- Array level if statements
+  | Cond Exp Var Var                 -- Array-level if statements
   | Use       Type AccArray          -- A real live ARRAY goes here!
-  | Generate  Type Exp (Fun1 Exp)    -- Generate Function Array, very similar to map
+  | Generate  Type Exp (Fun1 Exp)    -- Generate an array by applying a function to every index in shape
   | Replicate Type SliceType Exp Var -- Replicate array across one or more dimensions.
   | Index     SliceType Var Exp      -- Index a sub-array (slice).
                                      --   (Index sliceIndex Array SliceDims)
@@ -453,9 +452,9 @@ isFloatConst c =
 isNumConst :: Const -> Bool
 isNumConst cnst = isIntConst cnst || isFloatConst cnst
 
-
 -- | Convert any const satisfying `isIntConst` into a Haskell
 -- `Integer` value.
+constToInteger :: Const -> Integer
 constToInteger c = 
   case c of 
     I   i -> toInteger i
@@ -487,6 +486,21 @@ constToInteger c =
     B    _  -> error "constToInteger: cannot convert TBool Const to Integer"
     Tup  _  -> error "constToInteger: cannot convert tuple Const to Integer"
 
+-- | Convert any const satisfying `isNumConst` into a Haskell
+--   `Double` value.  
+-- constToDouble :: Const -> Double
+-- constToDouble c = 
+--   case c of 
+--     c | isIntConst c -> fromInteger (constToInteger c)
+--     D  f -> f
+--     CD f -> fromRational $ toRational f
+--     F  f -> fromRational $ toRational f
+--     CF f -> fromRational $ toRational f
+--     C    _  -> error "constToDouble: cannot convert TChar Const to Double"
+--     B    _  -> error "constToDouble: cannot convert TBool Const to Double"
+--     Tup  _  -> error "constToDouble: cannot convert tuple Const to Double"
+
+
 -- TODO: we could go this route in the future:
 -- instance Num  Const where 
 -- instance Real Const where 
@@ -498,11 +512,12 @@ constToInteger c =
 -- instance Integral Const where 
 --   toInteger x = 
 
--- | Unwrap a SimpleAST `Const` into a raw Haskell number.  Note that
---   this function may perform a size conversion IF the type of the
---   Const does not match the destination Haskell type.
-fromConst :: Num a => Const -> a 
-fromConst c = 
+-- | Unwrap a SimpleAST `Const` (satisfying isIntConst) into a raw
+--   Haskell number.  Note that this function may perform a size
+--   conversion IF the type of the Const does not match the destination
+--   Haskell type.
+constToNum :: Num a => Const -> a 
+constToNum c = 
   case c of 
     I   n -> fromIntegral n
     I8  n -> fromIntegral n
@@ -521,17 +536,52 @@ fromConst c =
     CUS n -> fromIntegral n
     CUI n -> fromIntegral n
     CUL n -> fromIntegral n
-    CULL n -> fromIntegral n
+    CULL n  -> fromIntegral n
     CC   n  -> fromIntegral n
     CUC  n  -> fromIntegral n
     CSC  n  -> fromIntegral n
-    F    _  -> error "fromConst: cannot convert TFloat Const to a Num"
-    CF   _  -> error "fromConst: cannot convert TCFloat Const to a Num"
-    D    _  -> error "fromConst: cannot convert TDouble Const to a Num"
-    CD   _  -> error "fromConst: cannot convert TCDouble Const to a Num"
+    F    f  -> error "constToNum: cannot convert TFloat Const to a Num"
+    CF   _  -> error "constToNum: cannot convert TCFloat Const to a Num"
+    D    _  -> error "constToNum: cannot convert TDouble Const to a Num"
+    CD   _  -> error "constToNum: cannot convert TCDouble Const to a Num"
+    C    _  -> error "constToNum: cannot convert TChar Const to a Num"
+    B    _  -> error "constToNum: cannot convert TBool Const to a Num"
+    Tup  _  -> error "constToNum: cannot convert tuple Const to a Num"
+
+-- | Unwrap a SimpleAST `Const` (satisfying isNumConst) into a raw
+--   Haskell Rational.
+constToRational :: Const -> Rational 
+constToRational c = 
+  case c of 
+    I   n -> toRational n
+    I8  n -> toRational n
+    I16 n -> toRational n
+    I32 n -> toRational n
+    I64 n -> toRational n
+    W   n -> toRational n
+    W8  n -> toRational n
+    W16 n -> toRational n
+    W32 n -> toRational n
+    W64 n -> toRational n
+    CS  n -> toRational n
+    CI  n -> toRational n
+    CL  n -> toRational n
+    CLL n -> toRational n
+    CUS n -> toRational n
+    CUI n -> toRational n
+    CUL n -> toRational n
+    CULL n  -> toRational n
+    CC   n  -> toRational n
+    CUC  n  -> toRational n
+    CSC  n  -> toRational n
+    F    n  -> toRational n
+    CF   n  -> toRational n
+    D    n  -> toRational n
+    CD   n  -> toRational n
     C    _  -> error "fromConst: cannot convert TChar Const to a Num"
     B    _  -> error "fromConst: cannot convert TBool Const to a Num"
     Tup  _  -> error "fromConst: cannot convert tuple Const to a Num"
+
 
 -- | What is the type of a `Const`?
 constToType :: Const -> Type
@@ -586,6 +636,11 @@ recoverExpType env exp =
        Nothing -> error$"recoverExpType:: unbound array variable: "++show vr
        Just (TArray dim elt) -> (dim,elt)
        Just _ -> error$"recoverExpType: internal error, array var has non-array type"++show vr
+
+--------------------------------------------------------------------------------
+
+-- typeCheck
+
 
 
 --------------------------------------------------------------------------------
