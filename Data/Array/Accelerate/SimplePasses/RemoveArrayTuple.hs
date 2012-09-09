@@ -62,19 +62,20 @@ data TempTree a = TT (TempTree a) (TempTree a) [TempTree a] -- Node of degree tw
 --   /mandatory/ as a result of the added scalar bindings, which are
 --   not representable within array expressions.
 -- 
-removeArrayTuple :: ([(S.Var, S.Type, TAExp)], TAExp) -> S.Prog
+removeArrayTuple :: ([(S.Var, S.Type, TAExp)], TAExp) -> S.Prog ()
 removeArrayTuple (binds, bod) = evalState main (0,[])
   where    
    main = do (newbinds,nameMap) <- doBinds [] M.empty binds
              newbod      <- dorhs nameMap bod
              newbinds2   <- dischargeNewScalarBinds
-             let finalbinds = mapBindings convertLeft (newbinds ++ newbinds2)
+             let finalbinds = L.map (\ (v,t,x) -> S.ProgBind v t () x) $
+                              mapBindings convertLeft (newbinds ++ newbinds2)
                  unVar (S.Vr v) = v
                  unVar x = error$ "removeArrayTuple: expecting the final result expressions "++
                                   "to be varrefs at this point, instead received: "++show x
-             return $ S.Prog finalbinds
-                             (L.map unVar $ flattenTT newbod)
-                             (getAnnot bod)
+             return $ S.Prog { progBinds   = finalbinds,
+                               progResults = (L.map unVar $ flattenTT newbod),
+                               progType    = (getAnnot bod) }
  
    -- Called on already processed expressions:
    flattenTT :: TempTree S.AExp -> [S.AExp]
@@ -83,9 +84,11 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
        TLeaf e   -> [e]
        TT a b ls -> flattenTT a ++ flattenTT b ++
                     concatMap flattenTT ls
-    
+
+   -- | Apply a function to the RHS expression contained in each bind.  SYB stuff.
    mapBindings _ [] = []
    mapBindings fn ((v,t,x):tl) = (v,t,fn x) : mapBindings fn tl
+--   mapBindings fn ((S.ProgBind v t d x) : tl) = S.ProgBind v t d (fn x) : mapBindings fn tl
 
    convertLeft (Left  ex)  = Left  $ convertExps  ex
    convertLeft (Right ae) = Right ae

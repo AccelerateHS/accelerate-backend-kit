@@ -56,7 +56,7 @@ import           Data.Array.Accelerate.SimplePasses.StaticTuples     (staticTupl
 -- | Convert the sophisticate Accelerate-internal AST representation
 --   into something very simple for external consumption.  Note: this
 --   involves applying a number of lowering compiler passes.
-convertToSimpleProg :: Sug.Arrays a => Sug.Acc a -> S.Prog
+convertToSimpleProg :: Sug.Arrays a => Sug.Acc a -> S.Prog ()
 convertToSimpleProg prog = 
   runPass "removeArrayTuple" removeArrayTuple $     
   runPass "gatherLets"       gatherLets $  

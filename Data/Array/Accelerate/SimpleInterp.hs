@@ -65,10 +65,10 @@ unArrVal   (ArrVal v)   = v
 -- | Evaluating a complete program creates a FLAT list of arrays as a
 --   result.  Reimposing a nested structure to the resulting
 --   tuple-of-arrays is not the job of this function.
-evalSimpleAST :: S.Prog -> [AccArray]
+evalSimpleAST :: S.Prog a -> [AccArray]
 evalSimpleAST (S.Prog binds results progtype) = 
 --    concatArrays $ 
-    maybtrace ("[dbg] evalSimpleAST, initial env "++ show (L.map (\(a,_,_)->a) binds)
+    maybtrace ("[dbg] evalSimpleAST, initial env "++ show (L.map (\(ProgBind v _ _ _)->v) binds)
            ++"  yielded environment: "++show (M.keys finalenv)) $
     L.map (unArrVal . (envLookup finalenv)) results
   where 
@@ -76,8 +76,8 @@ evalSimpleAST (S.Prog binds results progtype) =
    -- A binding simply extends an environment of values. 
 --   loop :: [(S.Var, S.Type, Either S.Exp S.AExp)] -> Env
    loop env [] = env
-   loop env ((vr,ty,Left rhs):rst)  = loop (M.insert vr (evalE env rhs) env) rst
-   loop env ((vr,ty,Right rhs):rst) = loop (doaexp env vr rhs) rst
+   loop env (ProgBind vr ty _ (Left rhs)  :rst) = loop (M.insert vr (evalE env rhs) env) rst
+   loop env (ProgBind vr ty _ (Right rhs) :rst) = loop (doaexp env vr rhs) rst
    
    doaexp env vr rhs =   
      let bind rhs' = M.insert vr rhs' env in

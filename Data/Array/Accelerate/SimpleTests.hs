@@ -34,7 +34,7 @@ import Text.PrettyPrint.GenericPretty (doc)
 
 -- | A tuple containing name, AST, and the printed result produced by evaluating under
 --   the reference Accelerate interpreter, and THEN flattened/printed as an S.AccArray.
-type TestEntry = (String, S.Prog, String)
+type TestEntry = (String, S.Prog (), String)
 
 -- | ALL test programs.
 allProgs :: [TestEntry]
@@ -86,7 +86,7 @@ otherProgs =
   go "p14c" p14c, go "p14d" p14d, go "p14e" p14e
   ]
 
-go :: forall a . (Arrays a) => String -> Acc a -> (String, S.Prog, String)
+go :: forall a . (Arrays a) => String -> Acc a -> TestEntry
 go name p =
   let arr = run p 
       -- Array typing nonsense:
@@ -99,7 +99,7 @@ go name p =
 
 -- | Test a complete compiler backend.  Construct a list of
 -- `test-framework` tests for a backend.
-testCompiler :: (S.Prog -> [S.AccArray]) -> [TestEntry] -> [Test]
+testCompiler :: (S.Prog () -> [S.AccArray]) -> [TestEntry] -> [Test]
 testCompiler eval progs = P.map mk (P.zip [0..] progs)
  where 
    mk (i, (name, prg, ans)) = 
@@ -113,7 +113,7 @@ testCompiler eval progs = P.map mk (P.zip [0..] progs)
 -- | Test a compiler which does some passes but doesn't compute a
 -- final answer.  This requires an oracle function to determine
 -- whether the output is good.
-testPartialCompiler :: (S.Prog -> a -> Bool) -> (S.Prog -> a) -> [TestEntry] -> [Test]
+testPartialCompiler :: (S.Prog () -> a -> Bool) -> (S.Prog () -> a) -> [TestEntry] -> [Test]
 testPartialCompiler oracle eval tests = P.map mk (P.zip [0..] tests)
   where
    mk (i, (name, prg, ans)) =

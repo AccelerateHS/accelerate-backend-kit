@@ -12,7 +12,7 @@
 module Data.Array.Accelerate.SimpleAST 
    ( 
      -- * The types making up Accelerate ASTs:
-     Prog(..),
+     Prog(..), ProgBind(..),
      AExp(..), -- AFun(..), 
      Exp(..), Fun1(Lam1), Fun2(..),
      Type(..), Const(..),
@@ -115,17 +115,26 @@ maybtrace = if dbg then trace else \_ -> id
 --   by data dependencies.  However, for convenience we maintain the
 --   invariant that the binding list is topologically sorted and can
 --   thus be evaluated in order.
--- 
---   Note that because there is no recursion, dependencies form a DAG.
-data Prog = Prog { 
-  progBinds   :: [ProgBind],
+--
+--   Note also that because there is no recursion, dependencies form a DAG.
+--
+--   Finally, each top-level binding is /decorated/ by a value of
+--   indeterminite type (hence the type parameter).
+data Prog decor = Prog { 
+  progBinds   :: [ProgBind decor],
   progResults :: [Var],
   progType    :: Type -- Final, pre-flattened type, can be an array-tuple.
 } deriving (Read,Show,Eq,Generic)
 
--- | A top-level binding.  Binds a unique variable name (of specified
--- type) to either an array or scalar expression.
-type ProgBind = (Var,Type,Either Exp AExp)
+-- | A top-level binding.  Binds a unique variable name to either an
+--   array or scalar expression.
+-- 
+--   The `Type` corresponds to the type of the value on the
+--   right-hand-side of the binding.  In addition, arbitrary metadata
+--   is associated with the binding, hence the type parameter `decor`.
+-- type ProgBind decor = (Var, Type, decor, Either Exp AExp)
+data ProgBind decor = ProgBind Var Type decor (Either Exp AExp)
+ deriving (Read,Show,Eq,Generic)
 
 -- TODO: invariant checker
 -- checkValidProg
@@ -603,10 +612,10 @@ constToType c =
 -- The important distinction here is that the `Exp` may not have free
 -- variables other than those bound at top-level (i.e. it may not be
 -- inside a `ELet`).
-topLevelExpType :: Prog -> Exp -> Type
+topLevelExpType :: Prog a -> Exp -> Type
 topLevelExpType Prog{progBinds} exp = recoverExpType origenv exp 
   where
-    origenv = M.fromList$ map (\(v,ty,_) -> (v,ty)) progBinds 
+    origenv = M.fromList$ map (\(ProgBind v ty _ _) -> (v,ty)) progBinds 
 
 -- | Recover the type of an expression, given an environment.  The
 -- environment must include bindings for any free scalar AND array
@@ -650,7 +659,8 @@ recoverExpType env exp =
 -- Boilerplate for generic pretty printing:
 
 instance Out Type
-instance Out Prog
+instance Out a => Out (Prog a)
+instance Out a => Out (ProgBind a)
 -- instance Out Fun1
 -- instance Out Fun2
 instance Out (Fun1 Exp)
