@@ -118,11 +118,14 @@ maybtrace = if dbg then trace else \_ -> id
 -- 
 --   Note that because there is no recursion, dependencies form a DAG.
 data Prog = Prog { 
-  progBinds   :: [(Var,Type,Either Exp AExp)],
+  progBinds   :: [ProgBind],
   progResults :: [Var],
   progType    :: Type -- Final, pre-flattened type, can be an array-tuple.
 } deriving (Read,Show,Eq,Generic)
 
+-- | A top-level binding.  Binds a unique variable name (of specified
+-- type) to either an array or scalar expression.
+type ProgBind = (Var,Type,Either Exp AExp)
 
 -- TODO: invariant checker
 -- checkValidProg
