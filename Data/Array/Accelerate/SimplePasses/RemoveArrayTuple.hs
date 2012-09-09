@@ -36,7 +36,7 @@ type FlexBindings = Bindings (Either T.Exp S.AExp)
 type CollectM = State (Int, Bindings T.Exp)
 
 -- A temporary tree datatype.  This is used internally in `removeArrayTuple`.
-data TempTree a = TT (TempTree a) (TempTree a) [TempTree a] -- Node of degree two or more 
+data TempTree a = TT (TempTree a) (TempTree a) [TempTree a] -- Internal node of degree two or more 
                 | TLeaf a
   deriving Show                 
 

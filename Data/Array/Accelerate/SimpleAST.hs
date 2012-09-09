@@ -133,11 +133,22 @@ data Prog decor = Prog {
 --   right-hand-side of the binding.  In addition, arbitrary metadata
 --   is associated with the binding, hence the type parameter `decor`.
 -- type ProgBind decor = (Var, Type, decor, Either Exp AExp)
-data ProgBind decor = ProgBind Var Type decor (Either Exp AExp)
- deriving (Read,Show,Eq,Generic)
+data ProgBind decor = ProgBind {
+    pbVar   :: Var,
+    pbType  :: Type,
+    pbDecor :: decor,
+    pbRHS   :: (Either Exp AExp)
+    } deriving (Read,Show,Eq,Generic)
 
+instance Functor ProgBind where
+  fmap fn pb = pb { pbDecor= fn (pbDecor pb) }
+--  fmap fn (ProgBind v t dec rhs) = ProgBind v t (fn dec) rhs
+-- pbMapDecorator :: (a -> b) -> ProgBind a -> ProgBind b
 -- TODO: invariant checker
 -- checkValidProg
+
+instance Functor Prog where
+  fmap fn prog = prog{ progBinds= fmap (fmap fn) (progBinds prog) }
 
 
 --------------------------------------------------------------------------------
@@ -153,8 +164,7 @@ data ProgBind decor = ProgBind Var Type decor (Either Exp AExp)
 data AExp = 
     Vr Var                           -- Array variable bound by a Let.
   | Unit Exp                         -- Turn an element into a singleton array
-  | Let (Var,Type,AExp) AExp         -- Let Var Type RHS Body
-                                     -- Let is used for common subexpression elimination
+--  | Let (Var,Type,AExp) AExp         -- Let Var Type RHS Body
   | Cond Exp Var Var                 -- Array-level if statements
   | Use       Type AccArray          -- A real live ARRAY goes here!
   | Generate  Type Exp (Fun1 Exp)    -- Generate an array by applying a function to every index in shape

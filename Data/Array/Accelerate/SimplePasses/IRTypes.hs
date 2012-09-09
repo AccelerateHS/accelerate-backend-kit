@@ -162,8 +162,6 @@ convertAExps aex =
       f   = convertAExps
   in
   case aex of 
-     Vr _ v                      -> S.Vr v
-     Let _ (v,ty,lhs) bod        -> S.Let (v,ty, f lhs) (f bod)
      Cond _ a (Vr _ v1) (Vr _ v2) -> S.Cond (cE a) v1 v2
      Unit _ ex                   -> S.Unit (cE ex)
      Use ty arr                  -> S.Use ty arr
@@ -187,8 +185,10 @@ convertAExps aex =
      Reshape     _ ex     (Vr _ v)     -> S.Reshape     (cE ex)         v
      Stencil   _ fn bndry (Vr _ v)     -> S.Stencil     (cF fn) bndry   v 
      Stencil2  _ fn bnd1 (Vr _ v1) bnd2 (Vr _ v2) -> S.Stencil2 (cF2 fn) bnd1 v1 bnd2 v2
+     Vr _ _                  -> error$"convertAExps: input doesn't meet constraints, Vr encountered."
+     Let _ _ _               -> error$"convertAExps: input doesn't meet constraints, Let encountered."
      Apply _ _ _             -> error$"convertAExps: input doesn't meet constraints, Apply encountered."
-     ArrayTuple _  _          -> error$"convertAExps: input doesn't meet constraints, ArrayTuple encountered."
+     ArrayTuple _  _         -> error$"convertAExps: input doesn't meet constraints, ArrayTuple encountered."
      TupleRefFromRight _ _ _ -> error$"convertAExps: input doesn't meet constraints, TupleRefFromRight encountered."
      oth -> error$"convertAExps: invariants not matched: "++show oth
 
@@ -261,8 +261,8 @@ reverseConvertAExps aex =
       dt  = TTuple [] -- Dummy type
   in
   case aex of 
-     S.Vr v                      -> Vr dt v
-     S.Let (v,ty,lhs) bod        -> Let dt (v,ty, f lhs) (f bod)
+--     S.Vr v                      -> Vr dt v
+--     S.Let (v,ty,lhs) bod        -> Let dt (v,ty, f lhs) (f bod)
      S.Cond a b c                -> Cond dt (cE a) (Vr dt b) (Vr dt c)
      S.Unit ex                   -> Unit dt (cE ex)
      S.Use ty arr                -> Use ty arr

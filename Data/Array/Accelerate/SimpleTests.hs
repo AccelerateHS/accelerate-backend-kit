@@ -458,6 +458,12 @@ untup3 e = (Exp $ SuccTupIdx (SuccTupIdx ZeroTupIdx) `Prj` e,
             Exp $ ZeroTupIdx `Prj` e)
 -}
 
+
+--------------------------------------------------------------------------------
+
+p15 :: Acc (Vector Int)
+p15 = A.filter (\_ -> constant True) (generate (constant$ Z :. 10) (\_ -> 40))
+
 --------------------------------------------------------------------------------
 -- Let's print matrices nicely.
 
