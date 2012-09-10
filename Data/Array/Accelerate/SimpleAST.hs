@@ -127,7 +127,7 @@ data Prog decor = Prog {
   progBinds   :: [ProgBind decor],
   progResults :: [Var],
   progType    :: Type -- Final, pre-flattened type, can be an array-tuple.
-} deriving (Read,Show,Eq,Generic)
+} deriving (Read,Show,Eq,Generic, Ord)
 
 -- | A top-level binding.  Binds a unique variable name to either an
 --   array or scalar expression.
@@ -136,17 +136,19 @@ data Prog decor = Prog {
 --   right-hand-side of the binding.  In addition, arbitrary metadata
 --   is associated with the binding, hence the type parameter `decor`.
 -- type ProgBind decor = (Var, Type, decor, Either Exp AExp)
-data ProgBind decor = ProgBind {
-    pbVar   :: Var,
-    pbType  :: Type,
-    pbDecor :: decor,
-    pbRHS   :: (Either Exp AExp)
-    } deriving (Read,Show,Eq,Generic)
+data ProgBind decor = ProgBind Var Type decor (Either Exp AExp)
+    deriving (Read,Show,Eq,Generic, Ord)
+-- OR.....             
+-- data ProgBind decor = ProgBind {
+--     pbVar   :: Var,
+--     pbType  :: Type,
+--     pbDecor :: decor,
+--     pbRHS   :: (Either Exp AExp)
+--     } deriving (Read,Show,Eq,Generic)
 
 instance Functor ProgBind where
-  fmap fn pb = pb { pbDecor= fn (pbDecor pb) }
---  fmap fn (ProgBind v t dec rhs) = ProgBind v t (fn dec) rhs
--- pbMapDecorator :: (a -> b) -> ProgBind a -> ProgBind b
+  fmap fn (ProgBind v t dec rhs) = ProgBind v t (fn dec) rhs
+
 -- TODO: invariant checker
 -- checkValidProg
 
@@ -188,7 +190,7 @@ data AExp =
   | Reshape     Exp      Var         -- Reshape Shape Array
   | Stencil  (Fun1 Exp) Boundary Var
   | Stencil2 (Fun2 Exp) Boundary Var Boundary Var -- Two source arrays/boundaries
- deriving (Read,Show,Eq,Generic)
+ deriving (Read,Show,Eq,Ord,Generic)
 
 
 -- | Boundary condition specification for stencil operations.
@@ -196,7 +198,7 @@ data Boundary = Clamp               -- ^clamp coordinates to the extent of the a
               | Mirror              -- ^mirror coordinates beyond the array extent
               | Wrap                -- ^wrap coordinates around on each dimension
               | Constant Const      -- ^use a constant value for outlying coordinates 
- deriving (Read,Show,Eq,Generic)
+ deriving (Read,Show,Eq,Ord,Generic)
           
           
 --------------------------------------------------------------------------------
@@ -205,11 +207,11 @@ data Boundary = Clamp               -- ^clamp coordinates to the extent of the a
 
 -- | Functions, arity 1
 data Fun1 a = Lam1 (Var,Type) a
- deriving (Read,Show,Eq,Generic)
+ deriving (Read,Show,Eq,Ord,Generic)
 
 -- | Functions, arity 2
 data Fun2 a = Lam2 (Var,Type) (Var,Type) a
- deriving (Read,Show,Eq,Generic)
+ deriving (Read,Show,Eq,Ord,Generic)
 
 -- | Scalar expressions
 data Exp = 
@@ -228,7 +230,7 @@ data Exp =
       indexFromRight :: Int , --  * where to start the slice
       projlen        :: Int , --  * how many scalars to extract
       tupexpr        :: Exp }
- deriving (Read,Show,Eq,Generic)
+ deriving (Read,Show,Eq,Ord,Generic)
 
 
 -- | Constants embedded within Accelerate programs (i.e. in the AST).
@@ -241,7 +243,7 @@ data Const = I Int  | I8 Int8  | I16 Int16  | I32 Int32  | I64 Int64
            | CS  CShort  | CI  CInt  | CL  CLong  | CLL  CLLong
            | CUS CUShort | CUI CUInt | CUL CULong | CULL CULLong
            | CC  CChar   | CSC CSChar | CUC CUChar 
- deriving (Read,Show,Eq,Generic)
+ deriving (Read,Show,Eq,Ord,Generic)
 
 
 --------------------------------------------------------------------------------
@@ -322,7 +324,7 @@ data Type = TTuple [Type]
           | TCShort  | TCInt   | TCLong  | TCLLong
           | TCUShort | TCUInt  | TCULong | TCULLong
           | TCChar   | TCSChar | TCUChar 
- deriving (Read,Show,Eq,Generic)
+ deriving (Read,Show,Eq,Generic,Ord)
 
 type Dims = Int
 
@@ -338,7 +340,7 @@ type Dims = Int
 -- in this representation.
 type SliceType      = [SliceComponent]
 data SliceComponent = Fixed | All 
-  deriving (Eq,Show,Read,Generic)
+  deriving (Eq,Show,Read,Ord,Generic)
 
 -- TEMP / OLD:
 -- They read left-to-right, in the same
@@ -368,7 +370,7 @@ data SliceComponent = Fixed | All
 --   Invariant -- all payload arrays should be the same length, and:
 --   > sum (arrDim a) == length (arrPayloads a !! i)
 data AccArray = AccArray { arrDim :: [Int], arrPayloads :: [ArrayPayload] }
- deriving (Show, Read, Eq)
+ deriving (Show, Read, Eq, Ord)
 
 -- | This is a single, contiguous batch of elements, representing one
 --   tuple-component of the contents of an Accelerate array.
@@ -394,7 +396,7 @@ data ArrayPayload =
 --   
 -- TODO: UArray doesn't offer cast like IOArray.  It would be nice
 -- to make all arrays canonicalized to a data buffer of Word8's:
- deriving (Show, Read, Eq)
+ deriving (Show, Read, Eq, Ord)
   
 -- | This is our Haskell representation of raw, contiguous data (arrays).
 -- It is subject to change in the future depending on what internal

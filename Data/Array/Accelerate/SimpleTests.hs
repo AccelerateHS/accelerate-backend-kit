@@ -6,8 +6,16 @@
 
 module Data.Array.Accelerate.SimpleTests 
    (testCompiler, testPartialCompiler,
+
+    -- * ALL exported test programs in one list.
     allProgs, allProgsMap,
-    generateOnlyProgs, unitProgs, otherProgs)  
+
+    -- * A breakdown of `allProgs`
+    generateOnlyProgs, unitProgs, otherProgs,
+
+    -- * An orthogonal breakdown of `allProgs`
+    sliceProgs, noSliceProgs
+   )
    where 
 
 import           Data.Array.Accelerate.SimpleConverter (convertToSimpleProg, unpackArray, Phantom)
@@ -24,6 +32,7 @@ import Data.List       (intersperse)
 import Data.List.Split (chunksOf)
 --import Control.DeepSeq (deepseq)
 import qualified Data.Map as M
+import qualified Data.Set as Set
 import qualified Prelude  as P
 import Prelude hiding (zipWith,replicate,map)
 import Test.Framework (testGroup, defaultMain, Test)
@@ -96,6 +105,26 @@ go name p =
       -- Compare flat list of payloads only for now:
   in (name, convertToSimpleProg p, show payloads)
        
+----------------------------------------------------------------------------------------------------
+-- Extra categories that are orthogonal to the above:
+
+-- | All tests using a notion of /Slices/, namely Replicate and Index.
+sliceProgs :: [TestEntry]
+sliceProgs = [
+  go "p2f" p2f,
+  go "p2" p2, go "p2b" p2b, go "p2cc" p2cc, 
+  go "p2d" p2d, go "p2e" p2e, go "p2h" p2h,
+  go "p3" p3,
+  go "p9" p9,
+  go "p10" p10, go "p10b" p10b, go "p10c" p10c
+  ]
+
+noSliceProgs :: [TestEntry]
+noSliceProgs = Set.toList$ 
+  Set.difference (Set.fromList allProgs)
+                 (Set.fromList sliceProgs)
+
+----------------------------------------------------------------------------------------------------
 
 -- | Test a complete compiler backend.  Construct a list of
 -- `test-framework` tests for a backend.
