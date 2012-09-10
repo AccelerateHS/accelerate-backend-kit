@@ -199,11 +199,11 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
        -- The rest is BOILERPLATE:      
        ----------------------------------------      
        T.Unit _ty ex               -> return$ TLeaf$ S.Unit (cE ex)
-       T.Use ty arr                -> return$ TLeaf$ S.Use ty arr
-       T.Generate aty ex fn        -> return$ TLeaf$ S.Generate aty (cE ex) (cF fn)
+       T.Use ty arr                -> return$ TLeaf$ S.Use arr
+       T.Generate aty ex fn        -> return$ TLeaf$ S.Generate (cE ex) (cF fn)
        T.ZipWith _ fn (T.Vr _ v1) (T.Vr _ v2)  -> lfr$ S.ZipWith (cF2 fn) v1 v2 
        T.Map     _ fn (T.Vr _ v)               -> lfr$ S.Map     (cF fn)  v
-       T.Replicate aty slice ex (T.Vr _ v)     -> lfr$ S.Replicate aty slice (cE ex) v
+       T.Replicate aty slice ex (T.Vr _ v)     -> lfr$ S.Replicate slice (cE ex) v
        T.Index     _ slc (T.Vr _ v) ex         -> lfr$ S.Index slc v (cE ex)
        T.Fold  _ fn einit (T.Vr _ v)           -> lfr$ S.Fold  (cF2 fn) (cE einit) v
        T.Fold1 _ fn       (T.Vr _ v)           -> lfr$ S.Fold1 (cF2 fn)            v

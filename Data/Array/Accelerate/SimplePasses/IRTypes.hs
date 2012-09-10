@@ -164,11 +164,11 @@ convertAExps aex =
   case aex of 
      Cond _ a (Vr _ v1) (Vr _ v2) -> S.Cond (cE a) v1 v2
      Unit _ ex                   -> S.Unit (cE ex)
-     Use ty arr                  -> S.Use ty arr
-     Generate aty ex fn          -> S.Generate aty (cE ex) (cF fn)
+     Use ty arr                  -> S.Use arr
+     Generate _ ex fn            -> S.Generate (cE ex) (cF fn)
      ZipWith _ fn (Vr _ v1) (Vr _ v2) -> S.ZipWith (cF2 fn) v1 v2 
      Map     _ fn (Vr _ v)       -> S.Map     (cF fn)  v
-     Replicate aty slice ex (Vr _ v) -> S.Replicate aty slice (cE ex) v
+     Replicate _aty slice ex (Vr _ v) -> S.Replicate slice (cE ex) v
      Index     _ slc (Vr _ v)    ex    -> S.Index slc v (cE ex)
      Fold  _ fn einit (Vr _ v)         -> S.Fold     (cF2 fn) (cE einit) v
      Fold1 _ fn       (Vr _ v)         -> S.Fold1    (cF2 fn)            v
@@ -265,11 +265,11 @@ reverseConvertAExps aex =
 --     S.Let (v,ty,lhs) bod        -> Let dt (v,ty, f lhs) (f bod)
      S.Cond a b c                -> Cond dt (cE a) (Vr dt b) (Vr dt c)
      S.Unit ex                   -> Unit dt (cE ex)
-     S.Use ty arr                -> Use ty arr
-     S.Generate aty ex fn        -> Generate aty (cE ex) (cF fn)
+     S.Use arr                   -> Use (error "this shouldn't be used...") arr
+     S.Generate ex fn            -> Generate (error "this shouldn't be used...") (cE ex) (cF fn)
      S.ZipWith fn v1 v2          -> ZipWith dt (cF2 fn) (Vr dt v1) (Vr dt v2)
      S.Map     fn v              -> Map     dt (cF fn)  (Vr dt v)
-     S.Replicate aty slice ex v  -> Replicate aty slice (cE ex) (Vr dt v)
+     S.Replicate slice ex v      -> Replicate (error "this shouldn't be used...") slice (cE ex) (Vr dt v)
      S.Index     slc v     ex    -> Index dt slc (Vr dt v) (cE ex)
      S.Fold  fn einit (v)        -> Fold     dt (cF2 fn) (cE einit) (Vr dt v)
      S.Fold1 fn       (v)        -> Fold1    dt (cF2 fn)            (Vr dt v)

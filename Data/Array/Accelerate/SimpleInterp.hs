@@ -77,9 +77,9 @@ evalSimpleAST (S.Prog binds results progtype) =
 --   loop :: [(S.Var, S.Type, Either S.Exp S.AExp)] -> Env
    loop env [] = env
    loop env (ProgBind vr ty _ (Left rhs)  :rst) = loop (M.insert vr (evalE env rhs) env) rst
-   loop env (ProgBind vr ty _ (Right rhs) :rst) = loop (doaexp env vr rhs) rst
+   loop env (ProgBind vr ty _ (Right rhs) :rst) = loop (doaexp env vr ty rhs) rst
    
-   doaexp env vr rhs =   
+   doaexp env vr (TArray _dim elty) rhs =   
      let bind rhs' = M.insert vr rhs' env in
      case rhs of
        S.Vr  v             -> bind$ envLookup env v
@@ -89,9 +89,9 @@ evalSimpleAST (S.Prog binds results progtype) =
        S.Cond e1 v1 v2 -> case evalE env e1 of 
                              ConstVal (B True)  -> bind$ envLookup env v1
                              ConstVal (B False) -> bind$ envLookup env v2
-       S.Use _ty arr -> bind$ ArrVal arr
+       S.Use arr -> bind$ ArrVal arr
        --------------------------------------------------------------------------------
-       S.Generate (TArray _dim elty) eSz (S.Lam1 (vr,vty) bodE) ->
+       S.Generate eSz (S.Lam1 (vr,vty) bodE) ->
          maybtrace ("[dbg] GENERATING: "++ show dims ++" "++ show elty) $ 
          
          -- It's tricky to support elementwise functions that produce
@@ -117,7 +117,7 @@ evalSimpleAST (S.Prog binds results progtype) =
        -- "Fixed" dimensions on the other hand are the replication
        -- dimensions.  Varying indices in those dimensions will not
        -- change the value contained in the indexed slot in the array.
-       S.Replicate (TArray _dim elty) slcSig ex vr ->          
+       S.Replicate slcSig ex vr ->          
          maybtrace ("[dbg] REPLICATING to "++show finalElems ++ " elems, newdims "++show newDims ++ " dims in "++show dimsIn) $
          maybtrace ("[dbg]   replicatation index stream: "++show (map (map constToInteger . untuple) allIndices)) $ 
          if length dimsOut /= replicateDims || 

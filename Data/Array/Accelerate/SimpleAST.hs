@@ -164,13 +164,11 @@ instance Functor Prog where
 data AExp = 
     Vr Var                           -- Array variable bound by a Let.
   | Unit Exp                         -- Turn an element into a singleton array
---  | Let (Var,Type,AExp) AExp         -- Let Var Type RHS Body
   | Cond Exp Var Var                 -- Array-level if statements
-  | Use       Type AccArray          -- A real live ARRAY goes here!
-  | Generate  Type Exp (Fun1 Exp)    -- Generate an array by applying a function to every index in shape
-  | Replicate Type SliceType Exp Var -- Replicate array across one or more dimensions.
-  | Index     SliceType Var Exp      -- Index a sub-array (slice).
-                                     --   (Index sliceIndex Array SliceDims)
+  | Use       AccArray               -- A real live ARRAY goes here!
+  | Generate  Exp (Fun1 Exp)         -- Generate an array by applying a function to every index in shape
+  | Replicate SliceType Exp Var      -- Replicate array across one or more dimensions.
+  | Index     SliceType Var Exp      -- Index a sub-array (slice): Index sliceIndex Array SliceDims.
   | Map      (Fun1 Exp) Var          -- Map Function Array
   | ZipWith  (Fun2 Exp) Var Var      -- ZipWith Function Array1 Array2
   | Fold     (Fun2 Exp) Exp Var      -- Fold Function Default Array
