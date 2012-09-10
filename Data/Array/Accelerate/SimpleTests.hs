@@ -115,7 +115,7 @@ sliceProgs = [
   go "p2" p2, go "p2b" p2b, go "p2cc" p2cc, 
   go "p2d" p2d, go "p2e" p2e, go "p2h" p2h,
   go "p3" p3,
-  go "p9" p9,
+  go "p9" p9, go "p9b" p9b,
   go "p10" p10, go "p10b" p10b, go "p10c" p10c
   ]
 
