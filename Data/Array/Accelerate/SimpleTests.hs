@@ -128,11 +128,11 @@ noSliceProgs = Set.toList$
 
 -- | Test a complete compiler backend.  Construct a list of
 -- `test-framework` tests for a backend.
-testCompiler :: (S.Prog () -> [S.AccArray]) -> [TestEntry] -> [Test]
+testCompiler :: (String -> S.Prog () -> [S.AccArray]) -> [TestEntry] -> [Test]
 testCompiler eval progs = P.map mk (P.zip [0..] progs)
  where 
    mk (i, (name, prg, ans)) = 
-     let payloads = concatMap S.arrPayloads (eval prg) in 
+     let payloads = concatMap S.arrPayloads (eval name prg) in 
      -- let [t] = hUnitTestToTests $ (show (eval prg)) ~=? ans in
      -- testCase ("run test "++show i) t 
      testGroup ("run test "++show i++" "++name) $
@@ -142,12 +142,12 @@ testCompiler eval progs = P.map mk (P.zip [0..] progs)
 -- | Test a compiler which does some passes but doesn't compute a
 -- final answer.  This requires an oracle function to determine
 -- whether the output is good.
-testPartialCompiler :: Show a => (S.Prog () -> a -> Bool) -> (S.Prog () -> a) -> [TestEntry] -> [Test]
+testPartialCompiler :: Show a => (S.Prog () -> a -> Bool) -> (String -> S.Prog () -> a) -> [TestEntry] -> [Test]
 testPartialCompiler oracle eval tests = P.map mk (P.zip [0..] tests)
   where
    mk (i, (name, prg, ans)) =
      testGroup ("run test "++show i++" "++name) $
-      let evaled = eval prg in
+      let evaled = eval name prg in
       seq (forceEval evaled) $ 
       -- deepseq prg $
       -- deepseq evaled $
