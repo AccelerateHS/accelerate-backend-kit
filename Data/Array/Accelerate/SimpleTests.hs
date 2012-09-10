@@ -17,12 +17,12 @@ import qualified Data.Array.Accelerate.Smart       as Sm
 import qualified Data.Array.Accelerate.Tuple       as Tu
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 
-
 import Data.Array.Accelerate as A 
 import Data.Array.Accelerate.Interpreter
 import Data.Int
 import Data.List       (intersperse)
 import Data.List.Split (chunksOf)
+--import Control.DeepSeq (deepseq)
 import qualified Data.Map as M
 import qualified Prelude  as P
 import Prelude hiding (zipWith,replicate,map)
@@ -113,13 +113,21 @@ testCompiler eval progs = P.map mk (P.zip [0..] progs)
 -- | Test a compiler which does some passes but doesn't compute a
 -- final answer.  This requires an oracle function to determine
 -- whether the output is good.
-testPartialCompiler :: (S.Prog () -> a -> Bool) -> (S.Prog () -> a) -> [TestEntry] -> [Test]
+testPartialCompiler :: Show a => (S.Prog () -> a -> Bool) -> (S.Prog () -> a) -> [TestEntry] -> [Test]
 testPartialCompiler oracle eval tests = P.map mk (P.zip [0..] tests)
   where
    mk (i, (name, prg, ans)) =
      testGroup ("run test "++show i++" "++name) $
-     hUnitTestToTests $ 
-      (True ~=? oracle prg (eval prg))
+      let evaled = eval prg in
+      seq (forceEval evaled) $ 
+      -- deepseq prg $
+      -- deepseq evaled $
+      hUnitTestToTests $ 
+        (True ~=? oracle prg evaled)
+
+   -- We don't want to require NFData (yet).  So we just print to force Eval:
+   forceEval prog = length (show prog)
+        
 ----------------------------------------------------------------------------------------------------
 
 p0 :: Acc (Array DIM2 Int64)

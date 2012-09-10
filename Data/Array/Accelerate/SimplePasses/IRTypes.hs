@@ -261,7 +261,7 @@ reverseConvertAExps aex =
       dt  = TTuple [] -- Dummy type
   in
   case aex of 
---     S.Vr v                      -> Vr dt v
+     S.Vr v                      -> Vr dt v
 --     S.Let (v,ty,lhs) bod        -> Let dt (v,ty, f lhs) (f bod)
      S.Cond a b c                -> Cond dt (cE a) (Vr dt b) (Vr dt c)
      S.Unit ex                   -> Unit dt (cE ex)

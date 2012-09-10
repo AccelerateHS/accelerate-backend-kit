@@ -35,6 +35,7 @@ module Data.Array.Accelerate.SimpleAST
     )
  where
 
+import Control.DeepSeq (NFData(..))
 import qualified Data.Array.IO     as IA
 import qualified Data.Array.MArray as MA
 import           Data.Array.Unboxed as U
@@ -83,6 +84,8 @@ instance Show Var where
   show (Var s) = s
 instance Read Var where
   readsPrec i s = map (\ (a,b) -> (Var a,b)) (readsPrec i s)
+instance NFData Var where
+  rnf (Var s) = rnf s
 #else
 #error "Need to define some symbol representation for SimpleAST.hs"
 #endif
@@ -149,8 +152,7 @@ instance Functor ProgBind where
 
 instance Functor Prog where
   fmap fn prog = prog{ progBinds= fmap (fmap fn) (progBinds prog) }
-
-
+  
 --------------------------------------------------------------------------------
 -- Accelerate Array-level Expressions
 --------------------------------------------------------------------------------
@@ -727,7 +729,31 @@ test :: UArray Int Int
 test = read "array (1,5) [(1,200),(2,201),(3,202),(4,203),(5,204)]" :: U.UArray Int Int
 
 
+-- More ugly boilerplate for NFData
+----------------------------------------------------------------------------------------------------
 
+instance NFData a => NFData (Prog a) where
+  rnf (Prog pbs pr pt) =
+    case rnf pbs of
+     () -> case rnf pr of
+           () -> case rnf pt of
+                 () -> ()
+                 
+instance NFData a => NFData (ProgBind a) where
+  rnf (ProgBind v t d rhs) = 
+    seq (rnf v) $ 
+    seq (rnf t) $
+    seq (rnf d) $
+    seq (rnf rhs) ()
+
+instance NFData Type where
+  rnf ty = error "FINISH ME"
+
+instance NFData Exp where
+  rnf ex = error "FINISH ME"
+  
+instance NFData AExp where
+  rnf ae = error "FINISH ME"
 
 
 ----------------------------------------------------------------------------------------------------

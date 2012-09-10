@@ -51,6 +51,7 @@ Library
                         symbol          >= 0.1.2,
                         vector          >= 0.9,
 --                        ghc             >= 7.2
+                        deepseq         >= 1.3,
                         test-framework, test-framework-hunit, HUnit,
                         split >= 0.2
 
@@ -63,5 +64,6 @@ Test-Suite test-accelerate-backend-kit
 --                 , deepseq >= 1.2
 --                 , binary
 --                 , QuickCheck, HUnit, time
+                 , deepseq         >= 1.3
                  , test-framework, test-framework-hunit, HUnit
                  , split >= 0.2
