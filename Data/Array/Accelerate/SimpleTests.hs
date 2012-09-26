@@ -92,7 +92,9 @@ otherProgs =
   go "p12" p12, 
   go "p13" p13, go "p13b" p13b, go "p13c" p13c, go "p13d" p13d, go "p13e" p13e, go "p13f" p13f,
   go "p14" p14, go "p14b" p14b, 
-  go "p14c" p14c, go "p14d" p14d, go "p14e" p14e
+  go "p14c" p14c, go "p14d" p14d, go "p14e" p14e,
+
+  go "p16a" p16a, go "p16b" p16b, go "p16c" p16c, go "p16d" p16d
   ]
 
 go :: forall a . (Arrays a) => String -> Acc a -> TestEntry
@@ -147,14 +149,13 @@ testPartialCompiler oracle eval tests = P.map mk (P.zip [0..] tests)
   where
    mk (i, (name, prg, ans)) =
      testGroup ("run test "++show i++" "++name) $
+     hUnitTestToTests $ 
+     (True ~=?) $ 
       let evaled = eval name prg in
-      seq (forceEval evaled) $ 
-      -- deepseq prg $
-      -- deepseq evaled $
-      hUnitTestToTests $ 
-        (True ~=? oracle prg evaled)
+      seq (forceEval evaled) $
+      oracle prg evaled
 
-   -- We don't want to require NFData (yet).  So we just print to force Eval:
+   -- HACK: We don't want to require NFData (yet).  So we just print to force Eval:
    forceEval prog = length (show prog)
         
 ----------------------------------------------------------------------------------------------------
@@ -500,6 +501,32 @@ untup3 e = (Exp $ SuccTupIdx (SuccTupIdx ZeroTupIdx) `Prj` e,
 
 p15 :: Acc (Vector Int)
 p15 = A.filter (\_ -> constant True) (generate (constant$ Z :. 10) (\_ -> 40))
+
+
+--------------------------------------------------------------------------------
+-- Fusion tests:
+
+p16a :: Acc (Vector Int)
+p16a = map (*2) $ 
+       map (+1) p1aa
+
+-- This one triggers identical Zipwith branches turning it into a Map.
+p16b :: Acc (Vector Int)
+p16b = map (*2) $ zipWith (+) p1aa p1aa
+
+
+-- This one can't eliminate the zipwith, but the Map will fuse on the other side.
+-- Also, the two arms are different sizes, stressing the "intersection" semantics.
+p16c :: Acc (Vector Int)
+p16c = map (*2) $ zipWith (+) p1aa
+          (generate (constant (Z :. (5::Int))) (unindex1))
+
+-- This one can't fuse map->generate because of the double-use of one
+-- generate, but it CAN fuse map into downstream zipwith.
+p16d :: Acc (Vector Int)
+p16d = zipWith (+) p1aa p16a
+
+
 
 --------------------------------------------------------------------------------
 -- Let's print matrices nicely.
