@@ -522,11 +522,12 @@ p16c = map (*2) $ zipWith (+) p1aa
           (generate (constant (Z :. (5::Int))) (unindex1))
 
 -- This one can't fuse map->generate because of the double-use of one
--- generate, but it CAN fuse map into downstream zipwith.
+-- generate, but it CAN fuse map into downstream zipwith.  And THEN
+-- that opens up the possibility of converting the zipWith to a Map
+-- and finally fusing in the generate (resulting in a single Generate).
 p16d :: Acc (Vector Int)
 p16d = zipWith (+) p1aa p16a
-
-
+-- This one presently prints no less than FIVE victory messages.
 
 --------------------------------------------------------------------------------
 -- Let's print matrices nicely.
