@@ -5,7 +5,7 @@
 -- | A battery of simple tests for any new SimpleAST-based  backend.
 
 module Data.Array.Accelerate.SimpleTests 
-   (testCompiler, testPartialCompiler,
+   (testCompiler, testPartialCompiler, TestEntry,
 
     -- * ALL exported test programs in one list.
     allProgs, allProgsMap,
