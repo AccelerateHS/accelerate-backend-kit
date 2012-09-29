@@ -14,7 +14,12 @@ module Data.Array.Accelerate.SimpleTests
     generateOnlyProgs, unitProgs, otherProgs,
 
     -- * An orthogonal breakdown of `allProgs`
-    sliceProgs, noSliceProgs
+    sliceProgs, noSliceProgs,
+
+    -- * Individual tests:
+    p0,
+    p1aa, p1ab, p1ac
+   , p1ba
    )
    where 
 
@@ -175,6 +180,11 @@ r1 = I.run p1
 p1aa :: Acc (Vector Int)
 p1aa = generate (constant (Z :. (10::Int)))
        (unindex1)
+
+p1ba :: Acc (Vector Int32)
+p1ba = generate (constant (Z :. (10::Int)))
+       (A.fromIntegral . unindex1)
+
 
 -- | Also exercise fromIntegral:
 p1a :: Acc (Vector Float)

@@ -30,6 +30,7 @@ module Data.Array.Accelerate.SimpleAST
      isIntType, isFloatType, isNumType, 
      isIntConst, isFloatConst, isNumConst,
      constToType, recoverExpType, topLevelExpType,
+     typeByteSize,
      
      maybtrace, tracePrint, dbg -- Flag for debugging output.
     )
@@ -49,6 +50,9 @@ import           Foreign.C.Types
 import           Text.PrettyPrint.HughesPJ (text, Doc)
 import           System.IO.Unsafe  (unsafePerformIO)
 import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
+
+import           Foreign.Storable (sizeOf)
+
 --------------------------------------------------------------------------------
 -- Prelude: Pick a simple representation of variables (interned symbols)
 --------------------------------------------------------------------------------
@@ -417,6 +421,31 @@ type RawData e = UArray Int e
 --------------------------------------------------------------------------------
 -- Convenience functions for dealing with large sum types.
 --------------------------------------------------------------------------------
+
+-- | How many bytes will be used up by a type once emitted to C.
+typeByteSize :: Type -> Int
+typeByteSize ty =
+  case ty of {
+    TInt8 ->1;    TInt16  ->2;  TInt32  ->4;  TInt64 ->8;
+    TWord8 ->1;   TWord16  ->2; TWord32  ->4; TWord64 ->8;
+    TInt    -> sizeOf(undefined::Int);
+--    TInt    -> 4;
+    TWord   -> sizeOf(undefined::Word);    
+    TCShort -> sizeOf(undefined::CShort);
+    TCInt   -> sizeOf(undefined::CInt);
+    TCLong  -> sizeOf(undefined::CLong);
+    TCLLong -> sizeOf(undefined::CLLong);
+    TCUShort ->sizeOf(undefined::CUShort);
+    TCUInt   ->sizeOf(undefined::CUInt);
+    TCULong  ->sizeOf(undefined::CULong);
+    TCULLong ->sizeOf(undefined::CULLong);
+    TCChar -> 1; TCSChar -> 1; TCUChar -> 1; -- C character types.
+    TFloat  -> 4; TDouble  -> 8;
+    TCFloat -> 4; TCDouble -> 8;
+    TBool -> 1;   TChar -> 1; -- sizeOf(undefined::Char)
+    TTuple ls -> sum$ map typeByteSize ls;
+    TArray _ _ -> error "typeByteSize: cannot know the size of array from its type"
+  }
 
 -- | Is the type numeric, rather than, for example, an array, tuple,
 -- boolean or character.  Note that C characters are considered

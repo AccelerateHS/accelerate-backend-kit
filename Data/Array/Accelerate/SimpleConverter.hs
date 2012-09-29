@@ -859,7 +859,7 @@ packArray orig@(S.AccArray dims origPayloads) =
   loop :: forall e . TupleType e -> [S.ArrayPayload] -> (ArrayData e, [S.ArrayPayload])
   loop tupTy payloads =
 --   trace ("packArray: LOOPING "++show (length payloads)++" payload(s), tupty: "++show tupTy ++"\n   "++show payloads) $
-   let err2 :: String -> (forall a . a)
+   let err2 :: forall a . String -> a
        err2 msg = error$"packArray: given a SimpleAST.AccArray of the wrong type, expected "++msg
                   ++" received "++ show(length payloads) ++ " payloads: "++paystr
        paystr = "\n"++(unlines$ L.map (take 200 . show) payloads) ++ "\n dimension: "++show dims
