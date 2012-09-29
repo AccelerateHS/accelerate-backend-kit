@@ -774,6 +774,9 @@ data Phantom a = Phantom
 -- | This converts Accelerate Array data to the simplified
 --   representation.  `unpackArray` has an odd return type to avoid
 --   type-family related type errors.
+--
+--   Note that this does NOT need to do a deep copy, because the data
+--   payload representation stays the same.
 unpackArray :: forall a . (Sug.Arrays a) => Sug.ArrRepr a -> (S.Type, S.AccArray, Phantom a)
 unpackArray arrrepr = (ty, S.AccArray shp payloads, 
                         Phantom :: Phantom a)
