@@ -31,7 +31,7 @@ import qualified Data.Array.Accelerate.Tuple       as Tu
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 
 import Data.Array.Accelerate as A 
-import Data.Array.Accelerate.Interpreter
+import Data.Array.Accelerate.Interpreter (run)
 import Data.Int
 import Data.List       (intersperse)
 import Data.List.Split (chunksOf)
@@ -104,13 +104,13 @@ otherProgs =
 
 go :: forall a . (Arrays a) => String -> Acc a -> TestEntry
 go name p =
-  let arr = run p 
-      -- Array typing nonsense:
-      (repr :: Sug.ArrRepr a) = Sug.fromArr arr
+  let arr = run p -- Run through the official Accelerate interpreter.
+      -- Then we unpack the results into our plainer format. 
+      (repr :: Sug.ArrRepr a) = Sug.fromArr arr  -- Array typing nonsense.
       (_ty, arr2, _phantom :: Phantom a) = unpackArray repr
       payloads = S.arrPayloads arr2
-      -- Compare flat list of payloads only for now:
-  in (name, convertToSimpleProg p, show payloads)
+      -- Compare the *flat* list of payloads only for now; we record the printed payload:
+  in (name, convertToSimpleProg p, show payloads) 
        
 ----------------------------------------------------------------------------------------------------
 -- Extra categories that are orthogonal to the above:

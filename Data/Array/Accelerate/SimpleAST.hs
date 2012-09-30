@@ -52,6 +52,7 @@ import           System.IO.Unsafe  (unsafePerformIO)
 import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
 
 import           Foreign.Storable (sizeOf)
+import           System.Environment(getEnvironment)
 
 --------------------------------------------------------------------------------
 -- Prelude: Pick a simple representation of variables (interned symbols)
@@ -97,14 +98,25 @@ instance NFData Var where
 var :: String -> Var
 --------------------------------------------------------------------------------
 
+-- | Debugging flag shared by all accelerate-backend-kit modules.
+--   This is activated by setting the environment variable DEBUG=1
 dbg :: Bool
-dbg = False
+dbg = case lookup "DEBUG" unsafeEnv of
+       Nothing  -> False
+       Just ""  -> False
+       Just "0" -> False
+       Just _   -> True
 
+unsafeEnv :: [(String,String)]
+unsafeEnv = unsafePerformIO getEnvironment
+
+-- | Print the value returned prefixed by a message.
 tracePrint :: Show a => String -> a -> a
 tracePrint s x = 
   if dbg then (trace (s ++ show x) x)
          else x
 
+-- | Trace, but only if debugging is enabled.
 maybtrace = if dbg then trace else \_ -> id 
 
 --------------------------------------------------------------------------------
