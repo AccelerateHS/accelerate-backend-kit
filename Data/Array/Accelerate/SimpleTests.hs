@@ -24,7 +24,6 @@ module Data.Array.Accelerate.SimpleTests
 
 import           Data.Array.Accelerate.SimpleConverter (convertToSimpleProg, unpackArray, Phantom)
 import qualified Data.Array.Accelerate.SimpleAST    as S
-import qualified Data.Array.Accelerate.SimpleInterp as I
 import qualified Data.Array.Accelerate.Smart       as Sm
 import qualified Data.Array.Accelerate.Tuple       as Tu
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
@@ -167,13 +166,11 @@ testPartialCompiler oracle eval tests = P.map mk (P.zip [0..] tests)
 p0 :: Acc (Array DIM2 Int64)
 p0 = use $ fromList (Z :. (2::Int) :. (5::Int)) [1..10::Int64]
 t0 = convertToSimpleProg p0
-r0 = I.run p0
 
 -- | Sharing recovery will create a Let here:
 p1 :: Acc (Scalar Int)
 p1 = fold (+) 0 (zipWith (*) p1aa p1aa)
 t1 = convertToSimpleProg p1
-r1 = I.run p1
 
 -- | Just generate 
 p1aa :: Acc (Vector Int)
@@ -207,7 +204,6 @@ p1b :: Acc (Vector Float)
 p1b = let xs = use$ fromList (Z :. (2::Int) :. (5::Int)) [1..10::Float]
       in  fold (+) 0 xs
 t1b = convertToSimpleProg p1b
-r1b = I.run p1b
 
 
 -- This one is JUST a zipwith:
@@ -226,7 +222,6 @@ p2 :: Acc (Vector Int32)
 p2 = let xs = replicate (constant (Z :. (4::Int))) (unit 40)
      in map (+ 10) xs
 t2 = convertToSimpleProg p2
-r2 = I.run p2
 
 -- A 2D version of previous:
 p2aa :: Acc (Array DIM2 Int32)
@@ -289,7 +284,6 @@ p3 = let arr = generate  (constant (Z :. (5::Int))) (\_ -> 33)
          xs  = replicate (constant$ Z :. (2::Int) :. All :. (3::Int)) arr
      in xs 
 t3 = convertToSimpleProg p3
-r3 = I.run p3
 
 -- Test 4, a program that creates an IndexScalar:
 p4 :: Acc (Scalar Int64)
@@ -297,7 +291,6 @@ p4 = let arr = generate (constant (Z :. (5::Int))) (\_ -> 33) in
      unit $ arr ! (index1 (2::Exp Int))
         -- (Lang.constant (Z :. (3::Int)))  
 t4 = convertToSimpleProg p4         
-r4 = I.run p4
 
 p4b :: Acc (Scalar Int64)
 p4b = let arr = generate (constant (Z :. (3::Int) :. (3::Int))) (\_ -> 33) 
@@ -311,7 +304,6 @@ t4b = convertToSimpleProg p4b
 p5 :: Acc (Scalar (((Z :. All) :. Int) :. All))
 p5 = unit$ lift $ Z :. All :. (2::Int) :. All
 t5 = convertToSimpleProg p5
-r5 = I.run p5
 
 -- This one generates ETupProjectFromRight:
 p6 :: Acc (Vector Float)
@@ -322,7 +314,6 @@ p6 = map go (use xs)
     sh = Z :. (2::Int)
     go x = let (a,b) = unlift x   in a*b
 t6 = convertToSimpleProg p6
-r6 = I.run p6
 
 -- | Transpose a matrix.
 transposeAcc :: Array DIM2 Float -> Acc (Array DIM2 Float)
@@ -337,7 +328,6 @@ transposeAcc mat =
 p7 :: Acc (Array DIM2 Float)
 p7 = transposeAcc (fromList (Z :. (2::Int) :. (2::Int)) [1..4])
 t7 = convertToSimpleProg p7
-r7 = I.run p7
 -- Evaluating "doc t7" prints:
 -- Let a0
 --     (TArray TFloat)
@@ -359,7 +349,6 @@ p8 = unit$ pi + (constant pi :: Exp Float) *
            negate (negate (abs (signum pi)))
 
 t8 = convertToSimpleProg p8
-r8 = I.run p8
 
 -- Prim arguments don't need to directly be tuple expressions:
 -- unit ((+) (let x0 = pi in (x0, 3.1415927 * x0)))

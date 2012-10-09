@@ -175,7 +175,7 @@ unF oth = error$"unF, expected float, received: "++show oth
 unD (D x) = x
 unC (C x) = x
 unB (B x) = x
-unTup (Tup ls) = ls
+-- unTup (Tup ls) = ls
 -- Length of a UArray:
 arrLen arr = let (st,en) = U.bounds arr in en - st      
 
@@ -191,14 +191,16 @@ mapArray :: (Const -> Const) -> AccArray -> AccArray
 mapArray fn (AccArray sh [pl]) = 
   AccArray sh (mapPayload fn pl)
 
--- This case is more complicated.  Here's where the coalescing happens.
+-- This case is more complicated.  The client function wants to view the data as tuples,
+-- which means it has to be re-zipped.
 mapArray fn (AccArray sh pls) = 
+  error "No way to use mapArray on arrays-of-tuples presently!"
   -- For the time being we fall back to an extremely inefficient
   -- system.  This function should only ever be really be used for
   -- non-performance-critical reference implemenatations.
-  AccArray sh $ payloadsFromList1 $ 
-  map fn $ 
-  map Tup $ L.transpose $ map payloadToList pls
+  -- AccArray sh $ payloadsFromList1 $ 
+  -- map fn $ 
+  -- map Tup $ L.transpose $ map payloadToList pls
 
 -- | Apply an elementwise function to a single payload.  The function
 --   must consistently map the same type of input to the same type of
@@ -244,11 +246,11 @@ rebuild first fn arr =
     D   _ -> [ArrayPayloadDouble $ amap (unD   . fn) arr]
     C   _ -> [ArrayPayloadChar   $ amap (unC   . fn) arr]
     B   _ -> [ArrayPayloadBool   $ amap (unW8  . fn) arr]
-    Tup ls -> concatMap (\ (i,x) -> rebuild x (\ x -> tupref (fn x) i) arr) $ 
-              zip [0..] ls              
+    -- Tup ls -> concatMap (\ (i,x) -> rebuild x (\ x -> tupref (fn x) i) arr) $ 
+    --           zip [0..] ls              
     oth -> error$"This constant should not be found inside an ArrayPayload: "++show oth
  where
-   tupref (Tup ls) i = ls !! i
+--   tupref (Tup ls) i = ls !! i
 
 
 -- | Convert a list of `Const` scalars of the same type into one or
@@ -277,8 +279,8 @@ payloadsFromList ty ls =
     TDouble -> [ArrayPayloadDouble $ fromL $ map unD   ls]
     TChar   -> [ArrayPayloadChar   $ fromL $ map unC   ls]
     TBool   -> [ArrayPayloadBool   $ fromL $ map fromBool ls]
-    TTuple tys -> concatMap (uncurry payloadsFromList)                 
-                            (zip tys (L.transpose $ map unTup ls))
+    -- TTuple tys -> concatMap (uncurry payloadsFromList)                 
+    --                         (zip tys (L.transpose $ map unTup ls))
     oth -> error$"payloadsFromList: This constant should not be found inside an ArrayPayload: "++show oth
 
 
@@ -303,8 +305,8 @@ payloadsFromList1 ls@(hd:_) =
     D   _ -> [ArrayPayloadDouble $ fromL $ map unD   ls]
     C   _ -> [ArrayPayloadChar   $ fromL $ map unC   ls]
     B   _ -> [ArrayPayloadBool   $ fromL $ map fromBool ls]
-    Tup _ -> concatMap payloadsFromList1 $ 
-             L.transpose $ map unTup ls
+    -- Tup _ -> concatMap payloadsFromList1 $ 
+    --          L.transpose $ map unTup ls
     oth -> error$"payloadsFromList1: This constant should not be found inside an ArrayPayload: "++show oth      
 
 -- | Unpack a payload into a list of Const.  Inefficient!
@@ -351,7 +353,7 @@ replicate dims const = AccArray dims (payload const)
        D x -> [ArrayPayloadDouble (fromL$ Prelude.replicate len x)]
        C x -> [ArrayPayloadChar   (fromL$ Prelude.replicate len x)]
        B x -> [ArrayPayloadBool   (fromL$ Prelude.replicate len (fromBool const))]
-       Tup ls -> concatMap payload ls 
+--       Tup ls -> concatMap payload ls 
 -- TODO -- add all C array types to the ArrayPayload type:
 --            | CF CFloat   | CD CDouble 
 --            | CS  CShort  | CI  CInt  | CL  CLong  | CLL  CLLong
@@ -403,7 +405,12 @@ indexArray (AccArray dims payloads) ind =
     multipliers = scanl (*) 1 (tail dims) -- The leftmost gets a 1 multiplier.
     position = sum $ zipWith (*) multipliers ind
 
+tuple :: [Const] -> Const
+tuple [x] = x
+tuple ls  = error "FIXME: SimpleArray.hs doesn't handle tuples properly right now"
+{-
 -- Private helper
 tuple :: [Const] -> Const
 tuple [x] = x
 tuple ls  = Tup ls
+ -}

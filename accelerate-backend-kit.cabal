@@ -26,7 +26,7 @@ Library
   Exposed-modules:   Data.Array.Accelerate.SimpleAST, 
                      Data.Array.Accelerate.SimpleArray,
                      Data.Array.Accelerate.SimpleConverter,
-                     Data.Array.Accelerate.SimpleInterp,
+--                     Data.Array.Accelerate.SimpleInterp,
                      Data.Array.Accelerate.SimpleTests
   
   -- Modules not exported by this package.
@@ -56,15 +56,15 @@ Library
                         test-framework, test-framework-hunit, HUnit,
                         split >= 0.2
 
-Test-Suite test-accelerate-backend-kit
-    type:       exitcode-stdio-1.0
-    main-is:    Test.hs
---    ghc-options: -rtsopts -threaded
-    build-depends: base >= 4, containers
---                 , array >= 0.3
---                 , deepseq >= 1.2
---                 , binary
---                 , QuickCheck, HUnit, time
-                 , deepseq         >= 1.3
-                 , test-framework, test-framework-hunit, HUnit
-                 , split >= 0.2
+-- Test-Suite test-accelerate-backend-kit
+--     type:       exitcode-stdio-1.0
+--     main-is:    Test.hs
+-- --    ghc-options: -rtsopts -threaded
+--     build-depends: base >= 4, containers
+-- --                 , array >= 0.3
+-- --                 , deepseq >= 1.2
+-- --                 , binary
+-- --                 , QuickCheck, HUnit, time
+--                  , deepseq         >= 1.3
+--                  , test-framework, test-framework-hunit, HUnit
+--                  , split >= 0.2

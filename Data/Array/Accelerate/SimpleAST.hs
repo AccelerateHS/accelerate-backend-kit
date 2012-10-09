@@ -253,7 +253,6 @@ data Exp =
 data Const = I Int  | I8 Int8  | I16 Int16  | I32 Int32  | I64 Int64
            | W Word | W8 Word8 | W16 Word16 | W32 Word32 | W64 Word64
            | F Float | D Double | C Char | B Bool
-           | Tup [Const]
             -- C types, rather annoying:
            | CF CFloat   | CD CDouble 
            | CS  CShort  | CI  CInt  | CL  CLong  | CLL  CLLong
@@ -549,7 +548,6 @@ constToInteger c =
     CD   _  -> error "constToInteger: cannot convert TCDouble Const to Integer"
     C    _  -> error "constToInteger: cannot convert TChar Const to Integer"
     B    _  -> error "constToInteger: cannot convert TBool Const to Integer"
-    Tup  _  -> error "constToInteger: cannot convert tuple Const to Integer"
 
 -- | Convert any const satisfying `isNumConst` into a Haskell
 --   `Double` value.  
@@ -563,7 +561,6 @@ constToInteger c =
 --     CF f -> fromRational $ toRational f
 --     C    _  -> error "constToDouble: cannot convert TChar Const to Double"
 --     B    _  -> error "constToDouble: cannot convert TBool Const to Double"
---     Tup  _  -> error "constToDouble: cannot convert tuple Const to Double"
 
 
 -- TODO: we could go this route in the future:
@@ -611,7 +608,6 @@ constToNum c =
     CD   _  -> error "constToNum: cannot convert TCDouble Const to a Num"
     C    _  -> error "constToNum: cannot convert TChar Const to a Num"
     B    _  -> error "constToNum: cannot convert TBool Const to a Num"
-    Tup  _  -> error "constToNum: cannot convert tuple Const to a Num"
 
 -- | Unwrap a SimpleAST `Const` (satisfying isNumConst) into a raw
 --   Haskell Rational.
@@ -645,7 +641,6 @@ constToRational c =
     CD   n  -> toRational n
     C    _  -> error "fromConst: cannot convert TChar Const to a Num"
     B    _  -> error "fromConst: cannot convert TBool Const to a Num"
-    Tup  _  -> error "fromConst: cannot convert tuple Const to a Num"
 
 
 -- | What is the type of a `Const`?
@@ -658,7 +653,6 @@ constToType c =
     CUS _ ->TCUShort; CUI _ ->TCUInt; CUL _  ->TCULong; CULL _ ->TCULLong;
     CF _ -> TCFloat;  CD _ -> TCDouble; CC _ -> TCChar; CSC _ -> TCSChar; CUC _ -> TCUChar;
     F _ -> TFloat; D _ -> TDouble; C _ -> TChar; B _ -> TBool;
-    Tup ls -> TTuple $ map constToType ls
   }
 
 -- | Recover the type of a /top-level/ `Exp` occuring within a `Prog`.

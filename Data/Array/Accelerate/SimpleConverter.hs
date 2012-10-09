@@ -335,8 +335,7 @@ convertExp e =
 
     Tuple tup -> convertTuple tup
 
-    Const c   -> return$ T.EConst$ 
-                 convertConst (Sug.eltType (typeOnlyErr "convertExp" ::ans)) c
+    Const c   -> return$ convertConst (Sug.eltType (typeOnlyErr "convertExp" ::ans)) c
 
     -- NOTE: The incoming AST indexes tuples FROM THE RIGHT:
     Prj idx ex -> let n = convertTupleIdx idx 
@@ -579,20 +578,21 @@ tupleTy ls = S.TTuple ls
 -------------------------------------------------------------------------------
 
 -- convertConst :: Sug.Elt t => Sug.EltRepr t -> S.Const
-convertConst :: TupleType a -> a -> S.Const
+convertConst :: TupleType a -> a -> T.Exp
 convertConst ty c = 
 --  tracePrint "Converting tuple const: " $
   case ty of 
-    UnitTuple -> S.Tup []
+    UnitTuple -> T.ETuple []
     PairTuple ty1 ty0 -> let (c1,c0) = c 
                              c0' = convertConst ty0 c0
                          in 
+                         -- Here is some confusing post-processing: 
                          case convertConst ty1 c1 of
-                           S.Tup [] -> c0' 
-                           S.Tup ls -> S.Tup (c0' : ls)
-                           singl -> S.Tup [c0', singl]
+                           T.ETuple [] -> c0'
+                           T.ETuple ls -> T.ETuple (c0' : ls)
+                           singl       -> T.ETuple [c0', singl]
 --                           oth -> error$ "mal constructed tuple on RHS of PairTuple: "++ show oth
-    SingleTuple scalar -> 
+    SingleTuple scalar -> T.EConst $ 
       case scalar of 
         NumScalarType (IntegralNumType typ) -> 
           case typ of 
