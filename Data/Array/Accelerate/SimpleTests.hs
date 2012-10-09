@@ -17,9 +17,8 @@ module Data.Array.Accelerate.SimpleTests
     sliceProgs, noSliceProgs,
 
     -- * Individual tests:
-    p0,
-    p1aa, p1ab, p1ac
-   , p1ba
+    p1aa , p1ab , p1ac ,
+    p2aa, p2a , p2f , p4 , p4b , p5 , p0 , p1 , p1b , p1c , p1d , p2 , p2b , p2c , p2cc , p2d , p2e , p2g , p2h , p3 , p2b , p6 , p8 , p9 , p9b , p10 , p10b , p10c , p11 , p11b , p11c , p12 , p13 , p13b , p13c , p13d , p13e , p13f , p14 , p14b , p14c , p14d , p14e , p16a , p16b , p16c , p16d
    )
    where 
 
@@ -84,7 +83,7 @@ otherProgs =
   go "p0" p0,                
   go "p1" p1, 
   go "p1b" p1b, go "p1c" p1c, go "p1d" p1d,
-  go "p2" p2, go "p2b" p2b, go "p2c" p2c, go "p2cc" p2cc, 
+  go "p2" p2, go "p2aa" p2aa, go "p2b" p2b, go "p2c" p2c, go "p2cc" p2cc, 
   go "p2d" p2d, go "p2e" p2e, go "p2g" p2g, go "p2h" p2h,  
   go "p3" p3, 
   go "p2b" p2b,
@@ -228,6 +227,12 @@ p2 = let xs = replicate (constant (Z :. (4::Int))) (unit 40)
      in map (+ 10) xs
 t2 = convertToSimpleProg p2
 r2 = I.run p2
+
+-- A 2D version of previous:
+p2aa :: Acc (Array DIM2 Int32)
+p2aa = let xs = replicate (constant (Z :. (4::Int) :. (3::Int))) (unit 40)
+       in map (+ 10) xs
+
 
 p2a :: Acc (Scalar Word)
 p2a = unit 40
