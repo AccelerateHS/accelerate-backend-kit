@@ -24,13 +24,15 @@ module Data.Array.Accelerate.SimpleAST
      
      -- * Slice representation
      SliceType(..), SliceComponent(..),
-           
+                
      -- * Helper routines and predicates:
      var, primArity, constToInteger, constToRational, constToNum, 
      isIntType, isFloatType, isNumType, 
      isIntConst, isFloatConst, isNumConst,
      constToType, recoverExpType, topLevelExpType,
      typeByteSize,
+     
+     normalizeEConst,
      
      maybtrace, tracePrint, dbg -- Flag for debugging output.
     )
@@ -701,6 +703,19 @@ recoverExpType env exp =
        Nothing -> error$"recoverExpType:: unbound array variable: "++show vr
        Just (TArray dim elt) -> (dim,elt)
        Just _ -> error$"recoverExpType: internal error, array var has non-array type"++show vr
+
+
+-- | Normalize an expression containing a constant.  This eliminates
+-- redundant encodings of tuples.  In particular, it lifts `Tup`
+-- constants out to `ETuple` expressions and it makes sure there are
+-- no unary-tuples.
+normalizeEConst :: Exp -> Exp
+normalizeEConst e =
+  case e of 
+    EConst (Tup ls) -> normalizeEConst$ ETuple$ map EConst ls
+    ETuple [x]      -> normalizeEConst x
+    ETuple ls       -> ETuple$ map normalizeEConst ls
+    other           -> other
 
 --------------------------------------------------------------------------------
 

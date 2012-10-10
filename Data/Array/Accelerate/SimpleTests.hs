@@ -18,7 +18,10 @@ module Data.Array.Accelerate.SimpleTests
 
     -- * Individual tests:
     p1aa , p1ab , p1ac ,
-    p2aa, p2a , p2f , p4 , p4b , p5 , p0 , p1 , p1b , p1c , p1d , p2 , p2b , p2c , p2cc , p2d , p2e , p2g , p2h , p3 , p2b , p6 , p8 , p9 , p9b , p10 , p10b , p10c , p11 , p11b , p11c , p12 , p13 , p13b , p13c , p13d , p13e , p13f , p14 , p14b , p14c , p14d , p14e , p16a , p16b , p16c , p16d
+    p2aa, p2a , p2f , p4 , p4b , p5 , p0 , p1 , p1b , p1c , p1d , p2 , p2b , p2c , p2cc , p2d , p2e , p2g , p2h ,
+    p3, p6 , p8 , p9 , p9b ,
+    p10 , p10b , p10c, p10d, p10e, p10f,
+    p11 , p11b , p11c , p12 , p13 , p13b , p13c , p13d , p13e , p13f , p14 , p14b , p14c , p14d , p14e , p16a , p16b , p16c , p16d
    )
    where 
 
@@ -91,7 +94,7 @@ otherProgs =
 --  go "p7" p7, 
   go "p8" p8, 
   go "p9" p9, go "p9b" p9b,
-  go "p10" p10, go "p10b" p10b, go "p10c" p10c, 
+  go "p10" p10, go "p10b" p10b, go "p10c" p10c, go "p10d" p10d, go "p10e" p10e, go "p10f" p10f, 
   go "p11" p11, go "p11b" p11b, go "p11c" p11c,
   go "p12" p12, 
   go "p13" p13, go "p13b" p13b, go "p13c" p13c, go "p13d" p13d, go "p13e" p13e, go "p13f" p13f,
@@ -381,7 +384,7 @@ p9b = map (\ e ->
           p9
  
 --------------------------------------------------------------------------------
--- How do we create IndexAny?
+-- How do we create IndexAny in the AST?
 
 -- repN :: Int -> Array sh e -> Acc (Array (sh:.Int) e)
 -- repN n a = replicate (Any :. n) a
@@ -392,14 +395,25 @@ repN n a = replicate (constant$ Any :. n) a
 p10 :: Acc (Array DIM1 Float)
 p10 = repN 3 (unit 40.4)
 
+-- A 3x4 matrix:
 p10b :: Acc (Array DIM2 Float)
 p10b = repN 4 p10
 
 p10c :: Acc (Array DIM1 Float)
 p10c = replicate (constant$ Any :. (3::Int)) (unit 4.4)
 
-----------------------------------------
+-- p10d :: Acc (Array DIM2 Float)
+p10d :: Acc (Scalar Float)
+p10d = slice p10b (constant (Z :. (2::Int) :. (2::Int)))
 
+p10e :: Acc (Vector Float)
+p10e = slice p10b (constant (Z :. (2::Int) :. All))
+
+p10f :: Acc (Vector Float)
+p10f = slice p10b (constant (Z :. All :. (2::Int)))
+
+
+----------------------------------------
 -- How about tuples of arrays?
 p11 :: Acc (Scalar Int, Scalar Int16, Scalar Int32)
 p11 = lift (unit 1, unit 2, unit 3)
