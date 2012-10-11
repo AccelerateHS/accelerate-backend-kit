@@ -150,7 +150,7 @@ evalSimpleAST (S.Prog binds results progtype) =
            finalElems = foldl (*) 1 dimsIn * 
                         foldl (*) 1 dimsOut
            
-           -- Insert the new dimensions where "Any"s occur.
+           -- Insert the new dimensions where "All"s occur.
            injectDims :: [Int] -> SliceType -> [Int] -> [Int]
            injectDims [] [] [] = []
            injectDims (dim:l1) (All : l2)    l3       = dim : injectDims l1 l2 l3

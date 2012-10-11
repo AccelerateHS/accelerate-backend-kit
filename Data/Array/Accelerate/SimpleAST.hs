@@ -32,7 +32,7 @@ module Data.Array.Accelerate.SimpleAST
      constToType, recoverExpType, topLevelExpType,
      typeByteSize,
      
-     normalizeEConst,
+     normalizeEConst, mkTTuple, 
      
      maybtrace, tracePrint, dbg -- Flag for debugging output.
     )
@@ -696,13 +696,16 @@ recoverExpType env exp =
         -- Indices are represented as Tuples:
         EIndex es             -> TTuple $ map (recoverExpType env) es
  where 
-   mkTTuple [ty] = ty
-   mkTTuple ls = TTuple ls
    arrayType vr = 
      case M.lookup vr env of 
        Nothing -> error$"recoverExpType:: unbound array variable: "++show vr
        Just (TArray dim elt) -> (dim,elt)
        Just _ -> error$"recoverExpType: internal error, array var has non-array type"++show vr
+
+-- | Helper function for constructing TTuples, which must be non-empty:
+mkTTuple :: [Type] -> Type
+mkTTuple [ty] = ty
+mkTTuple ls = TTuple ls
 
 
 -- | Normalize an expression containing a constant.  This eliminates
@@ -715,6 +718,8 @@ normalizeEConst e =
     EConst (Tup ls) -> normalizeEConst$ ETuple$ map EConst ls
     ETuple [x]      -> normalizeEConst x
     ETuple ls       -> ETuple$ map normalizeEConst ls
+    -- FIXME: We need to phase out EIndex entirely.  They are just represented as tuples:
+    EIndex ls       -> ETuple ls
     other           -> other
 
 --------------------------------------------------------------------------------

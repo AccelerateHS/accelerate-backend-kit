@@ -5,7 +5,7 @@
 -- | A battery of simple tests for any new SimpleAST-based  backend.
 
 module Data.Array.Accelerate.SimpleTests 
-   (testCompiler, testPartialCompiler, TestEntry,
+   (testCompiler, testPartialCompiler, TestEntry, makeTestEntry, 
 
     -- * ALL exported test programs in one list.
     allProgs, allProgsMap,
@@ -104,6 +104,10 @@ otherProgs =
   go "p16a" p16a, go "p16b" p16b, go "p16c" p16c, go "p16d" p16d
   ]
 
+makeTestEntry :: forall a . (Arrays a) => String -> Acc a -> TestEntry
+makeTestEntry = go
+
+-- | A shorthand name.
 go :: forall a . (Arrays a) => String -> Acc a -> TestEntry
 go name p =
   let arr = run p -- Run through the official Accelerate interpreter.
