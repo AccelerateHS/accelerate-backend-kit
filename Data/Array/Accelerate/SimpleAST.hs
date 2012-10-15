@@ -32,7 +32,9 @@ module Data.Array.Accelerate.SimpleAST
      constToType, recoverExpType, topLevelExpType,
      typeByteSize,
      
-     normalizeEConst, mkTTuple, 
+     normalizeEConst, mkTTuple, mkETuple,
+     
+     lookupProgBind,
      
      maybtrace, tracePrint, dbg -- Flag for debugging output.
     )
@@ -173,6 +175,16 @@ instance Functor ProgBind where
 instance Functor Prog where
   fmap fn prog = prog{ progBinds= fmap (fmap fn) (progBinds prog) }
   
+-- | O(N): look up a specific binding in a list of bindings.
+--
+-- In most cases you will want to create a Data.Map rather than using
+-- this function so as to avoid quadratic complexity.
+lookupProgBind :: Var -> [ProgBind a] -> Maybe (ProgBind a)
+lookupProgBind _ [] = Nothing
+lookupProgBind v (pb@(ProgBind v2 _ _ _) : rst) 
+  | v == v2   = Just pb
+  | otherwise = lookupProgBind v rst
+
 --------------------------------------------------------------------------------
 -- Accelerate Array-level Expressions
 --------------------------------------------------------------------------------
@@ -667,9 +679,11 @@ constToType c =
 -- The important distinction here is that the `Exp` may not have free
 -- variables other than those bound at top-level (i.e. it may not be
 -- inside a `ELet`).
+--
 topLevelExpType :: Prog a -> Exp -> Type
 topLevelExpType Prog{progBinds} exp = recoverExpType origenv exp 
   where
+    -- Note this is INEFFICIENT -- it creates a map from the list every time:
     origenv = M.fromList$ map (\(ProgBind v ty _ _) -> (v,ty)) progBinds 
 
 -- | Recover the type of an expression, given an environment.  The
@@ -707,6 +721,11 @@ mkTTuple :: [Type] -> Type
 mkTTuple [ty] = ty
 mkTTuple ls = TTuple ls
 
+-- | For expressions as well as types, we ensure we do-not create an empty tuple.
+--   (In the future it may be good to use a non-empty-list type explicitly.)
+mkETuple :: [Exp] -> Exp
+mkETuple [e] = e
+mkETuple ls = ETuple ls
 
 -- | Normalize an expression containing a constant.  This eliminates
 -- redundant encodings of tuples.  In particular, it lifts `Tup`

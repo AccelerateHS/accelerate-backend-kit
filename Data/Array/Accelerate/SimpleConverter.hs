@@ -270,7 +270,7 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
     Replicate sliceIndex slix a ->
       T.Replicate (getAccTypePre eacc) 
                   (cvtSlice sliceIndex) 
-                  <$> convertExp slix 
+                  <$> convertExp slix
                   <*> convertAcc a
     Index sliceIndex acc slix -> 
       T.Index (getAccTypePre eacc) (cvtSlice sliceIndex) <$> convertAcc acc

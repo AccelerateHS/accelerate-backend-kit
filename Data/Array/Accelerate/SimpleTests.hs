@@ -17,11 +17,12 @@ module Data.Array.Accelerate.SimpleTests
     sliceProgs, noSliceProgs,
 
     -- * Individual tests:
-    p1aa , p1ab , p1ac ,
-    p2aa, p2a , p2f , p4 , p4b , p5 , p0 , p1 , p1b , p1c , p1d , p2 , p2b , p2c , p2cc , p2d , p2e , p2g , p2h ,
-    p3, p6 , p8 , p9 , p9b ,
-    p10 , p10b , p10c, p10d, p10e, p10f,
-    p11 , p11b , p11c , p12 , p13 , p13b , p13c , p13d , p13e , p13f , p14 , p14b , p14c , p14d , p14e , p16a , p16b , p16c , p16d
+    p1aa, p1ab, p1ac,
+    p2aa, p2a, p2f, p4, p4b, p5, p0, p1, p1b, p1c, p1d, p2, p2b, p2bb, p2c, p2cc, p2cd, p2d, p2e, p2g, p2h,
+    p3, p6, p8, p9, p9b,
+    p10, p10b, p10c, p10d, p10e, p10f,
+    p11, p11b, p11c, p12, p13, p13b, p13c, p13d, p13e, p13f, p14, p14b, p14c, p14d, p14e, 
+    p16a, p16b, p16c, p16d, p16e 
    )
    where 
 
@@ -86,10 +87,9 @@ otherProgs =
   go "p0" p0,                
   go "p1" p1, 
   go "p1b" p1b, go "p1c" p1c, go "p1d" p1d,
-  go "p2" p2, go "p2aa" p2aa, go "p2b" p2b, go "p2c" p2c, go "p2cc" p2cc, 
+  go "p2" p2, go "p2aa" p2aa, go "p2b" p2b, go "p2bb" p2bb, go "p2c" p2c, go "p2cc" p2cc, go "p2cd" p2cd, 
   go "p2d" p2d, go "p2e" p2e, go "p2g" p2g, go "p2h" p2h,  
   go "p3" p3, 
-  go "p2b" p2b,
   go "p6" p6, 
 --  go "p7" p7, 
   go "p8" p8, 
@@ -101,7 +101,7 @@ otherProgs =
   go "p14" p14, go "p14b" p14b, 
   go "p14c" p14c, go "p14d" p14d, go "p14e" p14e,
 
-  go "p16a" p16a, go "p16b" p16b, go "p16c" p16c, go "p16d" p16d
+  go "p16a" p16a, go "p16b" p16b, go "p16c" p16c, go "p16d" p16d, go "p16e" p16e
   ]
 
 makeTestEntry :: forall a . (Arrays a) => String -> Acc a -> TestEntry
@@ -125,7 +125,7 @@ go name p =
 sliceProgs :: [TestEntry]
 sliceProgs = [
   go "p2f" p2f,
-  go "p2" p2, go "p2b" p2b, go "p2cc" p2cc, 
+  go "p2" p2, go "p2b" p2b, go "p2bb" p2bb, go "p2cc" p2cc, go "p2cd" p2cd, 
   go "p2d" p2d, go "p2e" p2e, go "p2h" p2h,
   go "p3" p3,
   go "p9" p9, go "p9b" p9b,
@@ -250,7 +250,12 @@ p2b = let arr = generate (constant (Z :. (5::Int))) unindex1
       in replicate (constant$ Z :. All :. (4::Int)) arr
           -- 1st generates: Array (Z :. 4 :. 5) [0,1,2,3,4,0,1,2,3,4,0,1,2,3,4,0,1,2,3,4]
           -- 2nd generates: Array (Z :. 5 :. 4) [0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4]
-t2b = convertToSimpleProg p2b
+
+-- A replicate-of-replicate with a 3D result:
+p2bb :: Acc (Array DIM3 Int)
+-- Array (Z :. 5 :. 3 :. 4) 
+p2bb = replicate (constant$ Z :. All :. (3::Int) :. All) p2b
+
 
 -- | A 2D array with some tuple operations:
 p2c :: Acc (Array DIM2 Int)
@@ -259,8 +264,16 @@ p2c = generate (constant (Z :. (3::Int) :. (3::Int)))
 
 -- | Expand 2D -> 3D
 p2cc :: Acc (Array DIM3 Int)
-p2cc = replicate (constant$ Z :. All :. (2::Int) :. All) p2c
---      in replicate (constant$ Z :. All :. All :. (2::Int)) arr  
+p2cc = -- replicate (constant$ Z :. All :. (2::Int) :. All) p2c
+       replicate (constant$ Z :. (2::Int) :. All :. All) p2c
+
+p2cd :: Acc (Array DIM3 Int)
+p2cd = replicate
+       (constant True ?
+        (constant$ Z :. (2::Int) :. All :. All,
+         constant$ Z :. (7::Int) :. All :. All))
+       p2c
+       
 
 p2d :: Acc (Array DIM4 (Int,Int))
 p2d = let arr = generate (constant (Z :. (3::Int) :. (3::Int))) unindex2
@@ -561,6 +574,20 @@ p16c = map (*2) $ zipWith (+) p1aa
 p16d :: Acc (Vector Int)
 p16d = zipWith (+) p1aa p16a
 -- This one presently prints no less than FIVE victory messages.
+
+
+-- This test has an map that WILL NOT be pushed through the backpermute.
+p16e :: Acc (Vector Float)
+p16e = map (+10) $ 
+       backpermute sz id $ 
+       generate sz (A.fromIntegral . unindex1_int)
+ where sz = constant (Z:.(5::Int))
+
+  --     swap = lift1 $ \(Z:.x:.y) -> Z :.      y  :.      x 
+  --                               :: Z :. Exp Int :. Exp Int
+  -- in
+  -- backpermute (swap $ shape mat') swap mat'
+
 
 --------------------------------------------------------------------------------
 -- Let's print matrices nicely.
