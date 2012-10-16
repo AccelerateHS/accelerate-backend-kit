@@ -17,7 +17,7 @@ module Data.Array.Accelerate.SimpleTests
     sliceProgs, noSliceProgs,
 
     -- * Individual tests:
-    p1aa, p1ab, p1ac, p1ba,
+    p1a, p1aa, p1ab, p1ac, p1ba,
     p2aa, p2a, p2f, p4, p4b, p5, p0, p1, p1b, p1c, p1d,
     p2, p2b, p2bb, p2c, p2cc, p2cd, p2ce, p2d, p2e, p2g, p2h,
     p3, p6, p8, p9, p9b,
@@ -67,6 +67,7 @@ allProgsMap = M.fromList $ P.map fn allProgs
 -- | These tests only use 
 generateOnlyProgs :: [TestEntry]
 generateOnlyProgs = [ 
+  go "p1a"  p1a,  
   go "p1aa" p1aa,
   go "p1ba" p1ba,  
   -- go "p1a" p1a,
