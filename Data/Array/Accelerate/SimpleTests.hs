@@ -17,7 +17,7 @@ module Data.Array.Accelerate.SimpleTests
     sliceProgs, noSliceProgs,
 
     -- * Individual tests:
-    p1aa, p1ab, p1ac,
+    p1aa, p1ab, p1ac, p1ba,
     p2aa, p2a, p2f, p4, p4b, p5, p0, p1, p1b, p1c, p1d,
     p2, p2b, p2bb, p2c, p2cc, p2cd, p2ce, p2d, p2e, p2g, p2h,
     p3, p6, p8, p9, p9b,
@@ -68,6 +68,7 @@ allProgsMap = M.fromList $ P.map fn allProgs
 generateOnlyProgs :: [TestEntry]
 generateOnlyProgs = [ 
   go "p1aa" p1aa,
+  go "p1ba" p1ba,  
   -- go "p1a" p1a,
   go "p1ab" p1ab,
   go "p1ac" p1ac
@@ -263,11 +264,13 @@ p2bb = replicate (constant$ Z :. All :. (3::Int) :. All) p2b
 p2c :: Acc (Array DIM2 Int)
 p2c = generate (constant (Z :. (3::Int) :. (3::Int)))
                (\e -> let (r,c) = unlift$ unindex2 e in 3 * r + c)
+-- Output: Array (Z :. 3 :. 3) [0,1,2,3,4,5,6,7,8]
 
 -- | Expand 2D -> 3D
 p2cc :: Acc (Array DIM3 Int)
-p2cc = -- replicate (constant$ Z :. All :. (2::Int) :. All) p2c
-       replicate (constant$ Z :. (2::Int) :. All :. All) p2c
+p2cc = replicate (constant$ Z :. (2::Int) :. All :. All) p2c
+-- Output: Array (Z :. 2 :. 3 :. 3) [0,1,2,3,4,5,6,7,8,0,1,2,3,4,5,6,7,8]
+
 
 p2cd :: Acc (Array DIM3 Int)
 p2cd = replicate

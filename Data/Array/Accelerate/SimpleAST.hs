@@ -683,7 +683,8 @@ constToType c =
 topLevelExpType :: Prog a -> Exp -> Type
 topLevelExpType Prog{progBinds} exp = recoverExpType origenv exp 
   where
-    -- Note this is INEFFICIENT -- it creates a map from the list every time:
+    -- Note this is highly INEFFICIENT -- it creates a map from the list every time:
+    -- Memoization would be useful here:
     origenv = M.fromList$ map (\(ProgBind v ty _ _) -> (v,ty)) progBinds 
 
 -- | Recover the type of an expression, given an environment.  The
