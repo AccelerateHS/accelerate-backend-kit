@@ -18,7 +18,8 @@ module Data.Array.Accelerate.SimpleTests
 
     -- * Individual tests:
     p1aa, p1ab, p1ac,
-    p2aa, p2a, p2f, p4, p4b, p5, p0, p1, p1b, p1c, p1d, p2, p2b, p2bb, p2c, p2cc, p2cd, p2d, p2e, p2g, p2h,
+    p2aa, p2a, p2f, p4, p4b, p5, p0, p1, p1b, p1c, p1d,
+    p2, p2b, p2bb, p2c, p2cc, p2cd, p2ce, p2d, p2e, p2g, p2h,
     p3, p6, p8, p9, p9b,
     p10, p10b, p10c, p10d, p10e, p10f,
     p11, p11b, p11c, p12, p13, p13b, p13c, p13d, p13e, p13f, p14, p14b, p14c, p14d, p14e, 
@@ -87,7 +88,8 @@ otherProgs =
   go "p0" p0,                
   go "p1" p1, 
   go "p1b" p1b, go "p1c" p1c, go "p1d" p1d,
-  go "p2" p2, go "p2aa" p2aa, go "p2b" p2b, go "p2bb" p2bb, go "p2c" p2c, go "p2cc" p2cc, go "p2cd" p2cd, 
+  go "p2" p2, go "p2aa" p2aa, go "p2b" p2b, go "p2bb" p2bb,
+  go "p2c" p2c, go "p2cc" p2cc, go "p2cd" p2cd, go "p2ce" p2ce,
   go "p2d" p2d, go "p2e" p2e, go "p2g" p2g, go "p2h" p2h,  
   go "p3" p3, 
   go "p6" p6, 
@@ -273,7 +275,12 @@ p2cd = replicate
         (constant$ Z :. (2::Int) :. All :. All,
          constant$ Z :. (7::Int) :. All :. All))
        p2c
-       
+
+p2ce :: Acc (Array DIM3 Int)
+p2ce = replicate
+       (constant$ Z :. (7::Int) :. All :. (2::Int))
+       (generate (index1 3) unindex1)
+
 
 p2d :: Acc (Array DIM4 (Int,Int))
 p2d = let arr = generate (constant (Z :. (3::Int) :. (3::Int))) unindex2
