@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TypeOperators, NamedFieldPuns, ExistentialQuantification #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -52,8 +52,29 @@ import Text.PrettyPrint.GenericPretty (doc)
 
 -- | A tuple containing name, AST, and the printed result produced by evaluating under
 --   the reference Accelerate interpreter, and THEN flattened/printed as an S.AccArray.
-type TestEntry = (String, S.Prog (), String)
+-- 
+--   The TestEntry also provides access to the original Accelerate
+--   program, but it is trickier to consume.
+data TestEntry = TestEntry {
+  name :: String, 
+  simpleProg :: S.Prog (), 
+  result :: String, 
+  origProg :: AccProg }
+ deriving (Show, Ord, Eq)
 
+data AccProg = forall a . (Arrays a) => AccProg (Acc a)
+
+instance Show AccProg where
+  show (AccProg acc) = show acc
+
+instance Ord AccProg where
+  -- HACK: Using printed representation:
+  compare (AccProg a) (AccProg b) = compare (show a) (show b)
+  
+instance Eq AccProg where
+  -- HACK: Using printed representation:
+  AccProg a == AccProg b = show a == show b
+  
 -- | ALL test programs.
 allProgs :: [TestEntry]
 allProgs = generateOnlyProgs ++ unitProgs ++ otherProgs
@@ -62,7 +83,7 @@ allProgs = generateOnlyProgs ++ unitProgs ++ otherProgs
 allProgsMap :: M.Map String TestEntry
 allProgsMap = M.fromList $ P.map fn allProgs
  where
-   fn x@(name,_,_) = (name,x)
+   fn x@TestEntry{name} = (name,x)
   
 -- | These tests only use 
 generateOnlyProgs :: [TestEntry]
@@ -121,7 +142,7 @@ go name p =
       (_ty, arr2, _phantom :: Phantom a) = unpackArray repr
       payloads = S.arrPayloads arr2
       -- Compare the *flat* list of payloads only for now; we record the printed payload:
-  in (name, convertToSimpleProg p, show payloads) 
+  in TestEntry name (convertToSimpleProg p) (show payloads) (AccProg p)
        
 ----------------------------------------------------------------------------------------------------
 -- Extra categories that are orthogonal to the above:
@@ -149,7 +170,7 @@ noSliceProgs = Set.toList$
 testCompiler :: (String -> S.Prog () -> [S.AccArray]) -> [TestEntry] -> [Test]
 testCompiler eval progs = P.map mk (P.zip [0..] progs)
  where 
-   mk (i, (name, prg, ans)) = 
+   mk (i, TestEntry name prg ans _) = 
      let payloads = concatMap S.arrPayloads (eval name prg) in 
      -- let [t] = hUnitTestToTests $ (show (eval prg)) ~=? ans in
      -- testCase ("run test "++show i) t 
@@ -163,7 +184,7 @@ testCompiler eval progs = P.map mk (P.zip [0..] progs)
 testPartialCompiler :: Show a => (S.Prog () -> a -> Bool) -> (String -> S.Prog () -> a) -> [TestEntry] -> [Test]
 testPartialCompiler oracle eval tests = P.map mk (P.zip [0..] tests)
   where
-   mk (i, (name, prg, ans)) =
+   mk (i, TestEntry name prg ans _) =
      testGroup ("run test "++show i++" "++name) $
      hUnitTestToTests $ 
      (True ~=?) $ 
