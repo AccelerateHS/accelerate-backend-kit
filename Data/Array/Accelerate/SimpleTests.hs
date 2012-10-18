@@ -62,7 +62,7 @@ data TestEntry = TestEntry {
   origProg :: AccProg }
  deriving (Show, Ord, Eq)
 
-data AccProg = forall a . (Arrays a) => AccProg (Acc a)
+data AccProg = forall a . (Arrays a, Show a) => AccProg (Acc a)
 
 instance Show AccProg where
   show (AccProg acc) = show acc
@@ -130,11 +130,11 @@ otherProgs =
   go "p17a" p17a, go "p17b" p17b
   ]
 
-makeTestEntry :: forall a . (Arrays a) => String -> Acc a -> TestEntry
+makeTestEntry :: forall a . (Show a, Arrays a) => String -> Acc a -> TestEntry
 makeTestEntry = go
 
 -- | A shorthand name.
-go :: forall a . (Arrays a) => String -> Acc a -> TestEntry
+go :: forall a . (Show a, Arrays a) => String -> Acc a -> TestEntry
 go name p =
   let arr = run p -- Run through the official Accelerate interpreter.
       -- Then we unpack the results into our plainer format. 
