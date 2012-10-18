@@ -38,6 +38,7 @@ import           Data.Array.Accelerate.AST
 import           Data.Array.Accelerate.Tuple
 import qualified Data.Array.Accelerate.Smart       as Sug
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
+import qualified Data.Array.Accelerate.Trafo.Sharing as Cvt
 import qualified Data.Array.Accelerate.SimpleArray as SA
 import qualified Data.Array.Accelerate.SimpleAST   as S
   -- Temporary AST before we get to the final one:
@@ -63,7 +64,7 @@ convertToSimpleProg prog =
   runPass "liftComplexRands" liftComplexRands $  
   
   runPass "staticTuples"     staticTuples     $   
-  runPass "initialConversion" (runEnvM . convertAcc . Sug.convertAcc) $ 
+  runPass "initialConversion" (runEnvM . convertAcc . Cvt.convertAcc) $ 
   prog
 
 -- Pass composition:

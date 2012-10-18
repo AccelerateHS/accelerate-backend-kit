@@ -413,7 +413,7 @@ p9b = map (\ e ->
 --                  (x::Exp Int32) + (y::Exp Int32)
                   lift (x::Exp Int32, y::Exp Int32, x+y)
           )
-          p9
+          p9a
  
 --------------------------------------------------------------------------------
 -- How do we create IndexAny in the AST?
