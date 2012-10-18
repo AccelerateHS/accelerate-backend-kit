@@ -21,9 +21,9 @@ module Data.Array.Accelerate.SimpleTests
     p2aa, p2a, p2f, p4, p4b, p5, p0, p1, p1b, p1c, p1d,
     p2, p2b, p2bb, p2c, p2cc, p2cd, p2ce, p2d, p2e, p2g, p2h,
     p3, p6, p8, p9, p9b,
-    p10, p10b, p10c, p10d, p10e, p10f,
+    p10, p10b, p10c, p10d, p10e, p10f, p10g,
     p11, p11b, p11c, p12, p13, p13b, p13c, p13d, p13e, p13f, p14, p14b, p14c, p14d, p14e, 
-    p16a, p16b, p16c, p16d, p16e 
+    p16a, p16b, p16c, p16d, p16e, p17a, p17b
    )
    where 
 
@@ -98,14 +98,15 @@ otherProgs =
 --  go "p7" p7, 
   go "p8" p8, 
   go "p9" p9, go "p9b" p9b,
-  go "p10" p10, go "p10b" p10b, go "p10c" p10c, go "p10d" p10d, go "p10e" p10e, go "p10f" p10f, 
+  go "p10" p10, go "p10b" p10b, go "p10c" p10c, go "p10d" p10d, go "p10e" p10e, go "p10f" p10f, go "p10g" p10g, 
   go "p11" p11, go "p11b" p11b, go "p11c" p11c,
   go "p12" p12, 
   go "p13" p13, go "p13b" p13b, go "p13c" p13c, go "p13d" p13d, go "p13e" p13e, go "p13f" p13f,
   go "p14" p14, go "p14b" p14b, 
   go "p14c" p14c, go "p14d" p14d, go "p14e" p14e,
 
-  go "p16a" p16a, go "p16b" p16b, go "p16c" p16c, go "p16d" p16d, go "p16e" p16e
+  go "p16a" p16a, go "p16b" p16b, go "p16c" p16c, go "p16d" p16d, go "p16e" p16e,
+  go "p17a" p17a, go "p17b" p17b
   ]
 
 makeTestEntry :: forall a . (Arrays a) => String -> Acc a -> TestEntry
@@ -209,8 +210,11 @@ p1ac = generate (constant Z)
                 (\ _ind -> 4.4 / 2.0)
 
 
-index1_int   a = (unindex1 (a :: Exp DIM1)) :: Exp Int
-unindex1_int a = (unindex1 a) :: Exp Int
+index1_int :: Exp Int -> Exp DIM1 
+index1_int = index1
+
+unindex1_int :: Exp DIM1 -> Exp Int
+unindex1_int  = unindex1 
 
 
 -- | And again with a 2D array:
@@ -423,7 +427,7 @@ repN n a = replicate (constant$ Any :. n) a
 p10 :: Acc (Array DIM1 Float)
 p10 = repN 3 (unit 40.4)
 
--- A 3x4 matrix:
+-- A 4x3 matrix, shape (Z :. 3 :. 4):
 p10b :: Acc (Array DIM2 Float)
 p10b = repN 4 p10
 
@@ -434,11 +438,17 @@ p10c = replicate (constant$ Any :. (3::Int)) (unit 4.4)
 p10d :: Acc (Scalar Float)
 p10d = slice p10b (constant (Z :. (2::Int) :. (2::Int)))
 
+-- Project a four-element row:
 p10e :: Acc (Vector Float)
 p10e = slice p10b (constant (Z :. (2::Int) :. All))
 
+-- Project a three-element column:
 p10f :: Acc (Vector Float)
 p10f = slice p10b (constant (Z :. All :. (2::Int)))
+
+-- A 0D slice of 1D vector:
+p10g :: Acc (Scalar Float)
+p10g = slice p10 (index1_int 1)
 
 
 ----------------------------------------
@@ -598,6 +608,15 @@ p16e = map (+10) $
   --                               :: Z :. Exp Int :. Exp Int
   -- in
   -- backpermute (swap $ shape mat') swap mat'
+
+--------------------------------------------------------------------------------
+-- Reshape:
+       
+p17a :: Acc (Vector Float)
+p17a = reshape (index1 10) p1a
+
+p17b :: Acc (Array DIM2 Float)
+p17b = reshape (index2 2 5) p1a
 
 
 --------------------------------------------------------------------------------

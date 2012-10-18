@@ -202,7 +202,7 @@ data AExp =
   | Use       AccArray               -- A real live ARRAY goes here!
   | Generate  Exp (Fun1 Exp)         -- Generate an array by applying a function to every index in shape
   | Replicate SliceType Exp Var      -- Replicate array across one or more dimensions.
-  | Index     SliceType Var Exp      -- Index a sub-array (slice): Index sliceIndex Array SliceDims.
+  | Index     SliceType Var Exp      -- Index a sub-array (slice): Index sliceIndex Array SlicePosition.
   | Map      (Fun1 Exp) Var          -- Map Function Array
   | ZipWith  (Fun2 Exp) Var Var      -- ZipWith Function Array1 Array2
   | Fold     (Fun2 Exp) Exp Var      -- Fold Function Default Array

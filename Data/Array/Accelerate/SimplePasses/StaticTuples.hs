@@ -39,7 +39,7 @@ staticTuples origae = aexp M.empty origae
      case e of  
 
        T.EIndexConsDynamic e1 e2 -> 
-         error$"IndexCons - finish me"
+         error$"IndexCons not handled yet - finish me"
          
        T.EIndexHeadDynamic e -> 
          let e'  = exp tenv e
@@ -66,8 +66,13 @@ staticTuples origae = aexp M.empty origae
        T.EShapeSize ex        -> T.EShapeSize (exp  tenv ex)
        T.EShape     ae        -> T.EShape     (aexp tenv ae)
        T.EConst c             -> T.EConst c 
-       T.ETuple ls            -> T.ETuple (L.map (exp tenv) ls)
-       T.EIndex els           -> T.EIndex (L.map (exp tenv) els)
+       T.ETuple ls            -> mkTuple (L.map (exp tenv) ls)
+       -- After this pass EIndex expressions are plain tuples:
+       T.EIndex els           -> mkTuple (L.map (exp tenv) els)
+
+   mkTuple :: [T.Exp] -> T.Exp
+   mkTuple [e] = e
+   mkTuple ls = T.ETuple ls
 
    -- | The real action happens at the expression level, so this
    --   array-expression traversal in this case is mostly boilerplate:
