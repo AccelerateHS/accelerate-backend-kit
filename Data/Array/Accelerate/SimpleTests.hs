@@ -20,7 +20,7 @@ module Data.Array.Accelerate.SimpleTests
     p1a, p1aa, p1ab, p1ac, p1ba,
     p2aa, p2a, p2f, p4, p4b, p5, p0, p1, p1b, p1c, p1d,
     p2, p2b, p2bb, p2c, p2cc, p2cd, p2ce, p2d, p2e, p2g, p2h,
-    p3, p6, p8, p9, p9b,
+    p3, p6, p8, p9a, p9b,
     p10, p10b, p10c, p10d, p10e, p10f, p10g,
     p11, p11b, p11c, p12, p13, p13b, p13c, p13d, p13e, p13f, p14, p14b, p14c, p14d, p14e, 
     p16a, p16b, p16c, p16d, p16e, p17a, p17b
@@ -97,7 +97,7 @@ otherProgs =
   go "p6" p6, 
 --  go "p7" p7, 
   go "p8" p8, 
-  go "p9" p9, go "p9b" p9b,
+  go "p9a" p9a, go "p9b" p9b,
   go "p10" p10, go "p10b" p10b, go "p10c" p10c, go "p10d" p10d, go "p10e" p10e, go "p10f" p10f, go "p10g" p10g, 
   go "p11" p11, go "p11b" p11b, go "p11c" p11c,
   go "p12" p12, 
@@ -133,7 +133,7 @@ sliceProgs = [
   go "p2" p2, go "p2b" p2b, go "p2bb" p2bb, go "p2cc" p2cc, go "p2cd" p2cd, 
   go "p2d" p2d, go "p2e" p2e, go "p2h" p2h,
   go "p3" p3,
-  go "p9" p9, go "p9b" p9b,
+  go "p9a" p9a, go "p9b" p9b,
   go "p10" p10, go "p10b" p10b, go "p10c" p10c
   ]
 
@@ -402,8 +402,8 @@ r8 = I.run p8
 
 
 -- A map with a tuple return type:
-p9 :: Acc (Vector (Int32,Int32))
-p9 = let xs = replicate (constant (Z :. (4::Int))) (unit 40)
+p9a :: Acc (Vector (Int32,Int32))
+p9a = let xs = replicate (constant (Z :. (4::Int))) (unit 40)
      in map (\ x -> lift (x+10, x*10)) xs
 
 -- How about tuples coming in and going out:
@@ -551,6 +551,7 @@ tix0 = Tu.ZeroTupIdx
 tix1 :: Elt s => Tu.TupleIdx ((t, s), s1) s
 tix1 = Tu.SuccTupIdx tix0
 
+-- Here we manually construct some of the AST we want:
 untup2 :: (Elt a, Elt b) => Sm.Exp (a, b) -> (Sm.Exp a, Sm.Exp b)
 untup2 e = (Sm.Exp $ Tu.SuccTupIdx Tu.ZeroTupIdx `Sm.Prj` e, 
             Sm.Exp $ Tu.ZeroTupIdx `Sm.Prj` e)
