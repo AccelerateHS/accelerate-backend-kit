@@ -20,10 +20,14 @@ module Data.Array.Accelerate.SimpleTests
     p1a, p1aa, p1ab, p1ac, p1ba,
     p2aa, p2a, p2f, p4, p4b, p5, p0, p1, p1b, p1c, p1d,
     p2, p2b, p2bb, p2c, p2cc, p2cd, p2ce, p2d, p2e, p2g, p2h,
-    p3, p6, p8, p9a, p9b,
+    p3, p6, p8, p9a, p9b, p9c, 
     p10, p10b, p10c, p10d, p10e, p10f, p10g,
     p11, p11b, p11c, p12, p13, p13b, p13c, p13d, p13e, p13f, p14, p14b, p14c, p14d, p14e, 
-    p16a, p16b, p16c, p16d, p16e, p17a, p17b
+    p16a, p16b, p16c, p16d, p16e, p17a, p17b,
+    p18a, p18b, 
+
+    -- * Reexports to make life easier:
+    doc, convertToSimpleProg
    )
    where 
 
@@ -118,7 +122,7 @@ otherProgs =
   go "p6" p6, 
 --  go "p7" p7, 
   go "p8" p8, 
-  go "p9a" p9a, go "p9b" p9b,
+  go "p9a" p9a, go "p9b" p9b, go "p9c" p9c,
   go "p10" p10, go "p10b" p10b, go "p10c" p10c, go "p10d" p10d, go "p10e" p10e, go "p10f" p10f, go "p10g" p10g, 
   go "p11" p11, go "p11b" p11b, go "p11c" p11c,
   go "p12" p12, 
@@ -127,7 +131,8 @@ otherProgs =
   go "p14c" p14c, go "p14d" p14d, go "p14e" p14e,
 
   go "p16a" p16a, go "p16b" p16b, go "p16c" p16c, go "p16d" p16d, go "p16e" p16e,
-  go "p17a" p17a, go "p17b" p17b
+  go "p17a" p17a, go "p17b" p17b,
+  go "p18a" p18a, go "p18b" p18b
   ]
 
 makeTestEntry :: forall a . (Show a, Arrays a) => String -> Acc a -> TestEntry
@@ -154,7 +159,7 @@ sliceProgs = [
   go "p2" p2, go "p2b" p2b, go "p2bb" p2bb, go "p2cc" p2cc, go "p2cd" p2cd, 
   go "p2d" p2d, go "p2e" p2e, go "p2h" p2h,
   go "p3" p3,
-  go "p9a" p9a, go "p9b" p9b,
+  go "p9a" p9a, go "p9b" p9b, 
   go "p10" p10, go "p10b" p10b, go "p10c" p10c
   ]
 
@@ -241,7 +246,7 @@ unindex1_int  = unindex1
 -- | And again with a 2D array:
 p1b :: Acc (Vector Float)
 p1b = let xs = use$ fromList (Z :. (2::Int) :. (5::Int)) [1..10::Float]
-      in  fold (+) 0 xs
+      in  fold (*) 0 xs
 t1b = convertToSimpleProg p1b
 r1b = I.run p1b
 
@@ -436,6 +441,12 @@ p9b = map (\ e ->
           )
           p9a
  
+-- A generate of an array of tuples
+p9c :: Acc (Vector (Float,Int))
+p9c = generate (index1 10) $ \ind -> 
+        let i = unindex1_int ind in 
+        lift (A.fromIntegral i + 30.3, i + 100)
+
 --------------------------------------------------------------------------------
 -- How do we create IndexAny in the AST?
 
@@ -639,6 +650,22 @@ p17a = reshape (index1 10) p1a
 
 p17b :: Acc (Array DIM2 Float)
 p17b = reshape (index2 2 5) p1a
+
+
+--------------------------------------------------------------------------------
+-- Arrays of dynamically computed sizes:
+
+-- We seem to be missing a char to int function??
+-- p18a :: Acc (Vector Char)
+-- p18a = generate (unit (index1 7) ! index0) (A.toEnum . unindex1_int)
+
+p18a :: Acc (Vector Int)
+p18a = generate (unit (index1 7) ! index0) unindex1_int
+
+-- Next introduce an EShape construct:
+p18b :: Acc (Scalar Int)
+p18b = unit$ shapeSize (shape p18a)
+
 
 
 --------------------------------------------------------------------------------

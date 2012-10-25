@@ -146,7 +146,8 @@ maybtrace = if dbg then trace else \_ -> id
 data Prog decor = Prog { 
   progBinds   :: [ProgBind decor],
   progResults :: [Var],
-  progType    :: Type -- Final, pre-flattened type, can be an array-tuple.
+  progType    :: Type,  -- Final, pre-flattened type, can be an array-tuple.
+  uniqueCounter :: Int  -- Counter for unique variable suffix generation
 } deriving (Read,Show,Eq,Generic, Ord)
 
 -- | A top-level binding.  Binds a unique variable name to either an
@@ -216,7 +217,7 @@ data AExp =
   | Scanr'   (Fun2 Exp) Exp Var      -- Scanr' Function InitialValue LinearArray
   | Scanr1   (Fun2 Exp)     Var      -- Scanr  Function              LinearArray
   | Permute  (Fun2 Exp) Var (Fun1 Exp) Var -- Permute CombineFun DefaultArr PermFun SourceArray
-  | Backpermute Exp (Fun1 Exp) Var   -- Backpermute ResultDimension   PermFun SourceArray
+  | Backpermute Exp (Fun1 Exp) Var   -- Backpermute ResultDimension   PermFun SourceArrayu
   | Reshape     Exp      Var         -- Reshape Shape Array
   | Stencil  (Fun1 Exp) Boundary Var
   | Stencil2 (Fun2 Exp) Boundary Var Boundary Var -- Two source arrays/boundaries
@@ -698,18 +699,19 @@ recoverExpType env exp =
                                   Just ty -> ty
         EConst c              -> constToType c
         ELet (vr,ty,_) bod    -> recoverExpType (M.insert vr ty env) bod
+        ETuple [x]            -> error$"recoverExpType: invariant broken, one element ETuple containing: "++show x
         ETuple es             -> TTuple$  map (recoverExpType env) es
         ECond _e1 e2 _e3      -> recoverExpType env e2
         EPrimApp ty _ _       -> ty
         EShapeSize _ex        -> TInt
         -- Shapes are represented as Tuples of Ints.  But we need to know how long:
         EShape vr             -> let (dim,_) = arrayType vr in 
-                                 TTuple$ take dim (repeat TInt)          
+                                 mkTTuple take dim (repeat TInt)          
         EIndexScalar vr _ex   -> snd (arrayType vr)
         ETupProject indR len ex -> let TTuple ls = recoverExpType env ex in 
                                    mkTTuple$ reverse $ take len $ drop indR $ reverse ls
         -- Indices are represented as Tuples:
-        EIndex es             -> TTuple $ map (recoverExpType env) es
+        EIndex es             -> mkTTuple $ map (recoverExpType env) es
  where 
    arrayType vr = 
      case M.lookup vr env of 
@@ -741,11 +743,6 @@ normalizeEConst e =
     -- FIXME: We need to phase out EIndex entirely.  They are just represented as tuples:
     EIndex ls       -> ETuple ls
     other           -> other
-
---------------------------------------------------------------------------------
-
--- typeCheck
-
 
 
 --------------------------------------------------------------------------------
@@ -816,7 +813,7 @@ test = read "array (1,5) [(1,200),(2,201),(3,202),(4,203),(5,204)]" :: U.UArray 
 ----------------------------------------------------------------------------------------------------
 
 instance NFData a => NFData (Prog a) where
-  rnf (Prog pbs pr pt) =
+  rnf (Prog pbs pr pt _) =
     case rnf pbs of
      () -> case rnf pr of
            () -> case rnf pt of

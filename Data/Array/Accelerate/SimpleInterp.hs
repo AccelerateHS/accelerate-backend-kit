@@ -66,7 +66,7 @@ unArrVal   (ArrVal v)   = v
 --   result.  Reimposing a nested structure to the resulting
 --   tuple-of-arrays is not the job of this function.
 evalSimpleAST :: S.Prog a -> [AccArray]
-evalSimpleAST (S.Prog binds results progtype) = 
+evalSimpleAST (S.Prog binds results progtype _) = 
 --    concatArrays $ 
     maybtrace ("[dbg] evalSimpleAST, initial env "++ show (L.map (\(ProgBind v _ _ _)->v) binds)
            ++"  yielded environment: "++show (M.keys finalenv)) $
@@ -252,7 +252,7 @@ evalE :: Env -> T.Exp -> Value
 evalE env expr = 
   case expr of 
     T.EVr  v             -> envLookup env v
-    T.ELet (vr,_ty,rhs) bod -> maybtrace ("  ELet: bound "++show vr++" to "++show rhs') $
+    T.ELet (vr,_ty,rhs) bod -> maybtrace ("[dbg]  ELet: bound "++show vr++" to "++show rhs') $
                                evalE (M.insert vr rhs' env) bod
                                where rhs' = (evalE env rhs)
     T.ETuple es          -> ConstVal$ Tup $ map (unConstVal . evalE env) es
@@ -275,7 +275,7 @@ evalE env expr =
     T.EPrimApp ty p es  -> evalPrim ty p (map (evalE env) es)
 
     T.ETupProject ind len ex -> 
-      tracePrint ("  ETupProject: "++show ind++" "++show len++": ") $
+      tracePrint ("[dbg]  ETupProject: "++show ind++" "++show len++": ") $
       case (ind, len, evalE env ex) of 
         (_,_,ConstVal (Tup ls)) -> ConstVal$ tuple$  slice ls 
         -- TODO -- check if this makes sense ... how can we run into this kind of tuple?:

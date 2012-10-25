@@ -75,7 +75,8 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
                                   "to be varrefs at this point, instead received: "++show x
              return $ S.Prog { progBinds   = finalbinds,
                                progResults = (L.map unVar $ flattenTT newbod),
-                               progType    = (getAnnot bod) }
+                               progType    = (getAnnot bod),
+                               uniqueCounter = 0 }
  
    -- Called on already processed expressions:
    flattenTT :: TempTree S.AExp -> [S.AExp]
