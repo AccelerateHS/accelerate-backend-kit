@@ -706,7 +706,7 @@ recoverExpType env exp =
         EShapeSize _ex        -> TInt
         -- Shapes are represented as Tuples of Ints.  But we need to know how long:
         EShape vr             -> let (dim,_) = arrayType vr in 
-                                 mkTTuple take dim (repeat TInt)          
+                                 mkTTuple$ take dim (repeat TInt)          
         EIndexScalar vr _ex   -> snd (arrayType vr)
         ETupProject indR len ex -> let TTuple ls = recoverExpType env ex in 
                                    mkTTuple$ reverse $ take len $ drop indR $ reverse ls
