@@ -24,7 +24,7 @@ module Data.Array.Accelerate.SimpleTests
     p10, p10b, p10c, p10d, p10e, p10f, p10g, p10h, p10i, 
     p11, p11b, p11c, p12, p13, p13b, p13c, p13d, p13e, p13f, p14, p14b, p14c, p14d, p14e, 
     p16a, p16b, p16c, p16d, p16e, p17a, p17b,
-    p18a, p18b, p18c, p18d, p18e,
+    p18a, p18b, p18c, p18d, p18e, p18f,
 
     -- * Reexports to make life easier:
     doc, convertToSimpleProg
@@ -133,7 +133,7 @@ otherProgs =
 
   go "p16a" p16a, go "p16b" p16b, go "p16c" p16c, go "p16d" p16d, go "p16e" p16e,
   go "p17a" p17a, go "p17b" p17b,
-  go "p18a" p18a, go "p18b" p18b, go "p18c" p18c, go "p18d" p18d, go "p18e" p18e
+  go "p18a" p18a, go "p18b" p18b, go "p18c" p18c, go "p18d" p18d, go "p18e" p18e, go "p18f" p18f
   ]
 
 makeTestEntry :: forall a . (Show a, Arrays a) => String -> Acc a -> TestEntry
@@ -689,6 +689,11 @@ p18e :: Acc (Vector Int)
 p18e = let mystery = unit (index1 7) ! index0 in
        reshape mystery $ 
        generate mystery unindex1_int
+
+-- Do a replicate of dynamic size:
+p18f :: Acc (Vector Int)
+p18f = let mystery = (unit (index1 7) ! index0) :: Exp (Z:.Int) in
+       replicate mystery (unit 40)
 
 
 --------------------------------------------------------------------------------
