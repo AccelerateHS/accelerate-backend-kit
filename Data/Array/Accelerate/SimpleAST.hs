@@ -47,6 +47,7 @@ import           Data.Array.Unboxed as U
 import qualified Data.Array.Unsafe as Un
 import           Data.Int
 import qualified Data.Map          as M
+import qualified Data.List         as L
 import           Data.Word
 import           Debug.Trace       (trace)
 import           Foreign.C.Types 
@@ -401,7 +402,32 @@ data SliceComponent = Fixed | All
 --   Invariant -- all payload arrays should be the same length, and:
 --   > sum (arrDim a) == length (arrPayloads a !! i)
 data AccArray = AccArray { arrDim :: [Int], arrPayloads :: [ArrayPayload] }
- deriving (Show, Read, Eq, Ord)
+ deriving (Eq, Ord)
+
+instance Show AccArray where
+  show (AccArray shape payloads) =
+        "AccArray "++show shape++
+        (L.concat$ L.map  ((" "++) . doPayld) payloads)
+   where
+     doPayld p = 
+       case p of 
+         ArrayPayloadInt    arr -> show$ U.elems arr
+         ArrayPayloadInt8   arr -> show$ U.elems arr
+         ArrayPayloadInt16  arr -> show$ U.elems arr
+         ArrayPayloadInt32  arr -> show$ U.elems arr
+         ArrayPayloadInt64  arr -> show$ U.elems arr
+         ArrayPayloadWord   arr -> show$ U.elems arr
+         ArrayPayloadWord8  arr -> show$ U.elems arr
+         ArrayPayloadWord16 arr -> show$ U.elems arr
+         ArrayPayloadWord32 arr -> show$ U.elems arr
+         ArrayPayloadWord64 arr -> show$ U.elems arr
+         ArrayPayloadFloat  arr -> show$ U.elems arr
+         ArrayPayloadDouble arr -> show$ U.elems arr
+         ArrayPayloadChar   arr -> show$ U.elems arr
+         ArrayPayloadBool   arr -> show$ U.elems arr
+
+instance Read AccArray where
+--  read str = error "FIXME: Read instance for AccArray is unfinished."
 
 -- | This is a single, contiguous batch of elements, representing one
 --   tuple-component of the contents of an Accelerate array.

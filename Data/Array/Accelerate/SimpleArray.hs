@@ -311,20 +311,20 @@ payloadsFromList1 ls@(hd:_) =
 payloadToList :: ArrayPayload -> [Const]
 payloadToList payl =   
   case payl of        
-    ArrayPayloadInt    arr -> map I  $ elems arr
-    ArrayPayloadInt8   arr -> map I8 $ elems arr
-    ArrayPayloadInt16  arr -> map I16$ elems arr
-    ArrayPayloadInt32  arr -> map I32$ elems arr
-    ArrayPayloadInt64  arr -> map I64$ elems arr
-    ArrayPayloadWord   arr -> map W  $ elems arr
-    ArrayPayloadWord8  arr -> map W8 $ elems arr
-    ArrayPayloadWord16 arr -> map W16$ elems arr
-    ArrayPayloadWord32 arr -> map W32$ elems arr
-    ArrayPayloadWord64 arr -> map W64$ elems arr
-    ArrayPayloadFloat  arr -> map F  $ elems arr
-    ArrayPayloadDouble arr -> map D  $ elems arr
-    ArrayPayloadChar   arr -> map C  $ elems arr
-    ArrayPayloadBool   arr -> map toBool $ elems arr
+    ArrayPayloadInt    arr -> map I  $ U.elems arr
+    ArrayPayloadInt8   arr -> map I8 $ U.elems arr
+    ArrayPayloadInt16  arr -> map I16$ U.elems arr
+    ArrayPayloadInt32  arr -> map I32$ U.elems arr
+    ArrayPayloadInt64  arr -> map I64$ U.elems arr
+    ArrayPayloadWord   arr -> map W  $ U.elems arr
+    ArrayPayloadWord8  arr -> map W8 $ U.elems arr
+    ArrayPayloadWord16 arr -> map W16$ U.elems arr
+    ArrayPayloadWord32 arr -> map W32$ U.elems arr
+    ArrayPayloadWord64 arr -> map W64$ U.elems arr
+    ArrayPayloadFloat  arr -> map F  $ U.elems arr
+    ArrayPayloadDouble arr -> map D  $ U.elems arr
+    ArrayPayloadChar   arr -> map C  $ U.elems arr
+    ArrayPayloadBool   arr -> map toBool $ U.elems arr
 
 
 -- | Create an array of with the given dimensions and many copies of

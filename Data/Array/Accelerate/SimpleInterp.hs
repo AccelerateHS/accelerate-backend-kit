@@ -5,7 +5,11 @@
 -- | An example interpreter for the simplified AST defined in "Data.Array.Accelerate.SimpleAST".
 module Data.Array.Accelerate.SimpleInterp
        (
-       run, evalSimpleAST
+         -- * Main module entrypoints  
+         run, evalSimpleAST,
+         
+         -- * Smaller pieces that may be useful
+         evalE, Value(..)
        )
        where
 
