@@ -368,7 +368,45 @@ evalPrim ty p [x] =
 --           | SP ScalarPrim
 --           | BP BoolPrim
 --           | OP OtherPrim
-    OP FromIntegral -> ConstVal $ (valToConst x)
+    OP FromIntegral ->
+      -- Here we need to convert to the right kind of constant:
+      let c = valToConst x
+          err = error$"bad type of input to FromIntegral: "++show ty
+      in
+      ConstVal$ 
+      case ty of
+        TInt     -> I$   fromInteger$ constToInteger c
+        TInt8    -> I8$  fromInteger$ constToInteger c        
+        TInt16   -> I16$ fromInteger$ constToInteger c
+        TInt32   -> I32$ fromInteger$ constToInteger c
+        TInt64   -> I64$ fromInteger$ constToInteger c
+        TWord    -> W$   fromInteger$ constToInteger c
+        TWord8   -> W8$  fromInteger$ constToInteger c        
+        TWord16  -> W16$ fromInteger$ constToInteger c
+        TWord32  -> W32$ fromInteger$ constToInteger c
+        TWord64  -> W64$ fromInteger$ constToInteger c
+
+        TCChar   -> CC $ fromInteger$ constToInteger c
+        TCUChar  -> CUC$ fromInteger$ constToInteger c
+        TCSChar  -> CSC$ fromInteger$ constToInteger c
+        TCShort  -> CS $ fromInteger$ constToInteger c
+        TCInt    -> CI $ fromInteger$ constToInteger c
+        TCLong   -> CL $ fromInteger$ constToInteger c
+        TCLLong  -> CLL$ fromInteger$ constToInteger c
+        TCUShort -> CUS$ fromInteger$ constToInteger c
+        TCUInt   -> CUI$ fromInteger$ constToInteger c
+        TCULong  -> CUL$ fromInteger$ constToInteger c
+        TCULLong -> CULL$ fromInteger$ constToInteger c
+
+        TFloat   -> F$  fromRational$ constToRational c
+        TDouble  -> D$  fromRational$ constToRational c
+        TCFloat  -> CF$ fromRational$ constToRational c
+        TCDouble -> CD$ fromRational$ constToRational c
+        
+        TBool      -> err
+        TChar      -> err
+        TTuple _   -> err
+        TArray _ _ -> err
     _ -> error$"UNFINISHED: evalPrim needs to be extended to handle all primitives: "++show p
 
 
