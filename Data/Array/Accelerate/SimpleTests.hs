@@ -21,10 +21,10 @@ module Data.Array.Accelerate.SimpleTests
     p2aa, p2a, p2f, p4, p4b, p5, p0, p1, p1b, p1c, p1d,
     p2, p2b, p2bb, p2c, p2cc, p2cd, p2ce, p2d, p2e, p2g, p2h,
     p3, p6, p8, p9a, p9b, p9c, 
-    p10, p10b, p10c, p10d, p10e, p10f, p10g,
+    p10, p10b, p10c, p10d, p10e, p10f, p10g, p10h, p10i, 
     p11, p11b, p11c, p12, p13, p13b, p13c, p13d, p13e, p13f, p14, p14b, p14c, p14d, p14e, 
     p16a, p16b, p16c, p16d, p16e, p17a, p17b,
-    p18a, p18b, p18c, 
+    p18a, p18b, p18c, p18d, 
 
     -- * Reexports to make life easier:
     doc, convertToSimpleProg
@@ -123,7 +123,8 @@ otherProgs =
 --  go "p7" p7, 
   go "p8" p8, 
   go "p9a" p9a, go "p9b" p9b, go "p9c" p9c,
-  go "p10" p10, go "p10b" p10b, go "p10c" p10c, go "p10d" p10d, go "p10e" p10e, go "p10f" p10f, go "p10g" p10g, 
+  go "p10" p10, go "p10b" p10b, go "p10c" p10c, go "p10d" p10d, go "p10e" p10e, go "p10f" p10f, 
+  go "p10g" p10g, go "p10h" p10h, go "p10i" p10i, 
   go "p11" p11, go "p11b" p11b, go "p11c" p11c,
   go "p12" p12, 
   go "p13" p13, go "p13b" p13b, go "p13c" p13c, go "p13d" p13d, go "p13e" p13e, go "p13f" p13f,
@@ -132,7 +133,7 @@ otherProgs =
 
   go "p16a" p16a, go "p16b" p16b, go "p16c" p16c, go "p16d" p16d, go "p16e" p16e,
   go "p17a" p17a, go "p17b" p17b,
-  go "p18a" p18a, go "p18b" p18b, go "p18c" p18c
+  go "p18a" p18a, go "p18b" p18b, go "p18c" p18c, go "p18d" p18d
   ]
 
 makeTestEntry :: forall a . (Show a, Arrays a) => String -> Acc a -> TestEntry
@@ -482,6 +483,15 @@ p10f = slice p10b (constant (Z :. All :. (2::Int)))
 p10g :: Acc (Scalar Float)
 p10g = slice p10 (index1_int 1)
 
+-- A 0D slice of a 1D vec of unknown size:
+p10h :: Acc (Scalar Int)
+p10h = slice p18a (index1_int 1)
+
+-- A pointless 1D slice of 1D vector:
+p10i :: Acc (Vector Int)
+p10i = slice p18a (constant$ Z:.All)
+
+
 
 ----------------------------------------
 -- How about tuples of arrays?
@@ -670,6 +680,9 @@ p18b = unit$ shapeSize (shape p18a)
 p18c :: Acc (Scalar Int)
 p18c = unit$ shapeSize (shape p2d)
 
+-- Do a reshape on something of unknown size:
+p18d :: Acc (Vector Int)
+p18d = reshape (index1 7) p18a
 
 
 --------------------------------------------------------------------------------
