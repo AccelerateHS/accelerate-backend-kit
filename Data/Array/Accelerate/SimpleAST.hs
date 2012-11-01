@@ -29,7 +29,7 @@ module Data.Array.Accelerate.SimpleAST
      var, primArity, constToInteger, constToRational, constToNum, 
      isIntType, isFloatType, isNumType, 
      isIntConst, isFloatConst, isNumConst,
-     constToType, recoverExpType, topLevelExpType,
+     constToType, recoverExpType, progToEnv, topLevelExpType,
      typeByteSize,
      
      normalizeEConst, mkTTuple, mkETuple,
@@ -708,11 +708,13 @@ constToType c =
 -- inside a `ELet`).
 --
 topLevelExpType :: Prog a -> Exp -> Type
-topLevelExpType Prog{progBinds} exp = recoverExpType origenv exp 
-  where
-    -- Note this is highly INEFFICIENT -- it creates a map from the list every time:
-    -- Memoization would be useful here:
-    origenv = M.fromList$ map (\(ProgBind v ty _ _) -> (v,ty)) progBinds 
+topLevelExpType pr exp = recoverExpType (progToEnv pr) exp 
+
+-- | For creating an initial environment in which to use `recoverExpType`
+progToEnv :: Prog a -> M.Map Var Type
+-- Note this is highly INEFFICIENT -- it creates a map from the list every time:
+-- Memoization would be useful here:
+progToEnv p = M.fromList$ map (\(ProgBind v ty _ _) -> (v,ty)) (progBinds p)
 
 -- | Recover the type of an expression, given an environment.  The
 -- environment must include bindings for any free scalar AND array

@@ -427,11 +427,14 @@ r8 = I.run p8
 -- unit ((+) (let x0 = pi in (x0, 3.1415927 * x0)))
 
 
+------------------------------------------------------------
+-- P9: Experimenting with Tuples:
+------------------------------------------------------------
 
 -- A map with a tuple return type:
 p9a :: Acc (Vector (Int32,Int32))
 p9a = let xs = replicate (constant (Z :. (4::Int))) (unit 40)
-     in map (\ x -> lift (x+10, x*10)) xs
+      in map (\ x -> lift (x+10, x*10)) xs
 
 -- How about tuples coming in and going out:
 p9b :: Acc (Vector (Int32,Int32,Int32))
@@ -447,6 +450,40 @@ p9c :: Acc (Vector (Float,Int))
 p9c = generate (index1 10) $ \ind -> 
         let i = unindex1_int ind in 
         lift (A.fromIntegral i + 30.3, i + 100)
+
+-- Take a contiguous section out of a large tuple:
+p9d :: Acc (Scalar (Int,Int,Int))
+p9d = unit$
+  let x :: (Int,Int,Int,Int,Int)
+      x = (1,2,3,4,5)
+      t :: Exp (Int,Int,Int,Int,Int)
+      t = lift x
+      (a,b,c,d,e) :: (Exp Int,Exp Int,Exp Int,Exp Int,Exp Int) = unlift t
+      v :: Exp (Int,Int,Int)
+      v = lift (b,c,d)
+  in v
+
+-- Now a large nested tuple:
+
+
+-- p9e :: Acc (Scalar (Int,Int,Int))
+p9e :: Acc (Scalar (Int,(Int,Int,Int)))
+p9e = unit$
+  let x :: (Int,(Int,(Int,Int,Int)),Float)
+      x = (1,(2,(3,4,5)),6)
+      t :: Exp (Int,(Int,(Int,Int,Int)),Float)
+      t = lift x
+
+      u :: (Exp Int,Exp (Int,(Int,Int,Int)),Exp Float)
+--      u :: (Exp Int,(Exp Int,(Exp Int,Exp Int,Exp Int)),Exp Float)
+      u = unlift t
+      (a,mid,f) = u      
+--      (a,(b,(c,d,e)),f) :: (Exp Int,(Exp Int,(Exp Int,Exp Int,Exp Int)),Exp Float) = unlift t
+      -- v :: Exp (Int,Int,Int)
+      -- v = lift (b,c,d)
+  in mid
+
+
 
 --------------------------------------------------------------------------------
 -- How do we create IndexAny in the AST?
@@ -493,8 +530,10 @@ p10i = slice p18a (constant$ Z:.All)
 
 
 
-----------------------------------------
+------------------------------------------------------------
 -- How about tuples of arrays?
+------------------------------------------------------------
+
 p11 :: Acc (Scalar Int, Scalar Int16, Scalar Int32)
 p11 = lift (unit 1, unit 2, unit 3)
 

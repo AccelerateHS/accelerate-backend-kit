@@ -9,7 +9,7 @@ module Data.Array.Accelerate.SimpleInterp
          run, evalSimpleAST,
          
          -- * Smaller pieces that may be useful
-         evalE, Value(..)
+         evalE, Value(..), evalPrim, 
        )
        where
 
@@ -276,7 +276,7 @@ evalE env expr =
     T.EShapeSize ex      -> case evalE env ex of 
                             _ -> error "need more work on shapes"
 
-    T.EPrimApp ty p es  -> evalPrim ty p (map (evalE env) es)
+    T.EPrimApp ty p es  -> ConstVal$ evalPrim ty p (map (valToConst . evalE env) es)
 
     T.ETupProject ind len ex -> 
       tracePrint ("[dbg]  ETupProject: "++show ind++" "++show len++": ") $
@@ -338,7 +338,7 @@ untupleVal (ArrVal a)   = [ArrVal a]
 
 --------------------------------------------------------------------------------
 
-evalPrim :: Type -> Prim -> [Value] -> Value
+evalPrim :: Type -> Prim -> [Const] -> Const
 -- evalPrim ty p [] = 
 --   case p of 
 --     NP Add -> ConstVal (I 0)
@@ -351,18 +351,16 @@ evalPrim ty p [x,y] =
 --    NP Abs -> ConstVal (absv $ valToConst $ head es)
 --    NP Sig -> ConstVal (sig  $ valToConst $ head es)
     
-    NP Add -> ConstVal (add (valToConst x) (valToConst y))
-    NP Mul -> ConstVal (mul (valToConst x) (valToConst y))
-    
-    SP Gt -> ConstVal (gt (valToConst x) (valToConst y))
-
+    NP Add -> add x y
+    NP Mul -> mul x y
+    SP Gt  -> gt x y
     oth -> error$"evalPrim needs to handle "++show oth
 
-evalPrim ty p [x] = 
+evalPrim ty p [c] = 
   case p of 
-    NP Neg -> ConstVal (neg  $ valToConst x)
-    NP Abs -> ConstVal (absv $ valToConst x)
-    NP Sig -> ConstVal (sig  $ valToConst x)
+    NP Neg -> neg  c
+    NP Abs -> absv c
+    NP Sig -> sig  c
 --           | IP IntPrim
 --           | FP FloatPrim
 --           | SP ScalarPrim
@@ -370,10 +368,7 @@ evalPrim ty p [x] =
 --           | OP OtherPrim
     OP FromIntegral ->
       -- Here we need to convert to the right kind of constant:
-      let c = valToConst x
-          err = error$"bad type of input to FromIntegral: "++show ty
-      in
-      ConstVal$ 
+      let err = error$"bad type of input to FromIntegral: "++show ty in
       case ty of
         TInt     -> I$   fromInteger$ constToInteger c
         TInt8    -> I8$  fromInteger$ constToInteger c        
