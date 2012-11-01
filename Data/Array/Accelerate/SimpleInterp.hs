@@ -9,7 +9,9 @@ module Data.Array.Accelerate.SimpleInterp
          run, evalSimpleAST,
          
          -- * Smaller pieces that may be useful
-         evalE, Value(..), evalPrim, 
+         evalPrim, 
+         evalE,
+         Value(..), valToConst, unConstVal, unArrVal, 
        )
        where
 
@@ -60,7 +62,10 @@ valToConst (ConstVal c ) = c
 valToConst (TupVal ls)   = Tup $ map valToConst ls
 valToConst (ArrVal a)    = error$ "cannot convert Array value to Const: "++show a
 
-unConstVal (ConstVal c) = c 
+unConstVal :: Value -> Const 
+unConstVal (ConstVal c) = c
+
+unArrVal :: Value -> AccArray
 unArrVal   (ArrVal v)   = v
 
 --------------------------------------------------------------------------------
