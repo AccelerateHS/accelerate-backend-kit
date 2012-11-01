@@ -22,7 +22,9 @@ module Data.Array.Accelerate.SimpleTests
     p2, p2b, p2bb, p2c, p2cc, p2cd, p2ce, p2d, p2e, p2g, p2h,
     p3, p6, p8, p9a, p9b, p9c, 
     p10, p10b, p10c, p10d, p10e, p10f, p10g, p10h, p10i, 
-    p11, p11b, p11c, p12, p13, p13b, p13c, p13d, p13e, p13f, p14, p14b, p14c, p14d, p14e, 
+    p11, p11b, p11c,
+    p12, p12b, p12c, p12d, p12e,
+    p13, p13b, p13c, p13d, p13e, p13f, p14, p14b, p14c, p14d, p14e, 
     p16a, p16b, p16c, p16d, p16e, p17a, p17b,
     p18a, p18b, p18c, p18d, p18e, p18f,
 
@@ -126,7 +128,7 @@ otherProgs =
   go "p10" p10, go "p10b" p10b, go "p10c" p10c, go "p10d" p10d, go "p10e" p10e, go "p10f" p10f, 
   go "p10g" p10g, go "p10h" p10h, go "p10i" p10i, 
   go "p11" p11, go "p11b" p11b, go "p11c" p11c,
-  go "p12" p12, 
+  go "p12" p12, go "p12b" p12b, go "p12c" p12c, go "p12d" p12d, go "p12e" p12e, 
   go "p13" p13, go "p13b" p13b, go "p13c" p13c, go "p13d" p13d, go "p13e" p13e, go "p13f" p13f,
   go "p14" p14, go "p14b" p14b, 
   go "p14c" p14c, go "p14d" p14d, go "p14e" p14e,
@@ -551,11 +553,40 @@ p11c = lift (p11b,p11b)
 --           new     = lift (a,c)
 --       in lift (new,new)
 
+
+------------------------------------------------------------
+-- P12: Conditionals
+
+-- | Array level conditional:
 p12 :: Acc (Scalar Word32, Scalar Float)
 p12 = let arr = generate (constant (Z :. (5::Int))) unindex1_int in 
       cond (arr A.! (index1 (2::Exp Int)) >* 2)
            (lift (unit 10, unit 20.0))
            (lift (unit 40, unit 30.0))
+
+-- | Scalar level conditional
+p12b :: Acc (Scalar Int)
+p12b = unit (constant True ? (11, 22))
+
+-- | Scalar conditional in more complex context:
+p12c :: Acc (Scalar Int)
+p12c = unit (33 + (constant True ? (11, 22)))
+
+
+-- | Scalar conditional with a more complex branch.
+p12d :: Acc (Scalar Int)
+p12d = unit (33 + (constant True ? (11, let x = 22 in x * x * x)))
+
+-- | Scalar conditional with a tuple return type:
+p12e :: Acc (Scalar Int)
+p12e = unit $
+  let tup :: Exp (Int,Int)
+      tup   = constant True ? (lift (11::Int, 22::Int),
+                               lift (100::Int,200::Int))
+      (a,b) = unlift tup :: (Exp Int, Exp Int)
+  in a + 33
+
+
 
 --------------------------------------------------------------------------------
 -- Let's test tuple type conversion
