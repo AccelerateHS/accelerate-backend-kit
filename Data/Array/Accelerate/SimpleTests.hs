@@ -589,7 +589,8 @@ p12e = unit $
 
 
 --------------------------------------------------------------------------------
--- Let's test tuple type conversion
+-- Scalar tuples: Let's test tuple simple-AST conversion:
+---------------------------------------------------------
 
 p13 :: Acc (Scalar ((Int8,Int16),(Int32,Int64)))
 p13 = unit $ 
@@ -637,6 +638,7 @@ p13f = unit $
 --------------------------------------------------------------------------------
 -- And test projection as well:
 
+p14 :: Acc (Scalar (Int8,Int16))
 p14 = unit $ prj1_2 p13c_
 
 -- Hmm [2012.06.27] 
@@ -644,9 +646,14 @@ p14b :: Acc (Scalar (Int8,Int16), Scalar Int32)
 p14b = let (a,b) = untup2 p13c_ in
        lift (unit a, unit b)
 
+p14c :: Acc (Scalar Int16)
 p14c = unit $ prj1_3 p13b_
+
+p14d :: Acc (Scalar Int16)
 p14d = A.map prj1_3 p13b
 -- Surface : TTuple [TTuple [TTuple [TTuple [],TInt8],TInt16],TInt32]
+
+p14e :: Acc (Scalar (Int8,Int16))
 p14e = A.map prj1_2 p13c
 -- Surface : TTuple [TTuple [TTuple [TTuple [],TInt8],TInt16],TInt32]
 
@@ -679,6 +686,7 @@ untup3 e = (Exp $ SuccTupIdx (SuccTupIdx ZeroTupIdx) `Prj` e,
 
 --------------------------------------------------------------------------------
 
+-- | Trying filter:
 p15 :: Acc (Vector Int)
 p15 = A.filter (\_ -> constant True) (generate (constant$ Z :. 10) (\_ -> 40))
 
