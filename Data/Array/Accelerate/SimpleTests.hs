@@ -20,7 +20,9 @@ module Data.Array.Accelerate.SimpleTests
     p1a, p1aa, p1ab, p1ac, p1ba,
     p2aa, p2a, p2f, p4, p4b, p5, p0, p1, p1b, p1c, p1d,
     p2, p2b, p2bb, p2c, p2cc, p2cd, p2ce, p2d, p2e, p2g, p2h,
-    p3, p6, p8, p9a, p9b, p9c, 
+    p3,
+    p6, p6b,
+    p8, p9a, p9b, p9c, 
     p10, p10b, p10c, p10d, p10e, p10f, p10g, p10h, p10i, 
     p11, p11b, p11c,
     p12, p12b, p12c, p12d, p12e,
@@ -121,7 +123,7 @@ otherProgs =
   go "p2c" p2c, go "p2cc" p2cc, go "p2cd" p2cd, go "p2ce" p2ce,
   go "p2d" p2d, go "p2e" p2e, go "p2g" p2g, go "p2h" p2h,  
   go "p3" p3, 
-  go "p6" p6, 
+  go "p6" p6,  go "p6b" p6b, 
 --  go "p7" p7, 
   go "p8" p8, 
   go "p9a" p9a, go "p9b" p9b, go "p9c" p9c,
@@ -377,6 +379,10 @@ p5 = unit$ lift $ Z :. All :. (2::Int) :. All
 t5 = convertToSimpleProg p5
 r5 = I.run p5
 
+------------------------------------------------------------
+-- Scalar tuples and projection:
+--------------------------------
+
 -- This one generates ETupProjectFromRight:
 p6 :: Acc (Vector Float)
 p6 = map go (use xs)
@@ -388,6 +394,19 @@ p6 = map go (use xs)
 t6 = convertToSimpleProg p6
 r6 = I.run p6
 
+-- Use a simple test that doesn't have any tuples-of-arrays, but DOES have a scalar level tuple internally.
+p6b :: Acc (Scalar Int)
+p6b = unit y
+  where
+    y = a + b
+    (a,b) = unlift x    
+    x :: Exp (Int,Int)
+    x = lift (2::Int, 3::Int)
+
+
+
+
+------------------------------------------------------------
 -- | Transpose a matrix.
 transposeAcc :: Array DIM2 Float -> Acc (Array DIM2 Float)
 transposeAcc mat =
