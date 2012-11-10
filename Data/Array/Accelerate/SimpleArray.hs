@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveGeneric  #-}
 {-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE MagicHash #-}
 {-# LANGUAGE FlexibleContexts #-}
 
 -- | Utilities for working with the simplified representation of
@@ -22,12 +23,13 @@ module Data.Array.Accelerate.SimpleArray
      -- * Functions for constructing `AccArray`s
      Data.Array.Accelerate.SimpleArray.replicate,      
      
-     -- * Functions for operating on payloads (internal components of AccArrays)     
+     -- * Functions for operating on payloads (internal components of AccArrays)
+     payloadToPtr,
      payloadToList, payloadsFromList, payloadsFromList1,
      payloadLength, 
      mapPayload, indexPayload,
      
-     applyToPayload, applyToPayload2, applyToPayload3,                                           
+     applyToPayload, applyToPayload2, applyToPayload3,     
    )
    
 where 
@@ -48,8 +50,10 @@ import           Foreign.C.Types
 import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
 import           System.IO.Unsafe (unsafePerformIO)
 import qualified Data.Map          as M
-  
 
+import           GHC.Ptr          (Ptr(Ptr), castPtr)
+import           GHC.Prim         (byteArrayContents#)
+import           Data.Array.Base  (UArray(UArray))
 ----------------------------------------------------------------------------------------------------
 -- Helper functions for working with Array data living on the Haskell heap:
 ----------------------------------------------------------------------------------------------------
@@ -325,6 +329,35 @@ payloadToList payl =
     ArrayPayloadDouble arr -> map D  $ U.elems arr
     ArrayPayloadChar   arr -> map C  $ U.elems arr
     ArrayPayloadBool   arr -> map toBool $ U.elems arr
+
+-- | Get a `ForeignPtr` to the raw storage of an array.
+--
+-- PRECONDITION: The unboxed array must be pinned.    
+payloadToPtr :: ArrayPayload -> Ptr ()
+payloadToPtr payl = 
+  case payl of        
+    ArrayPayloadInt    arr -> castPtr$uArrayPtr arr
+    ArrayPayloadInt8   arr -> castPtr$uArrayPtr arr
+    ArrayPayloadInt16  arr -> castPtr$uArrayPtr arr
+    ArrayPayloadInt32  arr -> castPtr$uArrayPtr arr
+    ArrayPayloadInt64  arr -> castPtr$uArrayPtr arr
+    ArrayPayloadWord   arr -> castPtr$uArrayPtr arr
+    ArrayPayloadWord8  arr -> castPtr$uArrayPtr arr
+    ArrayPayloadWord16 arr -> castPtr$uArrayPtr arr
+    ArrayPayloadWord32 arr -> castPtr$uArrayPtr arr
+    ArrayPayloadWord64 arr -> castPtr$uArrayPtr arr
+    ArrayPayloadFloat  arr -> castPtr$uArrayPtr arr
+    ArrayPayloadDouble arr -> castPtr$uArrayPtr arr
+    ArrayPayloadChar   arr -> castPtr$uArrayPtr arr
+    ArrayPayloadBool   arr -> castPtr$uArrayPtr arr
+
+-- Obtains a pointer to the payload of an unboxed array.
+--
+-- PRECONDITION: The unboxed array must be pinned.
+--
+{-# INLINE uArrayPtr #-}
+uArrayPtr :: UArray Int a -> Ptr a
+uArrayPtr (UArray _ _ _ ba) = Ptr (byteArrayContents# ba)
 
 
 -- | Create an array of with the given dimensions and many copies of

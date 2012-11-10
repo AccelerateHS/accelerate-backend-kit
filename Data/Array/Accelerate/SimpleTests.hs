@@ -108,7 +108,7 @@ generateOnlyProgs = [
 unitProgs :: [TestEntry]
 unitProgs = [
   go "p2a" p2a, go "p2f" p2f,
-  go "p4" p4, go "p4b" p4,
+  go "p4" p4, go "p4b" p4b,
   go "p5" p5
  ]
 
@@ -124,7 +124,7 @@ otherProgs =
   go "p2d" p2d, go "p2e" p2e, go "p2g" p2g, go "p2h" p2h,  
   go "p3" p3, 
   go "p6" p6,  go "p6b" p6b, 
---  go "p7" p7, 
+  go "p7" p7, 
   go "p8" p8, 
   go "p9a" p9a, go "p9b" p9b, go "p9c" p9c,
   go "p10" p10, go "p10b" p10b, go "p10c" p10c, go "p10d" p10d, go "p10e" p10e, go "p10f" p10f, 
@@ -252,8 +252,6 @@ unindex1_int  = unindex1
 p1b :: Acc (Vector Float)
 p1b = let xs = use$ fromList (Z :. (2::Int) :. (5::Int)) [1..10::Float]
       in  fold (*) 0 xs
-t1b = convertToSimpleProg p1b
-r1b = I.run p1b
 
 
 -- This one is JUST a zipwith:
@@ -384,6 +382,7 @@ r5 = I.run p5
 --------------------------------
 
 -- This one generates ETupProjectFromRight:
+-- (But it requires an array-of-tuples internally:)
 p6 :: Acc (Vector Float)
 p6 = map go (use xs)
   where

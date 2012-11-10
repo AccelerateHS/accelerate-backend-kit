@@ -34,7 +34,7 @@ module Data.Array.Accelerate.SimpleAST
      
      normalizeEConst, mkTTuple, mkETuple,
      
-     lookupProgBind,
+     lookupProgBind, expFreeVars,
      
      maybtrace, tracePrint, dbg -- Flag for debugging output.
     )
@@ -47,6 +47,7 @@ import           Data.Array.Unboxed as U
 import qualified Data.Array.Unsafe as Un
 import           Data.Int
 import qualified Data.Map          as M
+import qualified Data.Set          as S
 import qualified Data.List         as L
 import           Data.Word
 import           Debug.Trace       (trace)
@@ -771,6 +772,25 @@ normalizeEConst e =
     -- FIXME: We need to phase out EIndex entirely.  They are just represented as tuples:
     EIndex ls       -> ETuple ls
     other           -> other
+
+-- | Retrieve the set of variables that occur free in an `Exp`.
+expFreeVars :: Exp -> S.Set Var
+expFreeVars ex =
+   let f  = expFreeVars 
+       fs = S.unions . map expFreeVars in
+   case ex of
+    EShape avr          -> S.singleton avr -- NOTE! THIS WILL CHANGE.
+    EConst _            -> S.empty
+    EVr vr              -> S.singleton vr  
+    ECond e1 e2 e3      -> S.union (f e1)  $ S.union (f e2) (f e3)
+    ELet (v,_,rhs) bod  -> S.union (f rhs) $ S.delete v $ f bod
+    EIndexScalar avr ex -> S.insert avr $ f ex
+    EShapeSize ex       -> f ex 
+    ETupProject _ _ ex  -> f ex 
+    ETuple els          -> fs els    
+    EPrimApp _ _ els    -> fs els     
+    EIndex els          -> fs els 
+
 
 
 --------------------------------------------------------------------------------
