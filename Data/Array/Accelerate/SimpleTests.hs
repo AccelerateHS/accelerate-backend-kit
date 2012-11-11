@@ -19,7 +19,7 @@ module Data.Array.Accelerate.SimpleTests
     -- * Individual tests:
     p1a, p1aa, p1ab, p1ac, p1ba,
     p2aa, p2a, p2f, p4, p4b, p5, p0, p1, p1b, p1c, p1d,
-    p2, p2b, p2bb, p2c, p2cc, p2cd, p2ce, p2d, p2e, p2g, p2h,
+    p2, p2b, p2bb, p2c, p2cc, p2cd, p2ce, p2d, p2e, p2g, p2h, p2i, 
     p3,
     p6, p6b,
     p8, p9a, p9b, p9c, 
@@ -121,7 +121,7 @@ otherProgs =
   go "p1b" p1b, go "p1c" p1c, go "p1d" p1d,
   go "p2" p2, go "p2aa" p2aa, go "p2b" p2b, go "p2bb" p2bb,
   go "p2c" p2c, go "p2cc" p2cc, go "p2cd" p2cd, go "p2ce" p2ce,
-  go "p2d" p2d, go "p2e" p2e, go "p2g" p2g, go "p2h" p2h,  
+  go "p2d" p2d, go "p2e" p2e, go "p2g" p2g, go "p2h" p2h,  go "p2i" p2i,
   go "p3" p3, 
   go "p6" p6,  go "p6b" p6b, 
   go "p7" p7, 
@@ -162,7 +162,7 @@ sliceProgs :: [TestEntry]
 sliceProgs = [
   go "p2f" p2f,
   go "p2" p2, go "p2b" p2b, go "p2bb" p2bb, go "p2cc" p2cc, go "p2cd" p2cd, 
-  go "p2d" p2d, go "p2e" p2e, go "p2h" p2h,
+  go "p2d" p2d, go "p2e" p2e, go "p2h" p2h, go "p2i" p2i,
   go "p3" p3,
   go "p9a" p9a, go "p9b" p9b, 
   go "p10" p10, go "p10b" p10b, go "p10c" p10c
@@ -337,6 +337,16 @@ p2g = generate (constant (Z :. (3::Int) :. (3::Int))) unindex2
 
 p2h :: Acc (Array DIM3 (Int,Int))
 p2h = replicate (constant$ Z :. All :. (2::Int) :. All) p2g
+
+-- | Same as p2d exept without an array-of-tuples
+p2i :: Acc (Array DIM4 Int)
+p2i = let arr = generate (constant (Z :. (3::Int) :. (3::Int)))
+                         (\ ix ->
+                           let (a,b) = untup2 (unindex2 ix) in
+                           a + b
+                         )
+      in replicate (constant$ Z :. All :. (2::Int) :. All :. (2::Int)) arr
+
 
 
 -- There isn't really much support for non-Int indices... I think we
