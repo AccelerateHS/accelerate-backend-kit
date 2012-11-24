@@ -844,12 +844,17 @@ unpackArray arrrepr = (ty, S.AccArray shp payloads,
 --   representation with the type information necessary to form a proper
 --   Accelerate array.
 packArray :: forall sh e . (Sug.Elt e, Sug.Shape sh) => S.AccArray -> Sug.Array sh e
-packArray orig@(S.AccArray dims origPayloads) = 
-  if length dims == length dims' -- Is the expected rank correct?
+packArray orig@(S.AccArray dims origPayloads) =
+  -- TEMP: FIXME:  [2012.11.21]  Temporarily allowing mismathched dimensions as long as the # elemens is right:
+--  if length dims == length dims' then -- Is the expected rank correct?
+--  if product dims == product dims'
+  if (length dims == length dims') || (length dims' <= 1) -- Allowing mismatch for 0/1 dim.
   then Sug.Array shpVal (packit (typeOnlyErr "packArray1"::Sug.Array sh e) (reverse origPayloads))
-  else error$"SimpleConverter.packArray: array does not have the expected dimensions: "++show dims++" expected "++show dims'
- where 
-  shpVal :: Sug.EltRepr sh = Sug.fromElt (Sug.listToShape dims :: sh)
+  else error$"SimpleConverter.packArray: array does not have the expected shape: "++show dims++" expected "++show dims'
+ where
+
+  -- We must us the *real* dims here to get the exact shape, and not just the rank:
+  shpVal :: Sug.EltRepr sh = Sug.fromElt (Sug.listToShape (if dims' == [] then [] else dims) :: sh)
   dims' :: [Int] = Sug.shapeToList (Sug.ignore::sh)
 
   packit :: forall sh e . (Sug.Shape sh, Sug.Elt e) => Sug.Array sh e -> [S.ArrayPayload] -> (ArrayData (Sug.EltRepr e))
