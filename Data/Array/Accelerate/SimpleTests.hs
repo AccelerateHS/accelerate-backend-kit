@@ -18,7 +18,7 @@ module Data.Array.Accelerate.SimpleTests
 
     -- * Individual tests:
     p1a, p1aa, p1ab, p1ac, p1ba,
-    p2aa, p2a, p2f, p4, p4b, p5, p0, p1, p1b, p1c, p1d,
+    p2aa, p2a, p2f, p4, p4b, p4c, p5, p0, p1, p1b, p1c, p1d,
     p2, p2b, p2bb, p2c, p2cc, p2cd, p2ce, p2d, p2e, p2g, p2h, p2i, 
     p3,
     p6, p6b,
@@ -108,7 +108,7 @@ generateOnlyProgs = [
 unitProgs :: [TestEntry]
 unitProgs = [
   go "p2a" p2a, go "p2f" p2f,
-  go "p4" p4, go "p4b" p4b,
+  go "p4" p4, go "p4b" p4b, go "p4c" p4c,
   go "p5" p5
  ]
 
@@ -373,12 +373,21 @@ p4 = let arr = generate (constant (Z :. (5::Int))) (\_ -> 33) in
 t4 = convertToSimpleProg p4         
 r4 = I.run p4
 
+-- Ditto with more dimensions:
 p4b :: Acc (Scalar Int64)
 p4b = let arr = generate (constant (Z :. (3::Int) :. (3::Int))) (\_ -> 33) 
               :: Acc (Array DIM2 Int64)
       in
      unit $ arr ! (index2 (1::Exp Int) (2::Exp Int))
 t4b = convertToSimpleProg p4b
+
+-- This one is expensive, to resist inlineCheap:
+p4c :: Acc (Scalar Int)
+p4c = let arr = generate (constant (Z :. (5::Int)))
+                  (\ix -> (foldl1 (+) (P.replicate 10 (unindex1_int ix)))) in
+     unit $ arr ! (index1 (2::Exp Int))
+        -- (Lang.constant (Z :. (3::Int)))  
+
 
 
 -- This one generates EIndex. It creates an array containing a slice descriptor.
