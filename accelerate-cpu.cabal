@@ -1,0 +1,44 @@
+Name:                accelerate-cpu
+Version:             0.13.0.0
+Synopsis:            OpenCL and Cilk backends for Accelerate.
+
+Homepage:            https://github.com/AccelerateHS/accelerate-cpu/
+License:             BSD3
+License-file:        LICENSE
+Author:              Ryan R. Newton
+Maintainer:          rrnewton@gmail.com
+
+Category:            Language
+
+Build-type:          Simple
+
+-- Extra files to be distributed with the package, such as examples or
+-- a README.
+-- Extra-source-files:  
+
+-- Constraint on the version of Cabal needed to build this package.
+Cabal-version:       >=1.10
+
+
+Library
+  Exposed-modules:
+                     Data.Array.Accelerate.OpenCL
+--                     Data.Array.Accelerate.Cilk                     
+  
+  -- Modules not exported by this package:
+  Other-modules:       
+                     Data.Array.Accelerate.Shared.EmitCommon
+                     Data.Array.Accelerate.Shared.EmitC
+                     Data.Array.Accelerate.Shared.EmitOpenCL
+                     Data.Array.Accelerate.Shared.EmitHelpers
+                     Data.Array.Accelerate.Shared.EasyEmit
+                     Data.Array.Accelerate.OpenCL.JITRuntime
+
+  Build-depends:        base  == 4.*, containers >= 0.3, array, split,
+                        test-framework, process, unix, 
+                        mtl, pretty, prettyclass, GenericPretty,
+                        accelerate, accelerate-backend-kit, 
+                        OpenCL, 
+                        classsupport-b629
+
+  ghc-options:          -Wall
