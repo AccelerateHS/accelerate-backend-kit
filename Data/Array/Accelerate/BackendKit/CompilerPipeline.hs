@@ -30,7 +30,9 @@ import           Data.Array.Accelerate.BackendKit.Phase1.StaticTuples     (stati
 
 import Data.Array.Accelerate.BackendKit.Phase2.DesugarUnit       (desugarUnit)
 import Data.Array.Accelerate.BackendKit.Phase2.SizeAnalysis      (sizeAnalysis)
+import Data.Array.Accelerate.BackendKit.Phase2.ExplicitShapes    (explicitShapes)
 import Data.Array.Accelerate.BackendKit.Phase2.TrackUses         (trackUses)
+
 -- import Data.Array.Accelerate.BackendKit.Phase2.FuseMaps          (fuseMaps)
 -- import Data.Array.Accelerate.BackendKit.Phase2.EmitOpenCL        (emitOpenCL)
 -- import Data.Array.Accelerate.BackendKit.Phase2.EmitC             (emitC)
@@ -40,7 +42,6 @@ import Data.Array.Accelerate.BackendKit.Phase2.TrackUses         (trackUses)
 -- import Data.Array.Accelerate.BackendKit.Phase2.DesugToGenerate   (desugToGenerate)
 -- import Data.Array.Accelerate.BackendKit.Phase2.EstimateCost      (estimateCost)
 -- import Data.Array.Accelerate.BackendKit.Phase2.KernFreeVars      (kernFreeVars)
--- import Data.Array.Accelerate.BackendKit.Phase2.ExplicitShapes    (explicitShapes)
 -- import Data.Array.Accelerate.BackendKit.Phase2.UnzipETups        (unzipETups)
 -- import Data.Array.Accelerate.BackendKit.Phase2.NormalizeExps     (normalizeExps)
 -- import Data.Array.Accelerate.BackendKit.Phase2.ConvertLLIR       (convertLLIR)

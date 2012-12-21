@@ -43,6 +43,7 @@ Library
                         array           >= 0.3 && < 0.5,
                         mtl             >= 2.1,
                         pretty          >= 1.0 && < 1.2,
+                        prettyclass,
                         base >= 4, ghc-prim,
                         containers,
                         accelerate      == 0.13.*,
