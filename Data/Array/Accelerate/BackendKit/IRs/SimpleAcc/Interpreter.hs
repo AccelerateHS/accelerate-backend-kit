@@ -2,11 +2,12 @@
 {-# LANGUAGE DeriveGeneric #-}
 -- {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
--- | An example interpreter for the simplified AST defined in "Data.Array.Accelerate.SimpleAST".
+-- | An UNFINISHED example interpreter for the simplified AST defined in "Data.Array.Accelerate.SimpleAST".
+-- 
 module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter
        (
          -- * Main module entrypoints  
-         run, evalSimpleAST,
+         run, evalSimpleAcc,
          
          -- * Smaller pieces that may be useful
          evalPrim, 
@@ -15,7 +16,7 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter
        )
        where
 
-import           Data.Array.Accelerate.BackendKit.CompilerPipeline (convertToSimpleProg, repackAcc)
+import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase1, repackAcc)
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as T
 import           Data.Array.Accelerate.BackendKit.SimpleArray   as SA
@@ -35,7 +36,7 @@ run :: forall a . Sug.Arrays a => Acc a -> a
 run acc = 
           maybtrace ("[dbg] Repacking AccArray(s): "++show arrays) $ 
           repackAcc acc arrays
- where arrays = evalSimpleAST (convertToSimpleProg acc)
+ where arrays = evalSimpleAcc (phase1 acc)
 
 --------------------------------------------------------------------------------
 -- Values and Environments:
@@ -74,10 +75,10 @@ unArrVal   (ArrVal v)   = v
 -- | Evaluating a complete program creates a FLAT list of arrays as a
 --   result.  Reimposing a nested structure to the resulting
 --   tuple-of-arrays is not the job of this function.
-evalSimpleAST :: S.Prog a -> [AccArray]
-evalSimpleAST (S.Prog binds results progtype _) = 
+evalSimpleAcc :: S.Prog a -> [AccArray]
+evalSimpleAcc (S.Prog binds results progtype _) = 
 --    concatArrays $ 
-    maybtrace ("[dbg] evalSimpleAST, initial env "++ show (L.map (\(ProgBind v _ _ _)->v) binds)
+    maybtrace ("[dbg] evalSimpleAcc, initial env "++ show (L.map (\(ProgBind v _ _ _)->v) binds)
            ++"  yielded environment: "++show (M.keys finalenv)) $
     L.map (unArrVal . (envLookup finalenv)) results
   where 
@@ -94,7 +95,7 @@ evalSimpleAST (S.Prog binds results progtype _) =
        S.Vr  v             -> bind$ envLookup env v
        S.Unit e -> case evalE env e of 
                     ConstVal c -> bind$ ArrVal$ SA.replicate [] c
-                    oth  -> error$"evalSimpleAST: expecting ConstVal input to Unit, received: "++show oth
+                    oth  -> error$"evalSimpleAcc: expecting ConstVal input to Unit, received: "++show oth
        S.Cond e1 v1 v2 -> case evalE env e1 of 
                              ConstVal (B True)  -> bind$ envLookup env v1
                              ConstVal (B False) -> bind$ envLookup env v2

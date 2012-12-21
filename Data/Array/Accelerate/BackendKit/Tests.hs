@@ -35,7 +35,7 @@ module Data.Array.Accelerate.BackendKit.Tests
    )
    where 
 
-import           Data.Array.Accelerate.BackendKit.CompilerPipeline (convertToSimpleProg, unpackArray, Phantom)
+import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase1, unpackArray, Phantom)
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter as I
 import qualified Data.Array.Accelerate.Smart       as Sm
@@ -57,6 +57,7 @@ import Test.Framework (testGroup, defaultMain, Test)
 import Test.Framework.Providers.HUnit
 import Test.HUnit      ((~=?), (~?))
 import Text.PrettyPrint.GenericPretty (doc)
+
 
 -- | A tuple containing name, AST, and the printed result produced by evaluating under
 --   the reference Accelerate interpreter, and THEN flattened/printed as an S.AccArray.
@@ -846,4 +847,7 @@ instance Show a => NiceShow (Array DIM2 a) where
          rowls = chunksOf cols ls
 
 --------------------------------------------------------------------------------
-         
+
+convertToSimpleProg :: Sug.Arrays a => Sm.Acc a -> S.Prog ()
+convertToSimpleProg = phase1
+

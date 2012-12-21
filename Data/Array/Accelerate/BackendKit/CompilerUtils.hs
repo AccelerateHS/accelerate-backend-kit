@@ -8,7 +8,7 @@
 --   opaque composition of functions.
 
 module Data.Array.Accelerate.BackendKit.CompilerUtils
-       (runPass)
+       (runPass, runOptPass)
        where
 
 import           Text.PrettyPrint.GenericPretty (Out(doc), Generic)
@@ -26,6 +26,12 @@ runPass msg pass input =
  where x = pass input              
 
 
+-- An [optional] optimization pass:
+runOptPass :: Out a => String -> (t -> a) -> (t -> a) -> t -> a
+runOptPass str pass _otherwise = runPass str pass
+
+
 -- TODO: Enable profiling support and a more sophisticated runtime representation of Compilers.
+
 
 

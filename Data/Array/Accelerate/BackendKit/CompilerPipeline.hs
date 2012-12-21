@@ -6,7 +6,8 @@
 -- This representation retains nearly the full set of Accelerate
 -- language constructs.  Desugaring is postponed to phase 2.
 module Data.Array.Accelerate.BackendKit.CompilerPipeline
-       ( convertToSimpleProg,
+       ( 
+         phase1, phase2, phase3,
          -- Reexport from ToAccClone:
          unpackArray, packArray, repackAcc, Phantom
        )
@@ -15,7 +16,10 @@ module Data.Array.Accelerate.BackendKit.CompilerPipeline
 import qualified Data.Array.Accelerate.Smart       as Sug
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
-import           Data.Array.Accelerate.BackendKit.CompilerUtils           (runPass)
+import qualified Data.Array.Accelerate.BackendKit.IRs.CLike     as C
+import qualified Data.Array.Accelerate.BackendKit.IRs.GPUIR     as G
+import           Data.Array.Accelerate.BackendKit.IRs.Metadata   (ArraySizeEstimate)
+import           Data.Array.Accelerate.BackendKit.CompilerUtils  (runPass, runOptPass)
 
 -- Phase 1 passes:
 ----------------------------------------
@@ -48,16 +52,43 @@ import Data.Array.Accelerate.BackendKit.Phase3.KernFreeVars      (kernFreeVars)
 import Data.Array.Accelerate.BackendKit.Phase3.ToGPUIR           (convertToGPUIR)
 import Data.Array.Accelerate.BackendKit.Phase3.LowerGPUIR        (lowerGPUIR)
 
-
 --------------------------------------------------------------------------------
 -- Exposed entrypoints for this module:
 --------------------------------------------------------------------------------
 
+phase3 :: C.LLProg ArraySizeEstimate -> G.GPUProg ()
+phase3 prog =
+  runPass    "lowerGPUIR"        lowerGPUIR        $     -- ()
+  runPass    "convertToGPUIR"    convertToGPUIR    $     -- ()
+  runPass    "kernFreeVars"      kernFreeVars      $     -- (size,freevars)
+  prog
+  
+phase2 :: S.Prog () -> C.LLProg ArraySizeEstimate
+phase2 prog =
+  runPass    "convertToCLike"    convertToCLike    $     -- (size)
+  runPass    "unzipETups"        unzipETups        $     -- (size)  
+  runPass    "normalizeExps"     normalizeExps     $     -- (size)
+  runPass    "oneDimensionalize" oneDimensionalize $     -- (size)
+  runOptPass "deadArrays"        deadArrays (fmap fst) $ -- (size)
+  runPass    "trackUses"         trackUses         $     -- (size,uses)
+   -- NOTE INLINE CHEAP IS NOT OPTIONAL PRESENTLY! (needed for copy-prop)
+--   runOptPass "inlineCheap"       inlineCheap (fmap fst) $ -- (size)
+  runPass    "inlineCheap"       inlineCheap       $      -- (size)
+  runPass    "estimateCost"      estimateCost      $      -- (size,cost)
+  runPass    "desugtoGenerate"   desugToGenerate   $      -- (size)
+  runPass    "desugToBackperm"   desugToBackperm   $      -- (size,uses)
+  runOptPass "fuseMaps"          fuseMaps  id      $      -- (size,uses)
+  runPass    "trackUses"         trackUses         $      -- (size,uses)
+  runPass    "explicitShapes"    explicitShapes    $      -- (size)
+  runPass    "sizeAnalysis"      sizeAnalysis      $      -- (size)
+  runPass    "desugarUnit"       desugarUnit       $      -- ()
+  prog
+
 -- | Convert the sophisticate Accelerate-internal AST representation
 --   into something very simple for external consumption.  Note: this
 --   involves applying a number of lowering compiler passes.
-convertToSimpleProg :: Sug.Arrays a => Sug.Acc a -> S.Prog ()
-convertToSimpleProg prog = 
+phase1 :: Sug.Arrays a => Sug.Acc a -> S.Prog ()
+phase1 prog = 
   runPass "removeArrayTuple" removeArrayTuple $     
   runPass "gatherLets"       gatherLets $  
   runPass "liftComplexRands" liftComplexRands $  
@@ -65,28 +96,3 @@ convertToSimpleProg prog =
   runPass "staticTuples"     staticTuples     $   
   runPass "initialConversion"  accToAccClone  $ 
   prog
-
-
--- b629Compiler :: S.Prog () -> G.GPUProg ()
--- b629Compiler prog =
---   runPass    "lowerGPUIR"        lowerGPUIR        $     -- ()
---   runPass    "convertGPUIR"      convertGPUIR      $     -- ()
---   runPass    "kernFreeVars"      kernFreeVars      $     -- (size,freevars)
---   runPass    "convertLLIR"       convertLLIR       $     -- (size)
---   runPass    "unzipETups"        unzipETups        $     -- (size)  
---   runPass    "normalizeExps"     normalizeExps     $     -- (size)
---   runPass    "oneDimensionalize" oneDimensionalize $     -- (size)
---   runOptPass "deadArrays"        deadArrays (fmap fst) $ -- (size)
---   runPass    "trackUses"         trackUses         $     -- (size,uses)
---    -- NOTE INLINE CHEAP IS NOT OPTIONAL PRESENTLY! (needed for copy-prop)
--- --   runOptPass "inlineCheap"       inlineCheap (fmap fst) $ -- (size)
---   runPass    "inlineCheap"       inlineCheap       $      -- (size)
---   runPass    "estimateCost"      estimateCost      $      -- (size,cost)
---   runPass    "desugtoGenerate"   desugToGenerate   $      -- (size)
---   runPass    "desugToBackperm"   desugToBackperm   $      -- (size,uses)
---   runOptPass "fuseMaps"          fuseMaps  id      $      -- (size,uses)
---   runPass    "trackUses"         trackUses         $      -- (size,uses)
---   runPass    "explicitShapes"    explicitShapes    $      -- (size)
---   runPass    "sizeAnalysis"      sizeAnalysis      $      -- (size)
---   runPass    "desugarUnit"       desugarUnit       $      -- ()
---   prog

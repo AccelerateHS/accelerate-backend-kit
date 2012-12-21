@@ -24,23 +24,41 @@ Cabal-version:       >=1.2
 
 Library
   Exposed-modules:
+                     Data.Array.Accelerate.BackendKit.Tests
+                     Data.Array.Accelerate.BackendKit.CompilerPipeline
                      Data.Array.Accelerate.BackendKit.IRs.GPUIR
---                     Data.Array.Accelerate.BackendKit.IRs.GPUIR.Interpreter
+                     Data.Array.Accelerate.BackendKit.IRs.GPUIR.Interpreter
                      Data.Array.Accelerate.BackendKit.IRs.CLike
+                     Data.Array.Accelerate.BackendKit.IRs.CLike.Interpreter                     
                      Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
                      Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter
+                     Data.Array.Accelerate.BackendKit.IRs.Metadata
                      Data.Array.Accelerate.BackendKit.SimpleArray
-                     Data.Array.Accelerate.BackendKit.CompilerPipeline
-                     Data.Array.Accelerate.BackendKit.Tests
   
   -- Modules not exported by this package:
   Other-modules:       
                      Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone
+                     Data.Array.Accelerate.BackendKit.Utils.Helpers                     
+                     Data.Array.Accelerate.BackendKit.Utils.EasyEmit
                      Data.Array.Accelerate.BackendKit.Phase1.LiftLets
                      Data.Array.Accelerate.BackendKit.Phase1.LiftComplexRands
                      Data.Array.Accelerate.BackendKit.Phase1.RemoveArrayTuple
                      Data.Array.Accelerate.BackendKit.Phase1.StaticTuples
                      Data.Array.Accelerate.BackendKit.Phase2.DesugarUnit
+                     Data.Array.Accelerate.BackendKit.Phase2.DesugToBackperm
+                     Data.Array.Accelerate.BackendKit.Phase2.DesugToGenerate
+                     Data.Array.Accelerate.BackendKit.Phase2.EstimateCost
+                     Data.Array.Accelerate.BackendKit.Phase2.InlineCheap
+                     Data.Array.Accelerate.BackendKit.Phase2.FuseMaps
+                     Data.Array.Accelerate.BackendKit.Phase2.NormalizeExps
+                     Data.Array.Accelerate.BackendKit.Phase2.OneDimensionalize
+                     Data.Array.Accelerate.BackendKit.Phase2.SizeAnalysis
+                     Data.Array.Accelerate.BackendKit.Phase2.ToCLike
+                     Data.Array.Accelerate.BackendKit.Phase2.TrackUses
+                     Data.Array.Accelerate.BackendKit.Phase2.UnzipETups
+                     Data.Array.Accelerate.BackendKit.Phase3.KernFreeVars
+                     Data.Array.Accelerate.BackendKit.Phase3.LowerGPUIR
+                     Data.Array.Accelerate.BackendKit.Phase3.ToGPUIR
 
   Build-depends:
                         array           >= 0.3 && < 0.5,

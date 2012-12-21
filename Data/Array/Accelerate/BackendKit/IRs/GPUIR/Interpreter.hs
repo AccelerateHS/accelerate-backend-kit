@@ -5,7 +5,7 @@
 -- | This module provides an interpreter for the lower level IR (LLIR).
 --   It includes duplicated code from SimpleInterp.hs
 
-module ClassSupport.B629.GPUIRInterp
+module Data.Array.Accelerate.BackendKit.IRs.GPUIR.Interpreter
        (
          -- * Evaluating scalar expressions.
          evalScalarBlock,
@@ -13,10 +13,10 @@ module ClassSupport.B629.GPUIRInterp
        )
        where
        
-import           ClassSupport.B629.GPUIR
-import           Data.Array.Accelerate.SimpleAST hiding (Exp(..))
-import           Data.Array.Accelerate.SimpleInterp (evalPrim, Value(..), unConstVal, unArrVal)
-import           Data.Array.Accelerate.SimpleArray  (indexArray)
+import           Data.Array.Accelerate.BackendKit.IRs.GPUIR
+import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc hiding (Exp(..))
+import           Data.Array.Accelerate.BackendKit.SimpleArray   (indexArray)
+import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter (evalPrim, Value(..), unConstVal, unArrVal)
 import qualified Data.Map  as M
 import           Control.Monad.State.Strict
 
