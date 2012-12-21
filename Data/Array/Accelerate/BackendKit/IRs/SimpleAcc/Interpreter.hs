@@ -15,7 +15,7 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter
        )
        where
 
-import           Data.Array.Accelerate.BackendKit.Phase1 (convertToSimpleProg, repackAcc)
+import           Data.Array.Accelerate.BackendKit.CompilerPipeline (convertToSimpleProg, repackAcc)
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as T
 import           Data.Array.Accelerate.BackendKit.SimpleArray   as SA

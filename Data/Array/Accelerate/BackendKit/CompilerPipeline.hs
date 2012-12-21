@@ -5,7 +5,7 @@
 -- internal representation to the `SimpleAcc` external representation.
 -- This representation retains nearly the full set of Accelerate
 -- language constructs.  Desugaring is postponed to phase 2.
-module Data.Array.Accelerate.BackendKit.Phase1
+module Data.Array.Accelerate.BackendKit.CompilerPipeline
        ( convertToSimpleProg,
          -- Reexport from ToAccClone:
          unpackArray, packArray, repackAcc, Phantom
@@ -15,14 +15,42 @@ module Data.Array.Accelerate.BackendKit.Phase1
 import qualified Data.Array.Accelerate.Smart       as Sug
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
---               Lowering passes:
+import           Data.Array.Accelerate.BackendKit.CompilerUtils           (runPass)
+
+-- Phase 1 passes:
+----------------------------------------
+import           Data.Array.Accelerate.BackendKit.Passes.ToAccClone 
 import           Data.Array.Accelerate.BackendKit.Passes.LiftLets         (gatherLets)
 import           Data.Array.Accelerate.BackendKit.Passes.LiftComplexRands (liftComplexRands)
 import           Data.Array.Accelerate.BackendKit.Passes.RemoveArrayTuple (removeArrayTuple)
 import           Data.Array.Accelerate.BackendKit.Passes.StaticTuples     (staticTuples)
-import           Data.Array.Accelerate.BackendKit.CompilerUtils           (runPass)
 
-import           Data.Array.Accelerate.BackendKit.Passes.ToAccClone 
+-- Phase 2 passes:
+----------------------------------------
+
+import Data.Array.Accelerate.BackendKit.Phase2.DesugarUnit (desugarUnit)
+
+-- import B629.SizeAnalysis      (sizeAnalysis)
+-- import B629.TrackUses         (trackUses)
+-- import B629.FuseMaps          (fuseMaps)
+-- import B629.EmitOpenCL        (emitOpenCL)
+-- import B629.EmitC             (emitC)
+-- import B629.DeadArrays        (deadArrays)
+-- import B629.InlineCheap       (inlineCheap)
+-- import B629.DesugToBackperm   (desugToBackperm)
+-- import B629.DesugToGenerate   (desugToGenerate)
+-- import B629.EstimateCost      (estimateCost)
+-- import B629.KernFreeVars      (kernFreeVars)
+-- import B629.ExplicitShapes    (explicitShapes)
+-- import B629.UnzipETups        (unzipETups)
+-- import B629.NormalizeExps     (normalizeExps)
+-- import B629.ConvertLLIR       (convertLLIR)
+-- import B629.OneDimensionalize (oneDimensionalize)
+-- import B629.ConvertGPUIR      (convertGPUIR)
+-- import B629.LowerGPUIR        (lowerGPUIR)
+
+
+
 
 --------------------------------------------------------------------------------
 -- Exposed entrypoints for this module:
@@ -40,4 +68,5 @@ convertToSimpleProg prog =
   runPass "staticTuples"     staticTuples     $   
   runPass "initialConversion"  accToAccClone  $ 
   prog
+
 

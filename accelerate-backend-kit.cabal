@@ -27,9 +27,7 @@ Library
                      Data.Array.Accelerate.BackendKit.IRs.SimpleAcc, 
                      Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter,
                      Data.Array.Accelerate.BackendKit.SimpleArray,
-                     Data.Array.Accelerate.BackendKit.Phase1,
---                     Data.Array.Accelerate.BackendKit.Phase2,
---                     Data.Array.Accelerate.BackendKit.Phase3,
+                     Data.Array.Accelerate.BackendKit.CompilerPipeline,
                      Data.Array.Accelerate.BackendKit.Tests
   
   -- Modules not exported by this package:
@@ -39,7 +37,7 @@ Library
                      Data.Array.Accelerate.BackendKit.Passes.LiftComplexRands,
                      Data.Array.Accelerate.BackendKit.Passes.RemoveArrayTuple,
                      Data.Array.Accelerate.BackendKit.Passes.StaticTuples,
-                     Data.Array.Accelerate.BackendKit.Passes.DesugarUnit
+                     Data.Array.Accelerate.BackendKit.Phase2.DesugarUnit
 
   Build-depends:
                         array           >= 0.3 && < 0.5,

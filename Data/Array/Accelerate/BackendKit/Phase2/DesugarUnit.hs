@@ -1,7 +1,9 @@
 {-# LANGUAGE NamedFieldPuns #-}
 
 -- | This module defines a compiler pass for removing the `Unit` construct.
-module Data.Array.Accelerate.BackendKit.Passes.DesugarUnit (desugarUnit) where 
+module Data.Array.Accelerate.BackendKit.Phase2.DesugarUnit
+       (desugarUnit)
+       where
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
 
 desugarUnit :: Prog a -> Prog a 

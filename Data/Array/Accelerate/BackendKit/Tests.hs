@@ -35,7 +35,7 @@ module Data.Array.Accelerate.BackendKit.Tests
    )
    where 
 
-import           Data.Array.Accelerate.BackendKit.Phase1 (convertToSimpleProg, unpackArray, Phantom)
+import           Data.Array.Accelerate.BackendKit.CompilerPipeline (convertToSimpleProg, unpackArray, Phantom)
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter as I
 import qualified Data.Array.Accelerate.Smart       as Sm
