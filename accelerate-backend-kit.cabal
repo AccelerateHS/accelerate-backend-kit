@@ -28,23 +28,21 @@ Library
                      Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter,
                      Data.Array.Accelerate.BackendKit.SimpleArray,
                      Data.Array.Accelerate.BackendKit.Phase1,
+--                     Data.Array.Accelerate.BackendKit.Phase2,
+--                     Data.Array.Accelerate.BackendKit.Phase3,
                      Data.Array.Accelerate.BackendKit.Tests
   
   -- Modules not exported by this package:
   Other-modules:       
+                     Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone
                      Data.Array.Accelerate.BackendKit.Passes.LiftLets,
                      Data.Array.Accelerate.BackendKit.Passes.LiftComplexRands,
                      Data.Array.Accelerate.BackendKit.Passes.RemoveArrayTuple,
                      Data.Array.Accelerate.BackendKit.Passes.StaticTuples,
-                     Data.Array.Accelerate.BackendKit.Passes.IRTypes
                      Data.Array.Accelerate.BackendKit.Passes.DesugarUnit
 
   Build-depends:
                         array           >= 0.3 && < 0.5,
-                        -- base            == 4.*,
-                        -- directory       >= 1.0 && < 1.2,
-                        -- ghc-prim        == 0.2.*,
---                        mtl             == 2.0.*,
                         mtl             >= 2.1,
                         pretty          >= 1.0 && < 1.2,
                         base >= 4, ghc-prim,
@@ -52,8 +50,8 @@ Library
                         accelerate      == 0.13.*,
                         GenericPretty   >= 1.0,
 --                        symbol          >= 0.1.2,
-                        vector          >= 0.9,
 --                        ghc             >= 7.2
+                        vector          >= 0.9,
                         deepseq         >= 1.3,
                         test-framework, test-framework-hunit, HUnit,
                         split >= 0.2

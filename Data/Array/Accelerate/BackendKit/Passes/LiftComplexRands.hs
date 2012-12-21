@@ -11,7 +11,7 @@ module Data.Array.Accelerate.BackendKit.Passes.LiftComplexRands
 import Control.Applicative        ((<$>),(<*>))
 import Control.Monad.State.Strict (State, evalState, runState, get, put, modify)
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc  as S
-import Data.Array.Accelerate.BackendKit.Passes.IRTypes as T
+import Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone as T
 import Prelude                                    hiding (sum, exp)
 
 -- Shorthands:

@@ -13,8 +13,8 @@ module Data.Array.Accelerate.BackendKit.Passes.StaticTuples
        ( staticTuples )
        where 
 
-import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc            as S
-import Data.Array.Accelerate.BackendKit.Passes.IRTypes as T
+import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc         as S
+import Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone as T
 import Data.List as L
 import Data.Map  as M
 import Prelude   hiding (sum)

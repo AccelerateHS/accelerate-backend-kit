@@ -48,7 +48,7 @@ import qualified Data.Array.Accelerate.Trafo.Sharing as Cvt
 import qualified Data.Array.Accelerate.BackendKit.SimpleArray as SA
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
   -- Temporary AST before we get to the final one:
-import qualified Data.Array.Accelerate.BackendKit.Passes.IRTypes as T
+import qualified Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone as T
 
 -- Lowering passes:
 import           Data.Array.Accelerate.BackendKit.Passes.LiftLets         (gatherLets)
