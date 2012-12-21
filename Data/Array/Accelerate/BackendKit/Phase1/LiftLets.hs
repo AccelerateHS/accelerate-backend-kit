@@ -3,7 +3,7 @@
 -- | Compiler pass to lift Lets.  This is step 2 in a program flattening process.
 --------------------------------------------------------------------------------
 
-module Data.Array.Accelerate.BackendKit.Passes.LiftLets
+module Data.Array.Accelerate.BackendKit.Phase1.LiftLets
        ( liftLets, gatherLets )
        where 
 

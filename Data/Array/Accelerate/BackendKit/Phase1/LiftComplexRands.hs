@@ -4,7 +4,7 @@
 -- | Compiler pass to lift complex operands into let bindings
 --------------------------------------------------------------------------------
 
-module Data.Array.Accelerate.BackendKit.Passes.LiftComplexRands
+module Data.Array.Accelerate.BackendKit.Phase1.LiftComplexRands
        ( liftComplexRands )
        where 
 

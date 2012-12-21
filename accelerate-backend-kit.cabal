@@ -33,10 +33,10 @@ Library
   -- Modules not exported by this package:
   Other-modules:       
                      Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone
-                     Data.Array.Accelerate.BackendKit.Passes.LiftLets,
-                     Data.Array.Accelerate.BackendKit.Passes.LiftComplexRands,
-                     Data.Array.Accelerate.BackendKit.Passes.RemoveArrayTuple,
-                     Data.Array.Accelerate.BackendKit.Passes.StaticTuples,
+                     Data.Array.Accelerate.BackendKit.Phase1.LiftLets,
+                     Data.Array.Accelerate.BackendKit.Phase1.LiftComplexRands,
+                     Data.Array.Accelerate.BackendKit.Phase1.RemoveArrayTuple,
+                     Data.Array.Accelerate.BackendKit.Phase1.StaticTuples,
                      Data.Array.Accelerate.BackendKit.Phase2.DesugarUnit
 
   Build-depends:

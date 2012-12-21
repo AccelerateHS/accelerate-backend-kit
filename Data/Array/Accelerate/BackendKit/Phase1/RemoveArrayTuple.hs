@@ -6,7 +6,7 @@
 -- TODO:
 --  * Add copy-propagation to removeArrayTuple
 
-module Data.Array.Accelerate.BackendKit.Passes.RemoveArrayTuple 
+module Data.Array.Accelerate.BackendKit.Phase1.RemoveArrayTuple 
        ( removeArrayTuple )
        where 
 

@@ -9,7 +9,7 @@
 
 -- UNFINISHED  UNFINISHED UNFINISHED UNFINISHED UNFINISHED 
 
-module Data.Array.Accelerate.BackendKit.Passes.StaticTuples
+module Data.Array.Accelerate.BackendKit.Phase1.StaticTuples
        ( staticTuples )
        where 
 

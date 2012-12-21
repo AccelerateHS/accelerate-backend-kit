@@ -19,11 +19,11 @@ import           Data.Array.Accelerate.BackendKit.CompilerUtils           (runPa
 
 -- Phase 1 passes:
 ----------------------------------------
-import           Data.Array.Accelerate.BackendKit.Passes.ToAccClone 
-import           Data.Array.Accelerate.BackendKit.Passes.LiftLets         (gatherLets)
-import           Data.Array.Accelerate.BackendKit.Passes.LiftComplexRands (liftComplexRands)
-import           Data.Array.Accelerate.BackendKit.Passes.RemoveArrayTuple (removeArrayTuple)
-import           Data.Array.Accelerate.BackendKit.Passes.StaticTuples     (staticTuples)
+import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone 
+import           Data.Array.Accelerate.BackendKit.Phase1.LiftLets         (gatherLets)
+import           Data.Array.Accelerate.BackendKit.Phase1.LiftComplexRands (liftComplexRands)
+import           Data.Array.Accelerate.BackendKit.Phase1.RemoveArrayTuple (removeArrayTuple)
+import           Data.Array.Accelerate.BackendKit.Phase1.StaticTuples     (staticTuples)
 
 -- Phase 2 passes:
 ----------------------------------------

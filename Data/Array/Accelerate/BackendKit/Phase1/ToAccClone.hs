@@ -19,7 +19,7 @@
 -- internal representation to the `SimpleAcc` external representation.
 -- This representation retains nearly the full set of Accelerate
 -- language constructs.  Desugaring is postponed to phase 2.
-module Data.Array.Accelerate.BackendKit.Passes.ToAccClone
+module Data.Array.Accelerate.BackendKit.Phase1.ToAccClone
        ( 
          accToAccClone,
          unpackArray, packArray, repackAcc, Phantom
