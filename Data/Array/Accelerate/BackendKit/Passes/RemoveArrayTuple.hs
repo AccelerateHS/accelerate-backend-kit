@@ -16,7 +16,7 @@ import Prelude                                     hiding (sum)
 import Control.Monad.State.Strict (State, evalState, get, put)
 import Data.Map as M
 import Data.List as L
-import Data.Array.Accelerate.SimpleAST   as S
+import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc  as S
 import Data.Array.Accelerate.BackendKit.Passes.IRTypes as T
 
 import Debug.Trace(trace)

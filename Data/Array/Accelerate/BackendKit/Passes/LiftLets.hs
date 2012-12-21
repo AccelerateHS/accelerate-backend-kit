@@ -10,7 +10,7 @@ module Data.Array.Accelerate.BackendKit.Passes.LiftLets
 -- standard libraries
 import Control.Applicative          ((<$>),(<*>))
 import Control.Monad.State.Strict   (State, runState, get, put)
-import Data.Array.Accelerate.SimpleAST            as S
+import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc  as S
 import Data.Array.Accelerate.BackendKit.Passes.IRTypes as T
 import Data.List                                  as L
 import Prelude                                    hiding (sum)

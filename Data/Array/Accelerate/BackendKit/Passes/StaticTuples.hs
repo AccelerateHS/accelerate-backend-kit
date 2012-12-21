@@ -13,7 +13,7 @@ module Data.Array.Accelerate.BackendKit.Passes.StaticTuples
        ( staticTuples )
        where 
 
-import Data.Array.Accelerate.SimpleAST            as S
+import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc            as S
 import Data.Array.Accelerate.BackendKit.Passes.IRTypes as T
 import Data.List as L
 import Data.Map  as M
@@ -131,7 +131,7 @@ tupleNumLeaves :: S.Type -> Int
 tupleNumLeaves (S.TTuple ls) = L.sum $ L.map tupleNumLeaves ls
 tupleNumLeaves _             = 1
 
--- TODO: move into SimpleAST.hs perhaps:
+-- TODO: move into SimpleAcc.hs perhaps:
 retrieveTy :: TEnv -> T.Exp -> S.Type
 retrieveTy tenv e =
   S.tracePrint (" * Retrieving type for "++show e++" in tenv "++show (M.keys tenv) ++ " --> ") $

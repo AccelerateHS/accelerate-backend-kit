@@ -3,7 +3,7 @@
 -- {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 -- | An example interpreter for the simplified AST defined in "Data.Array.Accelerate.SimpleAST".
-module Data.Array.Accelerate.SimpleInterp
+module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter
        (
          -- * Main module entrypoints  
          run, evalSimpleAST,
@@ -15,11 +15,11 @@ module Data.Array.Accelerate.SimpleInterp
        )
        where
 
-import qualified Data.Array.Accelerate.Array.Sugar           as Sug
-import           Data.Array.Accelerate.SimpleAST             as S
-import           Data.Array.Accelerate.SimpleAST             as T
-import           Data.Array.Accelerate.SimpleArray           as SA
-import           Data.Array.Accelerate.SimpleConverter (convertToSimpleProg, repackAcc)
+import           Data.Array.Accelerate.BackendKit.Phase1 (convertToSimpleProg, repackAcc)
+import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
+import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as T
+import           Data.Array.Accelerate.BackendKit.SimpleArray   as SA
+import qualified Data.Array.Accelerate.Array.Sugar              as Sug
 import           Data.Array.Accelerate.Smart           (Acc)
 import qualified Data.List as L
 import qualified Data.Map  as M

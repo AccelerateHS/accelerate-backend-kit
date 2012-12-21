@@ -13,7 +13,13 @@
 -- Snoc-list accelerate internal format.
 #define SURFACE_TUPLES
 
-module Data.Array.Accelerate.SimpleConverter 
+-- | PHASE1 :  Accelerate -> SimpleAcc
+--
+-- This module provides a function to convert from Accelerate's
+-- internal representation to the `SimpleAcc` external representation.
+-- This representation retains nearly the full set of Accelerate
+-- language constructs.  Desugaring is postponed to phase 2.
+module Data.Array.Accelerate.BackendKit.Phase1
        ( 
          convertToSimpleProg, 
          unpackArray, packArray, repackAcc, Phantom
@@ -39,8 +45,8 @@ import           Data.Array.Accelerate.Tuple
 import qualified Data.Array.Accelerate.Smart       as Sug
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import qualified Data.Array.Accelerate.Trafo.Sharing as Cvt
-import qualified Data.Array.Accelerate.SimpleArray as SA
-import qualified Data.Array.Accelerate.SimpleAST   as S
+import qualified Data.Array.Accelerate.BackendKit.SimpleArray as SA
+import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
   -- Temporary AST before we get to the final one:
 import qualified Data.Array.Accelerate.BackendKit.Passes.IRTypes as T
 
@@ -368,7 +374,7 @@ convertExp e =
                              T.EIndex (_:tl) -> T.EIndex tl
                              T.EIndex []     -> error "IndexTail of empty index."
                              _               -> T.EIndexTailDynamic eix'
-    IndexAny       -> error "convertToSimpleAST: not expecting to observe IndexAny value."
+    IndexAny       -> error "convertToSimpleProg: not expecting to observe IndexAny value."
       -- return T.EIndexAny
 
     Cond c t ex -> T.ECond <$> convertExp c 
@@ -866,7 +872,7 @@ packArray orig@(S.AccArray dims origPayloads) =
   loop tupTy payloads =
 --   trace ("packArray: LOOPING "++show (length payloads)++" payload(s), tupty: "++show tupTy ++"\n   "++show payloads) $
    let err2 :: forall a . String -> a
-       err2 msg = error$"packArray: given a SimpleAST.AccArray of the wrong type, expected "++msg
+       err2 msg = error$"packArray: given a AccArray of the wrong type, expected "++msg
                   ++" received "++ show(length payloads) ++ " payloads: "++paystr
        paystr = "\n"++(unlines$ L.map (take 200 . show) payloads) ++ "\n dimension: "++show dims
    in

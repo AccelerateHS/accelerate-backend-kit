@@ -9,7 +9,7 @@
 --   simplified Accelerate backend-kit.  These datatypes are the
 --   /starting point/ for any subsequent code generation performed by
 --   a concrete backend.
-module Data.Array.Accelerate.SimpleAST 
+module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
    ( 
      -- * The types making up Accelerate ASTs:
      Prog(..), ProgBind(..),

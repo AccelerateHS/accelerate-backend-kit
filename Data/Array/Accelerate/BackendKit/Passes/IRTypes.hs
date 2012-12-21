@@ -4,11 +4,13 @@
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 -- | In the process of Accelerate AST simplification, we don't go
--- straight from Data.Array.Accelerate.AST to the final SimpleAST.
+-- straight from Data.Array.Accelerate.AST to the final SimpleAcc AST.
 -- Rather, there are intermediate steps.  This module contains
 -- intermediate representation(s) used by other passes in the compiler 
 -- but NOT exported for external consumption.
-
+--
+-- In particular this module contains an isomorphic representation of
+-- Accelerate's internal IR that is NOT flattened into a `Prog` type.
 
 module Data.Array.Accelerate.BackendKit.Passes.IRTypes
    (
@@ -29,8 +31,8 @@ import           System.IO.Unsafe (unsafePerformIO)
 import qualified Data.Map  as M
 import qualified Data.List as L
 
-import Data.Array.Accelerate.SimpleAST hiding (Exp(..), AExp(..))
-import qualified Data.Array.Accelerate.SimpleAST as S
+import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc hiding (Exp(..), AExp(..))
+import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 
 --------------------------------------------------------------------------------
 
@@ -42,7 +44,7 @@ import qualified Data.Array.Accelerate.SimpleAST as S
 --   enabling direct translation.  It is also used as the IR for
 --   subsequent lowerings (e.g. staticTuples or liftComplexRands).
 -- 
---   See documentation for SimpleAST.  Not reproducing it here.
+--   See documentation for SimpleAcc AST.  Not reproducing it here.
 --   This type differs by including ArrayTuple, TupleRefFromRight, and Apply.
 -- 
 --   This type is parameterized by an arbitrary annotation, which
@@ -85,7 +87,7 @@ data AExp a =
 
 -- | Scalar expressions
 -- 
---   This differs from `SimpleAST` in that it includes dynamic
+--   This differs from `SimpleAcc` in that it includes dynamic
 --   list-like treatment of indices.
 -- 
 data Exp =
@@ -123,7 +125,7 @@ instance Out a => Out (AExp a)
 --------------------------------------------------------------------------------
 
 -- | Convert scalar expressions /that meet the restrictions/ to the
--- final SimpleAST type.
+-- final SimpleAcc type.
 convertExps :: Exp -> S.Exp
 convertExps expr = 
   let f = convertExps in
@@ -143,9 +145,9 @@ convertExps expr =
     EIndexScalar ae _ -> error$"IRTypes.convertExps: expected EIndexScalar to have plain variable as array input, found: "++show ae
     EShape       ae   -> error$"IRTypes.convertExps: expected EShape" ++ " to have plain variable as array input, found: "++show ae
 
-    EIndexConsDynamic e1 e2 -> error "dynamic index manipulation not permitted in final SimpleAST"
-    EIndexHeadDynamic ex    -> error "dynamic index manipulation not permitted in final SimpleAST"
-    EIndexTailDynamic ex    -> error "dynamic index manipulation not permitted in final SimpleAST"
+    EIndexConsDynamic e1 e2 -> error "dynamic index manipulation not permitted in SimpleAcc IR"
+    EIndexHeadDynamic ex    -> error "dynamic index manipulation not permitted in SimpleAcc IR"
+    EIndexTailDynamic ex    -> error "dynamic index manipulation not permitted in SimpleAcc IR"
 
 convertFun1 :: S.Fun1 Exp -> S.Fun1 S.Exp
 convertFun1 (Lam1 bnd bod) = Lam1 bnd $ convertExps bod
@@ -154,7 +156,7 @@ convertFun2 :: S.Fun2 Exp -> S.Fun2 S.Exp
 convertFun2 (Lam2 bnd1 bnd2 bod) = Lam2 bnd1 bnd2 $ convertExps bod
 
 -- | Convert Array expressions /that meet the restrictions/ to the
---   final SimpleAST type.
+--   final SimpleAcc AST type.
 convertAExps :: AExp Type -> S.AExp
 convertAExps aex =
   let cE  = convertExps 
@@ -168,7 +170,7 @@ convertAExps aex =
      Use _ arr                   -> S.Use arr
      Generate _ ex fn            -> S.Generate (cE ex) (cF fn)
      ZipWith _ fn (Vr _ v1) (Vr _ v2) -> S.ZipWith (cF2 fn) v1 v2 
-     Map     _ fn (Vr _ v)       -> S.Map     (cF fn)  v
+     Map     _ fn (Vr _ v)            -> S.Map     (cF fn)  v
      Replicate _aty slice ex (Vr _ v) -> S.Replicate slice (cE ex) v
      Index     _ slc (Vr _ v)    ex    -> S.Index slc v (cE ex)
      Fold  _ fn einit (Vr _ v)         -> S.Fold     (cF2 fn) (cE einit) v

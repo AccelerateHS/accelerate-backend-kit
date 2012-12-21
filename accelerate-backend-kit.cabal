@@ -23,13 +23,14 @@ Cabal-version:       >=1.2
 
 
 Library
-  Exposed-modules:   Data.Array.Accelerate.SimpleAST, 
-                     Data.Array.Accelerate.SimpleArray,
-                     Data.Array.Accelerate.SimpleConverter,
-                     Data.Array.Accelerate.SimpleInterp,
-                     Data.Array.Accelerate.SimpleTests
+  Exposed-modules:
+                     Data.Array.Accelerate.BackendKit.IRs.SimpleAcc, 
+                     Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter,
+                     Data.Array.Accelerate.BackendKit.SimpleArray,
+                     Data.Array.Accelerate.BackendKit.Phase1,
+                     Data.Array.Accelerate.BackendKit.Tests
   
-  -- Modules not exported by this package.
+  -- Modules not exported by this package:
   Other-modules:       
                      Data.Array.Accelerate.BackendKit.Passes.LiftLets,
                      Data.Array.Accelerate.BackendKit.Passes.LiftComplexRands,

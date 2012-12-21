@@ -9,7 +9,7 @@
 --   These functions should mainly be used for constructing
 --   interpreters and reference implementations.  Many of them are
 --   unsuited for high-performance scenarios.
-module Data.Array.Accelerate.SimpleArray
+module Data.Array.Accelerate.BackendKit.SimpleArray
    ( 
           
      -- * Runtime Array data representation.
@@ -21,7 +21,7 @@ module Data.Array.Accelerate.SimpleArray
      indexArray,
 
      -- * Functions for constructing `AccArray`s
-     Data.Array.Accelerate.SimpleArray.replicate,      
+     Data.Array.Accelerate.BackendKit.SimpleArray.replicate,      
      
      -- * Functions for operating on payloads (internal components of AccArrays)
      payloadToPtr,
@@ -35,7 +35,7 @@ module Data.Array.Accelerate.SimpleArray
 where 
   
 
-import Data.Array.Accelerate.SimpleAST 
+import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
   
 import           Debug.Trace
 import           Data.Int

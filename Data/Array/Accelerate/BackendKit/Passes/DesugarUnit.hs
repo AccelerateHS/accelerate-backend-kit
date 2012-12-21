@@ -2,7 +2,7 @@
 
 -- | This module defines a compiler pass for removing the `Unit` construct.
 module Data.Array.Accelerate.BackendKit.Passes.DesugarUnit (desugarUnit) where 
-import Data.Array.Accelerate.SimpleAST
+import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
 
 desugarUnit :: Prog a -> Prog a 
 desugarUnit prog@Prog{progBinds} =

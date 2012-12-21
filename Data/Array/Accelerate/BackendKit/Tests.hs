@@ -4,7 +4,7 @@
 
 -- | A battery of simple tests for any new SimpleAST-based  backend.
 
-module Data.Array.Accelerate.SimpleTests 
+module Data.Array.Accelerate.BackendKit.Tests
    (testCompiler, testPartialCompiler, TestEntry(..), AccProg(..), makeTestEntry, 
 
     -- * ALL exported test programs in one list.
@@ -35,9 +35,9 @@ module Data.Array.Accelerate.SimpleTests
    )
    where 
 
-import           Data.Array.Accelerate.SimpleConverter (convertToSimpleProg, unpackArray, Phantom)
-import qualified Data.Array.Accelerate.SimpleAST    as S
-import qualified Data.Array.Accelerate.SimpleInterp as I
+import           Data.Array.Accelerate.BackendKit.Phase1 (convertToSimpleProg, unpackArray, Phantom)
+import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
+import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter as I
 import qualified Data.Array.Accelerate.Smart       as Sm
 import qualified Data.Array.Accelerate.Tuple       as Tu
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
