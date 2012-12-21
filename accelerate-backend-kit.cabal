@@ -19,13 +19,14 @@ Build-type:          Simple
 -- Extra-source-files:  
 
 -- Constraint on the version of Cabal needed to build this package.
-Cabal-version:       >=1.2
+Cabal-version:       >=1.10
 
 
 Library
   Exposed-modules:
                      Data.Array.Accelerate.BackendKit.Tests
                      Data.Array.Accelerate.BackendKit.CompilerPipeline
+                     Data.Array.Accelerate.BackendKit.CompilerUtils
                      Data.Array.Accelerate.BackendKit.IRs.GPUIR
                      Data.Array.Accelerate.BackendKit.IRs.GPUIR.Interpreter
                      Data.Array.Accelerate.BackendKit.IRs.CLike
@@ -44,10 +45,13 @@ Library
                      Data.Array.Accelerate.BackendKit.Phase1.LiftComplexRands
                      Data.Array.Accelerate.BackendKit.Phase1.RemoveArrayTuple
                      Data.Array.Accelerate.BackendKit.Phase1.StaticTuples
+                     Data.Array.Accelerate.BackendKit.Phase1.ToAccClone
+                     Data.Array.Accelerate.BackendKit.Phase2.DeadArrays
                      Data.Array.Accelerate.BackendKit.Phase2.DesugarUnit
                      Data.Array.Accelerate.BackendKit.Phase2.DesugToBackperm
                      Data.Array.Accelerate.BackendKit.Phase2.DesugToGenerate
                      Data.Array.Accelerate.BackendKit.Phase2.EstimateCost
+                     Data.Array.Accelerate.BackendKit.Phase2.ExplicitShapes
                      Data.Array.Accelerate.BackendKit.Phase2.InlineCheap
                      Data.Array.Accelerate.BackendKit.Phase2.FuseMaps
                      Data.Array.Accelerate.BackendKit.Phase2.NormalizeExps
