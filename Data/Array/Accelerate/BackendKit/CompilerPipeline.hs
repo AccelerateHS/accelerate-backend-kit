@@ -19,15 +19,14 @@ import           Data.Array.Accelerate.BackendKit.CompilerUtils           (runPa
 
 -- Phase 1 passes:
 ----------------------------------------
-import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone 
-import           Data.Array.Accelerate.BackendKit.Phase1.LiftLets         (gatherLets)
-import           Data.Array.Accelerate.BackendKit.Phase1.LiftComplexRands (liftComplexRands)
-import           Data.Array.Accelerate.BackendKit.Phase1.RemoveArrayTuple (removeArrayTuple)
-import           Data.Array.Accelerate.BackendKit.Phase1.StaticTuples     (staticTuples)
+import Data.Array.Accelerate.BackendKit.Phase1.ToAccClone        (accToAccClone,unpackArray, packArray, repackAcc, Phantom)
+import Data.Array.Accelerate.BackendKit.Phase1.LiftLets          (gatherLets)
+import Data.Array.Accelerate.BackendKit.Phase1.LiftComplexRands  (liftComplexRands)
+import Data.Array.Accelerate.BackendKit.Phase1.RemoveArrayTuple  (removeArrayTuple)
+import Data.Array.Accelerate.BackendKit.Phase1.StaticTuples      (staticTuples)
 
 -- Phase 2 passes:
 ----------------------------------------
-
 import Data.Array.Accelerate.BackendKit.Phase2.DesugarUnit       (desugarUnit)
 import Data.Array.Accelerate.BackendKit.Phase2.SizeAnalysis      (sizeAnalysis)
 import Data.Array.Accelerate.BackendKit.Phase2.ExplicitShapes    (explicitShapes)
@@ -39,20 +38,16 @@ import Data.Array.Accelerate.BackendKit.Phase2.EstimateCost      (estimateCost)
 import Data.Array.Accelerate.BackendKit.Phase2.InlineCheap       (inlineCheap)
 import Data.Array.Accelerate.BackendKit.Phase2.DeadArrays        (deadArrays)
 import Data.Array.Accelerate.BackendKit.Phase2.OneDimensionalize (oneDimensionalize)
+import Data.Array.Accelerate.BackendKit.Phase2.NormalizeExps     (normalizeExps)
+import Data.Array.Accelerate.BackendKit.Phase2.UnzipETups        (unzipETups)
+import Data.Array.Accelerate.BackendKit.Phase2.ToCLike           (convertToCLike)
 
--- import Data.Array.Accelerate.BackendKit.Phase2.EmitOpenCL        (emitOpenCL)
--- import Data.Array.Accelerate.BackendKit.Phase2.EmitC             (emitC)
-
-
+-- Phase 3 passes:
+----------------------------------------
 
 -- import Data.Array.Accelerate.BackendKit.Phase2.KernFreeVars      (kernFreeVars)
--- import Data.Array.Accelerate.BackendKit.Phase2.UnzipETups        (unzipETups)
--- import Data.Array.Accelerate.BackendKit.Phase2.NormalizeExps     (normalizeExps)
--- import Data.Array.Accelerate.BackendKit.Phase2.ConvertLLIR       (convertLLIR)
 -- import Data.Array.Accelerate.BackendKit.Phase2.ConvertGPUIR      (convertGPUIR)
 -- import Data.Array.Accelerate.BackendKit.Phase2.LowerGPUIR        (lowerGPUIR)
-
-
 
 
 --------------------------------------------------------------------------------
