@@ -4,7 +4,7 @@ Synopsis:            Simplified AST for Accelerate that makes it easy to build n
 
 -- Description:         
 
-Homepage:            https://github.com/rrnewton/accelerate
+Homepage:            https://github.com/AccelerateHS/accelerate-backend-kit/
 License:             BSD3
 License-file:        LICENSE
 Author:              Ryan R. Newton
@@ -39,8 +39,7 @@ Library
   -- Modules not exported by this package:
   Other-modules:       
                      Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone
-                     Data.Array.Accelerate.BackendKit.Utils.Helpers                     
-                     Data.Array.Accelerate.BackendKit.Utils.EasyEmit
+                     Data.Array.Accelerate.BackendKit.Utils.Helpers
                      Data.Array.Accelerate.BackendKit.Phase1.LiftLets
                      Data.Array.Accelerate.BackendKit.Phase1.LiftComplexRands
                      Data.Array.Accelerate.BackendKit.Phase1.RemoveArrayTuple
