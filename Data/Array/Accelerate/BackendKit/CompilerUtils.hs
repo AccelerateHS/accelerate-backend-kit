@@ -8,13 +8,22 @@
 --   opaque composition of functions.
 
 module Data.Array.Accelerate.BackendKit.CompilerUtils
-       (runPass, runOptPass)
+       (runPass, runOptPass, shapeName)
        where
 
 import           Text.PrettyPrint.GenericPretty (Out(doc), Generic)
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 
+----------------------------------------------------------------------------------------------------
+-- Compiler Conventions and global constants:
 
+
+-- | Given the name of an array variable, what is the name of the
+-- variable which will contain its shape.
+shapeName :: S.Var -> S.Var
+shapeName avr = S.var (show avr ++ "_shape")
+
+----------------------------------------------------------------------------------------------------
 
 -- Pass composition:
 runPass :: Out a => String -> (t -> a) -> t -> a

@@ -9,7 +9,8 @@ module Data.Array.Accelerate.BackendKit.Phase2.ExplicitShapes where
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
 import Data.List as L
 import Data.Array.Accelerate.BackendKit.IRs.Metadata (ArraySizeEstimate(..))
-import Data.Array.Accelerate.BackendKit.Utils.Helpers (mkIndTy, shapeName, mkPrj, mulI)
+import Data.Array.Accelerate.BackendKit.Utils.Helpers (mkIndTy, mkPrj, mulI)
+import Data.Array.Accelerate.BackendKit.CompilerUtils (shapeName)
 import Text.PrettyPrint.GenericPretty (Out(doc))
 import Debug.Trace (trace)
 

@@ -21,8 +21,9 @@ import Text.PrettyPrint.GenericPretty (Out(doc))
 
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
 import Data.Array.Accelerate.BackendKit.IRs.Metadata (ArraySizeEstimate(..))
-import Data.Array.Accelerate.BackendKit.Utils.Helpers (genUnique, genUniqueWith, GensymM, mkIndTy, mkPrj, shapeName,
+import Data.Array.Accelerate.BackendKit.Utils.Helpers (genUnique, genUniqueWith, GensymM, mkIndTy, mkPrj,
                                                        maybeLet, addI, mulI, quotI, remI)
+import Data.Array.Accelerate.BackendKit.CompilerUtils (shapeName)  
 
 -- | Configuration parameter.  This controls whether we take advantage
 -- of OpenCL/CUDA's native support for 2D and 3D kernels.  If this is

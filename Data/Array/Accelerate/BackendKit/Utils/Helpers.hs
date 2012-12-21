@@ -1,5 +1,4 @@
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
-{-# LANGUAGE OverloadedStrings #-}
 
 {- | This module contains helpers that are specific to the
      "Vectorized CodeGen" class using Accelerate.
@@ -11,7 +10,7 @@
 module Data.Array.Accelerate.BackendKit.Utils.Helpers
        (          
          -- * Helpers that capture certain conventions that the compiler follows:
-         builderName, shapeName, strideName, mkIndTy, isTupleTy,
+         strideName, mkIndTy, isTupleTy,
          GensymM, genUnique, genUniqueWith,
          
          -- * Other AST Helpers
@@ -45,19 +44,6 @@ import Prelude as P
 ----------------------------------------------------------------------------------------------------
 -- Conventions:
 ----------------------------------------------------------------------------------------------------
-
--- | During final C/OpenCL emission, create a name for a function that
--- executes a specific array operator.  That is, if you know the name
--- of an array variable, this will tell you what function to call to
--- populate that array.
-builderName :: Var -> P.String
-builderName vr = "build_" P.++ P.show vr
-
-
--- | Given the name of an array variable, what is the name of the
--- variable which will contain its shape.
-shapeName :: Var -> Var
-shapeName avr = S.var (P.show avr P.++ "_shape")
 
 -- | Given the name of an array variable resulting from a
 --   non-segmented FOLD, what is the name of a scalar variable
