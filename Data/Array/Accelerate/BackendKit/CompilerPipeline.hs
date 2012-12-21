@@ -37,17 +37,18 @@ import Data.Array.Accelerate.BackendKit.Phase2.DesugToBackperm   (desugToBackper
 import Data.Array.Accelerate.BackendKit.Phase2.DesugToGenerate   (desugToGenerate)
 import Data.Array.Accelerate.BackendKit.Phase2.EstimateCost      (estimateCost)
 import Data.Array.Accelerate.BackendKit.Phase2.InlineCheap       (inlineCheap)
+import Data.Array.Accelerate.BackendKit.Phase2.DeadArrays        (deadArrays)
+import Data.Array.Accelerate.BackendKit.Phase2.OneDimensionalize (oneDimensionalize)
 
 -- import Data.Array.Accelerate.BackendKit.Phase2.EmitOpenCL        (emitOpenCL)
 -- import Data.Array.Accelerate.BackendKit.Phase2.EmitC             (emitC)
--- import Data.Array.Accelerate.BackendKit.Phase2.DeadArrays        (deadArrays)
+
 
 
 -- import Data.Array.Accelerate.BackendKit.Phase2.KernFreeVars      (kernFreeVars)
 -- import Data.Array.Accelerate.BackendKit.Phase2.UnzipETups        (unzipETups)
 -- import Data.Array.Accelerate.BackendKit.Phase2.NormalizeExps     (normalizeExps)
 -- import Data.Array.Accelerate.BackendKit.Phase2.ConvertLLIR       (convertLLIR)
--- import Data.Array.Accelerate.BackendKit.Phase2.OneDimensionalize (oneDimensionalize)
 -- import Data.Array.Accelerate.BackendKit.Phase2.ConvertGPUIR      (convertGPUIR)
 -- import Data.Array.Accelerate.BackendKit.Phase2.LowerGPUIR        (lowerGPUIR)
 
