@@ -3,7 +3,7 @@
 -- | Compiler pass to lift Lets.  This is step 2 in a program flattening process.
 --------------------------------------------------------------------------------
 
-module Data.Array.Accelerate.SimplePasses.LiftLets
+module Data.Array.Accelerate.BackendKit.Passes.LiftLets
        ( liftLets, gatherLets )
        where 
 
@@ -11,7 +11,7 @@ module Data.Array.Accelerate.SimplePasses.LiftLets
 import Control.Applicative          ((<$>),(<*>))
 import Control.Monad.State.Strict   (State, runState, get, put)
 import Data.Array.Accelerate.SimpleAST            as S
-import Data.Array.Accelerate.SimplePasses.IRTypes as T
+import Data.Array.Accelerate.BackendKit.Passes.IRTypes as T
 import Data.List                                  as L
 import Prelude                                    hiding (sum)
 

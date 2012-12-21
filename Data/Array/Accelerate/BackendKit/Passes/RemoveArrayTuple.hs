@@ -6,7 +6,7 @@
 -- TODO:
 --  * Add copy-propagation to removeArrayTuple
 
-module Data.Array.Accelerate.SimplePasses.RemoveArrayTuple 
+module Data.Array.Accelerate.BackendKit.Passes.RemoveArrayTuple 
        ( removeArrayTuple )
        where 
 
@@ -17,7 +17,7 @@ import Control.Monad.State.Strict (State, evalState, get, put)
 import Data.Map as M
 import Data.List as L
 import Data.Array.Accelerate.SimpleAST   as S
-import Data.Array.Accelerate.SimplePasses.IRTypes as T
+import Data.Array.Accelerate.BackendKit.Passes.IRTypes as T
 
 import Debug.Trace(trace)
 -- tracePrint s x = trace (s ++ show x) x

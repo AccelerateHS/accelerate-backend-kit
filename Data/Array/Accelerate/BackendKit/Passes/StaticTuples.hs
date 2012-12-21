@@ -9,12 +9,12 @@
 
 -- UNFINISHED  UNFINISHED UNFINISHED UNFINISHED UNFINISHED 
 
-module Data.Array.Accelerate.SimplePasses.StaticTuples
+module Data.Array.Accelerate.BackendKit.Passes.StaticTuples
        ( staticTuples )
        where 
 
 import Data.Array.Accelerate.SimpleAST            as S
-import Data.Array.Accelerate.SimplePasses.IRTypes as T
+import Data.Array.Accelerate.BackendKit.Passes.IRTypes as T
 import Data.List as L
 import Data.Map  as M
 import Prelude   hiding (sum)

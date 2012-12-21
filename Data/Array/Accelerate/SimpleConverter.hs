@@ -42,13 +42,13 @@ import qualified Data.Array.Accelerate.Trafo.Sharing as Cvt
 import qualified Data.Array.Accelerate.SimpleArray as SA
 import qualified Data.Array.Accelerate.SimpleAST   as S
   -- Temporary AST before we get to the final one:
-import qualified Data.Array.Accelerate.SimplePasses.IRTypes as T
+import qualified Data.Array.Accelerate.BackendKit.Passes.IRTypes as T
 
 -- Lowering passes:
-import           Data.Array.Accelerate.SimplePasses.LiftLets         (gatherLets)
-import           Data.Array.Accelerate.SimplePasses.LiftComplexRands (liftComplexRands)
-import           Data.Array.Accelerate.SimplePasses.RemoveArrayTuple (removeArrayTuple)
-import           Data.Array.Accelerate.SimplePasses.StaticTuples     (staticTuples)
+import           Data.Array.Accelerate.BackendKit.Passes.LiftLets         (gatherLets)
+import           Data.Array.Accelerate.BackendKit.Passes.LiftComplexRands (liftComplexRands)
+import           Data.Array.Accelerate.BackendKit.Passes.RemoveArrayTuple (removeArrayTuple)
+import           Data.Array.Accelerate.BackendKit.Passes.StaticTuples     (staticTuples)
 
 --------------------------------------------------------------------------------
 -- Exposed entrypoints for this module:

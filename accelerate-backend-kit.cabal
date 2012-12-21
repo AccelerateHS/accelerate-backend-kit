@@ -31,11 +31,12 @@ Library
   
   -- Modules not exported by this package.
   Other-modules:       
-                     Data.Array.Accelerate.SimplePasses.LiftLets,
-                     Data.Array.Accelerate.SimplePasses.LiftComplexRands,
-                     Data.Array.Accelerate.SimplePasses.RemoveArrayTuple,
-                     Data.Array.Accelerate.SimplePasses.StaticTuples,
-                     Data.Array.Accelerate.SimplePasses.IRTypes
+                     Data.Array.Accelerate.BackendKit.Passes.LiftLets,
+                     Data.Array.Accelerate.BackendKit.Passes.LiftComplexRands,
+                     Data.Array.Accelerate.BackendKit.Passes.RemoveArrayTuple,
+                     Data.Array.Accelerate.BackendKit.Passes.StaticTuples,
+                     Data.Array.Accelerate.BackendKit.Passes.IRTypes
+                     Data.Array.Accelerate.BackendKit.Passes.DesugarUnit
 
   Build-depends:
                         array           >= 0.3 && < 0.5,

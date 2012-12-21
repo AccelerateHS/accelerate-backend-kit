@@ -4,14 +4,14 @@
 -- | Compiler pass to lift complex operands into let bindings
 --------------------------------------------------------------------------------
 
-module Data.Array.Accelerate.SimplePasses.LiftComplexRands
+module Data.Array.Accelerate.BackendKit.Passes.LiftComplexRands
        ( liftComplexRands )
        where 
 
 import Control.Applicative        ((<$>),(<*>))
 import Control.Monad.State.Strict (State, evalState, runState, get, put, modify)
 import Data.Array.Accelerate.SimpleAST            as S
-import Data.Array.Accelerate.SimplePasses.IRTypes as T
+import Data.Array.Accelerate.BackendKit.Passes.IRTypes as T
 import Prelude                                    hiding (sum, exp)
 
 -- Shorthands:

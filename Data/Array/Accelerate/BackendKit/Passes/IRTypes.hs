@@ -6,10 +6,11 @@
 -- | In the process of Accelerate AST simplification, we don't go
 -- straight from Data.Array.Accelerate.AST to the final SimpleAST.
 -- Rather, there are intermediate steps.  This module contains
--- intermediate representation(s) used by other passes found in this
--- directory.
+-- intermediate representation(s) used by other passes in the compiler 
+-- but NOT exported for external consumption.
 
-module Data.Array.Accelerate.SimplePasses.IRTypes
+
+module Data.Array.Accelerate.BackendKit.Passes.IRTypes
    (
      -- * Intermediate representations.
      AExp(..), getAnnot, 
