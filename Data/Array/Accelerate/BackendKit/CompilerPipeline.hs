@@ -30,7 +30,7 @@ import           Data.Array.Accelerate.BackendKit.Phase1.StaticTuples     (stati
 
 import Data.Array.Accelerate.BackendKit.Phase2.DesugarUnit       (desugarUnit)
 import Data.Array.Accelerate.BackendKit.Phase2.SizeAnalysis      (sizeAnalysis)
---- import Data.Array.Accelerate.BackendKit.Phase2.TrackUses         (trackUses)
+import Data.Array.Accelerate.BackendKit.Phase2.TrackUses         (trackUses)
 -- import Data.Array.Accelerate.BackendKit.Phase2.FuseMaps          (fuseMaps)
 -- import Data.Array.Accelerate.BackendKit.Phase2.EmitOpenCL        (emitOpenCL)
 -- import Data.Array.Accelerate.BackendKit.Phase2.EmitC             (emitC)
