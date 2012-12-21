@@ -28,26 +28,25 @@ import           Data.Array.Accelerate.BackendKit.Phase1.StaticTuples     (stati
 -- Phase 2 passes:
 ----------------------------------------
 
-import Data.Array.Accelerate.BackendKit.Phase2.DesugarUnit (desugarUnit)
-
--- import B629.SizeAnalysis      (sizeAnalysis)
--- import B629.TrackUses         (trackUses)
--- import B629.FuseMaps          (fuseMaps)
--- import B629.EmitOpenCL        (emitOpenCL)
--- import B629.EmitC             (emitC)
--- import B629.DeadArrays        (deadArrays)
--- import B629.InlineCheap       (inlineCheap)
--- import B629.DesugToBackperm   (desugToBackperm)
--- import B629.DesugToGenerate   (desugToGenerate)
--- import B629.EstimateCost      (estimateCost)
--- import B629.KernFreeVars      (kernFreeVars)
--- import B629.ExplicitShapes    (explicitShapes)
--- import B629.UnzipETups        (unzipETups)
--- import B629.NormalizeExps     (normalizeExps)
--- import B629.ConvertLLIR       (convertLLIR)
--- import B629.OneDimensionalize (oneDimensionalize)
--- import B629.ConvertGPUIR      (convertGPUIR)
--- import B629.LowerGPUIR        (lowerGPUIR)
+import Data.Array.Accelerate.BackendKit.Phase2.DesugarUnit       (desugarUnit)
+import Data.Array.Accelerate.BackendKit.Phase2.SizeAnalysis      (sizeAnalysis)
+--- import Data.Array.Accelerate.BackendKit.Phase2.TrackUses         (trackUses)
+-- import Data.Array.Accelerate.BackendKit.Phase2.FuseMaps          (fuseMaps)
+-- import Data.Array.Accelerate.BackendKit.Phase2.EmitOpenCL        (emitOpenCL)
+-- import Data.Array.Accelerate.BackendKit.Phase2.EmitC             (emitC)
+-- import Data.Array.Accelerate.BackendKit.Phase2.DeadArrays        (deadArrays)
+-- import Data.Array.Accelerate.BackendKit.Phase2.InlineCheap       (inlineCheap)
+-- import Data.Array.Accelerate.BackendKit.Phase2.DesugToBackperm   (desugToBackperm)
+-- import Data.Array.Accelerate.BackendKit.Phase2.DesugToGenerate   (desugToGenerate)
+-- import Data.Array.Accelerate.BackendKit.Phase2.EstimateCost      (estimateCost)
+-- import Data.Array.Accelerate.BackendKit.Phase2.KernFreeVars      (kernFreeVars)
+-- import Data.Array.Accelerate.BackendKit.Phase2.ExplicitShapes    (explicitShapes)
+-- import Data.Array.Accelerate.BackendKit.Phase2.UnzipETups        (unzipETups)
+-- import Data.Array.Accelerate.BackendKit.Phase2.NormalizeExps     (normalizeExps)
+-- import Data.Array.Accelerate.BackendKit.Phase2.ConvertLLIR       (convertLLIR)
+-- import Data.Array.Accelerate.BackendKit.Phase2.OneDimensionalize (oneDimensionalize)
+-- import Data.Array.Accelerate.BackendKit.Phase2.ConvertGPUIR      (convertGPUIR)
+-- import Data.Array.Accelerate.BackendKit.Phase2.LowerGPUIR        (lowerGPUIR)
 
 
 
@@ -70,3 +69,26 @@ convertToSimpleProg prog =
   prog
 
 
+-- b629Compiler :: S.Prog () -> G.GPUProg ()
+-- b629Compiler prog =
+--   runPass    "lowerGPUIR"        lowerGPUIR        $     -- ()
+--   runPass    "convertGPUIR"      convertGPUIR      $     -- ()
+--   runPass    "kernFreeVars"      kernFreeVars      $     -- (size,freevars)
+--   runPass    "convertLLIR"       convertLLIR       $     -- (size)
+--   runPass    "unzipETups"        unzipETups        $     -- (size)  
+--   runPass    "normalizeExps"     normalizeExps     $     -- (size)
+--   runPass    "oneDimensionalize" oneDimensionalize $     -- (size)
+--   runOptPass "deadArrays"        deadArrays (fmap fst) $ -- (size)
+--   runPass    "trackUses"         trackUses         $     -- (size,uses)
+--    -- NOTE INLINE CHEAP IS NOT OPTIONAL PRESENTLY! (needed for copy-prop)
+-- --   runOptPass "inlineCheap"       inlineCheap (fmap fst) $ -- (size)
+--   runPass    "inlineCheap"       inlineCheap       $      -- (size)
+--   runPass    "estimateCost"      estimateCost      $      -- (size,cost)
+--   runPass    "desugtoGenerate"   desugToGenerate   $      -- (size)
+--   runPass    "desugToBackperm"   desugToBackperm   $      -- (size,uses)
+--   runOptPass "fuseMaps"          fuseMaps  id      $      -- (size,uses)
+--   runPass    "trackUses"         trackUses         $      -- (size,uses)
+--   runPass    "explicitShapes"    explicitShapes    $      -- (size)
+--   runPass    "sizeAnalysis"      sizeAnalysis      $      -- (size)
+--   runPass    "desugarUnit"       desugarUnit       $      -- ()
+--   prog
