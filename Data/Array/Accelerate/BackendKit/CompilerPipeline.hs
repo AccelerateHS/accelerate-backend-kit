@@ -44,10 +44,9 @@ import Data.Array.Accelerate.BackendKit.Phase2.ToCLike           (convertToCLike
 
 -- Phase 3 passes:
 ----------------------------------------
-
--- import Data.Array.Accelerate.BackendKit.Phase2.KernFreeVars      (kernFreeVars)
--- import Data.Array.Accelerate.BackendKit.Phase2.ConvertGPUIR      (convertGPUIR)
--- import Data.Array.Accelerate.BackendKit.Phase2.LowerGPUIR        (lowerGPUIR)
+import Data.Array.Accelerate.BackendKit.Phase3.KernFreeVars      (kernFreeVars)
+-- import Data.Array.Accelerate.BackendKit.Phase3.ConvertGPUIR      (convertGPUIR)
+-- import Data.Array.Accelerate.BackendKit.Phase3.LowerGPUIR        (lowerGPUIR)
 
 
 --------------------------------------------------------------------------------

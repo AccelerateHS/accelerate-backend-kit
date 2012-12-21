@@ -24,19 +24,22 @@ Cabal-version:       >=1.2
 
 Library
   Exposed-modules:
-                     Data.Array.Accelerate.BackendKit.IRs.SimpleAcc, 
-                     Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter,
-                     Data.Array.Accelerate.BackendKit.SimpleArray,
-                     Data.Array.Accelerate.BackendKit.CompilerPipeline,
+                     Data.Array.Accelerate.BackendKit.IRs.GPUIR
+--                     Data.Array.Accelerate.BackendKit.IRs.GPUIR.Interpreter
+                     Data.Array.Accelerate.BackendKit.IRs.CLike
+                     Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
+                     Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter
+                     Data.Array.Accelerate.BackendKit.SimpleArray
+                     Data.Array.Accelerate.BackendKit.CompilerPipeline
                      Data.Array.Accelerate.BackendKit.Tests
   
   -- Modules not exported by this package:
   Other-modules:       
                      Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone
-                     Data.Array.Accelerate.BackendKit.Phase1.LiftLets,
-                     Data.Array.Accelerate.BackendKit.Phase1.LiftComplexRands,
-                     Data.Array.Accelerate.BackendKit.Phase1.RemoveArrayTuple,
-                     Data.Array.Accelerate.BackendKit.Phase1.StaticTuples,
+                     Data.Array.Accelerate.BackendKit.Phase1.LiftLets
+                     Data.Array.Accelerate.BackendKit.Phase1.LiftComplexRands
+                     Data.Array.Accelerate.BackendKit.Phase1.RemoveArrayTuple
+                     Data.Array.Accelerate.BackendKit.Phase1.StaticTuples
                      Data.Array.Accelerate.BackendKit.Phase2.DesugarUnit
 
   Build-depends:
