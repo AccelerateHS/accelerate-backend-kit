@@ -16,7 +16,7 @@ module Data.Array.Accelerate.Shared.EasyEmit
     EasyEmit, runEasyEmit, execEasyEmit, evalEasyEmit,
 
     -- * The syntax type.  The core type used to construct expressions via EasyEmit.
-    Syntax(), fromSyntax, toSyntax, (+++), CType(..),
+    Syntax(), fromSyntax, toSyntax, (+++), CType,
     
     -- * Functions for generating C/C++ Expressions:
     constant, stringconst, dot, arrow,
@@ -105,8 +105,8 @@ evalEasyEmit = fst . runEasyEmit
 
 
 -- This runs a subcomputation only for value -- discards its emission side effects.
-forValueOnly :: EasyEmit a -> EasyEmit a
-forValueOnly (EE m) =
+_forValueOnly :: EasyEmit a -> EasyEmit a
+_forValueOnly (EE m) =
  do (ls,c) <- S.get 
     let (val,(_,c2)) = S.runState m ([], c)
     S.put (ls,c2)
@@ -125,7 +125,7 @@ instance StringBuilder EasyEmit where
 --instance StringBuilder (S.State ([Doc], Int)) where 
   putS s = S.modify (\ (ls,cnt) -> (text s:ls, cnt) )
   runSB (EE m) = 
-      let (res, (ls,cnt)) = S.runState m ([],0) 
+      let (res, (ls,_cnt)) = S.runState m ([],0) 
       in (render$ vcat$ reverse ls, res)
 
 

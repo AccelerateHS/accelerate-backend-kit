@@ -4,7 +4,6 @@ Synopsis:            OpenCL and Cilk backends for Accelerate.
 
 Homepage:            https://github.com/AccelerateHS/accelerate-cpu/
 License:             BSD3
-License-file:        LICENSE
 Author:              Ryan R. Newton
 Maintainer:          rrnewton@gmail.com
 
@@ -18,7 +17,6 @@ Build-type:          Simple
 
 -- Constraint on the version of Cabal needed to build this package.
 Cabal-version:       >=1.10
-
 
 Library
   Exposed-modules:
@@ -38,7 +36,7 @@ Library
                         test-framework, process, unix, 
                         mtl, pretty, prettyclass, GenericPretty,
                         accelerate, accelerate-backend-kit, 
-                        OpenCL, 
-                        classsupport-b629
+                        OpenCL
 
-  ghc-options:          -Wall
+--  ghc-options:          -Wall
+  Default-Language:    Haskell2010
