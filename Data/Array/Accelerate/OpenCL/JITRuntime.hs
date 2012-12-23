@@ -5,8 +5,10 @@
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 -- | The JIT defined in this module responds to the following ENVIRONMENT VARIABLES:
+-- 
 --  * SIMPLEINTERP=1 -- use SimpleInterp as backend INSTEAD of C/OpenCL
 --  * EMITC=0        -- Disable the C-backend/gcc-compilation and run only OpenCL
+--  * PICKCPU=0      -- Prefer a CPU OpenCL device rather than picking the first GPU one.
 
 module Data.Array.Accelerate.OpenCL.JITRuntime (run, rawRunIO, Backend(..)) where 
 
@@ -58,6 +60,7 @@ import           Data.Array.Accelerate.Shared.EmitOpenCL        (emitOpenCL)
 
 --------------------------------------------------------------------------------
 -- Main Entrypoints
+--------------------------------------------------------------------------------
 
 -- | The supported backends.
 data Backend = OpenCL | SeqentialC | Both_C_OpenCL
@@ -105,7 +108,7 @@ compilerBackend = phase3 . phase2
 
 --------------------------------------------------------------------------------
 -- | Run a compiled program via C or OpenCL.  In the latter case
--- return a pointer to the result(s) in main (CPU) memory.
+-- return a pointer to the result(s) in host (CPU) memory.
 setupAndRunProg :: Backend -> String ->
                    G.GPUProg () ->
                    IO ([Ptr ()], M.Map Var BufEntry)
@@ -141,8 +144,7 @@ setupAndRunProg OpenCL name prog2 = do
   devtys <- mapM clGetDeviceType devs
 
   pickCPU <- getEnv "PICKCPU"
-  
-  -- HACK -- EQ instance is missing for CL_DEVICE_TYPE_GPU:
+      -- HACK -- EQ instance is missing for CL_DEVICE_TYPE_GPU:
   let isGPU (_,tys)  = "CL_DEVICE_TYPE_GPU" `elem` (map show tys)
       (prd,desired)  = case pickCPU of
                         Just x | x /= "" && x /= "0" -> ((not . isGPU), "CPU")
@@ -154,19 +156,19 @@ setupAndRunProg OpenCL name prog2 = do
           _         -> do clGetDeviceName (head devs) >>= (dbgPrint . ("[JIT] Selecting device: "++))
                           return (head devs)
   dbgPrint$ "[JIT]  Device Stats: "
-  dver     <- clGetDeviceVersion dev
-  driver   <- clGetDeviceDriverVersion dev
-  maxConst <- clGetDeviceMaxConstantBufferSize dev
-  maxAlloc <- clGetDeviceMaxMemAllocSize dev
-  memSize  <- clGetDeviceGlobalMemSize dev
+  dver      <- clGetDeviceVersion dev
+  driver    <- clGetDeviceDriverVersion dev
+  maxConst  <- clGetDeviceMaxConstantBufferSize dev
+  maxAlloc  <- clGetDeviceMaxMemAllocSize dev
+  memSize   <- clGetDeviceGlobalMemSize dev
   memCachSz <- clGetDeviceGlobalMemCacheSize dev
   memCachLn <- clGetDeviceGlobalMemCachelineSize dev
-  maxWG    <- clGetDeviceMaxWorkGroupSize dev
-  wiszs    <- clGetDeviceMaxWorkItemSizes dev
-  widims   <- clGetDeviceMaxWorkItemDimensions dev
-  memtype  <- clGetDeviceLocalMemType dev
-  localSz  <- clGetDeviceLocalMemSize dev
-  units    <- clGetDeviceMaxComputeUnits dev
+  maxWG     <- clGetDeviceMaxWorkGroupSize dev
+  wiszs     <- clGetDeviceMaxWorkItemSizes dev
+  widims    <- clGetDeviceMaxWorkItemDimensions dev
+  memtype   <- clGetDeviceLocalMemType dev
+  localSz   <- clGetDeviceLocalMemSize dev
+  units     <- clGetDeviceMaxComputeUnits dev
   dbgPrint$ "[JIT]  * device/driver ver: "++show dver ++" "++show driver
   dbgPrint$ "[JIT]  * const  mem size : "++commaint maxConst
   dbgPrint$ "[JIT]  * local  mem type : "++show memtype
@@ -175,9 +177,9 @@ setupAndRunProg OpenCL name prog2 = do
   dbgPrint$ "[JIT]  * global mem cache: "++commaint memCachSz
   dbgPrint$ "[JIT]  * global mem line : "++commaint memCachLn
   dbgPrint$ "[JIT]  * max alloc  size : "++commaint maxAlloc
-  dbgPrint$ "[JIT]  * max work group  : "++commaint maxWG
-  dbgPrint$ "[JIT]  * max work sizes  : "++show wiszs
-  dbgPrint$ "[JIT]  * max work dims   : "++show widims
+  dbgPrint$ "[JIT]  * max work group size : "++commaint maxWG
+  dbgPrint$ "[JIT]  * max work item sizes : "++show wiszs
+  dbgPrint$ "[JIT]  * max work item dims  : "++show widims
   dbgPrint$ "[JIT]  * max compute units : "++show units
 
   context <- clCreateContext [CL_CONTEXT_PLATFORM platform] [dev] print
@@ -365,10 +367,10 @@ runDAG (context, q, clprog) (G.GPUProg{progBinds, progResults, lastwriteTable}) 
 
      ------------------------------Kernel case----------------------------------
      -- Launch a kernel of specified dimension:
-     -- Handling a Kernel enqueues one GPU kernel, waiting on upstream events.         
+     -- Handling a Kernel enqueues one GPU kernel, waiting on upstream events. 
      Kernel iters (Lam formals _bod) args ->
        do kernel <- clCreateKernel clprog (builderName evtid)
-          name <- clGetKernelFunctionName kernel
+          name   <- clGetKernelFunctionName kernel
           dbgPrint$ "[JIT] kernel created: "++name
           let (_iterVs, shapeEs) = unzip iters
           (valEnv', ls) <- foldM (\ (env,ls) ex -> do (val,env') <- evalTopLvlExp env ex
@@ -377,7 +379,7 @@ runDAG (context, q, clprog) (G.GPUProg{progBinds, progResults, lastwriteTable}) 
           let shapeIs :: [Int]
               shapeIs = map (\ (ConstVal (I n)) -> n) (reverse ls)
 
-          dbgPrint$"[JIT] Kernel args are size followed by formals.  Formals: "++show formals 
+          dbgPrint$"[JIT] Kernel args are size followed by formals.  Size: "++ show shapeIs ++" Formals: "++show formals 
           dbgSetArg kernel 0 (product shapeIs)
 
           -- Set the rest of the inputs as kernel arguments:           
@@ -431,16 +433,18 @@ runDAG (context, q, clprog) (G.GPUProg{progBinds, progResults, lastwriteTable}) 
 
                 
           let allEvs    = mapMaybe (`M.lookup` evMap) evtdeps
-              dims      = if []==shapeIs then [1] else shapeIs
+              dims      = if []==shapeIs then [1] else shapeIs  -- Handle ONLY zero or one dim currently.
               groupDims = L.map (const 1) shapeIs
+--              groupDims = dims -- TEMP: Do everything in a single workgroup for now.
+          --------------------- *THE Kernel Launch* ---------------------
           clevnt <- clEnqueueNDRangeKernel q kernel dims groupDims allEvs
           -- let newentry = BufEntry{clevt=evnt, clmem=mem_out, 
           --                         bytesize=bufSize, fullshape=shapeIs, arraytype=pbty }
           kname <- clGetKernelFunctionName kernel
           dbgPrint$ "[JIT] Kernel "++kname++" LAUNCHED, ndrange "++show dims++" groupDims "++show groupDims
 
--- clReleaseEvent     -- TODO, free all events when flushing out the DAG.
--- clReleaseMemObject -- TODO, free all memobjects when flushing out the DAG.
+          -- clReleaseEvent     -- TODO, free all events when flushing out the DAG.
+          -- clReleaseMemObject -- TODO, free all memobjects when flushing out the DAG.
           -- Once the kernel is enqued, it is safe for us to let go of our handle on it:
           -- clReleaseKernel kernel
 

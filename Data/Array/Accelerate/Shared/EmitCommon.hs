@@ -213,7 +213,7 @@ emitE e expr = loop M.empty expr
 
    -- | Add a cast around an expression.
    castit :: Type -> Syntax -> Syntax
-   castit ty exp = E.parens ((E.parens (emitType e ty)) +++ exp)
+   castit ty exp = ((E.parens (emitType e ty)) +++ E.parens exp)
 
 
 emitConst :: Const -> Syntax
@@ -250,6 +250,7 @@ getSizeOfPB e (GPUProgBind{op}) = getSizeE e op
 varSyn :: Var -> Syntax
 varSyn = toSyntax . text . show
 
+printfFlag :: Type -> String
 printfFlag ty = 
   case ty of 
     TInt    -> "%d"

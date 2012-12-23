@@ -36,9 +36,9 @@ instance EmitBackend OpenCLEmitter where
   invokeKern e len body = do
      let myind  = get_global_id [0] 
      i <- tmpvarinit (emitType e TInt) myind
+     -- Optional, debugging:     
+     -- emitStmt$ printf [stringconst " [OpenCL_DBG] Kernel invoked, global_id[0] %d, local_id[0] %d\n", myind, get_local_id [0]]     
      body i
-     -- Optional, debugging:
-     -- emitStmt$ printf [stringconst "  Filled output array... out[%d] = %d\n", myind, "out" E.! myind]
 
   emitType _ = emitOpenCLType
 
@@ -47,3 +47,6 @@ instance EmitBackend OpenCLEmitter where
 
 get_global_id :: ([Syntax] -> Syntax)
 get_global_id = function "get_global_id"
+
+get_local_id :: ([Syntax] -> Syntax)
+get_local_id = function "get_local_id"

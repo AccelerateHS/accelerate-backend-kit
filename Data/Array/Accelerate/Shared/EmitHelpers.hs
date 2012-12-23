@@ -95,7 +95,7 @@ emitPrimApp p args =
               Floor   -> unary "floor"
               Ceiling -> unary "ceil"
               -- The C CAST that should be wrapped around the esult of
-              -- emitPrimApp should effectively truncate.
+              -- emitPrimApp should effectively truncate:
               Truncate -> arg
     SP p -> case p of
               Lt   -> binop "<"
@@ -124,7 +124,8 @@ emitPrimApp p args =
    leftD  = fromSyntax left
    rightD = fromSyntax right
    
-   binop op = left +++ toSyntax (text (" "++op++" ")) +++ right
+   -- No parens for a binop, that is handled by the caller of `emitPrimApp`:
+   binop op  = left +++ toSyntax (text (" "++op++" ")) +++ right
    binfun op = toSyntax (text op <> PP.parens (leftD <> comma <> rightD))
    unary  op = toSyntax$ text op <> PP.parens argD
 

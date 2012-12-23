@@ -18,4 +18,5 @@ results in this error on Mac OS:
 
     Please report this as a GHC bug:  http://www.haskell.org/ghc/reportabug
 
-On linux it works fine.
+On 7.4.2 (mac & linux) it works fine.
+
