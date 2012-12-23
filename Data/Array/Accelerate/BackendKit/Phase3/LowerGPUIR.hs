@@ -11,7 +11,7 @@ import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
 import qualified Data.Set                        as S
 import           Data.Array.Accelerate.BackendKit.IRs.GPUIR         as G
 import           Data.Array.Accelerate.BackendKit.IRs.Metadata  (ArraySizeEstimate(..), FreeVars(..))
-import           Data.Array.Accelerate.BackendKit.Utils.Helpers (genUnique, genUniqueWith, GensymM, strideName, fragileZip, quotI)
+import           Data.Array.Accelerate.BackendKit.Utils.Helpers (genUnique, genUniqueWith, GensymM, strideName, fragileZip)
 import           Control.Monad.State.Strict (runState)
 import           Debug.Trace
 
@@ -73,18 +73,21 @@ doBinds prog (pb@GPUProgBind { outarrs, evtid, evtdeps,
 
      --------------------------------------------------------------------------------
      -- Here is a serial fold as an example:
-     -- TODO FINISHME -- make this into the three-phase parallel fold!
      Fold (Lam [(v,_,ty1),(w,_,ty2)] bod) [initE] inV (ConstantStride _) -> do
-#if 1
+#if 0
+-- PARALLEL REDUCTION, UNFINISHED:    
        -- Not supporting tuple (multiple) accumulators:
        let (ScalarBlock locals [res] stmts) = bod
            Just upstream = lookupProgBind inV (progBinds prog)
            inSz = getSizeOfPB upstream
        -- We need a bunch of temporaries!
-       ix     <- genUnique
-       ix2    <- genUnique
-       newevt <- genUniqueWith "evtFldArr"
-       sharedAccums   <- genUniqueWith "sharedAccums"
+       ix           <- genUniqueWith "ix"
+       ix2          <- genUniqueWith "ix"
+       offset       <- genUniqueWith "offset"
+       newevt       <- genUniqueWith "evtFldArr"
+       sharedAccums <- genUniqueWith "sharedAccums"
+       numthreads   <- genUniqueWith "numThrds"
+
        -- The old arrayOpFvs are only for the kernel (the Lam) not for the extra bits that are
        -- parameters to the fold or are implicit.
        let localmembind = (sharedAccums, Local, TArray 1 ty2)
@@ -99,38 +102,40 @@ doBinds prog (pb@GPUProgBind { outarrs, evtid, evtdeps,
            kernargs     = EUnInitArray ty1 workGroupSize : 
                           map (EVr . fst3) almostAllBinds
 
-           newop = Kernel [(ix2, inSz)] kernbod kernargs
+           newop = Kernel [(ix2, EVr numthreads)] kernbod kernargs
            workGroupSizeE = EConst (I workGroupSize)
            kernbod = Lam allfreebinds $
-              ScalarBlock ((v,Default,ty1) : (w,Default,ty2) : locals) [] $ 
+              ScalarBlock ((v,Default,ty1) : (w,Default,ty2) : (offset,Default,TInt) : locals) [] $ 
               -------------------------Begin Kernel----------------------------
               [
                SComment "This function implements a Fold.  First we init our accumulator with the seed value:",
                SSet w initE,
+               SSet offset (mulI (EGetGlobalID 0) workGroupSizeE), 
+               
                SComment "Next, each thread serially folds a chunk of the inputs:", 
-               SCond (EPrimApp TBool (SP Eq) [EGetGlobalID 0, zero])
-                 [forUpTo ix (EPrimApp TInt (IP IDiv) [inSz,workGroupSizeE]) $
-                    SSet v (EIndexScalar inV (EVr ix)) :
+               forUpTo ix (EPrimApp TInt (IP Quot) [inSz,workGroupSizeE]) $
+                    SSet v (EIndexScalar inV (addI (EVr offset) (EVr ix))) :
                     stmts ++ -- This will consume v & w and write res.
-                    [SSet w (EVr res),
-                     SArrSet sharedAccums (remI (EVr ix) workGroupSizeE) (EVr res),
-                     SArrSet sharedAccums zero (EVr res)]]
-                 [SNoOp],
+                    [SSet w (EVr res)],
+               SArrSet sharedAccums (EGetGlobalID 0) (EVr w),
                SSynchronizeThreads,
-               SComment "Finally, we (temporarily) have a single thread sum over shared memory:",              
-               (forUpTo ix workGroupSizeE $
-                    SComment ("We continue using "++show w++" as an accumulator:") :
-                    SSet v (EIndexScalar sharedAccums (EVr ix)) :
-                    stmts ++ -- This will consume v & w and write res.
-                    [SSet w (EVr res)]
-                    ),
-               SArrSet arrnm zero (EIndexScalar sharedAccums zero)
+               
+               SComment "Finally, we (temporarily) have a single thread sum over shared memory:",
+               SCond (EPrimApp TBool (SP Eq) [EGetGlobalID 0, zero])
+                     [forUpTo ix workGroupSizeE $
+                        SComment ("We continue using "++show w++" as an accumulator:") :
+                        SSet v (EIndexScalar sharedAccums (EVr ix)) :
+                        stmts ++ -- This will consume v & w and write res.
+                        [SSet w (EVr res)]] [],
+               SArrSet arrnm zero (EVr w)
               ]
               --------------------------End Kernel-----------------------------
 
        rst <- doBinds prog rest
+       scalarBind <- mkScalarBind numthreads TInt (minI inSz workGroupSizeE)
        return $ 
          GPUProgBind newevt [] outarrs () (NewArray one) :
+         scalarBind : 
          GPUProgBind evtid (newevt:evtdeps) [] () newop : rst
 #else       
        -- Not supporting tuple (multiple) accumulators:
@@ -145,12 +150,12 @@ doBinds prog (pb@GPUProgBind { outarrs, evtid, evtdeps,
        -- parameters to the fold or are implicit.
        let newfvs = S.insert inV $
                     S.union (expFreeVars inSz) $
-                    S.union (expFreeVars init)
+                    S.union (expFreeVars initE)
                             (S.fromList arrayOpFvs)
        ix2 <- genUnique
        let newop = Generate [one] $ Lam [(ix2,G.Default,TInt)] $
                    ScalarBlock ((v,G.Default,ty1) : (w,G.Default,ty2) : locals) [w] $
-                     [SSet w init,
+                     [SSet w initE,
                       forloop]
 
        -- A little trick.  Here we put it back through the wash again
@@ -187,14 +192,6 @@ doBinds prog (pb@GPUProgBind { outarrs, evtid, evtdeps,
 
 
 --------------------------------------------------------------------------------
-
-
-mulI :: Exp -> Exp -> Exp
-mulI (EConst (I 0)) _ = EConst (I 0)
-mulI _ (EConst (I 0)) = EConst (I 0)
-mulI (EConst (I 1)) n = n
-mulI n (EConst (I 1)) = n
-mulI n m                = EPrimApp TInt (NP Mul) [n,m]
 
 
 typeToAddrSpc :: Type -> MemLocation
@@ -265,11 +262,8 @@ lookup3 a (hd@(b,_,_) : rst) | a == b    = Just hd
                              | otherwise = lookup3 a rst
 
 
-modI :: Exp -> Exp -> Exp
-modI n m = EPrimApp TInt (IP Mod) [n,m]
-
-
-remI :: Exp -> Exp -> Exp
-remI _ (EConst (I 1)) = EConst (I 0)
-remI (EConst (I n)) (EConst (I m)) = EConst$ I$ rem n m
-remI n m              = EPrimApp TInt (IP Rem) [n,m]
+mkScalarBind vr ty exp = do
+  ignoredevt <- genUniqueWith "ignored"
+  tmp        <- genUnique
+  return$  GPUProgBind ignoredevt [] [(vr,Default,ty)] () 
+                       (ScalarCode (ScalarBlock [(tmp,Default,ty)] [tmp] [SSet tmp exp])) 

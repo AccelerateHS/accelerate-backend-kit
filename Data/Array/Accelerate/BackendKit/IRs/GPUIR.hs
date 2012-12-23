@@ -9,16 +9,20 @@ module Data.Array.Accelerate.BackendKit.IRs.GPUIR
          Fun(..), MemLocation(..), Direction(..), Segmentation(..), EvtId,
 
          -- * Helper functions for the GPUIR
-         lookupProgBind, expFreeVars, stmtFreeVars, scalarBlockFreeVars
+         lookupProgBind, expFreeVars, stmtFreeVars, scalarBlockFreeVars,
+
+         -- * Helpers for constructing bits of AST syntax while incorporating small optimizations.
+         addI, mulI, quotI, remI, maxI, minI, 
        )
        where
 
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as SA
-import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Var,Type,AccArray)
+import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Var,Type,AccArray, Prim(..), Const(..), Type(..))
 import qualified Data.Set  as S
 import           Data.List as L
 import           Text.PrettyPrint.GenericPretty (Out, Generic)
 import           Data.Array.Accelerate.BackendKit.IRs.CLike (Direction(..))
+import           Prelude as P
 
 ----------------------------------------------------------------------------------------------------
 -- Low Level Intermediate Representation
@@ -39,9 +43,20 @@ data GPUProg decor = GPUProg {
 -- | A progbind may bind multiple arrays simultaneously.  The unzipped
 -- nature of arrays is exposed directly in the AST at this point.
 -- 
--- For example, a Generate parameterized by a ScalarBlock that returns
--- three values will in turn produce three arrays.  All three arrays
--- must be the same shape.
+-- A top level binding also at this point corresponds to a GPU
+-- scheduler *event* with explicit dependencies on other events.
+-- However, for some top level bindings that don't execute on the GPU
+-- (e.g. ScalarCode) these are ignored.
+--
+-- All arrays written by a TopLvlForm (implicitly or explicitly) are
+-- counted in the `outarrs` list.  For example, a Generate
+-- parameterized by a ScalarBlock that returns three values will in
+-- turn produce three arrays.  All three arrays must be the same
+-- shape.  On the other hand, a `Kernel` may write to as many arrays of
+-- whatever shapes it likes.
+-- 
+-- `outarrs` is actually kind of multi-purpose, because scalar
+-- bindings also produce output bindings, which are not arrays.
 data GPUProgBind d = GPUProgBind {
       evtid   :: EvtId,
       evtdeps :: [EvtId], 
@@ -69,7 +84,7 @@ data TopLvlForm =
   -- A GPU kernel.  There is no implicit output array (like with
   -- Generate).  Scalar and array arguments to the kernel must be
   -- explicit:
-  | Kernel  { kerniters :: [(Var,Exp)],     -- Each variable ranges from 0 to Exp-1
+  | Kernel  { kerniters :: [(Var,Exp)],     -- N dimensions.  Each variable ranges from 0 to Exp-1 independently.
               kernbod   :: Fun ScalarBlock, -- The arguments here are kernargs NOT the indices
               kernargs  :: [Exp] }
 
@@ -201,6 +216,41 @@ fst3 (a,_,_) = a
 
 -- TODO: invariant checker
 -- checkValidProg
+
+--------------------------------------------------------------------------------
+
+-- Convenient integer operations
+addI :: Exp -> Exp -> Exp
+addI (EConst (I 0)) n = n
+addI n (EConst (I 0)) = n
+addI (EConst (I n)) (EConst (I m)) = EConst$ I$ n + m
+addI n m              = EPrimApp TInt (NP SA.Add) [n,m]
+
+mulI :: Exp -> Exp -> Exp
+mulI (EConst (I 0)) _ = EConst (I 0)
+mulI _ (EConst (I 0)) = EConst (I 0)
+mulI (EConst (I 1)) n = n
+mulI n (EConst (I 1)) = n
+mulI (EConst (I n)) (EConst (I m)) = EConst$ I$ n * m
+mulI n m              = EPrimApp TInt (NP SA.Mul) [n,m]
+
+quotI :: Exp -> Exp -> Exp
+quotI n (EConst (I 1)) = n
+quotI (EConst (I n)) (EConst (I m)) = EConst$ I$ P.quot n m
+quotI n m              = EPrimApp TInt (IP SA.Quot) [n,m]
+
+remI :: Exp -> Exp -> Exp
+remI _ (EConst (I 1)) = EConst (I 0)
+remI (EConst (I n)) (EConst (I m)) = EConst$ I$ P.rem n m
+remI n m              = EPrimApp TInt (IP SA.Rem) [n,m]
+
+maxI :: Exp -> Exp -> Exp
+maxI (EConst (I n)) (EConst (I m)) = EConst$ I$ P.max n m
+maxI n m                           = EPrimApp TInt (SP SA.Max) [n,m]
+
+minI :: Exp -> Exp -> Exp
+minI (EConst (I n)) (EConst (I m)) = EConst$ I$ P.min n m
+minI n m                           = EPrimApp TInt (SP SA.Min) [n,m]
 
 --------------------------------------------------------------------------------
 -- BoilerPlate

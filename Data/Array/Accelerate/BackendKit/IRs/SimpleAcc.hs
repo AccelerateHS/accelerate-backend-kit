@@ -299,7 +299,9 @@ data NumPrim = Add | Sub | Mul | Neg | Abs | Sig
 
 -- | Primitive integral-only operations.
 -- All binops except BNot, shifts and rotates take an Int constant as second arg:
-data IntPrim = Quot | Rem | IDiv | Mod | 
+data IntPrim = Quot | Rem |
+               IDiv |  -- Integral division with truncation towards negative infinity.  I.e. 'div'
+               Mod  | 
                BAnd | BOr | BXor | BNot | BShiftL | BShiftR | BRotateL | BRotateR
   deriving (Read,Show,Eq,Ord,Generic)
 
