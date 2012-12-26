@@ -2,6 +2,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
+-- | This module contains a specialization of the generic code
+-- emission structure in "Data.Array.Accelerate.Shared.EmitCommon".
+-- It emits OpenCL code.
+-- 
+-- Unfortunately, this arrangement currently requires careful
+-- management of invariants that are NOT reflected in the type system.
+-- See `emitOpenCL` below and `emitC` for details.
+
 module Data.Array.Accelerate.Shared.EmitOpenCL
        (emitOpenCL)
        where
@@ -16,6 +24,12 @@ import Prelude as P
 -- | Here is a new type just to create a new instance and implement the type class methods:
 data OpenCLEmitter = OpenCLEmitter
 
+-- | The final pass in a compiler pipeline.  It emits an OpenCL
+-- program.
+--
+-- This does not handle the full GPUProg grammar, rather it requires
+-- that Kernels be the only remaining array constructs (not
+-- Fold/Scan/Generate).
 emitOpenCL :: GPUProg () -> String
 emitOpenCL = emitGeneric OpenCLEmitter 
 

@@ -2,6 +2,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
+-- | This module contains a specialization of the generic code
+-- emission structure in "Data.Array.Accelerate.Shared.EmitCommon".
+-- It emits code meant for ICC.
+--
+-- Unfortunately, this arrangement currently requires careful
+-- management of invariants that are NOT reflected in the type system.
+-- See `emitC` below and `emitOpenCL` for details.
+
 module Data.Array.Accelerate.Shared.EmitC
        (emitC) where
 
@@ -20,7 +28,12 @@ import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Type(..), Const(..), Var,
 -- | Here is a new type just to create a new instance and implement the type class methods:
 data CEmitter = CEmitter
 
--- emitC :: LLProg (ArraySizeEstimate,FreeVars) -> String
+-- | The final pass in a compiler pipeline.  It emit a GPUProg as a C
+-- program meant for ICC (the Intel C Compiler).
+-- 
+-- This does not handle the full GPUProg grammar, rather it requires
+-- that there be no SSynchronizeThreads or EGetLocalID / EGetGlobalID
+-- constructs.
 emitC :: GPUProg () -> String
 emitC = emitGeneric CEmitter 
 
