@@ -50,7 +50,8 @@ import Data.Array.Accelerate.BackendKit.Phase2.ToCLike           (convertToCLike
 ----------------------------------------
 import Data.Array.Accelerate.BackendKit.Phase3.KernFreeVars      (kernFreeVars)
 import Data.Array.Accelerate.BackendKit.Phase3.ToGPUIR           (convertToGPUIR)
-import Data.Array.Accelerate.BackendKit.Phase3.LowerGPUIR        (lowerGPUIR)
+import Data.Array.Accelerate.BackendKit.Phase3.DesugarGenerate   (desugarGenerate)
+import Data.Array.Accelerate.BackendKit.Phase3.DesugarFoldScan   (desugarFoldScan)
 
 --------------------------------------------------------------------------------
 -- Exposed entrypoints for this module:
@@ -58,8 +59,9 @@ import Data.Array.Accelerate.BackendKit.Phase3.LowerGPUIR        (lowerGPUIR)
 
 phase3 :: C.LLProg ArraySizeEstimate -> G.GPUProg ()
 phase3 prog =
-  runPass    "lowerGPUIR"        lowerGPUIR        $     -- ()
-  runPass    "convertToGPUIR"    convertToGPUIR    $     -- ()
+  runPass    "desugarFoldScan"   desugarFoldScan   $     -- ()
+  runPass    "desugarGenerate"   desugarGenerate   $     -- (size,freevars)
+  runPass    "convertToGPUIR"    convertToGPUIR    $     -- (size,freevars)
   runPass    "kernFreeVars"      kernFreeVars      $     -- (size,freevars)
   prog
   

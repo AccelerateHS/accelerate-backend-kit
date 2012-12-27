@@ -1,19 +1,19 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE CPP #-}
+{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
--- | A pass to get us down to an executable GPU program.
+-- | A pass to remove the last two non-Kernel GPU forms and therefor
+-- get down to an executable GPU program.
 
-module Data.Array.Accelerate.BackendKit.Phase3.LowerGPUIR (lowerGPUIR) where
+module Data.Array.Accelerate.BackendKit.Phase3.DesugarFoldScan (desugarFoldScan) where
 
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
-                  (Const(..), Type(..), Prim(..), NumPrim(..), ScalarPrim(..), IntPrim(..),Var)
--- import qualified Data.Array.Accelerate.SimpleAST as S
+                  (Const(..), Type(..), Prim(..), NumPrim(..), ScalarPrim(..), Var)
 import qualified Data.Set                        as S
 import           Data.Array.Accelerate.BackendKit.IRs.GPUIR         as G
 import           Data.Array.Accelerate.BackendKit.IRs.Metadata  (ArraySizeEstimate(..), FreeVars(..))
 import           Data.Array.Accelerate.BackendKit.Utils.Helpers (genUnique, genUniqueWith, GensymM, strideName, fragileZip)
 import           Control.Monad.State.Strict (runState)
-import           Debug.Trace
 
 --------------------- CONSTANTS : Configuration Parameters ---------------------
 
@@ -23,12 +23,11 @@ import           Debug.Trace
 workGroupSize :: Int
 workGroupSize = 1024
 
-
 --------------------------------------------------------------------------------
 
 -- | Desugar Generate and Fold into explicit Kernels and NewArrays.
-lowerGPUIR :: GPUProg (ArraySizeEstimate,FreeVars) -> GPUProg ()
-lowerGPUIR prog@GPUProg{progBinds, uniqueCounter} =
+desugarFoldScan :: GPUProg (ArraySizeEstimate,FreeVars) -> GPUProg ()
+desugarFoldScan prog@GPUProg{progBinds, uniqueCounter} =
   prog {
     progBinds    = binds, 
     uniqueCounter= newCounter
@@ -41,38 +40,20 @@ lowerGPUIR prog@GPUProg{progBinds, uniqueCounter} =
 -- their number of elements.
 doBinds :: GPUProg (ArraySizeEstimate,FreeVars) ->
            [GPUProgBind (ArraySizeEstimate,FreeVars)] -> GensymM [GPUProgBind ()]
-doBinds prog [] = return []
-doBinds prog (pb@GPUProgBind { outarrs, evtid, evtdeps,
-                               decor=(sz,FreeVars arrayOpFvs), op } : rest) = do  
+doBinds _ [] = return []
+doBinds prog (pb@GPUProgBind { decor=(sz,FreeVars arrayOpFvs), op } : rest) = do  
   let deflt = do rst <- doBinds prog rest
                  return $ pb{decor=()} : rst
   case op of
      Use  _       -> deflt
      Cond _ _ _   -> deflt
      ScalarCode _ -> deflt
-
-     -- A Generate breaks down into a separate NewArray and Kernel:      
-     -- Assumes trivial (duplicatable) els:
-     Generate els (Lam iterargs bod) -> do
-       -- Here is where we establish the protocol on additional kernel arguments.
-       -- Kernels take their index argument(s) PLUS free vars:
-       let iterVs = map (\ (v, _, TInt) -> v) iterargs
-           iters  = fragileZip iterVs els
-
-           -- After this transformation in this pass, the output variable itself becomes a "free var":
-           freebinds' = outarr1 : corefreebinds
-           
-       newevt <- genUniqueWith "evtNew"
-       rst <- doBinds prog rest
-       return $
-         GPUProgBind newevt [] outarrs () (NewArray (foldl mulI one els)) :
-         GPUProgBind evtid (newevt:evtdeps) [] ()
-                     (Kernel iters (Lam freebinds' (doBod iterVs bod))
-                                   (map (EVr . fst3) freebinds')) :
-         rst 
-
+     Generate _ _ -> deflt
+     NewArray _   -> deflt
+     Kernel {}    -> deflt
+     Scan _ _ _ _ -> error "DesugarFoldScan.hs/doBinds: FINISHME - need to handle "
+     
      --------------------------------------------------------------------------------
-     -- Here is a serial fold as an example:
      Fold (Lam [(v,_,ty1),(w,_,ty2)] bod) [initE] inV (ConstantStride _) -> do
 #if 0
 -- PARALLEL REDUCTION, UNFINISHED:    
@@ -138,6 +119,8 @@ doBinds prog (pb@GPUProgBind { outarrs, evtid, evtdeps,
          scalarBind : 
          GPUProgBind evtid (newevt:evtdeps) [] () newop : rst
 #else       
+       -- Here is a serial fold as an example:
+       ------------------------------------------------------------
        -- Not supporting tuple (multiple) accumulators:
        let (ScalarBlock locals [res] stmts) = bod
            Just upstream = lookupProgBind inV (progBinds prog)
@@ -162,42 +145,9 @@ doBinds prog (pb@GPUProgBind { outarrs, evtid, evtdeps,
        -- to get rid of the Generate we just introduced:
        doBinds prog (pb{ decor=(sz,FreeVars$ S.toList newfvs), op = newop } : rest)
 #endif
-
-     _ -> error$"LowerGPUIR.hs/doBinds: not handled: "++show op
- where
-   [outarr1@(arrnm,_spc,_ty)] = outarrs -- Touch this and you make the one-output-array assumption!
-
-   -- All the free variables must be explicitly passed to the kernel:
-   corefreebinds = map
-               -- We do a bit of digging here to find the type of each freevar:
-               (\fv -> case lookupProgBind fv (progBinds prog) of 
-                        Nothing -> error$"variable not in progbinds: "++show fv
-                        Just (GPUProgBind {outarrs=arrVs}) ->
-                          let (Just tyy) = lookup fv (map (\(a,_,b) ->(a,b)) arrVs) in
-                          (fv, typeToAddrSpc tyy, tyy)
-               )
-               arrayOpFvs
+     Fold _ _ _ _ -> error$"DesugarFoldScan.hs: Fold did not match invariants for this pass: "++ show op
                
-   -- Convert a Generate body into a Kernel body.  Rather than
-   -- returning a value, this writes it to an output arr.
-   doBod [ixV] (ScalarBlock bnds results stmts) =
-     case results of
-       [outv] -> ScalarBlock bnds []
-                 (stmts ++ [SArrSet arrnm (EVr ixV) (EVr outv)])
-       ls -> error$"LowerGPUIR.hs/doBod: not handling multi-result Generates presently: "++show ls
-
-   doBod indexVs _ = error$"LowerGPUIR.hs/doBod: handling only 1D Generates, not dimension "++show (length indexVs)
-
-
-
-
 --------------------------------------------------------------------------------
-
-
-typeToAddrSpc :: Type -> MemLocation
-typeToAddrSpc (TArray _ _) = Global
-typeToAddrSpc _            = Default
-
 
 -- | Build a simple for-loop from 0 up to limit-1:
 forUpToM :: Exp -> (Var -> [Stmt]) -> GensymM Stmt
@@ -211,8 +161,6 @@ forUpTo ix limit bod =
             (EPrimApp TInt (NP Add)  [EVr ix, EConst (I 1)])
          bod
 
-
-
 ---------------------------------------------------------------------
 -- HACK: This is incomplete!  We need a general-purpose way of getting
 -- the size of arrays at this phase in the compiler.  To do this
@@ -223,16 +171,13 @@ getSizeE :: TopLvlForm -> Exp
 getSizeE ae = 
   case ae of 
     Generate [ex] _ -> ex
-    _ -> error$"LowerGPUIR.hs.hs/getSizeE: cannot handle this yet: "++show ae
+    _ -> error$"DesugarFoldScan.hs/getSizeE: cannot handle this yet: "++show ae
 
 getSizeOfPB :: GPUProgBind (ArraySizeEstimate,FreeVars) -> Exp
 getSizeOfPB GPUProgBind{ decor=(sz,_), op } =
   case sz of
     KnownSize ls -> EConst (I (product ls))
     UnknownSize  -> getSizeE op
-
-fst3 :: (t, t1, t2) -> t
-fst3 (a,_,_) = a
 
 zero :: Exp
 zero = EConst (I 0)
@@ -267,3 +212,6 @@ mkScalarBind vr ty exp = do
   tmp        <- genUnique
   return$  GPUProgBind ignoredevt [] [(vr,Default,ty)] () 
                        (ScalarCode (ScalarBlock [(tmp,Default,ty)] [tmp] [SSet tmp exp])) 
+
+fst3 :: (t, t1, t2) -> t
+fst3 (a,_,_) = a

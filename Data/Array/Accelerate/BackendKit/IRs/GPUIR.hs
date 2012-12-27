@@ -85,7 +85,7 @@ data TopLvlForm =
   -- Generate).  Scalar and array arguments to the kernel must be
   -- explicit:
   | Kernel  { kerniters :: [(Var,Exp)],     -- N dimensions.  Each variable ranges from 0 to Exp-1 independently.
-              kernbod   :: Fun ScalarBlock, -- The arguments here are kernargs NOT the indices
+              kernbod   :: Fun ScalarBlock, -- *Closed* function.  The arguments here are kernargs NOT the indices.
               kernargs  :: [Exp] }
 
   -- These rest of the operators are ONLY, here to support initial
