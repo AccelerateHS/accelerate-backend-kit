@@ -15,7 +15,7 @@ module Main where
 import qualified Data.Array.Accelerate             as A
 import qualified Data.Array.Accelerate.Interpreter as I
 import           Data.Array.Accelerate.BackendKit.Tests (allProgsMap,p1aa,testCompiler,TestEntry(..),AccProg(AccProg),makeTestEntry)
-import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase1)
+-- import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase1)
 import           Data.Map           as M
 import           Data.List          as L 
 import           Test.Framework     (defaultMain, buildTest, testGroup, Test)
@@ -29,16 +29,22 @@ import           System.Posix.Env   (getEnv)
 
 import GHC.Conc (threadDelay)
 import Debug.Trace        (trace)
-import Data.Array.Accelerate.OpenCL.JITRuntime (run,rawRunIO, Backend(..))
+import qualified Data.Array.Accelerate.OpenCL.JITRuntime as OpenCL (run,rawRunIO) 
+import qualified Data.Array.Accelerate.Cilk.JITRuntime   as Cilk   (run,rawRunIO) 
 --------------------------------------------------------------------------------  
 
 main :: IO ()
-main = do 
+main = do
+  useCBackend <- getEnv "EMITC"
+  let backend = case useCBackend of 
+                  Just x | notFalse x -> "Cilk"
+                  Nothing             -> "OpenCL"
+                  _                   -> "OpenCL"
   ----------------------------------------  
   putStrLn "[main] First checking that all requested tests can be found within 'allProgs'..."
   supportedTestNames <- chooseTests
   let manualExamples = [example] -- Here we manually put in additional programs to test.
-  let supportedTests =
+  let supportedTests = L.filter isCompatible $
         manualExamples ++
         L.map (\ t -> case M.lookup t allProgsMap of 
                         Nothing -> error$"Test not found: "++ show t
@@ -46,33 +52,30 @@ main = do
                         -- makes it possible to use the -t pattern matching for all tests.
                         Just (TestEntry nm prg ans orig) -> (TestEntry (nameHack nm) prg ans orig))
               supportedTestNames
+
+      isCompatible (TestEntry name _ _ _)
+        | backend == "OpenCL" = True
+        | otherwise = if L.elem name useTests
+                      then trace ("  (Note: Skipping C backend because "++show name++" is a useTest)")
+                                 False
+                      else True
+        
   -- Force any error messages in spite of lazy data structure:
   if supportedTests == [] then error$ "supportedTestNames should not be null" else return ()
   evaluate (L.foldl1 seq $ L.map (\(TestEntry _ _ _ _) -> ()) supportedTests)
   putStrLn$"[main] Yep, all "++show (length supportedTests)++" tests are there."
-  ----------------------------------------
-  
-  useCBackend <- getEnv "EMITC"
-  let backend = case useCBackend of 
-                  Just x | notFalse x -> Both_C_OpenCL
-                  Nothing             -> Both_C_OpenCL -- DEFAULT
-                  _                   -> OpenCL
+  ----------------------------------------  
 
   let testsPlain = 
        testCompiler (\ name test -> unsafePerformIO$ do
                          let name' = unNameHack name
-                         thisbackend <-
-                               case backend of
-                                 OpenCL -> return OpenCL
-                                 Both_C_OpenCL ->
-                                   if L.elem name' useTests
-                                   then do putStrLn$"  (Note: Skipping C backend because "++show name' ++" is a useTest)"
-                                           return OpenCL
-                                   else return Both_C_OpenCL
-                         x <- rawRunIO thisbackend name test
-                         -- HACK: sleep to let opencl shut down.
-     --                    threadDelay 1000000
-                         return x
+                         case backend of
+                           "OpenCL" -> do
+                             x <- OpenCL.rawRunIO name test
+                             -- HACK: sleep to let opencl shut down.
+                             -- threadDelay 1000000
+                             return x
+                           "Cilk" -> Cilk.rawRunIO name test
                        )
              supportedTests
   let testsRepack = 
@@ -85,7 +88,7 @@ main = do
                     --                           ((length str > 0) ~? "non-empty result string")
                     -- in buildTest iotest
 
-                    let str = show (run OpenCL prg)
+                    let str = show (OpenCL.run prg)
                         iotest :: IO Bool
                         iotest = do putStrLn$ "Repacked: "++ str
                                     return (length str > 0)
@@ -98,16 +101,6 @@ main = do
   case repack of
     Just x | x /= "" && x /= "0" -> defaultMain testsRepack
     _                            -> defaultMain testsPlain
-
--- testCompiler :: (String -> S.Prog () -> [S.AccArray]) -> [TestEntry] -> [Test]
--- testCompiler eval progs = P.map mk (P.zip [0..] progs)
---  where 
---    mk (i, TestEntry name prg ans _) = 
---      let payloads = concatMap S.arrPayloads (eval name prg) in 
---      testGroup ("run test "++show i++" "++name) $
---      hUnitTestToTests $ 
---      ans ~=? (show payloads) -- EXPECTED goes on the left.
-
 
 
 -- | Is an environment variable encoding something representing true.

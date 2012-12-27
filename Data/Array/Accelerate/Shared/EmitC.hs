@@ -108,7 +108,17 @@ execBind e _prog (_ind, GPUProgBind {evtid, outarrs, op}) =
       emitStmt$ (function$ strToSyn$ builderName evtid) (sizefree ++ map (emitE e) args)
       return ()
 
-    _ -> error$"EmitC.hs/execBind: can't handle this array operator yet: "++show op
+    -- TODO: Should we keep just Kernel or just Generate or both?
+    Generate els (Lam pls bod) -> do
+      error$"EmitC.hs/execBind: FINISHME - Generate case "
+
+    Fold (Lam [(v,_,ty1),(w,_,ty2)] bod) [initE] inV (ConstantStride _) -> do
+      error$"EmitC.hs/execBind: FINISHME - Fold case "
+      
+      
+    Scan (Lam pls bod) dir els inV -> do
+      error$"EmitC.hs/execBind: FINISHME - Scan case "
+--    _ -> error$"EmitC.hs/execBind: can't handle this array operator yet: "++show op
 
 
 -- | Generate code to print out a single array of known size.

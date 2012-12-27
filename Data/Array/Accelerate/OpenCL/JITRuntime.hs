@@ -10,7 +10,7 @@
 --  * EMITC=0        -- Disable the C-backend/gcc-compilation and run only OpenCL
 --  * PICKCPU=0      -- Prefer a CPU OpenCL device rather than picking the first GPU one.
 
-module Data.Array.Accelerate.OpenCL.JITRuntime (run, rawRunIO, Backend(..)) where 
+module Data.Array.Accelerate.OpenCL.JITRuntime (run, rawRunIO) where 
 
 -- Import generic third party libraries:
 import qualified Control.Exception                 as E
@@ -62,14 +62,11 @@ import           Data.Array.Accelerate.Shared.EmitOpenCL        (emitOpenCL)
 -- Main Entrypoints
 --------------------------------------------------------------------------------
 
--- | The supported backends.
-data Backend = OpenCL | SeqentialC | Both_C_OpenCL
-   --  Cilk ... coming later
 
 -- | Run an Accelerate computation using the OpenCL backend with
 --   default (arbitrary) device choice.
-run :: forall a . Sug.Arrays a => Backend -> A.Acc a -> a
-run backend  acc =
+run :: forall a . Sug.Arrays a => A.Acc a -> a
+run acc =
   S.maybtrace ("[JIT] Repacking AccArray(s): "++show arrays) $ 
   repackAcc acc arrays
  where
@@ -79,12 +76,12 @@ run backend  acc =
 --   TArray dim _ = S.progType simple
    simple = phase1 acc
    arrays = unsafePerformIO $
-            rawRunIO backend "" simple
+            rawRunIO "" simple
 
 -- | The raw run function operating on the simplified input and output
 -- types---without the extra Accelerate sugar.
-rawRunIO :: Backend -> String -> S.Prog () -> IO [AccArray]
-rawRunIO backend name prog = do
+rawRunIO :: String -> S.Prog () -> IO [AccArray]
+rawRunIO name prog = do
   let prog' = compilerBackend prog
 
   useInterp <- getEnv "SIMPLEINTERP"
@@ -93,7 +90,7 @@ rawRunIO backend name prog = do
 --      return$ evalSimpleAST (fmap (const ()) prog')
       error$"JIT.hs: Need to revive the interpreter here.."
     _ -> do 
-      (ptrs,bufMap) <- setupAndRunProg backend name prog'
+      (ptrs,bufMap) <- setupAndRunProg name prog'
       let res = [ let BufEntry{fullshape,arraytype} = bufMap !@ vr in
                   recoverArrays fullshape arraytype ptr
                 | vr  <- G.progResults prog'
@@ -109,29 +106,11 @@ compilerBackend = phase3 . phase2
 --------------------------------------------------------------------------------
 -- | Run a compiled program via C or OpenCL.  In the latter case
 -- return a pointer to the result(s) in host (CPU) memory.
-setupAndRunProg :: Backend -> String ->
+setupAndRunProg :: String ->
                    G.GPUProg () ->
                    IO ([Ptr ()], M.Map Var BufEntry)
 
--- This is a mode for running both backends simultaneously:
-setupAndRunProg Both_C_OpenCL name prog2 = do
-  _ <- setupAndRunProg SeqentialC name prog2
-  setupAndRunProg OpenCL name prog2
-
-setupAndRunProg SeqentialC name prog2 = do
-  let emitted = emitC prog2
-      thisprog = ".plainC_"++ stripFileName name
--- TODO: Remove file for safety
-  writeFile ".plainC.c" emitted -- Write out this version also.
-  writeFile (thisprog++".c") emitted
-  cd <- system$"gcc -std=c99 "++thisprog++".c -o "++thisprog++".exe"
-  case cd of
-    ExitSuccess -> return ()
-    ExitFailure c -> error$"C Compiler failed with code "++show c
-  ExitSuccess <- system$"./"++thisprog++".exe"
-  return ([],M.empty)
-
-setupAndRunProg OpenCL name prog2 = do
+setupAndRunProg name prog2 = do
   let progsrc  = emitOpenCL prog2
   writeFile ".accelerate_generated.cl" progsrc
   writeFile (".accelerate_generated_"++stripFileName name++".cl") progsrc
