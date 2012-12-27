@@ -176,10 +176,11 @@ noSliceProgs = Set.toList$
 
 ----------------------------------------------------------------------------------------------------
 
--- | Test a complete compiler backend.  Construct a list of
+-- | Test a complete compiler backend starting from the point after
+-- conversion to the simplified AST.  Construct a list of
 -- `test-framework` tests for a backend.
 testCompiler :: (String -> S.Prog () -> [S.AccArray]) -> [TestEntry] -> [Test]
-testCompiler eval progs = P.map mk (P.zip [0..] progs)
+testCompiler eval progs = P.map mk (P.zip [(0::Int)..] progs)
  where 
    mk (i, TestEntry name prg ans _) = 
      let payloads = concatMap S.arrPayloads (eval name prg) in 

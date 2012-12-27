@@ -6,10 +6,13 @@
 -- This representation retains nearly the full set of Accelerate
 -- language constructs.  Desugaring is postponed to phase 2.
 module Data.Array.Accelerate.BackendKit.CompilerPipeline
-       ( 
+       (
+         -- * Major compiler phases:
          phase1, phase2, phase3,
-         -- Reexport from ToAccClone:
-         unpackArray, packArray, repackAcc, Phantom
+         -- * Reexport from ToAccClone:
+         unpackArray, packArray, repackAcc, Phantom,
+         -- * Internal bits, exported for now:
+         phase2A
        )
        where
 
@@ -57,6 +60,7 @@ import Data.Array.Accelerate.BackendKit.Phase3.DesugarFoldScan   (desugarFoldSca
 -- Exposed entrypoints for this module:
 --------------------------------------------------------------------------------
 
+-- | The final step: Lower to a GPU-targetting language.
 phase3 :: C.LLProg ArraySizeEstimate -> G.GPUProg ()
 phase3 prog =
   runPass    "desugarFoldScan"   desugarFoldScan   $     -- ()
@@ -65,11 +69,18 @@ phase3 prog =
   runPass    "kernFreeVars"      kernFreeVars      $     -- (size,freevars)
   prog
   
+-- | The bulk of the compilation process -- eliminate unnecessary
+-- forms and lower the language.
 phase2 :: S.Prog () -> C.LLProg ArraySizeEstimate
 phase2 prog =
   runPass    "convertToCLike"    convertToCLike    $     -- (size)
   runPass    "unzipETups"        unzipETups        $     -- (size)  
   runPass    "normalizeExps"     normalizeExps     $     -- (size)
+  phase2A    prog
+
+-- | Factor out this [internal] piece for use in some place(s).
+phase2A :: S.Prog () -> S.Prog ArraySizeEstimate
+phase2A prog =
   runPass    "oneDimensionalize" oneDimensionalize $     -- (size)
   runOptPass "deadArrays"        deadArrays (fmap fst) $ -- (size)
   runPass    "trackUses"         trackUses         $     -- (size,uses)
@@ -91,10 +102,9 @@ phase2 prog =
 --   involves applying a number of lowering compiler passes.
 phase1 :: Sug.Arrays a => Sug.Acc a -> S.Prog ()
 phase1 prog = 
-  runPass "removeArrayTuple" removeArrayTuple $     
-  runPass "gatherLets"       gatherLets $  
-  runPass "liftComplexRands" liftComplexRands $  
-  
-  runPass "staticTuples"     staticTuples     $   
-  runPass "initialConversion"  accToAccClone  $ 
+  runPass "removeArrayTuple"     removeArrayTuple  $     
+  runPass "gatherLets"           gatherLets        $  
+  runPass "liftComplexRands"     liftComplexRands  $  
+  runPass "staticTuples"         staticTuples      $
+  runPass "initialConversion"    accToAccClone     $ 
   prog
