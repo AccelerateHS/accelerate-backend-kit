@@ -10,7 +10,11 @@ import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase1, phas
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc   as S
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase1, phase2, phase3, repackAcc)
 
+import qualified Data.Map                          as M
+import           Data.Char        (isAlphaNum)
 import           System.IO.Unsafe (unsafePerformIO)
+import           System.Process   (system)
+import           System.Exit      (ExitCode(..))
 
 --------------------------------------------------------------------------------
 
@@ -31,24 +35,19 @@ run acc =
 
 rawRunIO :: String -> S.Prog () -> IO [S.AccArray]
 rawRunIO name prog = do
-  error "FINISHME - Cilk/JITRuntime.hs"
-  
+  let prog2    = phase3$ phase2 prog
+      emitted  = emitC prog2
+      thisprog = ".plainC_"++ stripFileName name
+-- TODO: Remove file for safety
+  writeFile ".plainC.c" emitted -- Write out this version also.
+  writeFile (thisprog++".c") emitted
+  cd <- system$"gcc -std=c99 "++thisprog++".c -o "++thisprog++".exe"
+  case cd of
+    ExitSuccess -> return ()
+    ExitFailure c -> error$"C Compiler failed with code "++show c
+  ExitSuccess <- system$"./"++thisprog++".exe"
+  return []
 
--- This is a mode for running both backends simultaneously:
--- setupAndRunProg Both_C_OpenCL name prog2 = do
---   _ <- setupAndRunProg SeqentialC name prog2
---   setupAndRunProg OpenCL name prog2
-
--- setupAndRunProg SeqentialC name prog2 = do
---   let emitted = emitC prog2
---       thisprog = ".plainC_"++ stripFileName name
--- -- TODO: Remove file for safety
---   writeFile ".plainC.c" emitted -- Write out this version also.
---   writeFile (thisprog++".c") emitted
---   cd <- system$"gcc -std=c99 "++thisprog++".c -o "++thisprog++".exe"
---   case cd of
---     ExitSuccess -> return ()
---     ExitFailure c -> error$"C Compiler failed with code "++show c
---   ExitSuccess <- system$"./"++thisprog++".exe"
---   return ([],M.empty)
-
+-- | Remove exotic characters to yield a filename
+stripFileName :: String -> String
+stripFileName name = filter isAlphaNum name
