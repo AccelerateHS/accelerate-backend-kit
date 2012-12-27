@@ -26,7 +26,7 @@ workGroupSize = 1024
 --------------------------------------------------------------------------------
 
 -- | Desugar Generate and Fold into explicit Kernels and NewArrays.
-desugarFoldScan :: GPUProg (ArraySizeEstimate,FreeVars) -> GPUProg ()
+desugarFoldScan :: GPUProg (ArraySizeEstimate,FreeVars) -> GPUProg (ArraySizeEstimate,FreeVars)
 desugarFoldScan prog@GPUProg{progBinds, uniqueCounter} =
   prog {
     progBinds    = binds, 
@@ -38,12 +38,13 @@ desugarFoldScan prog@GPUProg{progBinds, uniqueCounter} =
 
 -- This procedure keeps around a "size map" from array values names to
 -- their number of elements.
-doBinds :: GPUProg (ArraySizeEstimate,FreeVars) ->
-           [GPUProgBind (ArraySizeEstimate,FreeVars)] -> GensymM [GPUProgBind ()]
+doBinds ::          GPUProg     (ArraySizeEstimate,FreeVars)  ->
+                   [GPUProgBind (ArraySizeEstimate,FreeVars)] ->
+           GensymM [GPUProgBind (ArraySizeEstimate,FreeVars)]
 doBinds _ [] = return []
 doBinds prog (pb@GPUProgBind { decor=(sz,FreeVars arrayOpFvs), op } : rest) = do  
   let deflt = do rst <- doBinds prog rest
-                 return $ pb{decor=()} : rst
+                 return $ pb : rst
   case op of
      Use  _       -> deflt
      Cond _ _ _   -> deflt
@@ -68,7 +69,7 @@ doBinds prog (pb@GPUProgBind { decor=(sz,FreeVars arrayOpFvs), op } : rest) = do
        newevt       <- genUniqueWith "evtFldArr"
        sharedAccums <- genUniqueWith "sharedAccums"
        numthreads   <- genUniqueWith "numThrds"
-
+e
        -- The old arrayOpFvs are only for the kernel (the Lam) not for the extra bits that are
        -- parameters to the fold or are implicit.
        let localmembind = (sharedAccums, Local, TArray 1 ty2)
@@ -140,10 +141,8 @@ doBinds prog (pb@GPUProgBind { decor=(sz,FreeVars arrayOpFvs), op } : rest) = do
                    ScalarBlock ((v,G.Default,ty1) : (w,G.Default,ty2) : locals) [w] $
                      [SSet w initE,
                       forloop]
-
-       -- A little trick.  Here we put it back through the wash again
-       -- to get rid of the Generate we just introduced:
-       doBinds prog (pb{ decor=(sz,FreeVars$ S.toList newfvs), op = newop } : rest)
+       rst <- doBinds prog rest 
+       return (pb{ decor=(sz,FreeVars$ S.toList newfvs), op = newop } : rst)
 #endif
      Fold _ _ _ _ -> error$"DesugarFoldScan.hs: Fold did not match invariants for this pass: "++ show op
                
