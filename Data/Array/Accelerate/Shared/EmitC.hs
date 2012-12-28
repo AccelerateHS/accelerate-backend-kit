@@ -138,13 +138,15 @@ printArray e name (GPUProgBind { outarrs=[(vr,_,(TArray ndims elt))], op}) = do
             EVr v        -> set len (varSyn v)
      0  -> set len "1"
      oth -> error$"printArray: not yet able to handle arrays of shape: "++ show oth
-  for 0 (E.< len) (+1) $ \ind -> do 
-     printit ind  
+  emitStmt$ printf [stringconst " [ "]
+  printit 0  
+  for 1 (E.< len) (+1) $ \ind -> do
+     emitStmt$ printf [stringconst ", "]
+     printit ind
+  emitStmt$ printf [stringconst " ] "]
   where     
-    printit ind = emitStmt (printf [stringconst$show name++"[%d] = "++ printfFlag elt ++"\n",
-                          ind,
-                          arrsub (varSyn vr) ind
-                         ])
+    printit ind = emitStmt (printf [stringconst $ printfFlag elt,
+                                    arrsub (varSyn vr) ind])
 
 -- printArray oth = error$ "Can only print arrays of known size currently, not this: "++show (fmap fst oth)
 printArray _ _ oth = error$ "EmitC.hs/printArray: Bad progbind:"++show oth

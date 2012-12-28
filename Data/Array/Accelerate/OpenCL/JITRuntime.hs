@@ -503,7 +503,8 @@ recoverArrays shape aty ptr = AccArray shape payload
        TDouble  -> [ArrayPayloadDouble $ fromPtr elms ptr]
        TChar    -> [ArrayPayloadChar   $ fromPtr elms ptr]
        TBool    -> [ArrayPayloadBool   $ fromPtr elms ptr]
---       TTuple tys -> concatMap (uncurry payloadsFromList) 
+   -- FINISHME -- C Types
+--       TTuple tys -> concatMap (uncurry payloadsFromList)
 --                               (zip tys (L.transpose $ map unTup ls))
        oth -> error$"recoverArrays: unhandled in ArrayPayload: "++show oth
 
