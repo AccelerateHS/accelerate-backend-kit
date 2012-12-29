@@ -13,10 +13,11 @@ import           Data.Array.Accelerate.BackendKit.SimpleArray (payloadsFromList)
 
 -- import qualified Data.Map                          as M
 import           Data.Char        (isAlphaNum)
+import           Control.Monad    (when)
 import           System.IO.Unsafe (unsafePerformIO)
 import           System.Process   (readProcess, system)
 import           System.Exit      (ExitCode(..))
-import           System.Directory (removeFile)
+import           System.Directory (removeFile, doesFileExist)
 import           System.IO        (hPutStrLn, stderr, stdout, hFlush)
 
 --------------------------------------------------------------------------------
@@ -40,7 +41,8 @@ rawRunIO name prog = do
   let prog2    = phase3$ phase2 prog
       emitted  = emitC prog2
       thisprog = ".plainC_"++ stripFileName name
-  removeFile (thisprog++".c") -- Remove file for safety
+  b     <- doesFileExist (thisprog++".c")
+  when b $ removeFile    (thisprog++".c") -- Remove file for safety
   writeFile  (thisprog++".c") emitted
   dbgPrint$ "[JIT] Invoking C compiler on: "++ thisprog++".c"
   cd <- system$"gcc -std=c99 "++thisprog++".c -o "++thisprog++".exe"
