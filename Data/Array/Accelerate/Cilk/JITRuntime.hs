@@ -51,8 +51,10 @@ rawRunIO name prog = do
   dbgPrint$ "[JIT] Invoking external executable: "++ thisprog++".exe"
 --  ExitSuccess <- system$"./"++thisprog++".exe"
   result <- readProcess ("./"++thisprog++".exe") [] ""
-  dbgPrint$ "[JIT] Executable completed, parsing results, "++show (length result)++" characters:\n "++take 80 result
-  return$ parseMultiple result (tyToElts (S.progType prog))
+  let elts = tyToElts (S.progType prog)
+  dbgPrint$ "[JIT] Executable completed, parsing results, element types "++
+     show elts++", "++show (length result)++" characters:\n "++take 80 result
+  return$ parseMultiple result elts
  where
    parseMultiple _ [] = []
    parseMultiple str (elt:rst) = 
