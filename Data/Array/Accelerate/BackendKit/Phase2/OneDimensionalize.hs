@@ -38,8 +38,9 @@ type MyM a = ReaderT (Prog ArraySizeEstimate) GensymM a
 
 -- | The pass itself.
 oneDimensionalize :: Prog ArraySizeEstimate -> Prog ArraySizeEstimate
-oneDimensionalize  prog@Prog{progBinds, uniqueCounter } = 
-  prog { progBinds    = binds, 
+oneDimensionalize  prog@Prog{progBinds, progType, uniqueCounter } = 
+  prog { progBinds    = binds,
+         progType     = doTy progType, 
          uniqueCounter= newCount }
   where
     m1 = mapM doBind progBinds

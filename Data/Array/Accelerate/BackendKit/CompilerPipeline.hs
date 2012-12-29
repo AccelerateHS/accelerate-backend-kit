@@ -74,6 +74,7 @@ phase3 prog = fmap (const ()) $
 phase2 :: S.Prog () -> C.LLProg ArraySizeEstimate
 phase2 prog =
   runPass    "convertToCLike"    convertToCLike    $     -- (size)
+  runPass    "typecheck3"        typecheckPass     $     
   runPass    "unzipETups"        unzipETups        $     -- (size)  
   runPass    "normalizeExps"     normalizeExps     $     -- (size)
   phase2A    prog
@@ -81,6 +82,7 @@ phase2 prog =
 -- | Factor out this [internal] piece for use in some place(s).
 phase2A :: S.Prog () -> S.Prog ArraySizeEstimate
 phase2A prog =
+  runPass    "typecheck2"        typecheckPass     $       
   runPass    "oneDimensionalize" oneDimensionalize $     -- (size)
   runOptPass "deadArrays"        deadArrays (fmap fst) $ -- (size)
   runPass    "trackUses"         trackUses         $     -- (size,uses)
@@ -101,10 +103,17 @@ phase2A prog =
 --   into something very simple for external consumption.  Note: this
 --   involves applying a number of lowering compiler passes.
 phase1 :: Sug.Arrays a => Sug.Acc a -> S.Prog ()
-phase1 prog = 
+phase1 prog =
+  runPass "typecheck1"           typecheckPass     $       
   runPass "removeArrayTuple"     removeArrayTuple  $     
   runPass "gatherLets"           gatherLets        $  
   runPass "liftComplexRands"     liftComplexRands  $  
   runPass "staticTuples"         staticTuples      $
   runPass "initialConversion"    accToAccClone     $ 
   prog
+
+typecheckPass :: S.Prog a -> S.Prog a
+typecheckPass prog =
+  case S.typecheckProg prog of
+    Nothing -> prog
+    Just s -> error$"Typecheck pass failed: "++s

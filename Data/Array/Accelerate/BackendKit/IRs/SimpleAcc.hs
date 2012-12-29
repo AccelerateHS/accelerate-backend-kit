@@ -26,16 +26,20 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
      SliceType(..), SliceComponent(..),
                 
      -- * Helper routines and predicates:
-     var, primArity, constToInteger, constToRational, constToNum, 
+     primArity, constToInteger, constToRational, constToNum, 
      isIntType, isFloatType, isNumType, 
-     isIntConst, isFloatConst, isNumConst,
-     constToType, recoverExpType, progToEnv, topLevelExpType,
-     typeByteSize,
+     isIntConst, isFloatConst, isNumConst, 
+
+     var, progToEnv, lookupProgBind, expFreeVars,
      
+     -- * Building and normalizing pieces of syntax
      normalizeEConst, mkTTuple, mkETuple,
      
-     lookupProgBind, expFreeVars,
-     
+     -- * Type recovery and type checking:
+     constToType, recoverExpType, topLevelExpType,
+     typeByteSize, typecheckProg, 
+
+     -- * Debugging     
      maybtrace, tracePrint, dbg -- Flag for debugging output.
     )
  where
@@ -692,6 +696,10 @@ constToRational c =
     Tup  _  -> error "fromConst: cannot convert tuple Const to a Num"
 
 
+----------------------------------------------------------------------------------------------------
+-- Type checking:
+----------------------------------------------------------------------------------------------------
+
 -- | What is the type of a `Const`?
 constToType :: Const -> Type
 constToType c = 
@@ -749,6 +757,31 @@ recoverExpType env exp =
        Nothing -> error$"recoverExpType:: unbound array variable: "++show vr
        Just (TArray dim elt) -> (dim,elt)
        Just _ -> error$"recoverExpType: internal error, array var has non-array type"++show vr
+
+-- Attempt to typecheck a program, returning Nothing if it checks out,
+-- or an error message if there is a probem.
+typecheckProg :: Prog a -> Maybe String
+typecheckProg prog@Prog{progBinds, progResults, progType } =
+  -- The rule for progResults is that their types match a flattened version of the result type:
+  if resTys /= expectedTys then
+    mismatchErr "Result type" resTys expectedTys
+    else Nothing -- FINISHME
+  where
+    resTys      = map (env M.!) progResults
+    expectedTys = flattenTy progType
+    env         = progToEnv prog
+
+    mismatchErr msg got expected = Just$ msg++" does not match expected. "++
+                                   "\nGot:      "++show got ++
+                                   "\nExpected: "++show expected
+
+flattenTy :: Type -> [Type]
+flattenTy (TTuple ls) = concatMap flattenTy ls
+flattenTy ty          = [ty]
+  
+----------------------------------------------------------------------------------------------------
+-- End Type Checking 
+----------------------------------------------------------------------------------------------------
 
 -- | Helper function for constructing TTuples, which must be non-empty:
 mkTTuple :: [Type] -> Type
