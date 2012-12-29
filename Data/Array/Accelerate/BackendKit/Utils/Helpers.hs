@@ -31,14 +31,14 @@ module Data.Array.Accelerate.BackendKit.Utils.Helpers
 import qualified Data.Map as M
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc  as S
 import Text.PrettyPrint.HughesPJ as PP
-import Foreign.Storable (sizeOf)
-import Prelude (error, ($), (.))
-import Data.Int (Int)
-import Data.Word (Word)
-import Prelude ((++), show, return, Show)
+import Foreign.Storable           (sizeOf)
+import Prelude                    (error, ($), (.))
+import Data.Int                   (Int)
+import Data.Word                  (Word)
+import Prelude                    ((++), show, return, Show)
 import Control.Monad.State.Strict (State, get, put)
-import Control.Applicative ((<$>),(<*>),pure,Applicative)
-
+import Control.Applicative        ((<$>),(<*>),pure,Applicative)
+import Debug.Trace                (trace)
 import Prelude as P
 
 ----------------------------------------------------------------------------------------------------
@@ -222,3 +222,8 @@ mapMAEWithGEnv env lift fn0 ae =
    doLam2 (Lam2 (v,t) (w,u) bod) = Lam2 (v,t) (w,u) <$> fn0 (M.insert v (lift v t) $
                                                              M.insert w (lift w u) env) bod   
 
+traceFun :: (Show a, Show b) => String -> (a -> b) -> a -> b
+traceFun msg fn =
+  \ x ->
+    let y = fn x in 
+    trace (msg ++ " input: " ++ show x ++ " output: " ++ show y) y

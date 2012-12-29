@@ -118,6 +118,7 @@ doSz UnknownSize    = UnknownSize
 
 doTy :: Type -> Type
 doTy (TArray _ elt) = TArray 1 elt
+doTy (TTuple ls)    = TTuple$ map doTy ls
 doTy ty             = ty 
 
 doE :: Exp -> MyM Exp

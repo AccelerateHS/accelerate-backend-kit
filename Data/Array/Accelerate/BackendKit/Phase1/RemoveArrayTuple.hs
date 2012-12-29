@@ -1,4 +1,4 @@
-
+ 
 --------------------------------------------------------------------------------
 -- | Compiler pass to remove Array-level tuples entirely.
 --------------------------------------------------------------------------------
@@ -50,7 +50,7 @@ data TempTree a = TT (TempTree a) (TempTree a) [TempTree a] -- Internal node of 
 -- 
 --   This pass introduces new variable names and thus makes
 --   assumptions about the naming convention.  It assumes that adding
---   "_N" suffixes to existing variables will not capture existing
+--   "_N" suffixes to existing variables will not capture other existing
 --   variables.       
 -- 
 --   This pass introduces new top-level scalar bindings to enable the
@@ -80,7 +80,7 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
  
    -- Called on already processed expressions:
    flattenTT :: TempTree S.AExp -> [S.AExp]
-   flattenTT x = 
+   flattenTT x =
      case x of      
        TLeaf e   -> [e]
        TT a b ls -> flattenTT a ++ flattenTT b ++
@@ -139,10 +139,10 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
 
    freshNames vr len = L.map (S.var . ((show vr ++"_")++) . show) [1..len]
 
-   -- Types are stored in reverse order from natural Accelerate textual order:
-   deTupleTy (S.TTuple ls) = reverse ls
+   -- Types are stored in natural Accelerate textual order:
+   deTupleTy (S.TTuple ls) = ls
    deTupleTy oth           = [oth]
-   deepDetupleTy (S.TTuple ls) = concatMap deTupleTy (reverse ls)
+   deepDetupleTy (S.TTuple ls) = concatMap deTupleTy ls
    deepDetupleTy oth           = [oth]   
    
    -- Process the right hand side of a binding, breakup up Conds and
@@ -267,4 +267,3 @@ lfr = lf . return
 cE  = convertExps    
 cF  = convertFun1
 cF2 = convertFun2
-
