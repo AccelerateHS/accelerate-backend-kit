@@ -179,7 +179,6 @@ evalSimpleAcc (S.Prog binds results progtype _) =
        --------------------------------------------------------------------------------
        S.Map (S.Lam1 (v,vty) bod) invr -> 
 -- TODO!!! Handle maps that CHANGE the tupling...
---         trace ("MAPPING: over input arr "++ show inarr) $ 
          bind$ ArrVal$ mapArray evaluator inarr
          where  
            ArrVal inarr = envLookup env invr

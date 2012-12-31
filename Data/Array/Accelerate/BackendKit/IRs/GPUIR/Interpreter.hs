@@ -23,18 +23,16 @@ import           Control.Monad.State.Strict
 --------------------------------------------------------------------------------
 -- Values and Environments:
 
+-- NOTE: We use the Value rep from SimpleAcc.Interpreter
+
 -- | Environments. Because LLIR includes side effects, the environement is mutable.
 type Env = M.Map Var Value
 
 -- | Computations with an environment.
 type EnvM = State Env
 
--- | A helper routine just to get nicer errors:
-envLookup :: (Ord k, Show k) => M.Map k a -> k -> a
-envLookup env vr = 
-  case M.lookup vr env of 
-    Just x -> x 
-    Nothing -> error$ "LLIRInterp.hs/envLookup: no binding for variable "++show vr
+--------------------------------------------------------------------------------
+
 
 evalScalarBlock :: Env -> ScalarBlock -> [Const]
 evalScalarBlock env0 (ScalarBlock _decls results stmts) =
@@ -65,8 +63,8 @@ evalStmt st =
 
     SFor v initE testE incrE bodS ->
       error $ "GPUIRInterp.hs/evalStmt: not supporting array assignment in CPU-interpreted code"
-      
-    SSynchronizeThreads -> return ()
+
+    SSynchronizeThreads -> error "GPUIR/Interpreter:evalStmt: does not handle SSynchronizeThreads yet."
     SNoOp               -> return ()
     
 
@@ -87,6 +85,21 @@ evalExp env expr =
 
     EGetLocalID  _ -> error $ "GPUIRInterp.hs/evalExp: not supporting EGetLocalID in CPU-interpreted code"
     EGetGlobalID _ -> error $ "GPUIRInterp.hs/evalExp: not supporting EGetGlobalID in CPU-interpreted code"    
+
+
+evalProg :: Prog a -> Value
+evalProg = undefined
+
+-- Actually respecting SSynchronizeThreads is very difficult here,
+-- evaluating sequentially requires using CPS to stop all threads at
+-- the barrier, and work groups (aka "blocks") must be respected.
+evalTopLvl :: Env -> TopLvlForm -> Value
+evalTopLvl env tlf =
+  case tlf of
+    NewArray szE -> undefined
+    Kernel iters bod args ->
+      undefined
+
 
 {-
 --------------------------------------------------------------------------------
@@ -132,4 +145,14 @@ untupleVal (ConstVal c) = map ConstVal $ untuple c
 untupleVal (ArrVal a)   = [ArrVal a]
 
 -}
+
 --------------------------------------------------------------------------------
+-- Misc & Helpers:
+
+
+-- | A helper routine just to get nicer errors:
+envLookup :: (Ord k, Show k) => M.Map k a -> k -> a
+envLookup env vr = 
+  case M.lookup vr env of 
+    Just x -> x 
+    Nothing -> error$ "LLIRInterp.hs/envLookup: no binding for variable "++show vr

@@ -307,7 +307,7 @@ p2cc :: Acc (Array DIM3 Int)
 p2cc = replicate (constant$ Z :. (2::Int) :. All :. All) p2c
 -- Output: Array (Z :. 2 :. 3 :. 3) [0,1,2,3,4,5,6,7,8,0,1,2,3,4,5,6,7,8]
 
-
+-- | Dynamic size based on conditional.
 p2cd :: Acc (Array DIM3 Int)
 p2cd = replicate
        (constant True ?
