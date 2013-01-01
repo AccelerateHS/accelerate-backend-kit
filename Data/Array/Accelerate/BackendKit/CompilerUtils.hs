@@ -8,14 +8,24 @@
 --   opaque composition of functions.
 
 module Data.Array.Accelerate.BackendKit.CompilerUtils
-       (runPass, runOptPass, shapeName)
+       (
+         -- * Compiler construction, compiler conventions, and global constants:
+         runPass, runOptPass, shapeName,
+
+        -- * Debugging     
+        maybtrace, tracePrint, dbg -- Flag for debugging output.
+       )
        where
 
 import           Text.PrettyPrint.GenericPretty (Out(doc), Generic)
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
+import           Debug.Trace        (trace)
+import           System.IO.Unsafe   (unsafePerformIO)
+import           System.Environment (getEnvironment)
 
 ----------------------------------------------------------------------------------------------------
 -- Compiler Conventions and global constants:
+----------------------------------------------------------------------------------------------------
 
 
 -- | Given the name of an array variable, what is the name of the
@@ -23,12 +33,14 @@ import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 shapeName :: S.Var -> S.Var
 shapeName avr = S.var (show avr ++ "_shape")
 
-----------------------------------------------------------------------------------------------------
+------------------------------------------------------------
+-- Compiler Construction:
+------------------------------------------------------------
 
 -- Pass composition:
 runPass :: Out a => String -> (t -> a) -> t -> a
 runPass msg pass input =
-  S.maybtrace ("\n" ++ msg ++ ", output was:\n"++
+  maybtrace ("\n" ++ msg ++ ", output was:\n"++
                        "================================================================================\n"
                        ++ show (doc x)) 
   x
@@ -43,4 +55,27 @@ runOptPass str pass _otherwise = runPass str pass
 -- TODO: Enable profiling support and a more sophisticated runtime representation of Compilers.
 
 
+----------------------------------------------------------------------------------------------------
+-- DEBUGGING
+----------------------------------------------------------------------------------------------------
 
+-- | Debugging flag shared by all accelerate-backend-kit modules.
+--   This is activated by setting the environment variable DEBUG=1
+dbg :: Bool
+dbg = case lookup "DEBUG" unsafeEnv of
+       Nothing  -> False
+       Just ""  -> False
+       Just "0" -> False
+       Just _   -> True
+
+unsafeEnv :: [(String,String)]
+unsafeEnv = unsafePerformIO getEnvironment
+
+-- | Print the value returned prefixed by a message.
+tracePrint :: Show a => String -> a -> a
+tracePrint s x = 
+  if dbg then (trace (s ++ show x) x)
+         else x
+
+-- | Trace, but only if debugging is enabled.
+maybtrace = if dbg then trace else \_ -> id 

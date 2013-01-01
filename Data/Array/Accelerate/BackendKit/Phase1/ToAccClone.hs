@@ -47,6 +47,7 @@ import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import qualified Data.Array.Accelerate.Trafo.Sharing as Cvt
 import qualified Data.Array.Accelerate.BackendKit.SimpleArray as SA
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
+import           Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace)
   -- Temporary AST before we get to the final one:
 import qualified Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone as T
 
@@ -306,7 +307,7 @@ convertExp e =
                       ty = getExpType e
                       len = tupleNumLeaves ty
                   in 
-                   S.maybtrace ("TUPLE NUM LEAVES: "++show ty++" "++show len) $
+                   maybtrace ("TUPLE NUM LEAVES: "++show ty++" "++show len) $
                    T.ETupProject n len <$> convertExp ex
 
     -- This would seem to force indices to be LISTS at runtime??

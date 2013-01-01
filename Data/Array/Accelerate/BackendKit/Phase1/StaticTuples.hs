@@ -13,6 +13,7 @@ module Data.Array.Accelerate.BackendKit.Phase1.StaticTuples
        ( staticTuples )
        where 
 
+import Data.Array.Accelerate.BackendKit.CompilerUtils (tracePrint)
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc         as S
 import Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone as T
 import Data.List as L
@@ -134,7 +135,7 @@ tupleNumLeaves _             = 1
 -- TODO: move into SimpleAcc.hs perhaps:
 retrieveTy :: TEnv -> T.Exp -> S.Type
 retrieveTy tenv e =
-  S.tracePrint (" * Retrieving type for "++show e++" in tenv "++show (M.keys tenv) ++ " --> ") $
+  tracePrint (" * Retrieving type for "++show e++" in tenv "++show (M.keys tenv) ++ " --> ") $
   case e of  
     T.EVr vr -> case M.lookup vr tenv of 
                   Nothing  -> error$"retrieveTy: no binding in type environment for var "++show vr++" in tenv "++show (M.keys tenv)

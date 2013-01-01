@@ -8,6 +8,7 @@ import Data.Array.Accelerate.BackendKit.IRs.Metadata (Uses(..), ArraySizeEstimat
 
 import Test.Framework                    (defaultMain)
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as T
+import Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace)
 import Data.List as L
 import Data.Map  as M
 import Debug.Trace (trace)

@@ -36,6 +36,7 @@ where
   
 
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
+import Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace)
   
 import           Debug.Trace
 import           Data.Int

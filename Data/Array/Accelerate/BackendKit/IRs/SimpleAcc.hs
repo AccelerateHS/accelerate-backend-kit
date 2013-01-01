@@ -26,7 +26,7 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
      SliceType(..), SliceComponent(..),
                 
      -- * Helper routines and predicates:
-     primArity, constToInteger, constToRational, constToNum, 
+     primArity, constToInteger, constToRational, constToNum, mkZeroConst,
      isIntType, isFloatType, isNumType, 
      isIntConst, isFloatConst, isNumConst, 
 
@@ -38,9 +38,6 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
      -- * Type recovery and type checking:
      constToType, recoverExpType, topLevelExpType,
      typeByteSize, typecheckProg, 
-
-     -- * Debugging     
-     maybtrace, tracePrint, dbg -- Flag for debugging output.
     )
  where
 
@@ -54,9 +51,7 @@ import qualified Data.Map          as M
 import qualified Data.Set          as S
 import qualified Data.List         as L
 import           Data.Word
-import           Debug.Trace       (trace)
 import           Foreign.C.Types 
--- import           Pretty            (text) -- ghc api
 import           Text.PrettyPrint.HughesPJ (text, Doc)
 import           System.IO.Unsafe  (unsafePerformIO)
 import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
@@ -106,28 +101,6 @@ instance NFData Var where
 #endif
   
 var :: String -> Var
---------------------------------------------------------------------------------
-
--- | Debugging flag shared by all accelerate-backend-kit modules.
---   This is activated by setting the environment variable DEBUG=1
-dbg :: Bool
-dbg = case lookup "DEBUG" unsafeEnv of
-       Nothing  -> False
-       Just ""  -> False
-       Just "0" -> False
-       Just _   -> True
-
-unsafeEnv :: [(String,String)]
-unsafeEnv = unsafePerformIO getEnvironment
-
--- | Print the value returned prefixed by a message.
-tracePrint :: Show a => String -> a -> a
-tracePrint s x = 
-  if dbg then (trace (s ++ show x) x)
-         else x
-
--- | Trace, but only if debugging is enabled.
-maybtrace = if dbg then trace else \_ -> id 
 
 --------------------------------------------------------------------------------
 -- Complete Accelerate Programs
@@ -660,6 +633,19 @@ constToNum c =
     C    _  -> error "constToNum: cannot convert TChar Const to a Num"
     B    _  -> error "constToNum: cannot convert TBool Const to a Num"
     Tup  _  -> error "constToNum: cannot convert tuple Const to a Num"
+
+
+mkZeroConst :: Type -> Const
+mkZeroConst ty = 
+  case ty of {
+    TInt   ->I 0;  TInt8  -> I8 0;   TInt16  -> I16 0;  TInt32 -> I32 0; TInt64  -> I64 0; 
+    TWord  ->W 0;  TWord8 -> W8 0;   TWord16 -> W16 0; TWord32 -> W32 0; TWord64 -> W64 0; 
+    TCShort -> CS 0; TCInt -> CI 0;  TCLong  -> CL 0;  TCLLong -> CLL 0; 
+    TCUShort -> CUS 0;  TCUInt -> CUI 0;  TCULong -> CUL 0;  TCULLong -> CULL 0;
+    TCChar -> CC 0; TCSChar -> CSC 0; TCUChar -> CUC 0; -- C character types.
+    _ -> error$ "mkZeroConst: cannot make a zero Const of this type: "++show ty
+  }
+
 
 -- | Unwrap a SimpleAST `Const` (satisfying isNumConst) into a raw
 --   Haskell Rational.

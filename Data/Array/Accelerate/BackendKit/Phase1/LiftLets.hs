@@ -11,6 +11,7 @@ module Data.Array.Accelerate.BackendKit.Phase1.LiftLets
 import Control.Applicative          ((<$>),(<*>))
 import Control.Monad.State.Strict   (State, runState, get, put)
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc  as S
+import Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace)
 import Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone as T
 import Data.List                                  as L
 import Prelude                                    hiding (sum)
@@ -33,7 +34,7 @@ type Bindings a = [Binding a]
 liftLets :: T.AExp S.Type -> T.AExp S.Type
 liftLets x = 
      if L.null binds then loop binds else
-     S.maybtrace ("[dbg] Lifted out "++show (length binds)++" Lets ...") $ loop binds
+     maybtrace ("[dbg] Lifted out "++show (length binds)++" Lets ...") $ loop binds
   where (binds, bod) = gatherLets x
         finalTy = getAnnot bod
         loop [] = bod

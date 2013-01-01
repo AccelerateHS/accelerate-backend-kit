@@ -3,6 +3,7 @@
 
 module Data.Array.Accelerate.BackendKit.Phase2.InlineCheap (inlineCheap) where 
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
+import Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace)
 import Text.PrettyPrint.GenericPretty (Out(doc,docPrec))
 import Data.Map as M hiding (map) 
 

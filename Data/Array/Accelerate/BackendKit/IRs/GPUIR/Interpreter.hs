@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP, ScopedTypeVariables #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 -- | This module provides an interpreter for the lower level IR (LLIR).
@@ -15,10 +16,11 @@ module Data.Array.Accelerate.BackendKit.IRs.GPUIR.Interpreter
        
 import           Data.Array.Accelerate.BackendKit.IRs.GPUIR
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc hiding (Exp(..))
-import           Data.Array.Accelerate.BackendKit.SimpleArray   (indexArray)
+import           Data.Array.Accelerate.BackendKit.SimpleArray               (indexArray, payloadsFromList, replicate)
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter (evalPrim, Value(..), unConstVal, unArrVal)
 import qualified Data.Map  as M
 import           Control.Monad.State.Strict
+import           Prelude hiding (replicate)
 
 --------------------------------------------------------------------------------
 -- Values and Environments:
@@ -34,13 +36,13 @@ type EnvM = State Env
 --------------------------------------------------------------------------------
 
 
-evalScalarBlock :: Env -> ScalarBlock -> [Const]
-evalScalarBlock env0 (ScalarBlock _decls results stmts) =
-  -- Retrieve the results from the final environment.
-  map (unConstVal . (final M.!)) results
-  where
-    -- We use an untyped evaluation strategy and ignore the decls:
-    final = execState (mapM_ evalStmt stmts) env0
+evalScalarBlock :: ScalarBlock -> EnvM [Const]
+evalScalarBlock (ScalarBlock _decls results stmts) = do
+  -- We use an untyped evaluation strategy and ignore the decls:
+  mapM_ evalStmt stmts
+  final <- get
+  -- Retrieve the results from the final environment:  
+  return$ map (unConstVal . (final M.!)) results
 
 -- | Statements are evaluated only for effect:
 evalStmt :: Stmt -> EnvM ()
@@ -56,6 +58,8 @@ evalStmt st =
       env <- get
       put (M.insert v (ConstVal$ evalExp env e) env)
 
+    -- This is a *profoundly* inefficient way of evaluating array assignment,
+    -- but the AccArray representation needs to be changed from immutable UArray to fix this:
     SArrSet v ix rhs -> do
       error $ "GPUIRInterp.hs/evalStmt: not supporting array assignment in CPU-interpreted code"
       -- env <- get
@@ -93,12 +97,28 @@ evalProg = undefined
 -- Actually respecting SSynchronizeThreads is very difficult here,
 -- evaluating sequentially requires using CPS to stop all threads at
 -- the barrier, and work groups (aka "blocks") must be respected.
-evalTopLvl :: Env -> TopLvlForm -> Value
-evalTopLvl env tlf =
-  case tlf of
-    NewArray szE -> undefined
-    Kernel iters bod args ->
+evalPB :: GPUProgBind a -> EnvM ()
+evalPB GPUProgBind{ outarrs, op } =
+  case op of
+    NewArray szE -> do
+      env <- get
+      let I sz = evalExp env szE
+          [(vr,_,TArray _ elty)] = outarrs
+          arr  = replicate [sz] (mkZeroConst elty)
+      put$ M.insert vr (ArrVal arr) env
+
+    Kernel dimEs bod args -> do
+      env <- get
+      let dims = map (evalExp env . snd) dimEs
       undefined
+
+-- GPUProgBind {
+--       evtid   :: EvtId,
+--       evtdeps :: [EvtId], 
+--       outarrs :: [(Var,MemLocation,Type)],
+--       decor   :: d,
+--       op      :: TopLvlForm
+--     }
 
 
 {-
