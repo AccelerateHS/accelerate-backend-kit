@@ -16,6 +16,7 @@ module Data.Array.Accelerate.OpenCL.JITRuntime (run, rawRunIO) where
 import qualified Control.Exception                 as E
 import           Control.Monad    (forM, forM_, unless, foldM)
 import           Control.Parallel.OpenCL
+import           Control.Monad.State.Strict (runState)
 import           Data.Array.Unsafe (unsafeFreeze, unsafeForeignPtrToStorableArray)
 import           Data.Array.Unboxed                as U
 import qualified Data.Array.Storable               as SA
@@ -47,7 +48,8 @@ import           Data.Array.Accelerate.BackendKit.SimpleArray  (payloadToPtr)
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter (Value(..))
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc   as S
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
-                  (Type(..), Const(..), AccArray(..), ArrayPayload(..), Var, dbg, typeByteSize)
+                  (Type(..), Const(..), AccArray(..), ArrayPayload(..), Var, typeByteSize)
+import           Data.Array.Accelerate.BackendKit.CompilerUtils (dbg,maybtrace)
 
 import qualified Data.Array.Accelerate.BackendKit.IRs.CLike as LL
 import           Data.Array.Accelerate.BackendKit.IRs.GPUIR as G
@@ -67,7 +69,7 @@ import           Data.Array.Accelerate.Shared.EmitOpenCL        (emitOpenCL)
 --   default (arbitrary) device choice.
 run :: forall a . Sug.Arrays a => A.Acc a -> a
 run acc =
-  S.maybtrace ("[JIT] Repacking AccArray(s): "++show arrays) $ 
+  maybtrace ("[JIT] Repacking AccArray(s): "++show arrays) $ 
   repackAcc acc arrays
  where
    -- TODO we need a way to reimpose multidimensionality here for this
@@ -450,9 +452,9 @@ runDAG (context, q, clprog) (G.GPUProg{progBinds, progResults, lastwriteTable}) 
         evalTopLvlBlk :: M.Map Var Value -> ScalarBlock -> IO ([Const], M.Map Var Value)
         evalTopLvlBlk env blk = do
             let fvs = Set.toList$ scalarBlockFreeVars blk
-            env' <- forceArrVals env fvs
-            let vals = evalScalarBlock env' blk
-            return (vals, env')
+            env2 <- forceArrVals env fvs
+            let (vals,env3) = runState (evalScalarBlock blk) env2
+            return (vals, env3)
 
         -- | Wait on array results and add those to the existing environment.
         forceArrVals :: M.Map Var Value -> [Var] -> IO (M.Map Var Value)

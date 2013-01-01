@@ -6,6 +6,7 @@ import           Data.Array.Accelerate (Acc, Arrays)
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc   as S
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Type(..), Const(..))
+import           Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace, dbg)
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase1, phase2, phase3, repackAcc)
 import           Data.Array.Accelerate.Shared.EmitC (emitC)
 import           Data.Array.Accelerate.BackendKit.SimpleArray (payloadsFromList)
@@ -26,7 +27,7 @@ import           System.IO        (hPutStrLn, stderr, stdout, hFlush)
 --   default (arbitrary) device choice.
 run :: forall a . Sug.Arrays a => Acc a -> a
 run acc =
-  S.maybtrace ("[CilkJIT] Repacking AccArray(s): "++show arrays) $ 
+  maybtrace ("[CilkJIT] Repacking AccArray(s): "++show arrays) $ 
   repackAcc acc arrays
  where
    -- TODO we need a way to reimpose multidimensionality here for this
@@ -112,6 +113,6 @@ readPayload ty str =
 
 
 dbgPrint :: String -> IO ()
-dbgPrint str = if not S.dbg then return () else do
+dbgPrint str = if not dbg then return () else do
     putStrLn str
     hFlush stdout
