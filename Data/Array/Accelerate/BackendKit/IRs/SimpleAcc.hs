@@ -80,12 +80,17 @@ type Var = Symbol
 ----------------------------
 #elif defined(USE_SYMBOL)
 -- 'symbol' package
+-- NOTE - this package would seem to be UNSAFE because the Symbol type
+-- constructor is exported.
 import Data.Symbol
 var = intern
 type Var = Symbol 
 instance Read Symbol where 
--- NOTE - this package would seem to be unsafe because the Symbol type
--- constructor is exported.
+  
+#elif defined(USE_BYTESTRING_VARIABLES)
+
+-- FINISHME
+
 #elif defined(USE_STRING_VARIABLES)
 var = Var 
 newtype Var = Var String

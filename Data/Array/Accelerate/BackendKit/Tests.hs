@@ -781,6 +781,7 @@ p17b = reshape (index2 2 5) p1a
 
 --------------------------------------------------------------------------------
 -- Arrays of dynamically computed sizes:
+----------------------------------------
 
 -- We seem to be missing a char to int function??
 -- p18a :: Acc (Vector Char)
@@ -812,6 +813,26 @@ p18f :: Acc (Vector Int)
 p18f = let mystery = (unit (index1 7) ! index0) :: Exp (Z:.Int) in
        replicate mystery (unit 40)
 
+--------------------------------------------------------------------------------
+-- Testing *all* the scalar primitives:
+
+-- p19a = ...
+-- TODO
+
+--------------------------------------------------------------------------------
+-- Testing SCAN:
+
+-- TODO
+
+--------------------------------------------------------------------------------
+-- Testing all FOLD variants:
+
+-- TODO
+
+--------------------------------------------------------------------------------
+-- Testing STENCILs:
+
+-- TODO
 
 --------------------------------------------------------------------------------
 -- Let's print matrices nicely.

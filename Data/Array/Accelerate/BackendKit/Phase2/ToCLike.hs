@@ -2,17 +2,13 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
--- | This pass does the final conversion to LLIR format.
--- Unfortunately it does more work tan that along the way.  In
--- particular it finishes the rest of the unzipping process, and
--- incidentally does copy-prop.
+-- | This pass does the final conversion to CLike IR format.  Unfortunately it
+--   does more work tan that along the way.  In particular it finishes the rest of
+--   the unzipping process, and incidentally does copy-prop.
 
 module Data.Array.Accelerate.BackendKit.Phase2.ToCLike (convertToCLike) where
 
--- convert to low-level IR -- should be isomorphic at this point
-
--- import Data.Array.Accelerate.BackendKit.IRs.Metadata 
-import           Data.Array.Accelerate.BackendKit.Utils.Helpers (genUnique, GensymM, isTupleTy)
+import           Data.Array.Accelerate.BackendKit.Utils.Helpers (genUnique, genUniqueWith, GensymM, isTupleTy)
 import qualified Data.Array.Accelerate.BackendKit.IRs.CLike as LL
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import qualified Data.Map                                as M
@@ -20,19 +16,21 @@ import Data.List                                         as L
 import Control.Monad.Writer
 import Control.Applicative   ((<$>),(<*>))
 import Control.Monad.State.Strict
--- import Text.PrettyPrint.GenericPretty (Out(doc))
+
+import Debug.Trace (trace)
 
 ----------------------------------------------------------------------------------------------------
 
 -- | Callback functions for writing results (continuations):
 type Cont = [LL.Exp] -> [LL.Stmt]
 
--- | Unfortunately, this pass needs to do a bit of left-over tuple unzipping too.
-type Env = M.Map Var (Type,Maybe [Var])
--- type Env  = M.Map Var Type
+-- | Unfortunately, this pass needs to do a bit of left-over tuple unzipping
+--   too.  For this it carries an environment that maps tupled variables to
+--   their detupled subcomponents.  (Note that the same mechanism can also be
+--   reused simple to alpha rename vars; i.e. a singleton [Var] list.)
+type Env = M.Map Var (Type, Maybe [Var])
 
 ----------------------------------------------------------------------------------------------------
-
 
 -- | This pass takes a SimpleAST IR which already follows a number of
 --   conventions that make it directly convertable to the lower level
@@ -51,19 +49,17 @@ convertToCLike Prog{progBinds,progResults,progType,uniqueCounter} =
 
 doBlock :: Env -> Exp -> GensymM LL.ScalarBlock
 doBlock env ex = do
-  -- Here we need to recover the type of the result to introduce
-  -- temporary variables.
+  -- Here we need to recover the type of the result to introduce temporary variables:
   let ty = recoverExpType (unliftEnv env) ex
   (binds,cont)   <- makeResultWriterCont ty
   (stmts,binds2) <- runWriterT$ doStmts cont env ex
   return$ LL.ScalarBlock (binds++binds2) (L.map fst binds) stmts
 
-
+-- | Create temporary bindings and the callback/continuation that writes them.
 makeResultWriterCont :: Type -> GensymM ([(Var,Type)], Cont)
 makeResultWriterCont ty = do 
   tmps <- sequence$ replicate (countVals ty) genUnique
   let binds = zip tmps (flattenTypes ty)
-  let 
       cont results =
         L.zipWith (\ tmp result -> LL.SSet tmp (result))
           tmps results
@@ -122,16 +118,16 @@ doBinds env (ProgBind vr ty _ (Right (Vr vr2)) : rest) = do
     error$ "ToCLike.hs/doBinds: array of tuples should have been desugared long ago: "++show(vr,ty)
   doBinds (M.insert vr (ty,Just [vr2]) env) rest
 
--- Detupling case:
+-- Top-level scalar-tuple binding:  This is the Detupling case.
 doBinds env (ProgBind vr ty decor (Left rhs) : rest)
   | isTupleTy ty = do 
     blk@(LL.ScalarBlock _ results _) <- doBlock env rhs
-    -- Here we resolve references to the tupled top-level var into individual 
-    -- component-references.  The original variable is no longer used:
-    let env' = M.insert vr (ty,Just results) env
-        componentTys = flattenTypes ty
+    let componentTys = flattenTypes ty
+    -- We split the top-level var into similarly named fresh variables:
+    fresh <- replicateM (length componentTys) $ genUniqueWith (show vr)
+    let env' = M.insert vr (ty, Just fresh) env
     (env'',rest') <- doBinds env' rest
-    return (env'', LL.LLProgBind (zip results componentTys)
+    return (env'', LL.LLProgBind (zip fresh componentTys)
                                  decor (LL.ScalarCode blk) : rest')
                    
 doBinds env (ProgBind vr ty decor rhs : rest) = do 
@@ -141,14 +137,6 @@ doBinds env (ProgBind vr ty decor rhs : rest) = do
   (env',rest') <- doBinds (M.insert vr (ty,Nothing) env) rest
   return (env', LL.LLProgBind [(vr,ty)] decor rhs' : rest')
 
--- doBinds env (ProgBind vr ty _ (Right (Vr vr2)) : rest) = 
---   doBinds env rest
--- doBinds env (ProgBind vr ty decor rhs : rest) = do 
---   rhs' <- case rhs of
---             Left  ex -> LL.ScalarCode <$> doBlock env ex
---             Right ae -> doAE env ae
---   rest' <- doBinds env rest
---   return (LL.LLProgBind [(vr,ty)] decor rhs' : rest')
 
 
 doAE :: Env -> AExp -> GensymM LL.TopLvlForm
@@ -226,13 +214,15 @@ unliftEnv = M.map (\ (t,_) -> t)
 
 
 -- Do copy propagation for any array-level references:
--- copyProp :: Int -> Int -> Int
 copyProp :: Env -> Var -> Var
 copyProp env vr1 =
-  case env M.! vr1 of 
-    (_, Just [vr2]) -> copyProp env vr2
-    (_, Just ls)    -> error$"ToCLike.hs/copyProp: should not see array variable bound to: "++show ls
-    _               -> vr1
+  case M.lookup vr1 env of
+    -- Array variables have already been detupled, so if there is any entry in
+    -- this Env at all, it must be an alias:
+    Just (_, Just [vr2]) -> copyProp env vr2
+    Just (_, Just ls)    -> error$"ToCLike.hs/copyProp: should not see array variable bound to: "++show ls
+    Just _               -> vr1
+    Nothing              -> error$"ToCLike.hs/copyProp: internal error, variable "++show vr1++" unbound in environment: "++show (M.keys env)
 
    
 ----------------------------------------------------------------------------------------------------
