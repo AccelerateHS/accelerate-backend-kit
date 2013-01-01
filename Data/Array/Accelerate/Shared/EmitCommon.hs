@@ -11,7 +11,7 @@
 module Data.Array.Accelerate.Shared.EmitCommon
        ( EmitBackend(..), 
          emitE, emitS, emitBlock, emitGeneric, emitConst,
-         printfFlag, printf,
+         printfFlag, printf, eprintf,
          varSyn, strToSyn, lkup,
          getSizeE, getSizeOfPB
        ) where
@@ -290,8 +290,15 @@ lkup vr pbs =
     Just x -> x
     Nothing -> error$"EmitCommon.hs/lkup: lookup of var in progbinds failed: "++show vr
 
-printf :: ([Syntax] -> Syntax)
-printf = function "printf"
+-- | Printf to stdout.
+-- printf :: ([Syntax] -> Syntax)
+printf :: ([Syntax] -> EasyEmit ())
+printf = emitStmt . function "printf"
+
+-- | Printf to stderr.
+eprintf :: [Syntax] -> EasyEmit ()
+eprintf ls = emitStmt$ function "fprintf" ("stderr" : ls)
+
 
 strToSyn :: String -> Syntax
 strToSyn = toSyntax . text

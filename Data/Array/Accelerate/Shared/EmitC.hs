@@ -77,8 +77,8 @@ execBind e _prog (_ind, GPUProgBind {outarrs=resultBinds, op=(ScalarCode blk)}) 
       forM_ (zip resultBinds results) $ \ ((vr,_,_),res) ->
         set (varSyn vr) (varSyn res)
 
-   when dbg$ do
-     emitStmt$ printf [stringconst " [dbg] "]
+   when dbg$ forM_ resultBinds $ \ (vr,_,ty) -> do
+     eprintf [stringconst (" [dbg] Top lvl scalar binding: "++show vr++" = "++ printfFlag ty++"\n"), varSyn vr]
    return ()
      
 execBind e _prog (_ind, GPUProgBind {evtid, outarrs, op}) =
@@ -142,15 +142,15 @@ printArray e name (GPUProgBind { outarrs=[(vr,_,(TArray ndims elt))], op}) = do
             EVr v        -> set len (varSyn v)
      0  -> set len "1"
      oth -> error$"printArray: not yet able to handle arrays of rank: "++ show oth
-  emitStmt$ printf [stringconst " [ "]
+  printf [stringconst " [ "]
   printit 0  
   for 1 (E.< len) (+1) $ \ind -> do
-     emitStmt$ printf [stringconst ", "]
+     printf [stringconst ", "]
      printit ind
-  emitStmt$ printf [stringconst " ] "]
+  printf [stringconst " ] "]
   where     
-    printit ind = emitStmt (printf [stringconst $ printfFlag elt,
-                                    arrsub (varSyn vr) ind])
+    printit ind = printf [stringconst $ printfFlag elt,
+                          arrsub (varSyn vr) ind]
 
 -- printArray oth = error$ "Can only print arrays of known size currently, not this: "++show (fmap fst oth)
 printArray _ _ oth = error$ "EmitC.hs/printArray: Bad progbind:"++show oth
