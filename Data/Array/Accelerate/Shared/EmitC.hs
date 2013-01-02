@@ -46,8 +46,10 @@ instance EmitBackend CEmitter where
     include "stdint.h"
     include "stdbool.h"
   
-  invokeKern e len body = -- (aty,arrlen)
-     forRange (0,len) body
+  invokeKern e len body = do 
+    E.cilkForRange (0,len) body
+--     E.forRange (0,len) body
+    return ()
 
   emitType _ = emitCType
 

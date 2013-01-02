@@ -1,5 +1,11 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
+-- | A JIT to compile and run programs via Cilk.  This constitutes a full Accelerate
+-- backend.
+--
+--  TODO: this needs to be fixed to use dlopen for Use to work.  (Reading the results
+--  back is currently done by printing them as text -- a hack.)
+
 module Data.Array.Accelerate.Cilk.JITRuntime (run, rawRunIO) where 
 
 import           Data.Array.Accelerate (Acc, Arrays)
@@ -46,7 +52,13 @@ rawRunIO name prog = do
   when b $ removeFile    (thisprog++".c") -- Remove file for safety
   writeFile  (thisprog++".c") emitted
   dbgPrint$ "[JIT] Invoking C compiler on: "++ thisprog++".c"
-  cd <- system$"gcc -std=c99 "++thisprog++".c -o "++thisprog++".exe"
+
+  whichICC <- readProcess "which" ["icc"] []
+  case whichICC of
+    ""  -> error "ICC not found!"
+    _   -> dbgPrint $" [JIT] Using ICC at: "++show whichICC
+  
+  cd <- system$"icc -std=c99 "++thisprog++".c -o "++thisprog++".exe"
   case cd of
     ExitSuccess -> return ()
     ExitFailure c -> error$"C Compiler failed with code "++show c

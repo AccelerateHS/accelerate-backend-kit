@@ -26,7 +26,7 @@ module Data.Array.Accelerate.Shared.EasyEmit
     
     -- * Functions for generating C/C++ Statements:
     emitStmt, block, set, (+=), (-=), if_, return_, sizeof, assert,
-    for, forRange,
+    for, forRange, cilkForRange,
     var, varinit, tmpvar, tmpvarinit, 
 
     -- * Defining functions in C/C++ code using HOAS.
@@ -539,14 +539,28 @@ methcall obj meth args = obj `dot` (function meth args)
 forRange :: (Syntax,Syntax) -> (Syntax -> EasyEmit ()) -> EasyEmit ()
 forRange (start,end) fn = for start (<end) (+1) fn
 
+-- | Variant of `forRange` for parallel Cilk loops.
+cilkForRange :: (Syntax,Syntax) -> (Syntax -> EasyEmit ()) -> EasyEmit ()
+cilkForRange (start,end) fn = do
+--  emitLine "#pragma simd"
+  emitLine "#pragma vector always"
+  emitLine "#pragma ivdep"
+  rawFor "_Cilk_for" start (<end)
+                              (\ (Syn i) -> Syn$ i <+> "+= 1") fn
+
 -- | General for loop with one iteration variable.  Three parameters
 --   to the iteration: one value, and two functions.  Typical
 --   arguments are @0@, @(<n)@, @(+1)@.  The body is the fourth
 --   argument.
 for :: Syntax -> (Syntax -> Syntax) -> (Syntax -> Syntax) -> (Syntax -> EasyEmit()) -> EasyEmit ()
-for init test incr bodyFn = 
-  do 
-     Syn var <- gensym "i"
+for init test incr bodyFn =
+  rawFor "for" init test (\ (Syn i) -> Syn (i <+> "=" <+> fromSyntax (incr (Syn i)))) bodyFn
+
+-- | A general form of the for loop.  The for keyword is parametized and the
+-- increment is expected to return a full assignment (including =, +=, etc).
+rawFor :: Syntax -> Syntax -> (Syntax -> Syntax) -> (Syntax -> Syntax) -> (Syntax -> EasyEmit()) -> EasyEmit ()
+rawFor (Syn forKeyword) init test incr bodyFn = 
+  do Syn var <- gensym "i"
      (ls,oldcnt) <- S.get
      let (_,newcnt,body) = rawRunEasyEmit oldcnt $ bodyFn (Syn var)
      
@@ -556,12 +570,13 @@ for init test incr bodyFn =
 
      let s1 = t"int" <+> var <+> "=" <+> fromSyntax init
          s2 = fromSyntax$ test (Syn var)
-         s3 = var <+> "=" <+> (fromSyntax$ incr (Syn var))
+         s3 = (fromSyntax$ incr (Syn var))
 
-     emitLine$ Syn$ hangbraces ("for " <> PP.parens (s1 <> semi <+>
-						     s2 <> semi <+>
-						     s3)) indent $
+     emitLine$ Syn$ hangbraces (forKeyword <+> PP.parens (s1 <> semi <+>
+                                                          s2 <> semi <+>
+                                                          s3)) indent $
 	            body
+
 
 -- Helper used below:
 a <++> b | a P.== "" = b
