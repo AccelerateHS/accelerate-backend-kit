@@ -111,11 +111,13 @@ emitKerns e prog@(GPUProg {progBinds}) = do
 -- 
 --   Expect a definition by the name (builderName evtid).
 emitBindDef :: EmitBackend e => e -> GPUProg () -> (Int, GPUProgBind ()) -> EasyEmit ()
-
-emitBindDef e GPUProg{} (_ind, pb@GPUProgBind{ evtid, op, outarrs } ) | length outarrs P.<= 1 =
+emitBindDef e GPUProg{} (_ind, pb@GPUProgBind{ evtid, op, outarrs } ) =
   case op of
      -- Do NOTHING for scalar binds presently, they will be interpreted CPU-side by JIT.hs:
      ScalarCode _ -> return ()
+
+     _ | length outarrs P.> 1 -> 
+       error$"EmitCommon.hs/emitBindDef: cannot handle multi-array-variable bindings yet:\n"++show (doc pb)
 
      -- Cond does not create a *kernel* just more work for the driver/launcher:
      Cond _ _ _ -> return ()
@@ -125,20 +127,16 @@ emitBindDef e GPUProg{} (_ind, pb@GPUProgBind{ evtid, op, outarrs } ) | length o
      ---------------------------------------------------------------------- 
      -- TODO: Handle kernels from 0-3 dimensions:
      Kernel kerniters (Lam formals bodE) _kernargs -> do
-       let -- Expect the size expression to be TRIVIAL for now:
-           -- TODO: Make it a simple Either type instead:
-           sizefree = case szE of
-                        EConst _ -> [(var "ignored", G.Default, TInt)]
-                        EVr v    -> [(v, G.Default, TInt)]
-                        _ -> error$"EmitCommon.hs/emitBindDef: invariant broken, kernel with non-trivial size exp: "++show szE
+       let sizearg  = var "sizeArg"
+           sizebind = (sizearg, G.Default, TInt)
            -- TEMP: 1D for now:
-           [(ix,szE)] = kerniters -- Handle 1D only.
+           [(ix,_szE)] = kerniters -- Handle 1D only.
            idxargs = [(ix, G.Default, TInt)]
-           
 
        -- ARGUMENT PROTOCOL: Extra arguments are expected:
-       --  * The scalar kernel expects (indices ..., formals ...)
-       --  * The array builder expects (free-in-sizeE ..., formals ...)
+       --   * The scalar kernel expects (indices ..., formals ...)
+       --   * The array builder expects (size, formals ...)
+       -- Thus the caller of the builder function is expected to evaluate the size.
            
        -- (1) Emit a scalar-level procedure:
        -- Use a rawFunDef because we don't want EasyEmit to come up with the variable names:
@@ -147,23 +145,20 @@ emitBindDef e GPUProg{} (_ind, pb@GPUProgBind{ evtid, op, outarrs } ) | length o
          [] <- emitBlock e bodE
          return ()
          
-       -- (2) Emit an array-level harness, following the protocol for its argument list:
-       --     This function needs both the free variables to pass on to the scalar kernel
-       --     AND the free variables used in the size computation.
+       -- (2) Emit an array-level harness, following the protocol for its argument
+       --     list: This function needs both the size argument and the free variables
+       --     to pass on to the scalar kernel.
        _ <- rawFunDef (kernelReturnType e)
                       (builderName evtid)
-                      (map (decorateArg e) (sizefree ++ formals)) $       
+                      (map (decorateArg e) (sizebind : formals)) $       
             -- Call the kernel once and write one element of the output array:            
             do let body i = emitStmt (kern ([i] ++ L.map (varSyn . fst3) formals))
-               invokeKern e (emitE e szE) body
+               invokeKern e (varSyn sizearg) body
        return ()
      ----------------------------------------------------------------------
      Generate _ _ -> error$"EmitCommon.hs/emitBindDef: Generate is not supported in generic backend:\n "++ show (doc op)
      Fold _ _ _ _ -> emitFoldDef e pb
      Scan _ _ _ _ -> emitScanDef e pb
-
-emitBindDef _ _ (_, pb) =
-  error$"EmitCommon.hs/emitBindDef: cannot handle multi-array-variable bindings yet:\n"++show (doc pb)
 
 
 -- | Emit a block of scalar code, returning the variable names which hold the results.

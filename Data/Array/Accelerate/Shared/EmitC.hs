@@ -11,7 +11,7 @@
 -- See `emitC` below and `emitOpenCL` for details.
 
 module Data.Array.Accelerate.Shared.EmitC
-       (emitC) where
+       (emitC, ParMode(..)) where
 
 import Text.PrettyPrint.HughesPJ       (text)
 import Data.List as L
@@ -27,7 +27,9 @@ import Data.Array.Accelerate.BackendKit.CompilerUtils (dbg)
 import Debug.Trace (trace)
 
 -- | Here is a new type just to create a new instance and implement the type class methods:
-data CEmitter = CEmitter
+data CEmitter = CEmitter ParMode
+
+data ParMode = CilkParallel | Sequential
 
 -- | The final pass in a compiler pipeline.  It emit a GPUProg as a C
 -- program meant for ICC (the Intel C Compiler).
@@ -35,8 +37,8 @@ data CEmitter = CEmitter
 -- This does not handle the full GPUProg grammar, rather it requires
 -- that there be no SSynchronizeThreads or EGetLocalID / EGetGlobalID
 -- constructs.
-emitC :: GPUProg () -> String
-emitC = emitGeneric CEmitter 
+emitC :: ParMode -> GPUProg () -> String
+emitC pm = emitGeneric (CEmitter pm)
 
 -- | We fill in the plain-C-specific code generation methods:
 instance EmitBackend CEmitter where
@@ -46,9 +48,8 @@ instance EmitBackend CEmitter where
     include "stdint.h"
     include "stdbool.h"
   
-  invokeKern _e len body = do 
-    E.cilkForRange (0,len) body
-    return ()
+  invokeKern (CEmitter CilkParallel) len body = E.cilkForRange (0,len) body
+  invokeKern (CEmitter Sequential)   len body = E.forRange (0,len) body
 
   emitType _ = emitCType
 
@@ -62,6 +63,8 @@ instance EmitBackend CEmitter where
       return_ 0
     return ()
 
+  -- ARGUMENT PROTOCOL: For Folds, expect :
+  --   ( outarray, initelem, kernfreevars ...)
   emitFoldDef e pb@(GPUProgBind{ evtid }) = do
     rawFunDef "void" (builderName evtid) [] $ do
       return ()

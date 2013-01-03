@@ -1,3 +1,4 @@
+
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | A JIT to compile and run programs via Cilk.  This constitutes a full Accelerate
@@ -14,7 +15,7 @@ import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc   as S
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Type(..), Const(..))
 import           Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace, dbg)
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase1, phase2, repackAcc)
-import           Data.Array.Accelerate.Shared.EmitC (emitC)
+import           Data.Array.Accelerate.Shared.EmitC (emitC, ParMode(..))
 import           Data.Array.Accelerate.BackendKit.SimpleArray (payloadsFromList)
 
 
@@ -25,7 +26,7 @@ import           System.IO.Unsafe (unsafePerformIO)
 import           System.Process   (readProcess, system)
 import           System.Exit      (ExitCode(..))
 import           System.Directory (removeFile, doesFileExist)
-import           System.IO        (hPutStrLn, stderr, stdout, hFlush)
+import           System.IO        (stdout, hFlush)
 
 --------------------------------------------------------------------------------
 
@@ -53,10 +54,10 @@ phase3_ltd prog = fmap (const ()) $
 --------------------------------------------------------------------------------
 
 
--- | Run an Accelerate computation using the OpenCL backend with
---   default (arbitrary) device choice.
-run :: forall a . Sug.Arrays a => Acc a -> a
-run acc =
+-- | Run an Accelerate computation using a C backend in the given
+--   parallelism mode.
+run :: forall a . Sug.Arrays a => ParMode -> Acc a -> a
+run pm acc =
   maybtrace ("[CilkJIT] Repacking AccArray(s): "++show arrays) $ 
   repackAcc acc arrays
  where
@@ -65,24 +66,28 @@ run acc =
    -- track the final shape.
    simple = phase1 acc
    arrays = unsafePerformIO $
-            rawRunIO "" simple
+            rawRunIO pm "" simple
 
-rawRunIO :: String -> S.Prog () -> IO [S.AccArray]
-rawRunIO name prog = do
+rawRunIO :: ParMode -> String -> S.Prog () -> IO [S.AccArray]
+rawRunIO pm name prog = do
   let prog2    = phase3_ltd $ phase2 prog
-      emitted  = emitC prog2
+      emitted  = emitC pm prog2
       thisprog = ".plainC_"++ stripFileName name
   b     <- doesFileExist (thisprog++".c")
   when b $ removeFile    (thisprog++".c") -- Remove file for safety
   writeFile  (thisprog++".c") emitted
   dbgPrint$ "[JIT] Invoking C compiler on: "++ thisprog++".c"
 
-  whichICC <- readProcess "which" ["icc"] []
-  case whichICC of
-    ""  -> error "ICC not found!"
-    _   -> dbgPrint $"[JIT] Using ICC at: "++ (head (lines whichICC))
+  cc <- case pm of
+         Sequential -> return "gcc"
+         CilkParallel -> do
+           whichICC <- readProcess "which" ["icc"] []
+           case whichICC of
+             ""  -> error "ICC not found!"
+             _   -> dbgPrint $"[JIT] Using ICC at: "++ (head (lines whichICC))
+           return "icc"
   
-  cd <- system$"icc -std=c99 "++thisprog++".c -o "++thisprog++".exe"
+  cd <- system$ cc++" -std=c99 "++thisprog++".c -o "++thisprog++".exe"
   case cd of
     ExitSuccess -> return ()
     ExitFailure c -> error$"C Compiler failed with code "++show c

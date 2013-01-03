@@ -31,13 +31,15 @@ import GHC.Conc (threadDelay)
 import Debug.Trace        (trace)
 import qualified Data.Array.Accelerate.OpenCL.JITRuntime as OpenCL (run,rawRunIO) 
 import qualified Data.Array.Accelerate.Cilk.JITRuntime   as Cilk   (run,rawRunIO) 
+import           Data.Array.Accelerate.Shared.EmitC (ParMode(..))
 --------------------------------------------------------------------------------  
 
 main :: IO ()
 main = do
   useCBackend <- getEnv "EMITC"
   let backend = case useCBackend of 
-                  Just x | notFalse x -> "Cilk"
+                  Just "cilk"         -> "Cilk"
+                  Just x | notFalse x -> "C"
                   Nothing             -> "OpenCL"
                   _                   -> "OpenCL"
   ----------------------------------------  
@@ -75,7 +77,8 @@ main = do
                              -- HACK: sleep to let opencl shut down.
                              -- threadDelay 1000000
                              return x
-                           "Cilk" -> Cilk.rawRunIO name test
+                           "Cilk" -> Cilk.rawRunIO CilkParallel name test
+                           "C"    -> Cilk.rawRunIO Sequential   name test
                        )
              supportedTests
   let testsRepack = 

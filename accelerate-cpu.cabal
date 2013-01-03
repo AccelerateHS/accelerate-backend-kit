@@ -22,6 +22,7 @@ Library
   Exposed-modules:
                      Data.Array.Accelerate.OpenCL
                      Data.Array.Accelerate.Cilk                     
+                     Data.Array.Accelerate.C
   
   -- Modules not exported by this package:
   Other-modules:       
