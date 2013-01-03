@@ -37,14 +37,14 @@ import Data.Array.Accelerate.BackendKit.Phase3.DesugarGenerate   (desugarGenerat
 import Data.Array.Accelerate.BackendKit.CompilerUtils            (runPass)
 import qualified Data.Array.Accelerate.BackendKit.IRs.CLike     as C
 import qualified Data.Array.Accelerate.BackendKit.IRs.GPUIR     as G
-import           Data.Array.Accelerate.BackendKit.IRs.Metadata   (ArraySizeEstimate)
+import           Data.Array.Accelerate.BackendKit.IRs.Metadata   (ArraySizeEstimate, FreeVars)
 
 -- | Run a cut-down version of phase3 of the compiler:
 -- 
 -- TODO: Express this by enriching the compiler pipeline mechanism and
 -- *subtracting* a pass from the existing phase3...
-phase3_ltd :: C.LLProg ArraySizeEstimate -> G.GPUProg ()
-phase3_ltd prog = fmap (const ()) $
+phase3_ltd :: C.LLProg ArraySizeEstimate -> G.GPUProg (ArraySizeEstimate, FreeVars)
+phase3_ltd prog = 
   runPass    "desugarGenerate"   desugarGenerate   $     -- (size,freevars)
 --  runPass    "desugarFoldScan"   desugarFoldScan   $     -- (size,freevars)
   runPass    "convertToGPUIR"    convertToGPUIR    $     -- (size,freevars)

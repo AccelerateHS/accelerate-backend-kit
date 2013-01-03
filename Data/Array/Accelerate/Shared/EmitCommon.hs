@@ -68,15 +68,15 @@ class EmitBackend e where
   emitType :: e -> Type -> Syntax
 
   -- | Emit a main() function that invokes the kernels.  Not relevant in some backends.
-  emitMain :: e -> GPUProg () -> EasyEmit ()
+  emitMain :: Out a => e -> GPUProg a -> EasyEmit ()
   emitMain _ _ = return ()
 
   -- | Fold is not handled by the generic codegen, but this can be overloaded.
-  emitFoldDef :: EmitBackend e => e -> GPUProgBind () -> EasyEmit ()
+  emitFoldDef :: (Out a, EmitBackend e) => e -> GPUProgBind a -> EasyEmit ()
   emitFoldDef _e op = error$"EmitCommon.hs: Fold not supported in this backend:\n "++ show (doc op)
 
   -- | Scan is not handled by the generic codegen, but this can be overloaded.
-  emitScanDef :: EmitBackend e => e -> GPUProgBind () -> EasyEmit ()
+  emitScanDef :: (Out a, EmitBackend e) => e -> GPUProgBind a -> EasyEmit ()
   emitScanDef _e op = error$"EmitCommon.hs: Scan not supported in this backend:\n "++ show (doc op)
 
   -- | The (constant) return type for a kernel definition. 
@@ -91,7 +91,7 @@ class EmitBackend e where
 -- could also have been done with a Reader monad.
 
 -- | The main entrypoint / compiler pass.
-emitGeneric :: EmitBackend e => e -> GPUProg () -> String
+emitGeneric :: (Out a, EmitBackend e) => e -> GPUProg a -> String
 emitGeneric e prog = show$ execEasyEmit $ do
   emitIncludes e  
   emitKerns e prog  
@@ -99,19 +99,18 @@ emitGeneric e prog = show$ execEasyEmit $ do
   emitLine ""
 
 -- | Emit a series of kernels that implement the program
-emitKerns :: EmitBackend e => e -> GPUProg () -> EasyEmit ()
+emitKerns :: (Out a, EmitBackend e) => e -> GPUProg a -> EasyEmit ()
 emitKerns e prog@(GPUProg {progBinds}) = do 
-  mapM_ (emitBindDef e prog) (L.zip [0..] progBinds)
+  mapM_ (emitBindDef e) (L.zip [0..] progBinds)
   emitLine ""  -- Add a newline.
-
 
 -- | Creates procedure definitions for a ProgBind.  This typically
 --   includes scalar-level function and an array-level function that
 --   calls it multiple times to yield an array result.
 -- 
 --   Expect a definition by the name (builderName evtid).
-emitBindDef :: EmitBackend e => e -> GPUProg () -> (Int, GPUProgBind ()) -> EasyEmit ()
-emitBindDef e GPUProg{} (_ind, pb@GPUProgBind{ evtid, op, outarrs } ) =
+emitBindDef :: (Out a, EmitBackend e) => e -> (Int, GPUProgBind a) -> EasyEmit ()
+emitBindDef e (_ind, pb@GPUProgBind{ evtid, op, outarrs } ) =
   case op of
      -- Do NOTHING for scalar binds presently, they will be interpreted CPU-side by JIT.hs:
      ScalarCode _ -> return ()

@@ -102,7 +102,7 @@ rawRunIO name prog = do
 
 -- | Compile down to the penultimate step, right before code generation.
 compilerBackend :: S.Prog () -> G.GPUProg ()
-compilerBackend = phase3 . phase2 
+compilerBackend = fmap (const ()) . phase3 . phase2 
 
 
 --------------------------------------------------------------------------------

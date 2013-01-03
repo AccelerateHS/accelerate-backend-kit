@@ -19,13 +19,16 @@ import Control.Monad                   (forM_, when)
 import Data.Array.Accelerate.Shared.EasyEmit as E
 import qualified Prelude as P
 import Prelude (($), show, error, return, mapM_, String, fromIntegral, Int)
+import Text.PrettyPrint.GenericPretty (Out(doc))
+import Debug.Trace (trace)
 
 import Data.Array.Accelerate.Shared.EmitHelpers (builderName, emitCType, fragileZip)
-import Data.Array.Accelerate.Shared.EmitCommon 
+import Data.Array.Accelerate.Shared.EmitCommon
+import Data.Array.Accelerate.BackendKit.IRs.Metadata  (ArraySizeEstimate(..), FreeVars(..))
 import Data.Array.Accelerate.BackendKit.IRs.GPUIR as G
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Type(..), Const(..), Var, AccArray(arrDim))
 import Data.Array.Accelerate.BackendKit.CompilerUtils (dbg)
-import Debug.Trace (trace)
+
 
 
 
@@ -40,7 +43,7 @@ data ParMode = CilkParallel | Sequential
 -- This does not handle the full GPUProg grammar, rather it requires
 -- that there be no SSynchronizeThreads or EGetLocalID / EGetGlobalID
 -- constructs.
-emitC :: ParMode -> GPUProg () -> String
+emitC :: ParMode -> GPUProg (ArraySizeEstimate,FreeVars) -> String
 emitC pm = emitGeneric (CEmitter pm)
 
 -- | We fill in the plain-C-specific code generation methods:
@@ -57,17 +60,17 @@ instance EmitBackend CEmitter where
   emitType _ = emitCType
 
   emitMain e prog@GPUProg{progBinds} = do 
-    funDef "int" "main" [] $ \ () -> do
-      comm "First we EXECUTE the program by executing each array op in order:"
-      mapM_ (execBind e prog) (L.zip [0..] progBinds)
-      comm "This code prints the final result(s):"
-      forM_ (progResults prog) $ \ result -> 
-        printArray e result (lkup result progBinds)
-      return_ 0
+    _ <- funDef "int" "main" [] $ \ () -> do
+           comm "First we EXECUTE the program by executing each array op in order:"
+           mapM_ (execBind e prog) (L.zip [0..] progBinds)
+           comm "This code prints the final result(s):"
+           forM_ (progResults prog) $ \ result -> 
+             printArray e result (lkup result progBinds)
+           return_ 0
     return ()
 
   -- ARGUMENT PROTOCOL: Folds expect: ( inSize, inStride, outArrayPtr, inArrayPtr, initElems..., kernfreevars...)
-  emitFoldDef e pb@(GPUProgBind{ evtid, outarrs, op }) = do
+  emitFoldDef e (GPUProgBind{ evtid, outarrs, op }) = do
     let Fold (Lam formals bod) initEs inV _ = op
         vs = take (length initEs) formals
         ws = drop (length initEs) formals
@@ -76,22 +79,21 @@ instance EmitBackend CEmitter where
         outarg = (emitType e outTy, show outV)
         inarg  = (emitType e (trace "FINISHME0 - need type" (TArray 1 TInt)), show inV)
         freeargs = trace "FINISHME - fold free vars " []
-
         int_t = emitType e TInt
     
-    rawFunDef "void" (builderName evtid) ((int_t, "inSize") : (int_t, "inStride") : 
-                                          outarg : inarg : initargs ++ freeargs) $ do
-      E.forStridedRange (0, "inStride", "inSize") $ \ ix -> do 
-        let [(wvr, _, wty)] = ws in 
---        forM_ ws $ \ (wvr, _, wty) -> 
-          varinit (emitType e wty) (varSyn wvr) (arrsub (varSyn inV) ix)
-        tmps <- emitBlock e bod
-        eprintf " ** Folding in position %d (it was %d) intermediate result %d\n"
-                [ix, (arrsub (varSyn inV) ix), varSyn$ head tmps]
-        forM_ (fragileZip tmps vs) $ \ (tmp,(v,_,_)) -> set (varSyn v) (varSyn tmp)
-        return ()
-      arrset (varSyn outV) 0 (varSyn$ fst3$ head vs) 
-      return () -- End rawFunDef
+    _ <- rawFunDef "void" (builderName evtid) ((int_t, "inSize") : (int_t, "inStride") : 
+                                               outarg : inarg : initargs ++ freeargs) $ 
+         do E.forStridedRange (0, "inStride", "inSize") $ \ ix -> do 
+              let [(wvr, _, wty)] = ws in 
+      --        forM_ ws $ \ (wvr, _, wty) -> 
+                varinit (emitType e wty) (varSyn wvr) (arrsub (varSyn inV) ix)
+              tmps <- emitBlock e bod
+              eprintf " ** Folding in position %d (it was %d) intermediate result %d\n"
+                      [ix, (arrsub (varSyn inV) ix), varSyn$ head tmps]
+              forM_ (fragileZip tmps vs) $ \ (tmp,(v,_,_)) -> set (varSyn v) (varSyn tmp)
+              return ()
+            arrset (varSyn outV) 0 (varSyn$ fst3$ head vs) 
+            return () -- End rawFunDef
     return () -- End emitFoldDef
    
 
@@ -99,9 +101,9 @@ instance EmitBackend CEmitter where
 
 -- | Generate code that will actually execute a binding, creating the
 --    array in memory.  This is typically called to build the main() function.
-execBind :: EmitBackend e => e 
-             -> GPUProg () 
-             -> (Int, GPUProgBind ()) 
+execBind :: (Out a, EmitBackend e) => e 
+             -> GPUProg a 
+             -> (Int, GPUProgBind a) 
              -> EasyEmit ()
 execBind e _prog (_ind, GPUProgBind {outarrs=resultBinds, op=(ScalarCode blk)}) = do
    -- Declare and then populate then populate the scalar bindings:
@@ -176,7 +178,7 @@ execBind e _prog (_ind, GPUProgBind {evtid, outarrs, op}) =
 --------------------------------------------------------------------------------
 -- | Generate code to print out a single array of known size.
 --   Takes as input the ProgBind that produced the array.
-printArray :: EmitBackend e => e -> Var -> GPUProgBind () -> EasyEmit ()
+printArray :: (Out a, EmitBackend e) => e -> Var -> GPUProgBind a -> EasyEmit ()
 printArray e name (GPUProgBind { outarrs=[(vr,_,(TArray ndims elt))], op}) = do
   len <- tmpvar (emitType e TInt)
   let szE = case op of
@@ -204,7 +206,7 @@ printArray e name (GPUProgBind { outarrs=[(vr,_,(TArray ndims elt))], op}) = do
     printit ind = printf (printfFlag elt) [arrsub (varSyn vr) ind]
 
 -- printArray oth = error$ "Can only print arrays of known size currently, not this: "++show (fmap fst oth)
-printArray _ _ oth = error$ "EmitC.hs/printArray: Bad progbind:"++show oth
+printArray _ _ oth = error$ "EmitC.hs/printArray: Bad progbind:"++show (doc oth)
 
 
 --------------------------------------------------------------------------------  
