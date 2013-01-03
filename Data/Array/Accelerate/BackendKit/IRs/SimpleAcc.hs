@@ -52,12 +52,12 @@ import qualified Data.Set          as S
 import qualified Data.List         as L
 import           Data.Word
 import           Foreign.C.Types 
-import           Text.PrettyPrint.HughesPJ (text, Doc)
+import           Text.PrettyPrint.HughesPJ (text)
 import           System.IO.Unsafe  (unsafePerformIO)
 import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
 
 import           Foreign.Storable (sizeOf)
-import           System.Environment(getEnvironment)
+-- import           System.Environment(getEnvironment)
 
 --------------------------------------------------------------------------------
 -- Prelude: Pick a simple representation of variables (interned symbols)
@@ -631,7 +631,7 @@ constToNum c =
     CC   n  -> fromIntegral n
     CUC  n  -> fromIntegral n
     CSC  n  -> fromIntegral n
-    F    f  -> error "constToNum: cannot convert TFloat Const to a Num"
+    F    _  -> error "constToNum: cannot convert TFloat Const to a Num"
     CF   _  -> error "constToNum: cannot convert TCFloat Const to a Num"
     D    _  -> error "constToNum: cannot convert TDouble Const to a Num"
     CD   _  -> error "constToNum: cannot convert TCDouble Const to a Num"

@@ -35,11 +35,7 @@ Library
                      Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter
                      Data.Array.Accelerate.BackendKit.IRs.Metadata
                      Data.Array.Accelerate.BackendKit.SimpleArray
-  
-  -- Modules not exported by this package:
-  Other-modules:       
-                     Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone
-                     Data.Array.Accelerate.BackendKit.Utils.Helpers
+
                      Data.Array.Accelerate.BackendKit.Phase1.LiftLets
                      Data.Array.Accelerate.BackendKit.Phase1.LiftComplexRands
                      Data.Array.Accelerate.BackendKit.Phase1.RemoveArrayTuple
@@ -63,6 +59,11 @@ Library
                      Data.Array.Accelerate.BackendKit.Phase3.DesugarGenerate
                      Data.Array.Accelerate.BackendKit.Phase3.DesugarFoldScan
                      Data.Array.Accelerate.BackendKit.Phase3.ToGPUIR
+  
+  -- Modules not exported by this package:
+  Other-modules:       
+                     Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone
+                     Data.Array.Accelerate.BackendKit.Utils.Helpers
 
   Build-depends:
                         array           >= 0.3 && < 0.5,

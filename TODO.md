@@ -11,7 +11,10 @@ These should go into github issues
 
  * GPUIR needs an overhaul.  Kernel declaration probably need to be
    separate from kernel invocation (e.g. a fold will be multiple
-   kernel launches).
+   kernel launches), and kernels need to have local work size as well
+   as global.
 
  * The interpreters are in disarray.  It would be nice to have a fully
    functional interpreter for all three major IRs.
+
+

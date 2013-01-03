@@ -46,8 +46,8 @@ Intermediate Language 2: C-like for easier code emission
     Data.Array.Accelerate.IRTypes.CLike
 
 
-Intermediate Language 3: C-like for easier code emission
---------------------------------------------------------
+Intermediate Language 3: GPU IR resembling OpenCL or CUDA 
+---------------------------------------------------------
 
     Data.Array.Accelerate.IRTypes.GPUIR
 
