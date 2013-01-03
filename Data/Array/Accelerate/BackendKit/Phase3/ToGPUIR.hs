@@ -85,8 +85,8 @@ doBinds evEnv (LLProgBind vartys dec@(_,FreeVars fvs) toplvl : rest) = do
         let seg' = case seg of
 --                     Nothing -> G.ConstantStride (error "Need more information on fold stride...")
 --                    Nothing -> G.ConstantStride (G.EVr (strideName nm))
-                    -- TEMP: For the moment we are NOT using the stride component:
-                    Nothing -> G.ConstantStride (G.EConst (S.I (-99)))
+                    -- TEMP: For the moment we are ONLY supporting a "FoldAll", stride 1:
+                    Nothing -> G.ConstantStride (G.EConst (S.I 1))
                     Just v  -> G.VariableStride v
         in rebind (evs$ inV:fvs) $ 
            G.Fold (G.Lam (map liftBind args) (doSB bod))
