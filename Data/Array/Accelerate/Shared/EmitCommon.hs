@@ -9,8 +9,15 @@
 --   abuse!
 
 module Data.Array.Accelerate.Shared.EmitCommon
-       ( EmitBackend(..), 
-         emitE, emitS, emitBlock, emitGeneric, emitConst,
+       ( 
+         -- * The class definition
+         EmitBackend(..), 
+
+         -- * The main entrypoint
+         emitGeneric,
+
+         -- * Other bits and pieces
+         emitE, emitS, emitBlock, emitConst,
          printfFlag, printf, eprintf,
          varSyn, strToSyn, lkup,
          getSizeE, getSizeOfPB
@@ -34,25 +41,26 @@ import           Control.Monad
 import           Prelude                        as P
 import           Text.PrettyPrint.GenericPretty (Out(doc))
 import           Text.PrettyPrint.HughesPJ      as PP ((<>), (<+>), semi, parens) 
-import           Debug.Trace                    (trace)
+-- import           Debug.Trace                    (trace)
 
 ----------------------------------------------------------------------------------------------------
 -- First, the interface for the pieces of this code emitter that are FACTORED OUT:
 
+-- | The code emission "superclass", with default definitions for several methods.
+--   The methods here factor out functionality that differs between backends.
 class EmitBackend e where
-  -- | Emit a block of #includes or other header info at the beginnign of the file.
+  -- | Emit a block of #includes or other header info at the beginning of the file.
   emitIncludes :: e -> EasyEmit ()
   emitIncludes _ = return ()
 
   -- | Add extra address space qualifiers to function/kernel arguments.
   -- 
   --   Takes a (var,memlocation,type) triple, returns an emitted "type","var" pair.
---  decorateArg :: e -> Type -> G.MemLocation -> (Syntax,String) -> (Syntax,String)  
   decorateArg :: e -> (Var,G.MemLocation,Type) -> (Syntax,String)
   decorateArg e (v,_,ty) = (emitType e ty, show v)
 
-  -- | Given iteration space size and a function to call the scalar
-  -- kernel, this must invoke the function the right number of times.
+  -- | Given (1D) iteration space size and a function to call the scalar
+  -- kernel with an int index, this must invoke the function the right number of times.
   -- This might mean a loop, or for OpenCL/CUDA, the loop is implicit.
   invokeKern :: e -> Syntax -> (Syntax -> EasyEmit ()) -> EasyEmit ()
   
@@ -63,11 +71,21 @@ class EmitBackend e where
   emitMain :: e -> GPUProg () -> EasyEmit ()
   emitMain _ _ = return ()
 
+  -- | Fold is not handled by the generic codegen, but this can be overloaded.
+  emitFoldDef :: EmitBackend e => e -> GPUProgBind () -> EasyEmit ()
+  emitFoldDef _e op = error$"EmitCommon.hs: Fold not supported in this backend:\n "++ show (doc op)
+
+  -- | Scan is not handled by the generic codegen, but this can be overloaded.
+  emitScanDef :: EmitBackend e => e -> GPUProgBind () -> EasyEmit ()
+  emitScanDef _e op = error$"EmitCommon.hs: Scan not supported in this backend:\n "++ show (doc op)
+
+  -- | The (constant) return type for a kernel definition. 
   kernelReturnType :: e -> Syntax
   kernelReturnType _ = "void"
 
 ----------------------------------------------------------------------------------------------------
 -- Generic code emisson functions:
+----------------------------------------------------------------------------------------------------
 
 -- For now we thread an 'e' argument through all functions.  This
 -- could also have been done with a Reader monad.
@@ -80,7 +98,7 @@ emitGeneric e prog = show$ execEasyEmit $ do
   emitMain  e prog
   emitLine ""
 
--- | Emit a series of kernels that implement the program in OpenCL.
+-- | Emit a series of kernels that implement the program
 emitKerns :: EmitBackend e => e -> GPUProg () -> EasyEmit ()
 emitKerns e prog@(GPUProg {progBinds}) = do 
   mapM_ (emitBindDef e prog) (L.zip [0..] progBinds)
@@ -90,41 +108,37 @@ emitKerns e prog@(GPUProg {progBinds}) = do
 -- | Creates procedure definitions for a ProgBind.  This typically
 --   includes scalar-level function and an array-level function that
 --   calls it multiple times to yield an array result.
+-- 
+--   Expect a definition by the name (builderName evtid).
 emitBindDef :: EmitBackend e => e -> GPUProg () -> (Int, GPUProgBind ()) -> EasyEmit ()
 
--- Do NOTHING for scalar binds presently, they will be interpreted CPU-side by JIT.hs:
-emitBindDef _ _ (_, GPUProgBind{ op=(ScalarCode _) }) = return ()
-
-emitBindDef e GPUProg{} (_ind, GPUProgBind{ evtid, op} ) =
-  let
-      -- (TArray dim elty) = aty
-      -- aty'   = emitType e aty
-      -- elty'  = emitType e elty
-      -- [(name,_,aty)] = outarrs -- Laziness: use only in the right places.
-      
-      -- -- Extra arguments passing a pointer to the OUTPUT array:
-      -- outsizearg = decorateArg e TInt (emitType e TInt, "outsize")
-      -- outarg     = decorateArg e aty (aty', "out")
-      -- arrlen = if dim == 1 then "outsize" else 1     
-  in 
+emitBindDef e GPUProg{} (_ind, pb@GPUProgBind{ evtid, op, outarrs } ) | length outarrs P.<= 1 =
   case op of
+     -- Do NOTHING for scalar binds presently, they will be interpreted CPU-side by JIT.hs:
+     ScalarCode _ -> return ()
+
      -- Cond does not create a *kernel* just more work for the driver/launcher:
      Cond _ _ _ -> return ()
-
      Use      _ -> return () -- This is also the job of the driver.
      NewArray _ -> return () -- ditto
 
-     ----------------------------------------------------------------------
+     ---------------------------------------------------------------------- 
      -- TODO: Handle kernels from 0-3 dimensions:
-     Kernel [(ix,szE)] (Lam formals bodE) kernargs -> do
-       let -- Force the size expression to be TRIVIAL for now:
+     Kernel kerniters (Lam formals bodE) _kernargs -> do
+       let -- Expect the size expression to be TRIVIAL for now:
            -- TODO: Make it a simple Either type instead:
-           sizefree = -- map undefined (S.toList (expFreeVars szE))
-                      case szE of
+           sizefree = case szE of
                         EConst _ -> [(var "ignored", G.Default, TInt)]
                         EVr v    -> [(v, G.Default, TInt)]
+                        _ -> error$"EmitCommon.hs/emitBindDef: invariant broken, kernel with non-trivial size exp: "++show szE
            -- TEMP: 1D for now:
+           [(ix,szE)] = kerniters -- Handle 1D only.
            idxargs = [(ix, G.Default, TInt)]
+           
+
+       -- ARGUMENT PROTOCOL: Extra arguments are expected:
+       --  * The scalar kernel expects (indices ..., formals ...)
+       --  * The array builder expects (free-in-sizeE ..., formals ...)
            
        -- (1) Emit a scalar-level procedure:
        -- Use a rawFunDef because we don't want EasyEmit to come up with the variable names:
@@ -140,18 +154,17 @@ emitBindDef e GPUProg{} (_ind, GPUProgBind{ evtid, op} ) =
                       (builderName evtid)
                       (map (decorateArg e) (sizefree ++ formals)) $       
             -- Call the kernel once and write one element of the output array:            
---            do let body i = emitStmt (kern ([i] ++ L.map (emitE e) kernargs))
             do let body i = emitStmt (kern ([i] ++ L.map (varSyn . fst3) formals))
                invokeKern e (emitE e szE) body
        return ()
      ----------------------------------------------------------------------
-     _ -> error$"EmitCommon.hs/emitBindDef: this operator is not supported in the backend:\n "++ show (doc op)
- where
-   int_t = emitType e TInt
+     Generate _ _ -> error$"EmitCommon.hs/emitBindDef: Generate is not supported in generic backend:\n "++ show (doc op)
+     Fold _ _ _ _ -> emitFoldDef e pb
+     Scan _ _ _ _ -> emitScanDef e pb
 
+emitBindDef _ _ (_, pb) =
+  error$"EmitCommon.hs/emitBindDef: cannot handle multi-array-variable bindings yet:\n"++show (doc pb)
 
-emitBindDef _ _ (_, GPUProgBind { outarrs=_:_ }) =
-  error$"EmitCommon.hs/emitBindDef: cannot handle multi-array-variable bindings yet."
 
 -- | Emit a block of scalar code, returning the variable names which hold the results.
 emitBlock :: EmitBackend e => e -> ScalarBlock -> EasyEmit [Var]

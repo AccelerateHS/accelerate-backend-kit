@@ -8,12 +8,12 @@
 
 module Data.Array.Accelerate.Cilk.JITRuntime (run, rawRunIO) where 
 
-import           Data.Array.Accelerate (Acc, Arrays)
+import           Data.Array.Accelerate (Acc)
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc   as S
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Type(..), Const(..))
 import           Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace, dbg)
-import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase1, phase2, phase3, repackAcc)
+import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase1, phase2, repackAcc)
 import           Data.Array.Accelerate.Shared.EmitC (emitC)
 import           Data.Array.Accelerate.BackendKit.SimpleArray (payloadsFromList)
 
@@ -28,6 +28,30 @@ import           System.Directory (removeFile, doesFileExist)
 import           System.IO        (hPutStrLn, stderr, stdout, hFlush)
 
 --------------------------------------------------------------------------------
+
+-- Phase 3 passes:
+import Data.Array.Accelerate.BackendKit.Phase3.KernFreeVars      (kernFreeVars)
+import Data.Array.Accelerate.BackendKit.Phase3.ToGPUIR           (convertToGPUIR)
+import Data.Array.Accelerate.BackendKit.Phase3.DesugarGenerate   (desugarGenerate)
+import Data.Array.Accelerate.BackendKit.CompilerUtils            (runPass)
+import qualified Data.Array.Accelerate.BackendKit.IRs.CLike     as C
+import qualified Data.Array.Accelerate.BackendKit.IRs.GPUIR     as G
+import           Data.Array.Accelerate.BackendKit.IRs.Metadata   (ArraySizeEstimate)
+
+-- | Run a cut-down version of phase3 of the compiler:
+-- 
+-- TODO: Express this by enriching the compiler pipeline mechanism and
+-- *subtracting* a pass from the existing phase3...
+phase3_ltd :: C.LLProg ArraySizeEstimate -> G.GPUProg ()
+phase3_ltd prog = fmap (const ()) $
+  runPass    "desugarGenerate"   desugarGenerate   $     -- (size,freevars)
+--  runPass    "desugarFoldScan"   desugarFoldScan   $     -- (size,freevars)
+  runPass    "convertToGPUIR"    convertToGPUIR    $     -- (size,freevars)
+  runPass    "kernFreeVars"      kernFreeVars      $     -- (size,freevars)
+  prog
+  
+--------------------------------------------------------------------------------
+
 
 -- | Run an Accelerate computation using the OpenCL backend with
 --   default (arbitrary) device choice.
@@ -45,7 +69,7 @@ run acc =
 
 rawRunIO :: String -> S.Prog () -> IO [S.AccArray]
 rawRunIO name prog = do
-  let prog2    = phase3$ phase2 prog
+  let prog2    = phase3_ltd $ phase2 prog
       emitted  = emitC prog2
       thisprog = ".plainC_"++ stripFileName name
   b     <- doesFileExist (thisprog++".c")
@@ -56,7 +80,7 @@ rawRunIO name prog = do
   whichICC <- readProcess "which" ["icc"] []
   case whichICC of
     ""  -> error "ICC not found!"
-    _   -> dbgPrint $" [JIT] Using ICC at: "++show whichICC
+    _   -> dbgPrint $"[JIT] Using ICC at: "++ (head (lines whichICC))
   
   cd <- system$"icc -std=c99 "++thisprog++".c -o "++thisprog++".exe"
   case cd of

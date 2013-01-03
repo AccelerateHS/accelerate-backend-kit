@@ -24,7 +24,7 @@ import Data.Array.Accelerate.Shared.EmitCommon
 import Data.Array.Accelerate.BackendKit.IRs.GPUIR as G
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Type(..), Const(..), Var, AccArray(arrDim))
 import Data.Array.Accelerate.BackendKit.CompilerUtils (dbg)
-
+import Debug.Trace (trace)
 
 -- | Here is a new type just to create a new instance and implement the type class methods:
 data CEmitter = CEmitter
@@ -46,9 +46,8 @@ instance EmitBackend CEmitter where
     include "stdint.h"
     include "stdbool.h"
   
-  invokeKern e len body = do 
+  invokeKern _e len body = do 
     E.cilkForRange (0,len) body
---     E.forRange (0,len) body
     return ()
 
   emitType _ = emitCType
@@ -63,6 +62,14 @@ instance EmitBackend CEmitter where
       return_ 0
     return ()
 
+  emitFoldDef e pb@(GPUProgBind{ evtid }) = do
+    rawFunDef "void" (builderName evtid) [] $ do
+      return ()
+    return ()
+--    error$"FINISHME ... emitFold: "++show (builderName evtid)
+
+
+--------------------------------------------------------------------------------
 
 -- | Generate code that will actually execute a binding, creating the
 --    array in memory.  This is typically called to build the main() function.
@@ -84,7 +91,9 @@ execBind e _prog (_ind, GPUProgBind {outarrs=resultBinds, op=(ScalarCode blk)}) 
    return ()
      
 execBind e _prog (_ind, GPUProgBind {evtid, outarrs, op}) =
-  let [(outV,_,ty)] = outarrs in -- FIXME -- only handling one-output arrays for now...
+  let [(outV,_,ty)] = outarrs -- FIXME -- only handling one-output arrays for now...
+      TArray _ elty = ty 
+      elty' = emitType e elty in
   case op of 
     -- In the case of array conditionals we need to run the scalar
     -- code, then assign the result accordingly.  TODO: this is a
@@ -97,46 +106,59 @@ execBind e _prog (_ind, GPUProgBind {evtid, outarrs, op}) =
         (set (varSyn outV) (varSyn cvr))
 
     NewArray numelems -> do
-      let TArray _ elty = ty
-          elty' = emitType e elty
-          len   = emitE e numelems
+      let len   = emitE e numelems
       varinit (emitType e ty) (varSyn outV) (function "malloc" [sizeof elty' * len])
-      
       return ()
   
     Kernel dimSzs (Lam formals _) args -> do
+      -- The builder function also needs any free variables in the size:
       let [(_,szE)] = dimSzs
-          sizefree = -- map undefined (S.toList (expFreeVars szE))
+          sizearg = 
             case szE of
               EConst (I n) -> [fromIntegral n]
-              EVr v    -> [varSyn v]
+              EVr v        -> [varSyn v]
       -- Call the builder to fill in the array: 
-      emitStmt$ (function$ strToSyn$ builderName evtid) (sizefree ++ map (emitE e) args)
+      emitStmt$ (function$ strToSyn$ builderName evtid) (sizearg ++ map (emitE e) args)
       return ()
 
     -- TODO: Should we keep just Kernel or just Generate or both?
     Generate els (Lam pls bod) -> do
-      error$"EmitC.hs/execBind: FINISHME - Generate case "
+      error$"EmitC.hs/execBind: We don't directly support Generate kernels, they should have been desugared."
 
+    -- This is unpleasantly repetetive.  It doesn't benefit from the lowering to expose freevars and use NewArray.
     Fold (Lam [(v,_,ty1),(w,_,ty2)] bod) [initE] inV (ConstantStride _) -> do
-      error$"EmitC.hs/execBind: FINISHME - Fold case "
-      
-      
+      -- The builder function also needs any free variables in the size:
+      let freevars = trace "FINISHME - freevars of Fold" []
+          initarg = 
+            case initE of
+              EConst (I n) -> fromIntegral n
+              EVr v        -> varSyn v
+          len = 1  -- Output is fully folded
+      varinit (emitType e ty) (varSyn outV) (function "malloc" [sizeof elty' * len])
+      -- Call the builder to fill in the array: 
+      emitStmt$ (function$ strToSyn$ builderName evtid)
+                [] -- (varSyn outV : initarg : freevars)
+      return ()
+            
     Scan (Lam pls bod) dir els inV -> do
       error$"EmitC.hs/execBind: FINISHME - Scan case "
 --    _ -> error$"EmitC.hs/execBind: can't handle this array operator yet: "++show op
 
 
+--------------------------------------------------------------------------------
 -- | Generate code to print out a single array of known size.
 --   Takes as input the ProgBind that produced the array.
 printArray :: EmitBackend e => e -> Var -> GPUProgBind () -> EasyEmit ()
 printArray e name (GPUProgBind { outarrs=[(vr,_,(TArray ndims elt))], op}) = do
   len <- tmpvar (emitType e TInt)
   let szE = case op of
-             NewArray szE -> szE
+             NewArray s -> s
              Use arr    -> EConst$ I$ product$ arrDim arr
              -- FIXME: For now we punt and don't print anything:
-             Cond _ _ _ -> EConst (I 0)
+             Cond _ _ _   -> trace ("Warning: finish Cond case in printArray")$ 
+                             EConst (I 0)
+             -- A full fold:
+             Fold _ _ _ (ConstantStride (EConst (I 1))) -> EConst (I 1)
              oth -> error$"EmitC.hs/printArray, huh, why are we printing the result of this op?: "++show oth
   case ndims of
      1 -> case szE of 
@@ -164,3 +186,4 @@ printArray _ _ oth = error$ "EmitC.hs/printArray: Bad progbind:"++show oth
 
 include :: String -> EasyEmit ()
 include str = emitLine$ toSyntax$ text$ "#include \""++str++"\""
+

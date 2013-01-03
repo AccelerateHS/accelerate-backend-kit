@@ -354,6 +354,7 @@ runDAG (context, q, clprog) (G.GPUProg{progBinds, progResults, lastwriteTable}) 
           name   <- clGetKernelFunctionName kernel
           dbgPrint$ "[JIT] kernel created: "++name
           let (_iterVs, shapeEs) = unzip iters
+          -- Evaluate size expression(s) on the CPU side (interpreted):
           (valEnv', ls) <- foldM (\ (env,ls) ex -> do (val,env') <- evalTopLvlExp env ex
                                                       return (env',val:ls))
                                  (valEnv,[]) shapeEs
