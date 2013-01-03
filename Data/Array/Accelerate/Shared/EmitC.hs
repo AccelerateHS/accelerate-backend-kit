@@ -70,15 +70,15 @@ instance EmitBackend CEmitter where
     return ()
 
   -- ARGUMENT PROTOCOL: Folds expect: ( inSize, inStride, outArrayPtr, inArrayPtr, initElems..., kernfreevars...)
-  emitFoldDef e (GPUProgBind{ evtid, outarrs, op }) = do
+  emitFoldDef e (GPUProgBind{ evtid, outarrs, decor=(_,FreeVars arrayOpFVs), op }) = do
     let Fold (Lam formals bod) initEs inV _ = op
         vs = take (length initEs) formals
         ws = drop (length initEs) formals
         initargs = map (\(vr,_,ty) -> (emitType e ty, show vr)) vs
         [(outV,_,outTy)] = outarrs 
-        outarg = (emitType e outTy, show outV)
-        inarg  = (emitType e (trace "FINISHME0 - need type" (TArray 1 TInt)), show inV)
-        freeargs = trace "FINISHME - fold free vars " []
+        outarg   = (emitType e outTy, show outV)
+        inarg    = (emitType e (trace "FINISHME0 - need type" (TArray 1 TInt)), show inV)
+        freeargs = zip [error "FINISHME5 - Need types for free vars"] (map show arrayOpFVs)
         int_t = emitType e TInt
     
     _ <- rawFunDef "void" (builderName evtid) ((int_t, "inSize") : (int_t, "inStride") : 
@@ -101,9 +101,9 @@ instance EmitBackend CEmitter where
 
 -- | Generate code that will actually execute a binding, creating the
 --    array in memory.  This is typically called to build the main() function.
-execBind :: (Out a, EmitBackend e) => e 
-             -> GPUProg a 
-             -> (Int, GPUProgBind a) 
+execBind :: (EmitBackend e) => e 
+             -> GPUProg (ArraySizeEstimate,FreeVars)
+             -> (Int, GPUProgBind (ArraySizeEstimate,FreeVars))
              -> EasyEmit ()
 execBind e _prog (_ind, GPUProgBind {outarrs=resultBinds, op=(ScalarCode blk)}) = do
    -- Declare and then populate then populate the scalar bindings:
@@ -118,7 +118,7 @@ execBind e _prog (_ind, GPUProgBind {outarrs=resultBinds, op=(ScalarCode blk)}) 
      eprintf (" [dbg] Top lvl scalar binding: "++show vr++" = "++ printfFlag ty++"\n") [varSyn vr]
    return ()
      
-execBind e _prog (_ind, GPUProgBind {evtid, outarrs, op}) =
+execBind e _prog (_ind, GPUProgBind {evtid, outarrs, op, decor=(_,FreeVars arrayOpFVs)}) =
   let [(outV,_,ty)] = outarrs -- FIXME -- only handling one-output arrays for now...
       TArray _ elty = ty 
       elty' = emitType e elty in
@@ -156,14 +156,14 @@ execBind e _prog (_ind, GPUProgBind {evtid, outarrs, op}) =
     -- This is unpleasantly repetetive.  It doesn't benefit from the lowering to expose freevars and use NewArray.
     Fold (Lam [(v,_,ty1),(w,_,ty2)] bod) [initE] inV (ConstantStride (EConst (I stride))) -> do
       -- The builder function also needs any free variables in the size:
-      let freevars = trace "FINISHME - freevars of Fold 2" []
+      let freevars = arrayOpFVs 
           initarg = 
             case initE of
               EConst (I n) -> fromIntegral n
               EVr v        -> varSyn v
           len = 1  -- Output is fully folded
           insize  = trace "FINISHME3 -- need size in Fold " 10
-          allargs = insize : fromIntegral stride : varSyn outV : varSyn inV : initarg : freevars
+          allargs = insize : fromIntegral stride : varSyn outV : varSyn inV : initarg : map varSyn freevars
           
       varinit (emitType e ty) (varSyn outV) (function "malloc" [sizeof elty' * len])
       -- Call the builder to fill in the array: 

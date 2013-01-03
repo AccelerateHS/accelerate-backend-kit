@@ -14,6 +14,7 @@ module Data.Array.Accelerate.Shared.EmitOpenCL
        (emitOpenCL)
        where
 
+import Data.Array.Accelerate.BackendKit.IRs.Metadata  (ArraySizeEstimate, FreeVars)
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Type(..), Const(..), Var)
 import Data.Array.Accelerate.BackendKit.IRs.GPUIR as G
 import Data.Array.Accelerate.Shared.EasyEmit as E
@@ -30,7 +31,7 @@ data OpenCLEmitter = OpenCLEmitter
 -- This does not handle the full GPUProg grammar, rather it requires
 -- that Kernels be the only remaining array constructs (not
 -- Fold/Scan/Generate).
-emitOpenCL :: GPUProg () -> String
+emitOpenCL :: GPUProg (ArraySizeEstimate,FreeVars) -> String
 emitOpenCL = emitGeneric OpenCLEmitter 
 
 -- | We fill in the OpenCL-specific code generation methods:

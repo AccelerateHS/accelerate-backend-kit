@@ -28,6 +28,7 @@ import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
              constToType, constToInteger, constToRational,
              isFloatConst, isIntConst)
 
+import           Data.Array.Accelerate.BackendKit.IRs.Metadata  (ArraySizeEstimate(..), FreeVars(..))
 import           Data.Array.Accelerate.Shared.EasyEmit hiding (var)
 import qualified Data.Array.Accelerate.Shared.EasyEmit as E
 import           Data.Array.Accelerate.Shared.EmitHelpers (emitPrimApp, builderName)
@@ -42,6 +43,7 @@ import           Prelude                        as P
 import           Text.PrettyPrint.GenericPretty (Out(doc))
 import           Text.PrettyPrint.HughesPJ      as PP ((<>), (<+>), semi, parens) 
 -- import           Debug.Trace                    (trace)
+
 
 ----------------------------------------------------------------------------------------------------
 -- First, the interface for the pieces of this code emitter that are FACTORED OUT:
@@ -68,11 +70,11 @@ class EmitBackend e where
   emitType :: e -> Type -> Syntax
 
   -- | Emit a main() function that invokes the kernels.  Not relevant in some backends.
-  emitMain :: Out a => e -> GPUProg a -> EasyEmit ()
+  emitMain :: e -> GPUProg (ArraySizeEstimate,FreeVars) -> EasyEmit ()
   emitMain _ _ = return ()
 
   -- | Fold is not handled by the generic codegen, but this can be overloaded.
-  emitFoldDef :: (Out a, EmitBackend e) => e -> GPUProgBind a -> EasyEmit ()
+  emitFoldDef :: (EmitBackend e) => e -> GPUProgBind (ArraySizeEstimate,FreeVars) -> EasyEmit ()
   emitFoldDef _e op = error$"EmitCommon.hs: Fold not supported in this backend:\n "++ show (doc op)
 
   -- | Scan is not handled by the generic codegen, but this can be overloaded.
@@ -91,7 +93,7 @@ class EmitBackend e where
 -- could also have been done with a Reader monad.
 
 -- | The main entrypoint / compiler pass.
-emitGeneric :: (Out a, EmitBackend e) => e -> GPUProg a -> String
+emitGeneric :: (EmitBackend e) => e -> GPUProg (ArraySizeEstimate,FreeVars) -> String
 emitGeneric e prog = show$ execEasyEmit $ do
   emitIncludes e  
   emitKerns e prog  
@@ -99,7 +101,7 @@ emitGeneric e prog = show$ execEasyEmit $ do
   emitLine ""
 
 -- | Emit a series of kernels that implement the program
-emitKerns :: (Out a, EmitBackend e) => e -> GPUProg a -> EasyEmit ()
+emitKerns :: ( EmitBackend e) => e -> GPUProg (ArraySizeEstimate,FreeVars) -> EasyEmit ()
 emitKerns e prog@(GPUProg {progBinds}) = do 
   mapM_ (emitBindDef e) (L.zip [0..] progBinds)
   emitLine ""  -- Add a newline.
@@ -109,7 +111,7 @@ emitKerns e prog@(GPUProg {progBinds}) = do
 --   calls it multiple times to yield an array result.
 -- 
 --   Expect a definition by the name (builderName evtid).
-emitBindDef :: (Out a, EmitBackend e) => e -> (Int, GPUProgBind a) -> EasyEmit ()
+emitBindDef :: (EmitBackend e) => e -> (Int, GPUProgBind (ArraySizeEstimate,FreeVars)) -> EasyEmit ()
 emitBindDef e (_ind, pb@GPUProgBind{ evtid, op, outarrs } ) =
   case op of
      -- Do NOTHING for scalar binds presently, they will be interpreted CPU-side by JIT.hs:

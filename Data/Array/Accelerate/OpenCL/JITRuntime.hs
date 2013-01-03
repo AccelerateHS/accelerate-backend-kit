@@ -43,13 +43,14 @@ import           Prelude hiding (log)
 import qualified Data.Array.Accelerate             as A
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 
+import           Data.Array.Accelerate.BackendKit.IRs.Metadata     (ArraySizeEstimate(..), FreeVars(..))
+import           Data.Array.Accelerate.BackendKit.CompilerUtils    (dbg,maybtrace)
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase1, phase2, phase3, repackAcc)
-import           Data.Array.Accelerate.BackendKit.SimpleArray  (payloadToPtr)
+import           Data.Array.Accelerate.BackendKit.SimpleArray      (payloadToPtr)
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter (Value(..))
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc   as S
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
-                  (Type(..), Const(..), AccArray(..), ArrayPayload(..), Var, typeByteSize)
-import           Data.Array.Accelerate.BackendKit.CompilerUtils (dbg,maybtrace)
+                     (Type(..), Const(..), AccArray(..), ArrayPayload(..), Var, typeByteSize)
 
 import qualified Data.Array.Accelerate.BackendKit.IRs.CLike as LL
 import           Data.Array.Accelerate.BackendKit.IRs.GPUIR as G
@@ -101,15 +102,15 @@ rawRunIO name prog = do
       return res
 
 -- | Compile down to the penultimate step, right before code generation.
-compilerBackend :: S.Prog () -> G.GPUProg ()
-compilerBackend = fmap (const ()) . phase3 . phase2 
+compilerBackend :: S.Prog () -> G.GPUProg (ArraySizeEstimate,FreeVars)
+compilerBackend = phase3 . phase2 
 
 
 --------------------------------------------------------------------------------
 -- | Run a compiled program via C or OpenCL.  In the latter case
 -- return a pointer to the result(s) in host (CPU) memory.
 setupAndRunProg :: String ->
-                   G.GPUProg () ->
+                   G.GPUProg (ArraySizeEstimate,FreeVars) ->
                    IO ([Ptr ()], M.Map Var BufEntry)
 
 setupAndRunProg name prog2 = do
@@ -221,16 +222,16 @@ data BufEntry = BufEntry { logicalevt :: EvtId,
 -- | Take a program (DAG) and launch an OpenCL task graph that mimics the
 --   structure of that program.  Finally, collect the results.
 runDAG :: (CLContext, CLCommandQueue, CLProgram)
-       -> G.GPUProg ()
+       -> G.GPUProg (ArraySizeEstimate,FreeVars)
        -> IO ([Ptr ()], M.Map Var BufEntry)
 runDAG (context, q, clprog) (G.GPUProg{progBinds, progResults, lastwriteTable}) = do
     dbgPrint$ "[JIT] Launching a DAG of "++show (length progBinds)++" nodes..." 
   
     doPBs M.empty M.empty M.empty progBinds
  where
-   sizety :: M.Map Var ((), Type)
+   sizety :: M.Map Var ((ArraySizeEstimate,FreeVars), Type)
    sizety = M.fromList$ L.concatMap
-              (\ (G.GPUProgBind {outarrs, decor=size} ) -> map (\ (vr,_,ty) ->  (vr,(size,ty))) outarrs)
+              (\ (G.GPUProgBind {outarrs, decor=dec} ) -> map (\ (vr,_,ty) ->  (vr,(dec,ty))) outarrs)
             progBinds
 
    ------------------------------------------------------------
@@ -274,7 +275,7 @@ runDAG (context, q, clprog) (G.GPUProg{progBinds, progResults, lastwriteTable}) 
    doPBs :: M.Map Var Value
          -> M.Map Var BufEntry
          -> M.Map EvtId CLEvent
-         -> [G.GPUProgBind ()] 
+         -> [G.GPUProgBind (ArraySizeEstimate,FreeVars)] 
          -> IO ([Ptr ()], M.Map Var BufEntry)
    doPBs _ bufMap evMap [] = do ptrs <- waitArraysGetPtrs bufMap evMap progResults
                                 return (ptrs, bufMap)
