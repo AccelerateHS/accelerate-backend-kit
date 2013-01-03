@@ -26,7 +26,7 @@ module Data.Array.Accelerate.Shared.EasyEmit
     
     -- * Functions for generating C/C++ Statements:
     emitStmt, block, set, (+=), (-=), if_, return_, sizeof, assert,
-    for, forRange, cilkForRange,
+    for, forRange, forStridedRange, cilkForRange, cilkForStridedRange, 
     var, varinit, tmpvar, tmpvarinit, 
 
     -- * Defining functions in C/C++ code using HOAS.
@@ -537,16 +537,23 @@ methcall obj meth args = obj `dot` (function meth args)
 -- | For loop common case: for loop over a range with integer index:
 -- Input is [Inclusive,Exclusive) range.
 forRange :: (Syntax,Syntax) -> (Syntax -> EasyEmit ()) -> EasyEmit ()
-forRange (start,end) fn = for start (<end) (+1) fn
+forRange (start,end) = forStridedRange (start,1,end)
+
+-- | Variant of `forRange` that also specifies the stride (increment on each loop iteration).
+forStridedRange :: (Syntax,Syntax,Syntax) -> (Syntax -> EasyEmit ()) -> EasyEmit ()
+forStridedRange (start,stride,end) fn = for start (<end) (+stride) fn
 
 -- | Variant of `forRange` for parallel Cilk loops.
 cilkForRange :: (Syntax,Syntax) -> (Syntax -> EasyEmit ()) -> EasyEmit ()
-cilkForRange (start,end) fn = do
---  emitLine "#pragma simd"
+cilkForRange (start,end) = cilkForStridedRange (start,1,end)
+  
+-- | Variant of `forStridedRange` for parallel Cilk loops.
+cilkForStridedRange :: (Syntax,Syntax,Syntax) -> (Syntax -> EasyEmit ()) -> EasyEmit ()
+cilkForStridedRange (start,Syn stride,end) fn = do
   emitLine "#pragma vector always"
   emitLine "#pragma ivdep"
-  rawFor "_Cilk_for" start (<end)
-                              (\ (Syn i) -> Syn$ i <+> "+= 1") fn
+  rawFor "_Cilk_for" start (<end) (\ (Syn i) -> Syn$ i <+> "+=" <+> stride) fn
+
 
 -- | General for loop with one iteration variable.  Three parameters
 --   to the iteration: one value, and two functions.  Typical

@@ -17,14 +17,17 @@ import Text.PrettyPrint.HughesPJ       (text)
 import Data.List as L
 import Control.Monad                   (forM_, when)
 import Data.Array.Accelerate.Shared.EasyEmit as E
-import Prelude as P
+import qualified Prelude as P
+import Prelude (($), show, error, return, mapM_, String, fromIntegral, Int)
 
-import Data.Array.Accelerate.Shared.EmitHelpers (builderName, emitCType)
+import Data.Array.Accelerate.Shared.EmitHelpers (builderName, emitCType, fragileZip)
 import Data.Array.Accelerate.Shared.EmitCommon 
 import Data.Array.Accelerate.BackendKit.IRs.GPUIR as G
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Type(..), Const(..), Var, AccArray(arrDim))
 import Data.Array.Accelerate.BackendKit.CompilerUtils (dbg)
 import Debug.Trace (trace)
+
+
 
 -- | Here is a new type just to create a new instance and implement the type class methods:
 data CEmitter = CEmitter ParMode
@@ -63,14 +66,34 @@ instance EmitBackend CEmitter where
       return_ 0
     return ()
 
-  -- ARGUMENT PROTOCOL: For Folds, expect :
-  --   ( outarray, initelem, kernfreevars ...)
-  emitFoldDef e pb@(GPUProgBind{ evtid }) = do
-    rawFunDef "void" (builderName evtid) [] $ do
-      return ()
-    return ()
---    error$"FINISHME ... emitFold: "++show (builderName evtid)
+  -- ARGUMENT PROTOCOL: Folds expect: ( inSize, inStride, outArrayPtr, inArrayPtr, initElems..., kernfreevars...)
+  emitFoldDef e pb@(GPUProgBind{ evtid, outarrs, op }) = do
+    let Fold (Lam formals bod) initEs inV _ = op
+        vs = take (length initEs) formals
+        ws = drop (length initEs) formals
+        initargs = map (\(vr,_,ty) -> (emitType e ty, show vr)) vs
+        [(outV,_,outTy)] = outarrs 
+        outarg = (emitType e outTy, show outV)
+        inarg  = (emitType e (trace "FINISHME0 - need type" (TArray 1 TInt)), show inV)
+        freeargs = trace "FINISHME - fold free vars " []
 
+        int_t = emitType e TInt
+    
+    rawFunDef "void" (builderName evtid) ((int_t, "inSize") : (int_t, "inStride") : 
+                                          outarg : inarg : initargs ++ freeargs) $ do
+      E.forStridedRange (0, "inStride", "inSize") $ \ ix -> do 
+        let [(wvr, _, wty)] = ws in 
+--        forM_ ws $ \ (wvr, _, wty) -> 
+          varinit (emitType e wty) (varSyn wvr) (arrsub (varSyn inV) ix)
+        tmps <- emitBlock e bod
+        eprintf " ** Folding in position %d (it was %d) intermediate result %d\n"
+                [ix, (arrsub (varSyn inV) ix), varSyn$ head tmps]
+        forM_ (fragileZip tmps vs) $ \ (tmp,(v,_,_)) -> set (varSyn v) (varSyn tmp)
+        return ()
+      arrset (varSyn outV) 0 (varSyn$ fst3$ head vs) 
+      return () -- End rawFunDef
+    return () -- End emitFoldDef
+   
 
 --------------------------------------------------------------------------------
 
@@ -90,7 +113,7 @@ execBind e _prog (_ind, GPUProgBind {outarrs=resultBinds, op=(ScalarCode blk)}) 
         set (varSyn vr) (varSyn res)
 
    when dbg$ forM_ resultBinds $ \ (vr,_,ty) -> do
-     eprintf [stringconst (" [dbg] Top lvl scalar binding: "++show vr++" = "++ printfFlag ty++"\n"), varSyn vr]
+     eprintf (" [dbg] Top lvl scalar binding: "++show vr++" = "++ printfFlag ty++"\n") [varSyn vr]
    return ()
      
 execBind e _prog (_ind, GPUProgBind {evtid, outarrs, op}) =
@@ -129,18 +152,20 @@ execBind e _prog (_ind, GPUProgBind {evtid, outarrs, op}) =
       error$"EmitC.hs/execBind: We don't directly support Generate kernels, they should have been desugared."
 
     -- This is unpleasantly repetetive.  It doesn't benefit from the lowering to expose freevars and use NewArray.
-    Fold (Lam [(v,_,ty1),(w,_,ty2)] bod) [initE] inV (ConstantStride _) -> do
+    Fold (Lam [(v,_,ty1),(w,_,ty2)] bod) [initE] inV (ConstantStride (EConst (I stride))) -> do
       -- The builder function also needs any free variables in the size:
-      let freevars = trace "FINISHME - freevars of Fold" []
+      let freevars = trace "FINISHME - freevars of Fold 2" []
           initarg = 
             case initE of
               EConst (I n) -> fromIntegral n
               EVr v        -> varSyn v
           len = 1  -- Output is fully folded
+          insize  = trace "FINISHME3 -- need size in Fold " 10
+          allargs = insize : fromIntegral stride : varSyn outV : varSyn inV : initarg : freevars
+          
       varinit (emitType e ty) (varSyn outV) (function "malloc" [sizeof elty' * len])
       -- Call the builder to fill in the array: 
-      emitStmt$ (function$ strToSyn$ builderName evtid)
-                [] -- (varSyn outV : initarg : freevars)
+      emitStmt$ (function$ strToSyn$ builderName evtid) allargs
       return ()
             
     Scan (Lam pls bod) dir els inV -> do
@@ -169,15 +194,14 @@ printArray e name (GPUProgBind { outarrs=[(vr,_,(TArray ndims elt))], op}) = do
             EVr v        -> set len (varSyn v)
      0  -> set len "1"
      oth -> error$"printArray: not yet able to handle arrays of rank: "++ show oth
-  printf [stringconst " [ "]
+  printf " [ " []
   printit 0  
   for 1 (E.< len) (+1) $ \ind -> do
-     printf [stringconst ", "]
+     printf ", " []
      printit ind
-  printf [stringconst " ] "]
+  printf " ] " []
   where     
-    printit ind = printf [stringconst $ printfFlag elt,
-                          arrsub (varSyn vr) ind]
+    printit ind = printf (printfFlag elt) [arrsub (varSyn vr) ind]
 
 -- printArray oth = error$ "Can only print arrays of known size currently, not this: "++show (fmap fst oth)
 printArray _ _ oth = error$ "EmitC.hs/printArray: Bad progbind:"++show oth
@@ -190,3 +214,8 @@ printArray _ _ oth = error$ "EmitC.hs/printArray: Bad progbind:"++show oth
 include :: String -> EasyEmit ()
 include str = emitLine$ toSyntax$ text$ "#include \""++str++"\""
 
+fst3 :: (t, t1, t2) -> t
+fst3 (a,_,_) = a
+
+thd3 :: (t, t1, t2) -> t2
+thd3 (_,_,c) = c

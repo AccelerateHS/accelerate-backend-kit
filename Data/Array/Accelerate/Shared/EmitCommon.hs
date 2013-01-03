@@ -299,13 +299,12 @@ lkup vr pbs =
     Nothing -> error$"EmitCommon.hs/lkup: lookup of var in progbinds failed: "++show vr
 
 -- | Printf to stdout.
--- printf :: ([Syntax] -> Syntax)
-printf :: ([Syntax] -> EasyEmit ())
-printf = emitStmt . function "printf"
+printf :: String -> [Syntax] -> EasyEmit ()
+printf str ls = emitStmt$ function "printf" (stringconst str : ls)
 
 -- | Printf to stderr.
-eprintf :: [Syntax] -> EasyEmit ()
-eprintf ls = emitStmt$ function "fprintf" ("stderr" : ls)
+eprintf :: String -> [Syntax] -> EasyEmit ()
+eprintf str ls = emitStmt$ function "fprintf" ("stderr" : stringconst str : ls)
 
 
 strToSyn :: String -> Syntax
