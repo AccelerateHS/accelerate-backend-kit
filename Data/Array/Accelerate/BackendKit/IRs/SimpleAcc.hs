@@ -14,7 +14,7 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
      -- * The types making up Accelerate ASTs:
      Prog(..), ProgBind(..),
      AExp(..), -- AFun(..), 
-     Exp(..), Fun1(Lam1), Fun2(..),
+     Exp(..), TrivialExp(..), Fun1(Lam1), Fun2(..),
      Type(..), Const(..),
      Prim(..), NumPrim(..), IntPrim(..), FloatPrim(..), ScalarPrim(..), BoolPrim(..), OtherPrim(..),
      Boundary(..), Var,
@@ -131,7 +131,10 @@ data Prog decor = Prog {
   progBinds   :: [ProgBind decor],
   progResults :: [Var],
   progType    :: Type,  -- Final, pre-flattened type, can be an array-tuple.
-  uniqueCounter :: Int  -- Counter for unique variable suffix generation
+  uniqueCounter :: Int,  -- Counter for unique variable suffix generation
+
+  -- ^ Filled in later in the compiler, describes the shape of all top level binds.
+  sizeEnv :: M.Map Var (Type, [TrivialExp])
 } deriving (Read,Show,Eq,Generic, Ord)
 
 -- | A top-level binding.  Binds a unique variable name to either an
@@ -247,6 +250,10 @@ data Exp =
       tupexpr        :: Exp }
  deriving (Read,Show,Eq,Ord,Generic)
 
+-- | Trivial expressions.
+--   It happens that the only trivial constants we need are of type TInt.
+data TrivialExp = TrivConst Int | TrivVarref Var
+ deriving (Read,Show,Eq,Ord,Generic)
 
 -- | Constants embedded within Accelerate programs (i.e. in the AST).
 data Const = I Int  | I8 Int8  | I16 Int16  | I32 Int32  | I64 Int64
@@ -830,6 +837,7 @@ instance Out a => Out (ProgBind a)
 instance Out (Fun1 Exp)
 instance Out (Fun2 Exp)
 instance Out Exp
+instance Out TrivialExp
 instance Out AExp
 -- instance Out AFun
 instance Out Const
@@ -871,6 +879,10 @@ instance Out CUChar  where docPrec _ = text . show; doc = docPrec 0
 -- This just converts the non-pretty version:
 instance Out AccArray where docPrec _ = text . show; doc = docPrec 0
 
+instance (Out k, Out v) => Out (M.Map k v) where
+  docPrec = undefined
+  doc     = undefined
+  
 -- Why is this one not included in the array package?:
 instance (Read elt, U.IArray UArray elt) => Read (U.UArray Int elt) where
     readsPrec p = readParen (p > 9)
@@ -878,6 +890,7 @@ instance (Read elt, U.IArray UArray elt) => Read (U.UArray Int elt) where
                    ("array",s) <- lex r,
                    (b,t)       <- reads s,
                    (as :: [(Int,elt)],u) <- reads t ])
+
 
 test :: UArray Int Int
 test = read "array (1,5) [(1,200),(2,201),(3,202),(4,203),(5,204)]" :: U.UArray Int Int
@@ -887,7 +900,7 @@ test = read "array (1,5) [(1,200),(2,201),(3,202),(4,203),(5,204)]" :: U.UArray 
 ----------------------------------------------------------------------------------------------------
 
 instance NFData a => NFData (Prog a) where
-  rnf (Prog pbs pr pt _) =
+  rnf (Prog {progBinds=pbs, progResults=pr, progType=pt } ) =
     case rnf pbs of
      () -> case rnf pr of
            () -> case rnf pt of
