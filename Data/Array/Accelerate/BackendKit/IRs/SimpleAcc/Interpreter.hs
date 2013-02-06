@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP, ScopedTypeVariables #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE NamedFieldPuns #-}
 -- {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 -- | An UNFINISHED example interpreter for the simplified AST defined in "Data.Array.Accelerate.SimpleAST".
@@ -77,13 +78,13 @@ unArrVal   (ArrVal v)   = v
 --   result.  Reimposing a nested structure to the resulting
 --   tuple-of-arrays is not the job of this function.
 evalSimpleAcc :: S.Prog a -> [AccArray]
-evalSimpleAcc (S.Prog binds results progtype _) = 
+evalSimpleAcc (S.Prog {progBinds, progResults}) = 
 --    concatArrays $ 
-    maybtrace ("[dbg] evalSimpleAcc, initial env "++ show (L.map (\(ProgBind v _ _ _)->v) binds)
+    maybtrace ("[dbg] evalSimpleAcc, initial env "++ show (L.map (\(ProgBind v _ _ _)->v) progBinds)
            ++"  yielded environment: "++show (M.keys finalenv)) $
-    L.map (unArrVal . (envLookup finalenv)) results
+    L.map (unArrVal . (envLookup finalenv)) progResults
   where 
-   finalenv = loop M.empty binds
+   finalenv = loop M.empty progBinds
    -- A binding simply extends an environment of values. 
 --   loop :: [(S.Var, S.Type, Either S.Exp S.AExp)] -> Env
    loop env [] = env
