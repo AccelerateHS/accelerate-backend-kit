@@ -33,9 +33,10 @@ data GPUProg decor = GPUProg {
   progBinds     :: [GPUProgBind decor],
   progResults   :: [Var],
   uniqueCounter :: Int,
-  progType      :: Type, -- Final, pre-flattened type, can be an array-tuple.
-  -- A table mapping the name of a top-level array to the last event
-  -- that we need to wait on to fill it:
+  progType      :: Type, -- ^ Final, pre-flattened type, can be an array-tuple.
+  
+  -- | A table mapping the name of a top-level array to the last event
+  --   that we need to wait on to fill it:
   lastwriteTable :: [(Var,EvtId)]
   --  writerMap  :: M.Map Var EvtId -- No Generic yet
 } deriving (Read,Show,Eq,Generic, Ord)
@@ -58,11 +59,11 @@ data GPUProg decor = GPUProg {
 -- `outarrs` is actually kind of multi-purpose, because scalar
 -- bindings also produce output bindings, which are not arrays.
 data GPUProgBind d = GPUProgBind {
-      evtid   :: EvtId,
-      evtdeps :: [EvtId], 
-      outarrs :: [(Var,MemLocation,Type)],
-      decor   :: d,
-      op      :: TopLvlForm
+      evtid   :: EvtId,                    -- ^ EventID for this operator's execution.      
+      evtdeps :: [EvtId],                  -- ^ Dependencies for this operator.      
+      outarrs :: [(Var,MemLocation,Type)], -- ^ Outputs of this operator.
+      decor   :: d,                        -- ^ Parameterizable decoration
+      op      :: TopLvlForm                -- ^ The operator itself.
     }
     deriving (Read,Show,Eq,Generic, Ord)
 
@@ -72,18 +73,18 @@ type EvtId = Var
 -- Accelerate Array-level Expressions
 ------------------------------------------------------------
 
--- A top level operation, including array and scalar expressions.
+-- | A top level operation, including array and scalar expressions.
 data TopLvlForm =   
     ScalarCode ScalarBlock -- A block of Scalar code binding one or more variables.
   | Cond Exp Var Var
   | Use       AccArray
 
-  -- Create a new array of the specified # elements:
+  -- | Create a new array of the specified # elements:
   | NewArray Exp 
 
-  -- A GPU kernel.  There is no implicit output array (like with
-  -- Generate).  Scalar and array arguments to the kernel must be
-  -- explicit:
+  -- | A GPU kernel.  There is no implicit output array (like with
+  --   Generate).  Scalar and array arguments to the kernel must be
+  --   explicit:
   | Kernel  { kerniters :: [(Var,Exp)],     -- N dimensions.  Each variable ranges from 0 to Exp-1 independently.
               kernbod   :: Fun ScalarBlock, -- *Closed* function.  The arguments here are kernargs NOT the indices.
               kernargs  :: [Exp] }
@@ -92,7 +93,7 @@ data TopLvlForm =
   -- translation and possible additional optimization.  They must be
   -- eliminated before a GPU backend is expected to run.
   ------------------------------------------------------------
-  -- Generate carries the individual dimension components [Exp]
+  -- | Generate carries the individual dimension components [Exp]
   | Generate  [Exp] (Fun ScalarBlock)
   | Fold (Fun ScalarBlock) [Exp] Var Segmentation -- ^ A possibly segmented fold.
   | Scan (Fun ScalarBlock) Direction [Exp] Var    -- ^ [Exp] provides the initial accumulator value(s)
