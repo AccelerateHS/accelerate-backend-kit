@@ -21,7 +21,7 @@ import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import qualified Data.Array.Accelerate.BackendKit.IRs.CLike     as C
 import qualified Data.Array.Accelerate.BackendKit.IRs.GPUIR     as G
-import           Data.Array.Accelerate.BackendKit.IRs.Metadata   (ArraySizeEstimate)
+import           Data.Array.Accelerate.BackendKit.IRs.Metadata   (ArraySizeEstimate, FreeVars)
 import           Data.Array.Accelerate.BackendKit.CompilerUtils  (runPass, runOptPass)
 
 -- Phase 1 passes:
@@ -61,8 +61,8 @@ import Data.Array.Accelerate.BackendKit.Phase3.DesugarFoldScan   (desugarFoldSca
 --------------------------------------------------------------------------------
 
 -- | The final step: Lower to a GPU-targetting language.
-phase3 :: C.LLProg ArraySizeEstimate -> G.GPUProg ()
-phase3 prog = fmap (const ()) $
+phase3 :: C.LLProg ArraySizeEstimate -> G.GPUProg (ArraySizeEstimate, FreeVars)
+phase3 prog = 
   runPass    "desugarGenerate"   desugarGenerate   $     -- (size,freevars)
   runPass    "desugarFoldScan"   desugarFoldScan   $     -- (size,freevars)
   runPass    "convertToGPUIR"    convertToGPUIR    $     -- (size,freevars)
