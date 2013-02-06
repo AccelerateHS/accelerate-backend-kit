@@ -7,7 +7,6 @@
 -- | The JIT defined in this module responds to the following ENVIRONMENT VARIABLES:
 -- 
 --  * SIMPLEINTERP=1 -- use SimpleInterp as backend INSTEAD of C/OpenCL
---  * EMITC=0        -- Disable the C-backend/gcc-compilation and run only OpenCL
 --  * PICKCPU=0      -- Prefer a CPU OpenCL device rather than picking the first GPU one.
 
 module Data.Array.Accelerate.OpenCL.JITRuntime (run, rawRunIO) where 

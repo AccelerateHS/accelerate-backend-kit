@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 
 -- | The program defined by this module responds to the following ENVIRONMENT VARIABLES:
 --  
@@ -29,19 +30,33 @@ import           System.Posix.Env   (getEnv)
 
 import GHC.Conc (threadDelay)
 import Debug.Trace        (trace)
-import qualified Data.Array.Accelerate.OpenCL.JITRuntime as OpenCL (run,rawRunIO) 
-import qualified Data.Array.Accelerate.Cilk.JITRuntime   as Cilk   (run,rawRunIO) 
+import qualified Data.Array.Accelerate.Cilk.JITRuntime   as Cilk   (run,rawRunIO)
+import qualified Data.Array.Accelerate.Cilk as CilkRun
+import qualified Data.Array.Accelerate.C    as CRun
 import           Data.Array.Accelerate.Shared.EmitC (ParMode(..))
+
+#ifdef ENABLE_OPENCL
+import qualified Data.Array.Accelerate.OpenCL.JITRuntime as OpenCL (run,rawRunIO) 
+#endif
 --------------------------------------------------------------------------------  
 
 main :: IO ()
 main = do
+  putStrLn "Note: this tests either the OpenCL backend by default."
+  putStrLn "      EMITC can be set to C or Cilk to test those backends."
+  
   useCBackend <- getEnv "EMITC"
   let backend = case useCBackend of 
                   Just "cilk"         -> "Cilk"
                   Just x | notFalse x -> "C"
+#ifdef ENABLE_OPENCL
                   Nothing             -> "OpenCL"
                   _                   -> "OpenCL"
+#else
+                  _                   -> "C"
+#endif
+
+  putStrLn$ " [!] Testing backend: "++ backend
   ----------------------------------------  
   putStrLn "[main] First checking that all requested tests can be found within 'allProgs'..."
   supportedTestNames <- chooseTests
@@ -55,6 +70,7 @@ main = do
                         Just (TestEntry nm prg ans orig) -> (TestEntry (nameHack nm) prg ans orig))
               supportedTestNames
 
+      -- Temporarily skipping some backends for some tests:
       isCompatible (TestEntry name _ _ _)
         | backend == "OpenCL" = True
         | otherwise = if L.elem name useTests
@@ -72,26 +88,27 @@ main = do
        testCompiler (\ name test -> unsafePerformIO$ do
                          let name' = unNameHack name
                          case backend of
+#ifdef ENABLE_OPENCL
                            "OpenCL" -> do
                              x <- OpenCL.rawRunIO name test
                              -- HACK: sleep to let opencl shut down.
                              -- threadDelay 1000000
                              return x
+#endif
                            "Cilk" -> Cilk.rawRunIO CilkParallel name test
                            "C"    -> Cilk.rawRunIO Sequential   name test
                        )
              supportedTests
   let testsRepack = 
         L.zipWith (\ i (TestEntry name _ _ (AccProg prg)) ->
-                    -- let str = show (run OpenCL prg)
-                    --     iotest :: IO Test 
-                    --     iotest = do putStrLn$ "ACC Result: "++ str
-                    --                 return$ testGroup ("run test "++show i++" "++name) $
-                    --                         hUnitTestToTests $ 
-                    --                           ((length str > 0) ~? "non-empty result string")
-                    -- in buildTest iotest
 
-                    let str = show (OpenCL.run prg)
+                    let runit = case backend of
+#ifdef ENABLE_OPENCL
+                                 "OpenCL" -> OpenCL.run
+#endif
+                                 "Cilk"   -> CilkRun.run
+                                 "C"      -> CRun.run
+                        str = show (runit prg)
                         iotest :: IO Bool
                         iotest = do putStrLn$ "Repacked: "++ str
                                     return (length str > 0)
@@ -145,11 +162,11 @@ example = makeTestEntry "example" p
 oneDimOrLessTests :: [String]
 oneDimOrLessTests = words$ 
      " p1a p1aa p1ab p1ac p1ba  "
-  ++ " p2 "                   -- These will push map through replicate     
-  ++ " p2a  p2e p2f "    -- Some simple replicates
+  ++ " p2 "                    -- These will push map through replicate     
+  ++ " p2a  p2e p2f "          -- Some simple replicates
   ++ " p16a p16b p16c p16d"
-  ++ " p16e"                   -- has a map that won't get fused; gets desugared to Generate.
-  ++ " p4 p4c"                     -- scalar indexing
+  ++ " p16e"                   -- Has a map that won't get fused; gets desugared to Generate.
+  ++ " p4 p4c"                 -- scalar indexing
   ++ " p6b"                    -- scalar tuples
 --  ++ " p9a p9b p9c"            -- array of tuples    
   ++ " p10c p10d p10e p10f p10g p10h p10i "  -- uses slice/index

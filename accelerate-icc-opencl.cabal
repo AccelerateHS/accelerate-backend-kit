@@ -1,6 +1,6 @@
-Name:                accelerate-cpu
+Name:                accelerate-icc-opencl
 Version:             0.13.0.0
-Synopsis:            OpenCL and Cilk backends for Accelerate.
+Synopsis:            OpenCL and Cilk/ICC backends for Accelerate.
 
 Homepage:            https://github.com/AccelerateHS/accelerate-cpu/
 License:             BSD3
@@ -18,30 +18,38 @@ Build-type:          Simple
 -- Constraint on the version of Cabal needed to build this package.
 Cabal-version:       >=1.10
 
+
+Flag opencl
+  Description:          Enable the OpenCL parallel backend
+  Default:              False
+
 Library
+  Default-Language:    Haskell2010
   Exposed-modules:
-                     Data.Array.Accelerate.OpenCL
                      Data.Array.Accelerate.Cilk                     
                      Data.Array.Accelerate.C
   
   -- Modules not exported by this package:
-  Other-modules:       
+  Other-modules:  
                      Data.Array.Accelerate.Shared.EmitCommon
                      Data.Array.Accelerate.Shared.EmitC
-                     Data.Array.Accelerate.Shared.EmitOpenCL
                      Data.Array.Accelerate.Shared.EmitHelpers
                      Data.Array.Accelerate.Shared.EasyEmit
-                     Data.Array.Accelerate.OpenCL.JITRuntime
                      Data.Array.Accelerate.Cilk.JITRuntime
 
-  Build-depends:        base  == 4.*, containers >= 0.3, array, directory,  split,
-                        test-framework, process, unix, 
-                        mtl, pretty, prettyclass, GenericPretty,
-                        accelerate, accelerate-backend-kit, 
-                        OpenCL
+  Build-depends:     base  == 4.*, containers >= 0.3, array, directory,  split,
+                     test-framework, process, unix, 
+                     mtl, pretty, prettyclass, GenericPretty,
+                     accelerate, accelerate-backend-kit
 
---  ghc-options:          -Wall
-  Default-Language:    Haskell2010
+  if flag(opencl) {
+    Exposed-modules:   Data.Array.Accelerate.OpenCL                     
+    Other-modules:     Data.Array.Accelerate.Shared.EmitOpenCL
+                       Data.Array.Accelerate.OpenCL.JITRuntime
+    Build-depends:    OpenCL
+    CPP-options:      -DENABLE_OPENCL
+  }
+
 
 Test-Suite test-accelerate-cpu
     type:       exitcode-stdio-1.0
@@ -52,4 +60,7 @@ Test-Suite test-accelerate-cpu
                  , split >= 0.2
                  , mtl, pretty, prettyclass, GenericPretty
                  , accelerate-backend-kit, accelerate >= 0.13 
-                 , OpenCL
+
+    if flag(opencl)
+      CPP-options:  -DENABLE_OPENCL
+      build-depends: OpenCL
