@@ -13,15 +13,16 @@
 module Data.Array.Accelerate.Shared.EmitC
        (emitC, ParMode(..)) where
 
-import Text.PrettyPrint.HughesPJ       (text)
-import Data.List as L
-import Control.Monad                   (forM_, when)
-import Data.Array.Accelerate.Shared.EasyEmit as E
-import qualified Prelude as P
+import           Control.Monad (forM_, when)
+import           Data.List as L
+import qualified Data.Map  as M
+import qualified Prelude   as P
 import Prelude (($), show, error, return, mapM_, String, fromIntegral, Int)
+import Text.PrettyPrint.HughesPJ       (text)
 import Text.PrettyPrint.GenericPretty (Out(doc))
 import Debug.Trace (trace)
 
+import Data.Array.Accelerate.Shared.EasyEmit as E
 import Data.Array.Accelerate.Shared.EmitHelpers (builderName, emitCType, fragileZip)
 import Data.Array.Accelerate.Shared.EmitCommon
 import Data.Array.Accelerate.BackendKit.IRs.Metadata  (ArraySizeEstimate(..), FreeVars(..))
@@ -33,9 +34,10 @@ import Data.Array.Accelerate.BackendKit.CompilerUtils (dbg)
 
 
 -- | Here is a new type just to create a new instance and implement the type class methods:
-data CEmitter = CEmitter ParMode
-
+--   We also keep around an environment that we extract from the top level program.
+data CEmitter = CEmitter ParMode Env
 data ParMode = CilkParallel | Sequential
+type Env = M.Map Var Type
 
 -- | The final pass in a compiler pipeline.  It emit a GPUProg as a C
 -- program meant for ICC (the Intel C Compiler).
@@ -44,7 +46,11 @@ data ParMode = CilkParallel | Sequential
 -- that there be no SSynchronizeThreads or EGetLocalID / EGetGlobalID
 -- constructs.
 emitC :: ParMode -> GPUProg (ArraySizeEstimate,FreeVars) -> String
-emitC pm = emitGeneric (CEmitter pm)
+emitC pm prog@GPUProg{progBinds} =
+    emitGeneric (CEmitter pm (M.fromList binds)) prog
+  where
+    binds = L.map (\(v,_,ty) -> (v,ty)) $
+            concatMap outarrs progBinds
 
 -- | We fill in the plain-C-specific code generation methods:
 instance EmitBackend CEmitter where
@@ -54,8 +60,8 @@ instance EmitBackend CEmitter where
     include "stdint.h"
     include "stdbool.h"
   
-  invokeKern (CEmitter CilkParallel) len body = E.cilkForRange (0,len) body
-  invokeKern (CEmitter Sequential)   len body = E.forRange (0,len) body
+  invokeKern (CEmitter CilkParallel _) len body = E.cilkForRange (0,len) body
+  invokeKern (CEmitter Sequential _)   len body = E.forRange (0,len) body
 
   emitType _ = emitCType
 
@@ -70,15 +76,15 @@ instance EmitBackend CEmitter where
     return ()
 
   -- ARGUMENT PROTOCOL: Folds expect: ( inSize, inStride, outArrayPtr, inArrayPtr, initElems..., kernfreevars...)
-  emitFoldDef e (GPUProgBind{ evtid, outarrs, decor=(_,FreeVars arrayOpFVs), op }) = do
+  emitFoldDef e@(CEmitter _ env) (GPUProgBind{ evtid, outarrs, decor=(_,FreeVars arrayOpFVs), op }) = do
     let Fold (Lam formals bod) initEs inV _ = op
         vs = take (length initEs) formals
         ws = drop (length initEs) formals
         initargs = map (\(vr,_,ty) -> (emitType e ty, show vr)) vs
         [(outV,_,outTy)] = outarrs 
         outarg   = (emitType e outTy, show outV)
-        inarg    = (emitType e (trace "FINISHME0 - need type" (TArray 1 TInt)), show inV)
-        freeargs = zip [error "FINISHME5 - Need types for free vars"] (map show arrayOpFVs)
+        inarg    = (emitType e (env M.! inV), show inV)
+        freeargs = zip [error "FINISHME5 - EmitC.hs: Need types for free vars"] (map show arrayOpFVs)
         int_t = emitType e TInt
     
     _ <- rawFunDef "void" (builderName evtid) ((int_t, "inSize") : (int_t, "inStride") : 
@@ -162,7 +168,7 @@ execBind e _prog (_ind, GPUProgBind {evtid, outarrs, op, decor=(_,FreeVars array
               EConst (I n) -> fromIntegral n
               EVr v        -> varSyn v
           len = 1  -- Output is fully folded
-          insize  = trace "FINISHME3 -- need size in Fold " 10
+          insize  = trace "FINISHME3 EmitC.hs -- need size in Fold, hardcoding... " 10
           allargs = insize : fromIntegral stride : varSyn outV : varSyn inV : initarg : map varSyn freevars
           
       varinit (emitType e ty) (varSyn outV) (function "malloc" [sizeof elty' * len])
