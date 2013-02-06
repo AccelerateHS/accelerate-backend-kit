@@ -84,7 +84,8 @@ instance EmitBackend CEmitter where
         [(outV,_,outTy)] = outarrs 
         outarg   = (emitType e outTy, show outV)
         inarg    = (emitType e (env M.! inV), show inV)
-        freeargs = zip [error "FINISHME5 - EmitC.hs: Need types for free vars"] (map show arrayOpFVs)
+        freeargs = map (\fv -> (emitType e (env M.! fv), show fv))
+                       arrayOpFVs
         int_t = emitType e TInt
     
     _ <- rawFunDef "void" (builderName evtid) ((int_t, "inSize") : (int_t, "inStride") : 
