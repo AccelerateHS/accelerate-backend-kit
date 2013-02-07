@@ -61,19 +61,19 @@ import Data.Array.Accelerate.BackendKit.Phase3.DesugarFoldScan   (desugarFoldSca
 --------------------------------------------------------------------------------
 
 -- | The final step: Lower to a GPU-targetting language.
-phase3 :: C.LLProg ArraySizeEstimate -> G.GPUProg (ArraySizeEstimate, FreeVars)
+phase3 :: C.LLProg () -> G.GPUProg (ArraySizeEstimate, FreeVars)
 phase3 prog = 
   runPass    "desugarGenerate"   desugarGenerate   $     -- (size,freevars)
   runPass    "desugarFoldScan"   desugarFoldScan   $     -- (size,freevars)
   runPass    "convertToGPUIR"    convertToGPUIR    $     -- (size,freevars)
-  runPass    "kernFreeVars"      kernFreeVars      $     -- (size,freevars)
+  runPass    "kernFreeVars"      kernFreeVars      $     -- (freevars)
   prog
   
 -- | The bulk of the compilation process -- eliminate unnecessary
 -- forms and lower the language.
-phase2 :: S.Prog () -> C.LLProg ArraySizeEstimate
+phase2 :: S.Prog () -> C.LLProg ()
 phase2 prog =
-  runPass    "convertToCLike"    convertToCLike    $     -- (size)
+  runPass    "convertToCLike"    convertToCLike    $     -- ()
   runPass    "typecheck3"        typecheckPass     $     -- (size)
   runPass    "unzipETups"        unzipETups        $     -- (size)  
   runPass    "normalizeExps"     normalizeExps     $     -- (size)

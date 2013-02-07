@@ -39,11 +39,11 @@ type Env = M.Map Var (Type, Maybe [Var])
 -- | This pass takes a SimpleAST IR which already follows a number of
 --   conventions that make it directly convertable to the lower level
 --   IR, and it does the final conversion.
-convertToCLike :: Prog ArraySizeEstimate -> LL.LLProg ArraySizeEstimate
+convertToCLike :: Prog ArraySizeEstimate -> LL.LLProg ()
 convertToCLike Prog{progBinds,progResults,progType,uniqueCounter,typeEnv} =
   LL.LLProg
   {
-    LL.progBinds    = binds, 
+    LL.progBinds    = map (fmap (const ())) binds, 
     LL.progResults  = map (copyProp finalEnv) progResults,
     LL.progType     = progType,
     LL.uniqueCounter= newCounter,

@@ -16,13 +16,13 @@ import           Data.Set  as S
 
 -- | A compiler pass that adds metadata only.  It counts the uses of
 --   all array and scalar variables.  
-kernFreeVars :: LLProg a -> LLProg (a, FreeVars)
+kernFreeVars :: LLProg () -> LLProg (FreeVars)
 kernFreeVars prog@LLProg{progBinds} =
   prog{ progBinds= L.map doBind progBinds}
 
-doBind :: LLProgBind t -> LLProgBind (t, FreeVars)
+doBind :: LLProgBind () -> LLProgBind (FreeVars)
 -- This pass measures KERNEL free vars, these scalar expressions don't count:
-doBind (LLProgBind vrs d op) = LLProgBind vrs (d,FreeVars (S.toList (doAE op))) op
+doBind (LLProgBind vrs d op) = LLProgBind vrs (FreeVars (S.toList (doAE op))) op
 
 -- Update a usemap with new usages found in an AExp.
 doAE :: LL.TopLvlForm -> S.Set SA.Var

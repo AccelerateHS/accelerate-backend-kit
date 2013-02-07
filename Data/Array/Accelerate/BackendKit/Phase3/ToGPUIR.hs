@@ -24,7 +24,7 @@ import qualified Data.Set                        as S
 -- | This pass takes a SimpleAST IR which already follows a number of
 --   conventions that make it directly convertable to the lower level
 --   GPU IR, and it does the final conversion.
-convertToGPUIR :: LLProg (ArraySizeEstimate,FreeVars) -> G.GPUProg (ArraySizeEstimate,FreeVars)
+convertToGPUIR :: LLProg (FreeVars) -> G.GPUProg (ArraySizeEstimate,FreeVars)
 convertToGPUIR LLProg{progBinds,progResults,progType,uniqueCounter,sizeEnv} =
   G.GPUProg
   {
@@ -46,9 +46,9 @@ defaultDec :: (ArraySizeEstimate, FreeVars)
 defaultDec = (UnknownSize, FreeVars [])
 
 doBinds :: M.Map S.Var (S.Type, S.TrivialExp) -> M.Map S.Var G.EvtId ->
-           [LLProgBind (ArraySizeEstimate,FreeVars)] -> GensymM [G.GPUProgBind (ArraySizeEstimate,FreeVars)]
+           [LLProgBind (FreeVars)] -> GensymM [G.GPUProgBind (ArraySizeEstimate,FreeVars)]
 doBinds _ _ [] = return []
-doBinds sizeEnv evEnv (LLProgBind vartys dec@(_,FreeVars fvs) toplvl : rest) = do
+doBinds sizeEnv evEnv (LLProgBind vartys dec@(FreeVars fvs) toplvl : rest) = do
   newevt <- genEvt
   let -- < TEMPORARY!  FIXME >
       getSize v = case sizeEnv M.! v of
