@@ -133,8 +133,10 @@ data Prog decor = Prog {
   progType    :: Type,  -- Final, pre-flattened type, can be an array-tuple.
   uniqueCounter :: Int,  -- Counter for unique variable suffix generation
 
-  -- ^ Filled in later in the compiler, describes the shape of all top level binds.
-  sizeEnv :: M.Map Var (Type, [TrivialExp])
+  -- | A cache for efficiency only.  This should contain bindings for a superset of
+  -- all top-level variables bound by progBinds.  Most passes don't change this, so
+  -- caching it here avoids rebuilding the `Map` many times.
+  typeEnv :: M.Map Var Type
 } deriving (Read,Show,Eq,Generic, Ord)
 
 -- | A top-level binding.  Binds a unique variable name to either an
@@ -473,24 +475,26 @@ typeByteSize ty =
   case ty of {
     TInt8 ->1;    TInt16  ->2;  TInt32  ->4;  TInt64 ->8;
     TWord8 ->1;   TWord16  ->2; TWord32  ->4; TWord64 ->8;
-    TInt    -> sizeOf(undefined::Int);
+    TInt    -> sizeOf(err::Int);
 --    TInt    -> 4;
-    TWord   -> sizeOf(undefined::Word);    
-    TCShort -> sizeOf(undefined::CShort);
-    TCInt   -> sizeOf(undefined::CInt);
-    TCLong  -> sizeOf(undefined::CLong);
-    TCLLong -> sizeOf(undefined::CLLong);
-    TCUShort ->sizeOf(undefined::CUShort);
-    TCUInt   ->sizeOf(undefined::CUInt);
-    TCULong  ->sizeOf(undefined::CULong);
-    TCULLong ->sizeOf(undefined::CULLong);
+    TWord   -> sizeOf(err::Word);    
+    TCShort -> sizeOf(err::CShort);
+    TCInt   -> sizeOf(err::CInt);
+    TCLong  -> sizeOf(err::CLong);
+    TCLLong -> sizeOf(err::CLLong);
+    TCUShort ->sizeOf(err::CUShort);
+    TCUInt   ->sizeOf(err::CUInt);
+    TCULong  ->sizeOf(err::CULong);
+    TCULLong ->sizeOf(err::CULLong);
     TCChar -> 1; TCSChar -> 1; TCUChar -> 1; -- C character types.
     TFloat  -> 4; TDouble  -> 8;
     TCFloat -> 4; TCDouble -> 8;
-    TBool -> 1;   TChar -> 1; -- sizeOf(undefined::Char)
+    TBool -> 1;   TChar -> 1; -- sizeOf(err::Char)
     TTuple ls -> sum$ map typeByteSize ls;
     TArray _ _ -> error "typeByteSize: cannot know the size of array from its type"
   }
+ where
+   err = error "typeByteSize: this should never be used"
 
 -- | Is the type numeric, rather than, for example, an array, tuple,
 -- boolean or character.  Note that C characters are considered
@@ -880,8 +884,8 @@ instance Out CUChar  where docPrec _ = text . show; doc = docPrec 0
 instance Out AccArray where docPrec _ = text . show; doc = docPrec 0
 
 instance (Out k, Out v) => Out (M.Map k v) where
-  docPrec = undefined
-  doc     = undefined
+  docPrec n m = docPrec n $ M.toList m
+  doc         = docPrec 0 
   
 -- Why is this one not included in the array package?:
 instance (Read elt, U.IArray UArray elt) => Read (U.UArray Int elt) where

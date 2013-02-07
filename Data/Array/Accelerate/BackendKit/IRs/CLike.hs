@@ -1,3 +1,4 @@
+
 {-# LANGUAGE DeriveGeneric #-}
 
 module Data.Array.Accelerate.BackendKit.IRs.CLike
@@ -29,6 +30,11 @@ data LLProg decor = LLProg {
   progResults :: [Var],
   uniqueCounter :: Int,
   progType    :: Type -- Final, pre-flattened type, can be an array-tuple.
+
+  -- | Describes the type and shape of all top level binds.  The list has length
+  -- equal to the number of dimensions.
+--  sizeEnv :: M.Map Var (Type, [TrivialExp])
+  
 } deriving (Read,Show,Eq,Generic, Ord)
 
 -- | A progbind may bind multiple arrays simultaneously.  The unzipped

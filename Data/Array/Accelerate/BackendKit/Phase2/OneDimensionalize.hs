@@ -19,6 +19,7 @@ import Control.Monad.State.Strict
 import Control.Monad.Reader
 import Text.PrettyPrint.GenericPretty (Out(doc))
 
+import qualified Data.Map as M
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
 import Data.Array.Accelerate.BackendKit.IRs.Metadata (ArraySizeEstimate(..))
 import Data.Array.Accelerate.BackendKit.Utils.Helpers (genUnique, genUniqueWith, GensymM, mkIndTy, mkPrj,
@@ -41,7 +42,10 @@ oneDimensionalize :: Prog ArraySizeEstimate -> Prog ArraySizeEstimate
 oneDimensionalize  prog@Prog{progBinds, progType, uniqueCounter } = 
   prog { progBinds    = binds,
          progType     = doTy progType, 
-         uniqueCounter= newCount }
+         uniqueCounter= newCount,
+         -- Rebuild this because types change due to ranks becoming 1:
+         typeEnv      = M.fromList$ map (\(ProgBind v t _ _) -> (v,t)) binds
+       }
   where
     m1 = mapM doBind progBinds
     m2 = runReaderT m1 prog

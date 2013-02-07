@@ -20,7 +20,7 @@ mtrace = maybtrace
 fuseMaps :: Prog (ArraySizeEstimate,Uses) -> Prog (ArraySizeEstimate,Uses)
 fuseMaps prog@Prog{progBinds} =
   prog { progBinds= doBinds [] M.empty progBinds}
-
+  -- TODO: Remove dead entries from the typeEnv.
 
 fuseLam1s :: Fun1 Exp -> Fun1 Exp -> Fun1 Exp
 fuseLam1s (Lam1 (v1,ty1) bod1) (Lam1 (v2,ty2) bod2) =

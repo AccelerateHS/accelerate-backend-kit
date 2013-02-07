@@ -76,6 +76,7 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
              return $ S.Prog { progBinds   = finalbinds,
                                progResults = (L.map unVar $ flattenTT newbod),
                                progType    = (getAnnot bod),
+                               typeEnv     = M.fromList$ L.map (\(S.ProgBind v t _ _) -> (v,t)) finalbinds,
                                uniqueCounter = 0 }
  
    -- Called on already processed expressions:

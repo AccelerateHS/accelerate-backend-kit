@@ -61,7 +61,7 @@ doBinds n mp (ProgBind arOut ty (size, _) (Right ae) : rest) = this : doBinds (n
        UnknownSize -> 
          (error$"DesugarMaps: not handling Map/ZipWith of UnknownSize yet...")$ 
          -- TEMP: This is there for later:
-         let numDims = undefined in
+         let numDims = error "desguToGenerate: UNFINISHED -- need numDims" in
          createShapeIntersection numDims $         
            map (\v -> case M.lookup v mp of
                         Nothing -> Left v
@@ -71,6 +71,6 @@ doBinds n mp (ProgBind arOut ty (size, _) (Right ae) : rest) = this : doBinds (n
 
 -- TODO FIXME: Handle unknown sizes and intersections:
 createShapeIntersection :: Int -> [Either Var [Int]] -> [Exp]
-createShapeIntersection = undefined 
+createShapeIntersection = error "FINISHME: DesugToGenerate.hs: createShapeIntersection"
   -- This needs to either use the information we have statically, or
   -- use EShape to get the necessary information at runtime.

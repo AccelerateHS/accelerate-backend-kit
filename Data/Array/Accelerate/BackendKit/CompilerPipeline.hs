@@ -105,7 +105,7 @@ phase2A prog =
 phase1 :: Sug.Arrays a => Sug.Acc a -> S.Prog ()
 phase1 prog =
   runPass "typecheck1"           typecheckPass     $       
-  runPass "removeArrayTuple"     removeArrayTuple  $     
+  runPass "removeArrayTuple"     removeArrayTuple  $ -- convert to S.Prog
   runPass "gatherLets"           gatherLets        $  
   runPass "liftComplexRands"     liftComplexRands  $  
   runPass "staticTuples"         staticTuples      $

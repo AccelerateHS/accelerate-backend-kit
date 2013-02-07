@@ -3,7 +3,7 @@
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 -- | This pass does the final conversion to CLike IR format.  Unfortunately it
---   does more work tan that along the way.  In particular it finishes the rest of
+--   does more work than that along the way.  In particular it finishes the rest of
 --   the unzipping process, and incidentally does copy-prop.
 
 module Data.Array.Accelerate.BackendKit.Phase2.ToCLike (convertToCLike) where
@@ -46,6 +46,7 @@ convertToCLike Prog{progBinds,progResults,progType,uniqueCounter} =
   }
   where
     ((finalEnv,binds),newCounter) = runState (doBinds M.empty progBinds) uniqueCounter    
+
 
 doBlock :: Env -> Exp -> GensymM LL.ScalarBlock
 doBlock env ex = do

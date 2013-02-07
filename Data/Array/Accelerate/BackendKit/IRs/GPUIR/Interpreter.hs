@@ -92,7 +92,7 @@ evalExp env expr =
 
 
 evalProg :: Prog a -> Value
-evalProg = undefined
+evalProg = error "FINISHME GPUIR/Interpreter.hs -- evalProg"
 
 -- Actually respecting SSynchronizeThreads is very difficult here,
 -- evaluating sequentially requires using CPS to stop all threads at
@@ -110,7 +110,7 @@ evalPB GPUProgBind{ outarrs, op } =
     Kernel dimEs bod args -> do
       env <- get
       let dims = map (evalExp env . snd) dimEs
-      undefined
+      error "FINISHME GPUIR/Interpreter.hs -- evalPB, Kernel case"
 
 -- GPUProgBind {
 --       evtid   :: EvtId,
