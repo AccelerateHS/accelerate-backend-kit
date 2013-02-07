@@ -27,7 +27,7 @@ import Data.Array.Accelerate.Shared.EmitHelpers (builderName, emitCType, fragile
 import Data.Array.Accelerate.Shared.EmitCommon
 import Data.Array.Accelerate.BackendKit.IRs.Metadata  (FreeVars(..))
 import Data.Array.Accelerate.BackendKit.IRs.GPUIR as G
-import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Type(..), Const(..), Var, AccArray(arrDim))
+import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Type(..), Const(..), Var, AccArray(arrDim), TrivialExp(..))
 import Data.Array.Accelerate.BackendKit.CompilerUtils (dbg)
 
 
@@ -125,7 +125,7 @@ execBind e _prog (_ind, GPUProgBind {outarrs=resultBinds, op=(ScalarCode blk)}) 
      eprintf (" [dbg] Top lvl scalar binding: "++show vr++" = "++ printfFlag ty++"\n") [varSyn vr]
    return ()
      
-execBind e _prog (_ind, GPUProgBind {evtid, outarrs, op, decor=(FreeVars arrayOpFVs)}) =
+execBind e GPUProg{sizeEnv} (_ind, GPUProgBind {evtid, outarrs, op, decor=(FreeVars arrayOpFVs)}) =
   let [(outV,_,ty)] = outarrs -- FIXME -- only handling one-output arrays for now...
       TArray _ elty = ty 
       elty' = emitType e elty in
@@ -169,7 +169,8 @@ execBind e _prog (_ind, GPUProgBind {evtid, outarrs, op, decor=(FreeVars arrayOp
               EConst (I n) -> fromIntegral n
               EVr v        -> varSyn v
           len = 1  -- Output is fully folded
-          insize  = trace "FINISHME3 EmitC.hs -- need size in Fold, hardcoding... " 10
+          insize :: Syntax
+          insize  = trivToSyntax$ P.snd$ sizeEnv M.! inV
           allargs = insize : fromIntegral stride : varSyn outV : varSyn inV : initarg : map varSyn freevars
           
       varinit (emitType e ty) (varSyn outV) (function "malloc" [sizeof elty' * len])
@@ -228,3 +229,9 @@ fst3 (a,_,_) = a
 
 thd3 :: (t, t1, t2) -> t2
 thd3 (_,_,c) = c
+
+
+trivToSyntax :: TrivialExp -> Syntax
+trivToSyntax (TrivConst n)  = fromIntegral n
+trivToSyntax (TrivVarref v) = varSyn v
+
