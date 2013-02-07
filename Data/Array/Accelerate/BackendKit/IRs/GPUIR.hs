@@ -16,24 +16,29 @@ module Data.Array.Accelerate.BackendKit.IRs.GPUIR
        )
        where
 
-import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as SA
-import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Var,Type,AccArray, Prim(..), Const(..), Type(..))
 import qualified Data.Set  as S
+import qualified Data.Map  as M
 import           Data.List as L
-import           Text.PrettyPrint.GenericPretty (Out, Generic)
-import           Data.Array.Accelerate.BackendKit.IRs.CLike (Direction(..))
 import           Prelude as P
+import           Text.PrettyPrint.GenericPretty (Out, Generic)
+
+import           Data.Array.Accelerate.BackendKit.IRs.CLike (Direction(..))
+import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as SA
+import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
+                   (Var,Type,AccArray, Prim(..), Const(..), Type(..), TrivialExp)
+
 
 ----------------------------------------------------------------------------------------------------
 -- Low Level Intermediate Representation
 ----------------------------------------------------------------------------------------------------
 
--- | The low-level AST.
+-- | The lowest-level AST containing a very different ProgBind type.
 data GPUProg decor = GPUProg { 
   progBinds     :: [GPUProgBind decor],
   progResults   :: [Var],
   uniqueCounter :: Int,
   progType      :: Type, -- ^ Final, pre-flattened type, can be an array-tuple.
+  sizeEnv :: M.Map Var (Type, TrivialExp), -- ^ Same as CLike IR (LLProg)
   
   -- | A table mapping the name of a top-level array to the last event
   --   that we need to wait on to fill it:

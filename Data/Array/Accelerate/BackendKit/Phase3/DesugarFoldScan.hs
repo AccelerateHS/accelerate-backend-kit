@@ -7,14 +7,16 @@
 
 module Data.Array.Accelerate.BackendKit.Phase3.DesugarFoldScan (desugarFoldScan) where
 
-import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
-                  (Const(..), Type(..), Prim(..), NumPrim(..), ScalarPrim(..), Var)
-import qualified Data.Set                        as S
+import           Control.Monad.State.Strict (runState)
+import qualified Data.Map as M
+import qualified Data.Set as S
+
 import           Data.Array.Accelerate.BackendKit.IRs.GPUIR         as G
 import           Data.Array.Accelerate.BackendKit.IRs.Metadata  (ArraySizeEstimate(..), FreeVars(..))
 import           Data.Array.Accelerate.BackendKit.Utils.Helpers (genUnique, genUniqueWith, GensymM, strideName, fragileZip)
-import           Control.Monad.State.Strict (runState)
-
+import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
+                   (Const(..), Type(..), Prim(..), NumPrim(..), ScalarPrim(..), Var, TrivialExp(..))
+                  
 --------------------- CONSTANTS : Configuration Parameters ---------------------
 
 -- | How big should a work-group for folding purposes?  It must be big
@@ -27,23 +29,24 @@ workGroupSize = 1024
 
 -- | Desugar Generate and Fold into explicit Kernels and NewArrays.
 desugarFoldScan :: GPUProg (ArraySizeEstimate,FreeVars) -> GPUProg (ArraySizeEstimate,FreeVars)
-desugarFoldScan prog@GPUProg{progBinds, uniqueCounter} =
+desugarFoldScan prog@GPUProg{progBinds, uniqueCounter, sizeEnv} =
   prog {
     progBinds    = binds, 
     uniqueCounter= newCounter
   }
   where
-    (binds,newCounter) = runState (doBinds prog progBinds) uniqueCounter
+    (binds,newCounter) = runState (doBinds sizeEnv prog progBinds) uniqueCounter
 
 
 -- This procedure keeps around a "size map" from array values names to
 -- their number of elements.
-doBinds ::          GPUProg     (ArraySizeEstimate,FreeVars)  ->
+doBinds ::          M.Map Var (Type,TrivialExp) ->
+                    GPUProg     (ArraySizeEstimate,FreeVars) -> 
                    [GPUProgBind (ArraySizeEstimate,FreeVars)] ->
            GensymM [GPUProgBind (ArraySizeEstimate,FreeVars)]
-doBinds _ [] = return []
-doBinds prog (pb@GPUProgBind { decor=(sz,FreeVars arrayOpFvs), op } : rest) = do  
-  let deflt = do rst <- doBinds prog rest
+doBinds _ _ [] = return []
+doBinds sizeEnv prog (pb@GPUProgBind { decor=(sz,FreeVars arrayOpFvs), op } : rest) = do  
+  let deflt = do rst <- doBinds sizeEnv prog rest
                  return $ pb : rst
   case op of
      Use  _       -> deflt
@@ -60,8 +63,7 @@ doBinds prog (pb@GPUProgBind { decor=(sz,FreeVars arrayOpFvs), op } : rest) = do
 -- PARALLEL REDUCTION, UNFINISHED:    
        -- Not supporting tuple (multiple) accumulators:
        let (ScalarBlock locals [res] stmts) = bod
-           Just upstream = lookupProgBind inV (progBinds prog)
-           inSz = getSizeOfPB upstream
+           inSz = getSizeE inV
        -- We need a bunch of temporaries!
        ix           <- genUniqueWith "ix"
        ix2          <- genUniqueWith "ix"
@@ -69,7 +71,7 @@ doBinds prog (pb@GPUProgBind { decor=(sz,FreeVars arrayOpFvs), op } : rest) = do
        newevt       <- genUniqueWith "evtFldArr"
        sharedAccums <- genUniqueWith "sharedAccums"
        numthreads   <- genUniqueWith "numThrds"
-e
+
        -- The old arrayOpFvs are only for the kernel (the Lam) not for the extra bits that are
        -- parameters to the fold or are implicit.
        let localmembind = (sharedAccums, Local, TArray 1 ty2)
@@ -78,6 +80,9 @@ e
                     S.union (expFreeVars inSz) (expFreeVars initE)
            -- The new free variables are all top-level, so we use that fact to recover their types:
            newbinds = map (retrieveTopLvlBind prog) newfvs
+           -- FIXME -- USE sizeEnv instead 
+
+
            almostAllBinds = outarr1 : newbinds ++ corefreebinds
            allfreebinds = localmembind : almostAllBinds
            -- The sharedAccums variable becomes a kernel argument and contains workGroupSize elements:
@@ -113,7 +118,7 @@ e
               ]
               --------------------------End Kernel-----------------------------
 
-       rst <- doBinds prog rest
+       rst <- doBinds sizeEnv prog rest
        scalarBind <- mkScalarBind numthreads TInt (minI inSz workGroupSizeE)
        return $ 
          GPUProgBind newevt [] outarrs () (NewArray one) :
@@ -124,8 +129,7 @@ e
        ------------------------------------------------------------
        -- Not supporting tuple (multiple) accumulators:
        let (ScalarBlock locals [res] stmts) = bod
-           Just upstream = lookupProgBind inV (progBinds prog)
-           inSz = getSizeOfPB upstream
+           inSz = getSizeE inV
        forloop <- forUpToM inSz $ \ ix ->
                     SSet v (EIndexScalar inV (EVr ix)) :
                     stmts ++ -- This will consume v & w and write res.
@@ -141,10 +145,21 @@ e
                    ScalarBlock ((v,G.Default,ty1) : (w,G.Default,ty2) : locals) [w] $
                      [SSet w initE,
                       forloop]
-       rst <- doBinds prog rest 
+       rst <- doBinds sizeEnv prog rest 
        return (pb{ decor=(sz,FreeVars$ S.toList newfvs), op = newop } : rst)
 #endif
      Fold _ _ _ _ -> error$"DesugarFoldScan.hs: Fold did not match invariants for this pass: "++ show op
+
+
+  where -- Goes with doBinds above.
+
+    -- | Get an expression representing the size of an output array:
+    getSizeE :: Var -> Exp
+    getSizeE vr = 
+      case M.lookup vr sizeEnv of 
+        Just (_, TrivConst n)  -> EConst (I n)
+        Just (_, TrivVarref v) -> EVr v
+        Nothing -> error$"DesugarFoldScan.hs: no size entry for variable: "++show vr
                
 --------------------------------------------------------------------------------
 
@@ -160,37 +175,13 @@ forUpTo ix limit bod =
             (EPrimApp TInt (NP Add)  [EVr ix, EConst (I 1)])
          bod
 
----------------------------------------------------------------------
--- HACK: This is incomplete!  We need a general-purpose way of getting
--- the size of arrays at this phase in the compiler.  To do this
--- properly OneDimensionalize will need to be modified.
-
- -- Get an expression representing the size of an output array:
-getSizeE :: TopLvlForm -> Exp
-getSizeE ae = 
-  case ae of 
-    Generate [ex] _ -> ex
-    _ -> error$"DesugarFoldScan.hs/getSizeE: cannot handle this yet: "++show ae
-
-getSizeOfPB :: GPUProgBind (ArraySizeEstimate,FreeVars) -> Exp
-getSizeOfPB GPUProgBind{ decor=(sz,_), op } =
-  case sz of
-    KnownSize ls -> EConst (I (product ls))
-    UnknownSize  -> getSizeE op
-
 zero :: Exp
 zero = EConst (I 0)
 
 one :: Exp
 one  = EConst (I 1)
 
-
--- topLevelExpType :: Show a => t -> a -> t1
--- topLevelExpType prog ex = error$"FINISHME: need to get the type of top level expr: "++show ex
-
--- (\vr -> (vr, Default, topLevelExpType prog (EVr vr)))
-
-
+-- Quadratic -- TODO: Use a Data.Map
 retrieveTopLvlBind :: GPUProg t -> Var -> (Var, MemLocation, Type)
 retrieveTopLvlBind GPUProg{progBinds} vr = loop progBinds
  where

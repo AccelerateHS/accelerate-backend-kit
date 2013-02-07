@@ -28,11 +28,12 @@ convertToGPUIR :: LLProg (FreeVars) -> G.GPUProg (ArraySizeEstimate,FreeVars)
 convertToGPUIR LLProg{progBinds,progResults,progType,uniqueCounter,sizeEnv} =
   G.GPUProg
   {
-    G.progBinds     = binds, 
-    G.progResults   = progResults,
-    G.progType      = progType,
-    G.uniqueCounter = newCounter,
-    G.lastwriteTable   = concatMap fn binds
+    G.progBinds      = binds, 
+    G.progResults    = progResults,
+    G.progType       = progType,
+    G.uniqueCounter  = newCounter,
+    G.lastwriteTable = concatMap fn binds,
+    G.sizeEnv        = sizeEnv
   }
   where
     (binds,newCounter) = runState (doBinds sizeEnv M.empty progBinds) uniqueCounter
