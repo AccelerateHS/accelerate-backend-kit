@@ -21,10 +21,8 @@ import           Control.Monad.State.Strict (runState)
 --   In the process this pass does a form of closure conversion.  Free
 --   variables inside `Generate`s are passed explicitly to Kernels.
 -- 
---   The metadata becomes less meaningful after this pass.
---   `ArraySizeEstimate` for a Kernel is not well defined in general,
---   so it is expected to be `UnknownSize`.
-desugarGenerate :: GPUProg (ArraySizeEstimate,FreeVars) -> GPUProg (ArraySizeEstimate,FreeVars)
+--   The newly introduced Kernel forms are expected NOT to have any `FreeVars`
+desugarGenerate :: GPUProg (ArraySizeEstimate,FreeVars) -> GPUProg (FreeVars)
 desugarGenerate prog@GPUProg{progBinds, uniqueCounter} =
   prog {
     progBinds    = binds, 
@@ -37,12 +35,12 @@ desugarGenerate prog@GPUProg{progBinds, uniqueCounter} =
 -- This procedure keeps around a "size map" from array values names to
 -- their number of elements.
 doBinds :: GPUProg (ArraySizeEstimate,FreeVars) ->
-           [GPUProgBind (ArraySizeEstimate,FreeVars)] -> GensymM [GPUProgBind (ArraySizeEstimate,FreeVars)]
+           [GPUProgBind (ArraySizeEstimate,FreeVars)] -> GensymM [GPUProgBind (FreeVars)]
 doBinds _ [] = return []
 doBinds prog (pb@GPUProgBind { outarrs, evtid, evtdeps,
-                               decor=(sz,FreeVars arrayOpFvs), op } : rest) = do  
+                               decor=(_,FreeVars arrayOpFvs), op } : rest) = do  
   let deflt = do rst <- doBinds prog rest
-                 return $ pb : rst
+                 return $ pb{decor=FreeVars arrayOpFvs} : rst
   case op of
      Use  _       -> deflt
      Cond _ _ _   -> deflt
@@ -66,8 +64,8 @@ doBinds prog (pb@GPUProgBind { outarrs, evtid, evtdeps,
        newevt <- genUniqueWith "evtNew"
        rst <- doBinds prog rest
        return $ 
-         GPUProgBind newevt [] outarrs (sz,FreeVars []) (NewArray (foldl mulI one els)) :
-         GPUProgBind evtid (newevt:evtdeps) [] (UnknownSize,FreeVars [])
+         GPUProgBind newevt [] outarrs (FreeVars []) (NewArray (foldl mulI one els)) :
+         GPUProgBind evtid (newevt:evtdeps) [] (FreeVars [])
                      (Kernel iters (Lam freebinds' (doBod iterVs bod))
                                    (map (EVr . fst3) freebinds')) :
          rst 
