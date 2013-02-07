@@ -25,7 +25,7 @@ import qualified Data.Set                        as S
 --   conventions that make it directly convertable to the lower level
 --   GPU IR, and it does the final conversion.
 convertToGPUIR :: LLProg (ArraySizeEstimate,FreeVars) -> G.GPUProg (ArraySizeEstimate,FreeVars)
-convertToGPUIR LLProg{progBinds,progResults,progType,uniqueCounter} =
+convertToGPUIR LLProg{progBinds,progResults,progType,uniqueCounter,sizeEnv} =
   G.GPUProg
   {
     G.progBinds     = binds, 
@@ -35,7 +35,7 @@ convertToGPUIR LLProg{progBinds,progResults,progType,uniqueCounter} =
     G.lastwriteTable   = concatMap fn binds
   }
   where
-    (binds,newCounter) = runState (doBinds M.empty progBinds) uniqueCounter
+    (binds,newCounter) = runState (doBinds sizeEnv M.empty progBinds) uniqueCounter
     -- In the initial translation the lastwriteTable is the identity:
     fn G.GPUProgBind{G.outarrs, G.evtid} =
       let (vs,_,_) = unzip3 outarrs in 
@@ -45,16 +45,21 @@ convertToGPUIR LLProg{progBinds,progResults,progType,uniqueCounter} =
 defaultDec :: (ArraySizeEstimate, FreeVars)
 defaultDec = (UnknownSize, FreeVars [])
 
--- This procedure keeps around a "size map" from array values names to
--- their number of elements.
-doBinds :: M.Map S.Var G.EvtId ->
+doBinds :: M.Map S.Var (S.Type, S.TrivialExp) -> M.Map S.Var G.EvtId ->
            [LLProgBind (ArraySizeEstimate,FreeVars)] -> GensymM [G.GPUProgBind (ArraySizeEstimate,FreeVars)]
-doBinds _ [] = return []
-doBinds evEnv (LLProgBind vartys dec@(_,FreeVars fvs) toplvl : rest) = do
+doBinds _ _ [] = return []
+doBinds sizeEnv evEnv (LLProgBind vartys dec@(_,FreeVars fvs) toplvl : rest) = do
   newevt <- genEvt
-  let rebind deps = G.GPUProgBind newevt deps (map liftBind vartys) dec
+  let -- < TEMPORARY!  FIXME >
+      getSize v = case sizeEnv M.! v of
+                    (_, S.TrivConst n)  -> KnownSize [n]
+                    (_, S.TrivVarref _) -> UnknownSize
+      dec' = if null vartys then (UnknownSize, FreeVars fvs)
+             else (getSize (fst$ head vartys), FreeVars fvs)
+      -- </ TEMPORARY!  FIXME > 
+      rebind deps = G.GPUProgBind newevt deps (map liftBind vartys) dec'
       evEnv' = foldl (\mp (v,_) -> M.insert v newevt mp) evEnv vartys
-  rst <- doBinds evEnv' rest
+  rst <- doBinds sizeEnv evEnv' rest
 
   let -- shared code for cases below:
       liftSB sb cont = do
