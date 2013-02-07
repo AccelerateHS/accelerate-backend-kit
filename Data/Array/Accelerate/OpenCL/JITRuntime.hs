@@ -101,7 +101,7 @@ rawRunIO name prog = do
       return res
 
 -- | Compile down to the penultimate step, right before code generation.
-compilerBackend :: S.Prog () -> G.GPUProg (ArraySizeEstimate,FreeVars)
+compilerBackend :: S.Prog () -> G.GPUProg (FreeVars)
 compilerBackend = phase3 . phase2 
 
 
@@ -109,7 +109,7 @@ compilerBackend = phase3 . phase2
 -- | Run a compiled program via C or OpenCL.  In the latter case
 -- return a pointer to the result(s) in host (CPU) memory.
 setupAndRunProg :: String ->
-                   G.GPUProg (ArraySizeEstimate,FreeVars) ->
+                   G.GPUProg (FreeVars) ->
                    IO ([Ptr ()], M.Map Var BufEntry)
 
 setupAndRunProg name prog2 = do
@@ -221,14 +221,14 @@ data BufEntry = BufEntry { logicalevt :: EvtId,
 -- | Take a program (DAG) and launch an OpenCL task graph that mimics the
 --   structure of that program.  Finally, collect the results.
 runDAG :: (CLContext, CLCommandQueue, CLProgram)
-       -> G.GPUProg (ArraySizeEstimate,FreeVars)
+       -> G.GPUProg (FreeVars)
        -> IO ([Ptr ()], M.Map Var BufEntry)
 runDAG (context, q, clprog) (G.GPUProg{progBinds, progResults, lastwriteTable}) = do
     dbgPrint$ "[JIT] Launching a DAG of "++show (length progBinds)++" nodes..." 
   
     doPBs M.empty M.empty M.empty progBinds
  where
-   sizety :: M.Map Var ((ArraySizeEstimate,FreeVars), Type)
+   sizety :: M.Map Var ((FreeVars), Type)
    sizety = M.fromList$ L.concatMap
               (\ (G.GPUProgBind {outarrs, decor=dec} ) -> map (\ (vr,_,ty) ->  (vr,(dec,ty))) outarrs)
             progBinds
@@ -274,7 +274,7 @@ runDAG (context, q, clprog) (G.GPUProg{progBinds, progResults, lastwriteTable}) 
    doPBs :: M.Map Var Value
          -> M.Map Var BufEntry
          -> M.Map EvtId CLEvent
-         -> [G.GPUProgBind (ArraySizeEstimate,FreeVars)] 
+         -> [G.GPUProgBind (FreeVars)] 
          -> IO ([Ptr ()], M.Map Var BufEntry)
    doPBs _ bufMap evMap [] = do ptrs <- waitArraysGetPtrs bufMap evMap progResults
                                 return (ptrs, bufMap)

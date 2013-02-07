@@ -25,7 +25,7 @@ import Debug.Trace (trace)
 import Data.Array.Accelerate.Shared.EasyEmit as E
 import Data.Array.Accelerate.Shared.EmitHelpers (builderName, emitCType, fragileZip)
 import Data.Array.Accelerate.Shared.EmitCommon
-import Data.Array.Accelerate.BackendKit.IRs.Metadata  (ArraySizeEstimate(..), FreeVars(..))
+import Data.Array.Accelerate.BackendKit.IRs.Metadata  (FreeVars(..))
 import Data.Array.Accelerate.BackendKit.IRs.GPUIR as G
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Type(..), Const(..), Var, AccArray(arrDim))
 import Data.Array.Accelerate.BackendKit.CompilerUtils (dbg)
@@ -45,7 +45,7 @@ type Env = M.Map Var Type
 -- This does not handle the full GPUProg grammar, rather it requires
 -- that there be no SSynchronizeThreads or EGetLocalID / EGetGlobalID
 -- constructs.
-emitC :: ParMode -> GPUProg (ArraySizeEstimate,FreeVars) -> String
+emitC :: ParMode -> GPUProg (FreeVars) -> String
 emitC pm prog@GPUProg{progBinds} =
     emitGeneric (CEmitter pm (M.fromList binds)) prog
   where
@@ -76,7 +76,7 @@ instance EmitBackend CEmitter where
     return ()
 
   -- ARGUMENT PROTOCOL: Folds expect: ( inSize, inStride, outArrayPtr, inArrayPtr, initElems..., kernfreevars...)
-  emitFoldDef e@(CEmitter _ env) (GPUProgBind{ evtid, outarrs, decor=(_,FreeVars arrayOpFVs), op }) = do
+  emitFoldDef e@(CEmitter _ env) (GPUProgBind{ evtid, outarrs, decor=(FreeVars arrayOpFVs), op }) = do
     let Fold (Lam formals bod) initEs inV _ = op
         vs = take (length initEs) formals
         ws = drop (length initEs) formals
@@ -109,8 +109,8 @@ instance EmitBackend CEmitter where
 -- | Generate code that will actually execute a binding, creating the
 --    array in memory.  This is typically called to build the main() function.
 execBind :: (EmitBackend e) => e 
-             -> GPUProg (ArraySizeEstimate,FreeVars)
-             -> (Int, GPUProgBind (ArraySizeEstimate,FreeVars))
+             -> GPUProg (FreeVars)
+             -> (Int, GPUProgBind (FreeVars))
              -> EasyEmit ()
 execBind e _prog (_ind, GPUProgBind {outarrs=resultBinds, op=(ScalarCode blk)}) = do
    -- Declare and then populate then populate the scalar bindings:
@@ -125,7 +125,7 @@ execBind e _prog (_ind, GPUProgBind {outarrs=resultBinds, op=(ScalarCode blk)}) 
      eprintf (" [dbg] Top lvl scalar binding: "++show vr++" = "++ printfFlag ty++"\n") [varSyn vr]
    return ()
      
-execBind e _prog (_ind, GPUProgBind {evtid, outarrs, op, decor=(_,FreeVars arrayOpFVs)}) =
+execBind e _prog (_ind, GPUProgBind {evtid, outarrs, op, decor=(FreeVars arrayOpFVs)}) =
   let [(outV,_,ty)] = outarrs -- FIXME -- only handling one-output arrays for now...
       TArray _ elty = ty 
       elty' = emitType e elty in
