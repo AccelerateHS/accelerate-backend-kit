@@ -87,8 +87,10 @@ rawRunIO pm name prog = do
              ""  -> error "ICC not found!"
              _   -> dbgPrint $"[JIT] Using ICC at: "++ (head (lines whichICC))
            return "icc"
-  
-  cd <- system$ cc++" -std=c99 "++thisprog++".c -o "++thisprog++".exe"
+
+  let ccCmd = cc++" -std=c99 "++thisprog++".c -o "++thisprog++".exe"
+  dbgPrint$ "[JIT]   Compiling with: "++ ccCmd
+  cd <- system$ ccCmd
   case cd of
     ExitSuccess -> return ()
     ExitFailure c -> error$"C Compiler failed with code "++show c

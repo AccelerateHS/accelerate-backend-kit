@@ -54,16 +54,24 @@ emitC pm prog@GPUProg{progBinds} =
 
 -- | We fill in the plain-C-specific code generation methods:
 instance EmitBackend CEmitter where
-  emitIncludes _ = do 
+  emitIncludes e = do 
     include "stdlib.h"
     include "stdio.h"
     include "stdint.h"
     include "stdbool.h"
-  
+    case e of
+      CEmitter Sequential   _ -> return ()
+      CEmitter CilkParallel _ -> do include "cilk/cilk.h"
+                                    include "cilk/reducer.h"
+      
   invokeKern (CEmitter CilkParallel _) len body = E.cilkForRange (0,len) body
   invokeKern (CEmitter Sequential _)   len body = E.forRange (0,len) body
 
   emitType _ = emitCType
+
+  -- In Cilk we use a vectorized ("elemental") function:
+  scalarKernelReturnType (CEmitter CilkParallel _) = "__declspec(vector) void"
+  scalarKernelReturnType (CEmitter Sequential _)   = "void"
 
   emitMain e prog@GPUProg{progBinds} = do 
     _ <- funDef "int" "main" [] $ \ () -> do

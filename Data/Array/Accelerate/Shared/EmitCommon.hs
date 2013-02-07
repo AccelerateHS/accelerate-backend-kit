@@ -81,9 +81,15 @@ class EmitBackend e where
   emitScanDef :: (Out a, EmitBackend e) => e -> GPUProgBind a -> EasyEmit ()
   emitScanDef _e op = error$"EmitCommon.hs: Scan not supported in this backend:\n "++ show (doc op)
 
-  -- | The (constant) return type for a kernel definition. 
+  -- | The (constant) return type for a complete array-level kernel definition. 
   kernelReturnType :: e -> Syntax
   kernelReturnType _ = "void"
+
+  -- | The (constant) return type for a scalar-level kernel definition. 
+  scalarKernelReturnType :: e -> Syntax
+  scalarKernelReturnType _ = "void"
+  
+
 
 ----------------------------------------------------------------------------------------------------
 -- Generic code emisson functions:
@@ -141,8 +147,9 @@ emitBindDef e (_ind, pb@GPUProgBind{ evtid, op, outarrs } ) =
            
        -- (1) Emit a scalar-level procedure:
        -- Use a rawFunDef because we don't want EasyEmit to come up with the variable names:
-       kern <- rawFunDefProto "void" ("kernelFun_"++show evtid)
-                                     (map (decorateArg e) (idxargs ++ formals)) $ do
+       kern <- rawFunDefProto (scalarKernelReturnType e)
+                              ("kernelFun_"++show evtid)
+                              (map (decorateArg e) (idxargs ++ formals)) $ do
          [] <- emitBlock e bodE
          return ()
          
