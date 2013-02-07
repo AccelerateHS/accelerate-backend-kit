@@ -90,14 +90,15 @@ instance EmitBackend CEmitter where
     
     _ <- rawFunDef "void" (builderName evtid) ((int_t, "inSize") : (int_t, "inStride") : 
                                                outarg : inarg : initargs ++ freeargs) $ 
-         do E.forStridedRange (0, "inStride", "inSize") $ \ ix -> do 
-              let [(wvr, _, wty)] = ws in 
-      --        forM_ ws $ \ (wvr, _, wty) -> 
-                varinit (emitType e wty) (varSyn wvr) (arrsub (varSyn inV) ix)
+         do E.comm$"Fold loop, reduction variable(s): "++show vs
+            E.forStridedRange (0, "inStride", "inSize") $ \ ix -> do
+              let [(wvr, _, wty)] = ws
+              varinit (emitType e wty) (varSyn wvr) (arrsub (varSyn inV) ix)
               tmps <- emitBlock e bod
               eprintf " ** Folding in position %d (it was %d) intermediate result %d\n"
                       [ix, (arrsub (varSyn inV) ix), varSyn$ head tmps]
-              forM_ (fragileZip tmps vs) $ \ (tmp,(v,_,_)) -> set (varSyn v) (varSyn tmp)
+              forM_ (fragileZip tmps vs) $ \ (tmp,(v,_,_)) ->
+                 set (varSyn v) (varSyn tmp)
               return ()
             arrset (varSyn outV) 0 (varSyn$ fst3$ head vs) 
             return () -- End rawFunDef
