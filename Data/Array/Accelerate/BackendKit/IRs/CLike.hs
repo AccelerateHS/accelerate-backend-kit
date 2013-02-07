@@ -15,10 +15,13 @@ module Data.Array.Accelerate.BackendKit.IRs.CLike
        where
 
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as SA
-import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Var,Type,Prim,AccArray)
+import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Var,Type,Prim,AccArray,TrivialExp)
+import           Data.Array.Accelerate.BackendKit.IRs.Metadata   (ArraySizeEstimate)
 import           Text.PrettyPrint.GenericPretty (Out, Generic)
-import qualified Data.Set as S
-import           Data.List          as L
+import qualified Data.Set  as S
+import qualified Data.Map  as M
+import           Data.List as L
+
 
 ----------------------------------------------------------------------------------------------------
 -- Low Level Intermediate Representation
@@ -29,11 +32,12 @@ data LLProg decor = LLProg {
   progBinds   :: [LLProgBind decor],
   progResults :: [Var],
   uniqueCounter :: Int,
-  progType    :: Type -- Final, pre-flattened type, can be an array-tuple.
+  progType    :: Type, -- Final, pre-flattened type, can be an array-tuple.
 
-  -- | Describes the type and shape of all top level binds.  The list has length
-  -- equal to the number of dimensions.
---  sizeEnv :: M.Map Var (Type, [TrivialExp])
+  -- | Describes the type and shape of all top level binds.
+  --   All arrays are one-dimensional at this point, so size is a scalar.
+  --   Scalar variables have entries in this map, but their size is listed as zero.
+  sizeEnv :: M.Map Var (Type, TrivialExp)
   
 } deriving (Read,Show,Eq,Generic, Ord)
 

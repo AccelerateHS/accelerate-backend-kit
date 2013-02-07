@@ -74,7 +74,7 @@ phase3 prog =
 phase2 :: S.Prog () -> C.LLProg ArraySizeEstimate
 phase2 prog =
   runPass    "convertToCLike"    convertToCLike    $     -- (size)
-  runPass    "typecheck3"        typecheckPass     $     
+  runPass    "typecheck3"        typecheckPass     $     -- (size)
   runPass    "unzipETups"        unzipETups        $     -- (size)  
   runPass    "normalizeExps"     normalizeExps     $     -- (size)
   phase2A    prog

@@ -1,5 +1,6 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 -- | This pass does the final conversion to CLike IR format.  Unfortunately it
@@ -8,14 +9,17 @@
 
 module Data.Array.Accelerate.BackendKit.Phase2.ToCLike (convertToCLike) where
 
+import qualified Data.Map   as M
+import           Data.List  as L
+import           Control.Monad.Writer
+import           Control.Applicative   ((<$>),(<*>))
+import           Control.Monad.State.Strict
+
 import           Data.Array.Accelerate.BackendKit.Utils.Helpers (genUnique, genUniqueWith, GensymM, isTupleTy)
+import           Data.Array.Accelerate.BackendKit.CompilerUtils (shapeName)
 import qualified Data.Array.Accelerate.BackendKit.IRs.CLike as LL
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
-import qualified Data.Map                                as M
-import Data.List                                         as L
-import Control.Monad.Writer
-import Control.Applicative   ((<$>),(<*>))
-import Control.Monad.State.Strict
+import           Data.Array.Accelerate.BackendKit.IRs.Metadata   (ArraySizeEstimate(..))
 
 import Debug.Trace (trace)
 
@@ -35,17 +39,51 @@ type Env = M.Map Var (Type, Maybe [Var])
 -- | This pass takes a SimpleAST IR which already follows a number of
 --   conventions that make it directly convertable to the lower level
 --   IR, and it does the final conversion.
-convertToCLike :: Prog a -> LL.LLProg a
-convertToCLike Prog{progBinds,progResults,progType,uniqueCounter} =
+convertToCLike :: Prog ArraySizeEstimate -> LL.LLProg ArraySizeEstimate
+convertToCLike Prog{progBinds,progResults,progType,uniqueCounter,typeEnv} =
   LL.LLProg
   {
     LL.progBinds    = binds, 
     LL.progResults  = map (copyProp finalEnv) progResults,
     LL.progType     = progType,
-    LL.uniqueCounter= newCounter
+    LL.uniqueCounter= newCounter,
+    LL.sizeEnv      = sizeEnv
   }
   where
-    ((finalEnv,binds),newCounter) = runState (doBinds M.empty progBinds) uniqueCounter    
+    ((finalEnv,binds),newCounter) = runState (doBinds M.empty progBinds) uniqueCounter
+
+    -- Map subdivided names back onto their original counterparts
+    backMap = M.fromList$ concatMap fn (M.toList finalEnv)
+    fn (vr,(_,Just ls)) = map (,vr) ls
+    fn (vr,(_,Nothing)) = []
+
+    sizeEnv = M.fromList$ L.concatMap getSize binds
+    getSize :: LL.LLProgBind ArraySizeEstimate -> [(Var,(Type,TrivialExp))]
+    getSize (LL.LLProgBind votys sz _) =
+      let -- Scalars must always have "size" zero:
+          mkEntry v t@(TArray _ _) s = (v, (t, s))
+          mkEntry v t              _ = (v, (t, TrivConst 0)) in
+      case sz of
+        KnownSize ls -> zipWith (\ (vo,ty) sz -> mkEntry vo ty sz) votys (map TrivConst ls)
+        UnknownSize  ->
+          case votys of 
+            [] -> error$ "ToCLike.hs: There should be no forms with ZERO output vars at this phase."
+            (v1,_):_ -> 
+              let origV = backMap M.! v1  
+                  origShp = shapeName origV 
+              in case M.lookup origShp finalEnv of
+                  -- If we must refer to the size by NAME, that grows complicated if detupling has occured:
+                  Just (_, Just shpvs) -> 
+                    if length shpvs == length votys
+                    then zipWith (\ (vo,ty) shpvr -> mkEntry vo ty (TrivVarref shpvr))
+                                  votys shpvs 
+                    else error$"ToCLike.hs: internal invariant broken, mismatched len: "++show(votys,shpvs)
+                  -- If the shape has not been detupled we can use the original name:
+                  Just (_, Nothing) ->
+                    case votys of
+                      [(vo,ty)] -> [mkEntry vo ty (TrivVarref origShp)]
+                      _         -> error$ "ToCLike.hs: invariant broken, expected one output, got "++show votys
+                  Nothing -> error$"no entry for shapename "++show origShp++" in final env: "++show finalEnv
 
 
 doBlock :: Env -> Exp -> GensymM LL.ScalarBlock
@@ -110,6 +148,7 @@ doStmts k env ex =
 
 
 -- | Return a new list of bindings AND the final environment.
+--   May return a shorter list due to copy propagation.
 doBinds :: Env -> [ProgBind a] -> GensymM (Env, [LL.LLProgBind a])
 doBinds env [] = return (env,[])
 
@@ -136,6 +175,9 @@ doBinds env (ProgBind vr ty decor rhs : rest) = do
             Left  ex -> LL.ScalarCode <$> doBlock env ex
             Right ae -> doAE env ae
   (env',rest') <- doBinds (M.insert vr (ty,Nothing) env) rest
+
+  -- TEMPORARY: We don't yet handle array-of-tuples.  When we do, the (vr,ty) list
+  -- will not necessarily be a singleton:
   return (env', LL.LLProgBind [(vr,ty)] decor rhs' : rest')
 
 
