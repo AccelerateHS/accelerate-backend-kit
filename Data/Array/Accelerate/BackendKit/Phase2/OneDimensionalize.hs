@@ -39,7 +39,7 @@ type MyM a = ReaderT (Prog ArraySizeEstimate) GensymM a
 
 -- | The pass itself.
 oneDimensionalize :: Prog ArraySizeEstimate -> Prog ArraySizeEstimate
-oneDimensionalize  prog@Prog{progBinds, progType, uniqueCounter } = 
+oneDimensionalize  prog@Prog{progBinds, progType, uniqueCounter, typeEnv } = 
   prog { progBinds    = binds,
          progType     = doTy progType, 
          uniqueCounter= newCount,
@@ -47,28 +47,33 @@ oneDimensionalize  prog@Prog{progBinds, progType, uniqueCounter } =
          typeEnv      = M.fromList$ map (\(ProgBind v t _ _) -> (v,t)) binds
        }
   where
-    m1 = mapM doBind progBinds
+    m1 = mapM (doBind typeEnv) progBinds
     m2 = runReaderT m1 prog
     (binds,newCount) = runState m2 uniqueCounter
 
+compute1DSize :: Int -> Exp -> MyM Exp
+compute1DSize ndim eSz = do
+   -- The one-dimensional size is just the product of the dimensions:
+   lift$ maybeLet eSz (mkIndTy ndim)
+          (\tmp -> foldl mulI (EConst (I 1))
+                   [ mkPrj i 1 ndim (EVr tmp) | i <- reverse[0 .. ndim-1] ])
+
 -- Map Var (ProgBind (a,b,Cost)) -> 
-doBind :: ProgBind ArraySizeEstimate -> MyM (ProgBind ArraySizeEstimate)
-doBind (ProgBind vo t sz (Left  ex)) = (ProgBind vo (doTy t) (doSz sz) . Left)  <$> doE ex
+doBind :: M.Map Var Type -> ProgBind ArraySizeEstimate -> MyM (ProgBind ArraySizeEstimate)
+doBind env (ProgBind vo t sz (Left  ex)) = (ProgBind vo (doTy t) (doSz sz) . Left)  <$> doExp env ex
 --doBind (ProgBind vo t sz (Right ex)) = (ProgBind vo (doTy t) (doSz sz) . Right) <$> mapMAE doE ex
 
-doBind pb@(ProgBind vo aty sz (Right ae)) = (ProgBind vo (doTy aty) (doSz sz) . Right) <$>
+doBind env pb@(ProgBind vo aty sz (Right ae)) =
+   (ProgBind vo (doTy aty) (doSz sz) . Right) <$>
   case ae of
-    -- For Generate, we need to change the size argument and the type expected by the kernel.
+
+    -- For OpenCL/CUDA, we need to do flattening if the array is >3D anyway.
+    -- Presently we always flatten to 1D, but in the future we may want to allow 2D
+    -- and 3D.
     Generate eSz (Lam1 (indV,indTy) bod) | flattenGenerates || ndim > 3 -> do
-      -- With no OpenCL/CUDA support, we need to do flattening if the
-      -- array is >3D anyway.  TODO!  This is backend specific.  We
-      -- may want to change it for a CPU/Cilk backend.
-      eSz'   <- doE eSz
-      -- The one-dimensional size is just the product of the dimensions:
-      eSz''  <- lift$ maybeLet eSz' (mkIndTy ndim)
-                       (\tmp -> foldl mulI (EConst (I 1))
-                                 [ mkPrj i 1 ndim (EVr tmp) | i <- reverse[0 .. ndim-1] ])
-      bod'   <- doE bod
+    -- For Generate, we need to change the size argument and the type expected by the kernel.
+      eSz''  <- compute1DSize ndim =<< doE eSz
+      bod'   <- doExp (M.insert indV indTy env) bod
       tmp    <- lift$ genUniqueWith "flatidx"
       newidx <- unFlatIDX pb (EVr tmp)
       return$ Generate eSz'' $
@@ -77,27 +82,25 @@ doBind pb@(ProgBind vo aty sz (Right ae)) = (ProgBind vo (doTy aty) (doSz sz) . 
 
     -- BOILERPLATE:
     ------------------------------------------------------------
-    Generate e (Lam1 arg bod)         -> Generate <$> doE e <*> (Lam1 arg <$> doE bod)
-    Use _                             -> return ae
-    Vr _                              -> return ae
-    Unit ex                           -> Unit <$> doE ex
-    Cond a b c                        -> Cond <$> doE a <*> return b <*> return c
-    Fold     (Lam2 a1 a2 bod) e v     -> Fold     <$> (Lam2 a1 a2 <$> doE bod) <*> doE e <*> return v
-    Fold1    (Lam2 a1 a2 bod) v       -> Fold1    <$> (Lam2 a1 a2 <$> doE bod) <*> return v
-    FoldSeg  (Lam2 a1 a2 bod) e v w   -> FoldSeg  <$> (Lam2 a1 a2 <$> doE bod) <*> doE e <*> return v <*> return w
-    Fold1Seg (Lam2 a1 a2 bod) v w     -> Fold1Seg <$> (Lam2 a1 a2 <$> doE bod) <*> return v <*> return w
-    Scanl    (Lam2 a1 a2 bod) e v     -> Scanl    <$> (Lam2 a1 a2 <$> doE bod) <*> doE e <*> return v
-    Scanl'   (Lam2 a1 a2 bod) e v     -> Scanl'   <$> (Lam2 a1 a2 <$> doE bod) <*> doE e <*> return v
-    Scanl1   (Lam2 a1 a2 bod)   v     -> Scanl1   <$> (Lam2 a1 a2 <$> doE bod)           <*> return v
-    Scanr    (Lam2 a1 a2 bod) e v     -> Scanr    <$> (Lam2 a1 a2 <$> doE bod) <*> doE e <*> return v
-    Scanr'   (Lam2 a1 a2 bod) e v     -> Scanr'   <$> (Lam2 a1 a2 <$> doE bod) <*> doE e <*> return v
-    Scanr1   (Lam2 a1 a2 bod)   v     -> Scanr1   <$> (Lam2 a1 a2 <$> doE bod)           <*> return v
-    Permute (Lam2 a1 a2 bod1) v (Lam1 a3 bod2) w -> Permute <$> (Lam2 a1 a2 <$> doE bod1) <*> return v
-                                                            <*> (Lam1 a3    <$> doE bod2) <*> return w
-    Stencil  (Lam1 a1    bod) b v     -> do bod' <- doE bod
-                                            return$ Stencil  (Lam1 a1    bod') b v
-    Stencil2 (Lam2 a1 a2 bod) b v c w -> do bod' <- doE bod
-                                            return$ Stencil2 (Lam2 a1 a2 bod') b v c w
+    Generate e lam1         -> Generate <$> doE e <*> doLam1 lam1
+    Use _                   -> return ae
+    Vr _                    -> return ae
+    Unit ex                 -> Unit <$> doE ex
+    Cond a b c              -> Cond <$> doE a <*> return b <*> return c
+    Fold     lam2 e v       -> Fold     <$> doLam2 lam2 <*> doE e <*> return v
+    Fold1    lam2 v         -> Fold1    <$> doLam2 lam2 <*> return v
+    FoldSeg  lam2 e v w     -> FoldSeg  <$> doLam2 lam2 <*> doE e <*> return v <*> return w
+    Fold1Seg lam2 v w       -> Fold1Seg <$> doLam2 lam2 <*> return v <*> return w
+    Scanl    lam2 e v       -> Scanl    <$> doLam2 lam2 <*> doE e <*> return v
+    Scanl'   lam2 e v       -> Scanl'   <$> doLam2 lam2 <*> doE e <*> return v
+    Scanl1   lam2   v       -> Scanl1   <$> doLam2 lam2           <*> return v
+    Scanr    lam2 e v       -> Scanr    <$> doLam2 lam2 <*> doE e <*> return v
+    Scanr'   lam2 e v       -> Scanr'   <$> doLam2 lam2 <*> doE e <*> return v
+    Scanr1   lam2   v       -> Scanr1   <$> doLam2 lam2           <*> return v
+    Permute  lam2 v lam1 w  -> Permute  <$> doLam2 lam2 <*> return v
+                                        <*> doLam1 lam1 <*> return w
+    Stencil  lam1 b v       -> Stencil  <$> doLam1 lam1 <*> return b <*> return v
+    Stencil2 lam2 b v c w   -> Stencil2 <$> doLam2 lam2 <*> return b <*> return v <*> return c <*> return w
     -- Reshape shE v                     -> return (Vr v)
     -- Backpermute ex (Lam1 arg bod) vr  -> Backpermute <$> doE ex <*> (Lam1 arg <$> doE bod)  <*> return vr
     -- Replicate template ex vr          -> Replicate template <$> doE ex <*> return vr
@@ -111,10 +114,15 @@ doBind pb@(ProgBind vo aty sz (Right ae)) = (ProgBind vo (doTy aty) (doSz sz) . 
     Replicate _ _ _     -> err
     Index  _ _ _        -> err
  where
+   doE = doExp env
    err = doerr ae
    TArray ndim _elty = aty
 
-
+   doLam2 (Lam2 (v,t1) (w,t2) bod) =
+     Lam2 (v,t1) (w,t2) <$>
+       doExp (M.insert v t1 $ M.insert w t2 env) bod
+   doLam1 (Lam1 (v,t) bod) =
+     Lam1 (v,t) <$> doExp (M.insert v t env) bod
 
 doSz :: ArraySizeEstimate -> ArraySizeEstimate
 doSz (KnownSize ls) = KnownSize$ [product ls]
@@ -125,8 +133,8 @@ doTy (TArray _ elt) = TArray 1 elt
 doTy (TTuple ls)    = TTuple$ map doTy ls
 doTy ty             = ty 
 
-doE :: Exp -> MyM Exp
-doE ex = 
+doExp :: M.Map Var Type -> Exp -> MyM Exp
+doExp env ex = 
   case ex of
     -- This is where we inject a polynomial to do indexing:
     EIndexScalar avr indE -> do
@@ -139,14 +147,16 @@ doE ex =
          (EIndexScalar avr (makeFlatIDX pb (EVr tmp)))
     
     EShape avr          -> return$ EShape avr
-    EShapeSize e        -> EShapeSize <$> doE e
+    EShapeSize e        -> case recoverExpType env e of
+                             TTuple ls -> compute1DSize (length ls) e
+                             _         -> return e -- Otherwise the expression itself is a scalar.
     EVr _               -> return ex
     EConst _            -> return ex
-    ECond e1 e2 e3      -> ECond   <$> doE e1 <*> doE e2 <*> doE e3
-    ELet (v,t,rhs) bod  -> (\r b -> ELet (v,t,r) b) <$> doE rhs <*> doE bod
-    ETupProject i l e   -> ETupProject i l  <$> doE e
-    EPrimApp p t els    -> EPrimApp    p t  <$> mapM doE els
-    ETuple els          -> ETuple           <$> mapM doE els
+    ECond e1 e2 e3      -> ECond   <$> doExp env e1 <*> doExp env e2 <*> doExp env e3
+    ELet (v,t,rhs) bod  -> (\r b -> ELet (v,t,r) b) <$> doExp env rhs <*> doExp (M.insert v t env) bod
+    ETupProject i l e   -> ETupProject i l  <$> doExp env e
+    EPrimApp p t els    -> EPrimApp    p t  <$> mapM (doExp env) els
+    ETuple els          -> ETuple           <$> mapM (doExp env) els
     EIndex _            -> doerr ex
 
 -- | Construct a polynomial expression that computes the flat-index
