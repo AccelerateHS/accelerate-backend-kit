@@ -16,7 +16,11 @@ module Data.Array.Accelerate.BackendKit.CompilerPipeline
        )
        where
 
-import qualified Data.Array.Accelerate.Smart       as Sug
+import           Text.PrettyPrint.GenericPretty (Out(..))
+import           Text.PrettyPrint.HughesPJ (text)
+import           Debug.Trace (trace)
+
+import qualified Data.Array.Accelerate.Smart       as Smt
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import qualified Data.Array.Accelerate.BackendKit.IRs.CLike     as C
@@ -73,7 +77,7 @@ phase3 prog =
 -- forms and lower the language.
 phase2 :: S.Prog () -> C.LLProg ()
 phase2 prog =
-  runPass    "convertToCLike"    convertToCLike    $     -- ()
+  runPass    "ExconvertToCLike"    convertToCLike    $     -- ()
   -- todo: Verify final CLike here
   runPass    "typecheck3"        typecheckPass     $     -- (size)
   -- todo: UnzipArrays, here 
@@ -104,14 +108,15 @@ phase2A prog =
 -- | Convert the sophisticate Accelerate-internal AST representation
 --   into something very simple for external consumption.  Note: this
 --   involves applying a number of lowering compiler passes.
-phase1 :: Sug.Arrays a => Sug.Acc a -> S.Prog ()
+phase1 :: (Sug.Arrays a) => Smt.Acc a -> S.Prog ()
 phase1 prog =
   runPass "typecheck1"           typecheckPass     $       
   runPass "removeArrayTuple"     removeArrayTuple  $ -- convert to S.Prog
   runPass "gatherLets"           gatherLets        $  
   runPass "liftComplexRands"     liftComplexRands  $  
   runPass "staticTuples"         staticTuples      $
-  runPass "initialConversion"    accToAccClone     $ 
+  runPass "initialConversion"    accToAccClone     $
+--  runPass "preConversion"        id                $
   prog
 
 typecheckPass :: S.Prog a -> S.Prog a
@@ -119,3 +124,7 @@ typecheckPass prog =
   case S.typecheckProg prog of
     Nothing -> prog
     Just s -> error$"Typecheck pass failed: "++s
+
+-- instance Show a => Out (Sug.Acc a) where
+--   doc       = text . show
+--   docPrec _ = text . show

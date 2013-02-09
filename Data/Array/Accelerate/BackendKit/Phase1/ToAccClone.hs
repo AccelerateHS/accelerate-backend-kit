@@ -51,6 +51,10 @@ import           Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace)
   -- Temporary AST before we get to the final one:
 import qualified Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone as T
 
+--------------------------------------------------------------------------------
+-- Main entrypoint
+--------------------------------------------------------------------------------
+
 -- | Convert from the internal Acc representation to the temporary
 -- (isomorphic) `AccClone` representation.
 accToAccClone :: Sug.Arrays a => Sug.Acc a -> TAExp
@@ -62,33 +66,62 @@ type TAExp = T.AExp S.Type
 -- Environments
 --------------------------------------------------------------------------------
 
--- We use a simple state monad for keeping track of the environment
-type EnvM = State (SimpleEnv, Counter) 
-type SimpleEnv = [S.Var]
+-- | We use a simple state monad for keeping track of the environment (and resolving
+-- De-bruijn indices).  Following the Accelerate front-end conventions, we use
+-- separate environments for scalar and array bindings.
+type EnvM = State (SimpleEnv, Counter)
 type Counter = Int
+data SimpleEnv = SimpleEnv { scalarEnv :: [S.Var],
+                             arrayEnv  :: [S.Var] }
+  deriving (Show)
 
-runEnvM :: Num t => State ([a1], t) a -> a
-runEnvM m = evalState m ([], 0)
 
--- Evaluate a sub-branch in an extended environment.
--- Returns the name of the fresh variable as well as the result:
-withExtendedEnv :: String -> EnvM b -> EnvM (S.Var, b)
-withExtendedEnv basename branch = do 
-  (env,cnt) <- get 
+runEnvM :: Num t => State (SimpleEnv, t) a -> a
+runEnvM m = evalState m (SimpleEnv [] [], 0)
+
+-- | Evaluate a sub-branch in an extended SCALAR environment.
+--   Returns the name of the fresh variable as well as the result:
+withExtendedScalarEnv :: String -> EnvM b -> EnvM (S.Var, b)
+withExtendedScalarEnv basename branch = do 
+  (orig@(SimpleEnv env aenv),cnt) <- get 
   let newsym = S.var $ basename ++ show cnt
-  put (newsym:env, cnt+1) 
+  put (SimpleEnv (newsym:env) aenv, cnt+1) 
   b <- branch
   -- We keep counter-increments from the sub-branch, but NOT the extended env:
   (_,cnt2) <- get 
-  put (env,cnt2)
+  put (orig,cnt2)
   return (newsym, b)
 
--- Look up a de bruijn index in the environment:
-envLookup :: Int -> EnvM S.Var
-envLookup i = do (env,_) <- get
-                 if length env > i
-                  then return (env !! i)
-                  else error$ "Environment did not contain an element "++show i++" : "++show env
+-- | Look up a de bruijn index in the SCALAR environment to find the variables new name.
+envLookupScalar :: Int -> EnvM S.Var
+envLookupScalar i =
+  do (SimpleEnv env _,_) <- get
+     if length env > i
+       then return (env !! i)
+       else error$ "Environment did not contain an element "++show i++" : "++show env
+
+-- | Ditto for arrays.
+withExtendedArrayEnv :: String -> EnvM b -> EnvM (S.Var, b)
+withExtendedArrayEnv basename branch = do 
+  (orig@(SimpleEnv env aenv),cnt) <- get 
+  let newsym = S.var $ basename ++ show cnt
+  put (SimpleEnv env (newsym:aenv), cnt+1) 
+  b <- branch
+  -- We keep counter-increments from the sub-branch, but NOT the extended env:
+  (_,cnt2) <- get 
+  put (orig,cnt2)
+  return (newsym, b)
+
+
+-- | Ditto for arrays.
+envLookupArray :: Int -> EnvM S.Var
+envLookupArray i =
+  do (SimpleEnv _ aenv,_) <- get
+     if length aenv > i
+       then return (aenv !! i)
+       else error$ "Environment did not contain an element "++show i++" : "++show aenv
+
+--------------------------------------------------------------------------------
 
 getAccType :: forall aenv ans . Sug.Arrays ans => OpenAcc aenv ans -> S.Type
 getAccType _ = convertArrayType ty2 
@@ -112,7 +145,8 @@ typeOnlyErr msg = error$ msg++ ": This is a value that should never be evaluated
         
 -- convertAcc :: Delayable a => OpenAcc aenv a -> EnvM T.AExp
 convertAcc :: OpenAcc aenv a -> EnvM TAExp
-convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc 
+convertAcc (OpenAcc cacc) =
+  convertPreOpenAcc cacc 
  where 
  cvtSlice :: SliceIndex slix sl co dim -> S.SliceType
  cvtSlice (SliceNil)            = []
@@ -129,13 +163,15 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
   case eacc of 
     Alet acc1 acc2 -> 
        do a1     <- convertAcc acc1
-          (v,a2) <- withExtendedEnv "a"$ 
+          (v,a2) <- withExtendedArrayEnv "aLt"$ 
                     convertAcc acc2 
           let sty = getAccType acc1
           return$ T.Let (getAccTypePre eacc) (v,sty,a1) a2
 
     Avar idx -> 
-      do var <- envLookup (idxToInt idx)
+      do var <- envLookupArray (idxToInt idx)
+         (env,_) <- get
+         maybtrace ("* DID idx lookup for ARRAY var, idx "++show (idxToInt idx)++" yielded "++ show var++" in Env "++show env) $ return()
          return$ T.Vr (getAccTypePre eacc) var
 
     ------------------------------------------------------------
@@ -163,7 +199,7 @@ convertAcc (OpenAcc cacc) = convertPreOpenAcc cacc
                                    <*> convertAcc acc2
 
     Apply (Alam (Abody funAcc)) acc -> 
-      do (v,bod) <- withExtendedEnv "a" $ convertAcc funAcc
+      do (v,bod) <- withExtendedArrayEnv "aAp" $ convertAcc funAcc
          let sty = getAccType acc
          T.Apply (getAccTypePre eacc) (S.Lam1 (v, sty) bod) <$> convertAcc acc
 
@@ -282,14 +318,15 @@ convertExp e =
   case e of 
     Let exp1 exp2 -> 
       do e1     <- convertExp exp1
-         (v,e2) <- withExtendedEnv "e"$ 
+         (v,e2) <- withExtendedScalarEnv "e"$ 
                    convertExp exp2 
          let sty = getExpType exp1
          return$ T.ELet (v,sty,e1) e2
     
     -- Here is where we get to peek at the type of a variable:
     Var idx -> 
-      do var <- envLookup (idxToInt idx)
+      do var <- envLookupScalar (idxToInt idx)
+         maybtrace ("* DID idx lookup for var, idx "++show (idxToInt idx)++" yielded "++ show var) $ return()
          return$ T.EVr var
     
     -- Lift let's outside of primapps so we can get to the tuple:
@@ -338,8 +375,18 @@ convertExp e =
                            <*> convertExp t
                            <*> convertExp ex
     
-    IndexScalar acc eix -> T.EIndexScalar <$> convertAcc acc
-                                          <*> convertExp eix
+    IndexScalar acc eix ->
+      maybtrace ("PRODUCING INDEX SCALAR: "++show acc++" "++show eix) $
+                           -- T.EIndexScalar <$> convertAcc acc
+                           --                <*> convertExp eix
+      do a1 <- convertAcc acc
+         maybtrace ("  GOT ARRAY: "++show a1) $ return ()
+         ix <- convertExp eix
+         maybtrace ("  GOT INDEX: "++show ix) $ return ()
+         return (T.EIndexScalar a1 ix)
+
+
+      
     Shape acc -> T.EShape <$> convertAcc acc
     ShapeSize  acc -> T.EShapeSize  <$> convertExp acc
 
@@ -707,8 +754,8 @@ convertFun =  loop []
                                let (_:: OpenFun (env, arg) aenv res) = f2 
                                    ety = Sug.eltType ((error"This shouldn't happen (4)") :: arg)
                                    sty = convertType ety
-                               (_,x) <- withExtendedEnv "v" $ do
-                                          v <- envLookup 0
+                               (_,x) <- withExtendedScalarEnv "v" $ do
+                                          v <- envLookupScalar 0
                                           loop ((v,sty) : acc) f2
                                return x 
 
