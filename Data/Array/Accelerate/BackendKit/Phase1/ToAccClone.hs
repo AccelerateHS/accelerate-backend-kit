@@ -170,8 +170,6 @@ convertAcc (OpenAcc cacc) =
 
     Avar idx -> 
       do var <- envLookupArray (idxToInt idx)
-         (env,_) <- get
-         maybtrace ("* DID idx lookup for ARRAY var, idx "++show (idxToInt idx)++" yielded "++ show var++" in Env "++show env) $ return()
          return$ T.Vr (getAccTypePre eacc) var
 
     ------------------------------------------------------------
@@ -326,7 +324,6 @@ convertExp e =
     -- Here is where we get to peek at the type of a variable:
     Var idx -> 
       do var <- envLookupScalar (idxToInt idx)
-         maybtrace ("* DID idx lookup for var, idx "++show (idxToInt idx)++" yielded "++ show var) $ return()
          return$ T.EVr var
     
     -- Lift let's outside of primapps so we can get to the tuple:
@@ -375,17 +372,8 @@ convertExp e =
                            <*> convertExp t
                            <*> convertExp ex
     
-    IndexScalar acc eix ->
-      maybtrace ("PRODUCING INDEX SCALAR: "++show acc++" "++show eix) $
-                           -- T.EIndexScalar <$> convertAcc acc
-                           --                <*> convertExp eix
-      do a1 <- convertAcc acc
-         maybtrace ("  GOT ARRAY: "++show a1) $ return ()
-         ix <- convertExp eix
-         maybtrace ("  GOT INDEX: "++show ix) $ return ()
-         return (T.EIndexScalar a1 ix)
-
-
+    IndexScalar acc eix -> T.EIndexScalar <$> convertAcc acc
+                                          <*> convertExp eix
       
     Shape acc -> T.EShape <$> convertAcc acc
     ShapeSize  acc -> T.EShapeSize  <$> convertExp acc
