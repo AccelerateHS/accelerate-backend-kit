@@ -1,6 +1,18 @@
 
 {-# LANGUAGE DeriveGeneric #-}
 
+-- | A lower-level intermediate representation that has certain notable differences
+-- from Accelerate's front-end representation.  Everything is one dimensional, and
+-- there are no tuples at the array or scalar levels.  Accordingly, array operations
+-- potentially have more than one output binding, and the lambdas that parameterize
+-- them may have more (untupled) arguments than before.  The set of array operators
+-- is also greatly reduced.
+--
+-- Scalar computations explicitly separate statements from expressions, making code
+-- generation to C-like languages easy.  
+--
+-- The language is still purely functional.
+
 module Data.Array.Accelerate.BackendKit.IRs.CLike
        (
          -- * LLIR: modified, lower-level versions of the AST in
@@ -123,35 +135,35 @@ lookupProgBind v (pb@(LLProgBind vls _ _) : rst)
   | otherwise = lookupProgBind v rst
 
 expFreeVars :: Exp -> S.Set Var
-expFreeVars = doE
+expFreeVars = fvE
 
 scalarBlockFreeVars :: ScalarBlock -> S.Set Var
-scalarBlockFreeVars = doBlk
+scalarBlockFreeVars = fvBlk
 
 stmtFreeVars :: Stmt -> S.Set SA.Var
-stmtFreeVars = doStmt
+stmtFreeVars = fvStmt
 
-doBlk :: ScalarBlock -> S.Set SA.Var
-doBlk (ScalarBlock binds _results stmts) =
-  S.difference (S.unions$ L.map doStmt stmts)
+fvBlk :: ScalarBlock -> S.Set SA.Var
+fvBlk (ScalarBlock binds _results stmts) =
+  S.difference (S.unions$ L.map fvStmt stmts)
                (S.fromList$ L.map fst binds)
 
-doStmt :: Stmt -> S.Set SA.Var
-doStmt (SSet _ rhs) = doE rhs
-doStmt (SCond e1 s1 s2) = S.union (doE e1)
-                           $ S.union (S.unions$ L.map doStmt s1)
-                                     (S.unions$ L.map doStmt s2)
+fvStmt :: Stmt -> S.Set SA.Var
+fvStmt (SSet _ rhs) = fvE rhs
+fvStmt (SCond e1 s1 s2) = S.union (fvE e1)
+                           $ S.union (S.unions$ L.map fvStmt s1)
+                                     (S.unions$ L.map fvStmt s2)
 
-doE :: Exp -> S.Set SA.Var
-doE ex =
+fvE :: Exp -> S.Set SA.Var
+fvE ex =
   case ex of
     EConst _            -> S.empty
     EVr vr              -> S.singleton vr  
-    ECond e1 e2 e3      -> S.union (doE e1)  $ S.union (doE e2) (doE e3)
-    EIndexScalar v e _  -> S.insert v $ doE e
-    EPrimApp _ _ els    -> doEs els     
+    ECond e1 e2 e3      -> S.union (fvE e1)  $ S.union (fvE e2) (fvE e3)
+    EIndexScalar v e _  -> S.insert v $ fvE e
+    EPrimApp _ _ els    -> fvEs els     
  where
-  doEs = L.foldl (\ acc e -> S.union acc (doE e)) S.empty 
+  fvEs = L.foldl (\ acc e -> S.union acc (fvE e)) S.empty 
 
 
 -- TODO: invariant checker
