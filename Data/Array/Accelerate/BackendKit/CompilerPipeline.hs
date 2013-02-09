@@ -80,8 +80,8 @@ phase2 prog =
   runPass    "convertToCLike"    convertToCLike    $     -- ()
   -- todo: Verify final CLike here
   runPass    "typecheck3"        typecheckPass     $     -- (foldstrides,size)
-  -- todo: UnzipArrays, here 
-  runPass    "unzipETups"        unzipETups        $     -- (foldstrides,size)  
+--  runPass    "unzipArrays"       typecheckPass     $     -- (foldstrides,size)  
+  runPass    "unzipETups"        unzipETups        $     -- (foldstrides,size)
   runPass    "normalizeExps"     normalizeExps     $     -- (foldstrides,size)
   phase2A    prog
 

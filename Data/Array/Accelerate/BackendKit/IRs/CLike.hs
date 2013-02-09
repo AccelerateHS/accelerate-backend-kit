@@ -97,9 +97,8 @@ data TopLvlForm =
       identity   :: ScalarBlock,
       generator  :: Fun ScalarBlock,
       dimensions :: ScalarBlock,
-      variant    :: ReduceVariant
---      stride     :: Exp
-      }
+      variant    :: ReduceVariant,
+      stride     :: Exp }
 
 --  | Scan (Fun ScalarBlock) Direction ScalarBlock Var   -- Var is the input array.
                                                        -- ScalarBlock computes the initial value(s).

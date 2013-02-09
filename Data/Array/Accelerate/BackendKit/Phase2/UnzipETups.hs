@@ -27,6 +27,8 @@ import Data.Array.Accelerate.BackendKit.Phase2.NormalizeExps (wrapLets)
 --   a Nothing here.
 type Env = M.Map Var (Type,Maybe [Var])
 
+type SubBinds = [(Var,Type)]
+
 ----------------------------------------------------------------------------------------------------
 
 -- | This pass is similar to the `removeArrayTuple` pass, but at the
@@ -39,7 +41,7 @@ type Env = M.Map Var (Type,Maybe [Var])
 --        (i.e. in RHS of Let).  In this case the ELet IS still allowed to 
 --        bind a tuple variable, and specific (ETupProject _ 1 (EVr _)) forms
 --        will refer to its components.
---        (Top-level scalar bindings are likewise allowed to remain tuples.)
+--        (TOP-LEVEL scalar bindings are likewise allowed to remain tuples.)
 --    (4) ETuple may occur directly as an argument to EIndexScalar.
 --    (5) Unit values, ETuple [], persist.
 --
@@ -51,14 +53,19 @@ type Env = M.Map Var (Type,Maybe [Var])
 --  point at which we could employ an array-of-structs backend.  The
 --  scalar tuples are gone *within* kernels, but the association
 --  between the components of an array-of-structs is still there.
-unzipETups :: Prog a -> Prog a
-unzipETups prog@Prog{progBinds, uniqueCounter} = 
-  prog{ progBinds= binds, 
-        uniqueCounter= newCounter2 }
+--
+--  Finally, while this pass does not COMMIT to unzipped arrays, it lays the
+--  groundwork by producing names for the unzipped components and returning a map
+--  from old names to unzipped names.  In fact, this pass produces such names for ALL
+--  TOP-LEVEL bindings, including both scalar and array bindings.
+unzipETups :: Prog a -> Prog (SubBinds,a)
+unzipETups prog@Prog{progBinds, uniqueCounter, typeEnv} = prog'
  where
+  prog' = prog{ progBinds= binds, 
+                uniqueCounter= newCounter2 } 
    -- NOTE -- We can't detuple ALL top level scalar binds, so right now we don't do ANY.
   -- TODO, this should use traverseWithKey as of containers-0.5:
-  envM = M.fromList <$> mapM fn (M.toList (progToEnv prog))
+  envM = M.fromList <$> mapM fn (M.toList typeEnv)
 
   -- Here we introduce temporary names for the subcomponents of any top-level tuple-bindings:
   -- fn (vr,ty) | countVals ty == 1 = return (vr,(ty,Just [vr]))
@@ -67,20 +74,20 @@ unzipETups prog@Prog{progBinds, uniqueCounter} =
 
   -- NEW POLICY: Do not untuple ANY of the top level bindings yet.
   -- Kick it down the road to ConvertLLIR.
-  fn (vr,ty) = return (vr,(ty,Nothing))  
+  fn (vr,ty) = return (vr,(ty,Nothing))
   
   (env, newCounter1)  = runState envM uniqueCounter
   (binds,newCounter2) = runState (doBinds env progBinds) newCounter1
    
 
-doBinds :: Env -> [ProgBind t] -> GensymM [ProgBind t]
+doBinds :: Env -> [ProgBind t] -> GensymM [ProgBind (SubBinds,t)]
 doBinds env = mapM (doBind env)
 
-doBind :: Env -> ProgBind a -> GensymM (ProgBind a)
-doBind env (ProgBind v t dec (Left ex))  = ProgBind v t dec . Left  <$>
+doBind :: Env -> ProgBind a -> GensymM (ProgBind (SubBinds, a))
+doBind env (ProgBind v t dec (Left ex))  = ProgBind v t ([],dec) . Left  <$>
    doSpine env ex
 
-doBind env (ProgBind v t dec (Right ae)) = ProgBind v t dec . Right <$>
+doBind env (ProgBind v t dec (Right ae)) = ProgBind v t ([],dec) . Right <$>
    -- The following MUST be *Nothing* because we have no way to detuple
    -- the input to kernels (i.e. array elements) at this point.
    mapMAEWithGEnv env (\ _ ty -> (ty,Nothing))

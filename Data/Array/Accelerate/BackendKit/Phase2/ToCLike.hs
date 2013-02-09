@@ -40,7 +40,7 @@ type Env = M.Map Var (Type, Maybe [Var])
 -- | This pass takes a SimpleAST IR which already follows a number of
 --   conventions that make it directly convertable to the lower level
 --   IR, and it does the final conversion.
-convertToCLike :: Prog (FoldStrides Exp, ArraySizeEstimate) -> LL.LLProg ()
+convertToCLike :: Prog ([(Var,Type)],(FoldStrides Exp, ArraySizeEstimate)) -> LL.LLProg ()
 convertToCLike Prog{progBinds,progResults,progType,uniqueCounter,typeEnv} =
   LL.LLProg
   {
@@ -59,9 +59,9 @@ convertToCLike Prog{progBinds,progResults,progType,uniqueCounter,typeEnv} =
     fn (_ ,(_,Nothing)) = []
 
     sizeEnv = M.fromList$ L.concatMap getSize binds
-    getSize :: LL.LLProgBind (FoldStrides Exp,ArraySizeEstimate) ->
+    getSize :: LL.LLProgBind (a,(b,ArraySizeEstimate)) ->
                [(Var,(Type,TrivialExp))]
-    getSize (LL.LLProgBind votys (_,sz) _) =
+    getSize (LL.LLProgBind votys (_,(_,sz)) _) =
       let -- Scalars must always have "size" zero:
           mkEntry v t@(TArray _ _) s = (v, (t, s))
           mkEntry v t              _ = (v, (t, TrivConst 0)) in
@@ -206,6 +206,7 @@ doAE env ae =
         <*> (LL.Lam [(ix,TInt)] <$> exp2Blk TInt (LL.EIndexScalar inV (LL.EVr ix) 0))
         <*> error "FINISHME - need size here in ToCLike.hs"
         <*> return LL.Fold
+        <*> return (error "NEED STRIDE")
 
       where env' = M.insert v (t,Nothing) $
                    M.insert w (u,Nothing) env
