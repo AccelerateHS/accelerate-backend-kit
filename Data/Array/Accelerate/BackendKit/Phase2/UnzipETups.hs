@@ -3,7 +3,7 @@
 
 -- | This file contains a pass for removing scalar tuples.
 -- 
--- It also assumes a number of invariants on the input grammar: that
+-- It assumes a number of invariants on the input grammar: that
 -- several forms have been desugared by previous passes, and that all
 -- ELet's are lifted so that they will never be passed as an argument
 -- to a primitive.
@@ -33,7 +33,7 @@ type Env = M.Map Var (Type,Maybe [Var])
 --   scalar level.  It removes ETuple and ETupProject forms, but not
 --   ALL of them.  It leaves stylized uses:
 --
---    (1) A single ETuple is permitted in the tail position of each kernel.
+--    (1) A single ETuple is permitted in the tail position of each kernel (Lam).
 --    (2) A single ETupProject is permitted around EIndexScalar expressions.
 --    (3) ETuple's are also allowed in the tail of "spine" conditionals 
 --        (i.e. in RHS of Let).  In this case the ELet IS still allowed to 
