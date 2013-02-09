@@ -27,7 +27,7 @@ import Data.Array.Accelerate.BackendKit.Phase2.NormalizeExps (wrapLets)
 --   a Nothing here.
 type Env = M.Map Var (Type,Maybe [Var])
 
-type SubBinds = [(Var,Type)]
+type SubBinds = [Var]
 
 ----------------------------------------------------------------------------------------------------
 
@@ -61,40 +61,38 @@ type SubBinds = [(Var,Type)]
 unzipETups :: Prog a -> Prog (SubBinds,a)
 unzipETups prog@Prog{progBinds, uniqueCounter, typeEnv} = prog'
  where
-  prog' = prog{ progBinds= binds, 
+  prog' = prog{ progBinds= map addSubBinds binds, 
                 uniqueCounter= newCounter2 } 
-   -- NOTE -- We can't detuple ALL top level scalar binds, so right now we don't do ANY.
-  -- TODO, this should use traverseWithKey as of containers-0.5:
+  addSubBinds (ProgBind v t dec op) = ProgBind v t (nextenv M.! v,dec) op
+  -- Compute the *future* detupled names for top-level binds in the next pass:
   envM = M.fromList <$> mapM fn (M.toList typeEnv)
-
   -- Here we introduce temporary names for the subcomponents of any top-level tuple-bindings:
-  -- fn (vr,ty) | countVals ty == 1 = return (vr,(ty,Just [vr]))
-  --            | otherwise = do tmps <- sequence$ replicate (countVals ty) genUnique
-  --                             return (vr,(ty,Just tmps))
+  fn (vr,ty) | countVals ty == 1 = return (vr,[vr])
+             | otherwise = do tmps <- sequence$ replicate (countVals ty) genUnique
+                              return (vr,tmps)
+  (nextenv, newCounter1)  = runState envM uniqueCounter
 
-  -- NEW POLICY: Do not untuple ANY of the top level bindings yet.
-  -- Kick it down the road to ConvertLLIR.
-  fn (vr,ty) = return (vr,(ty,Nothing))
-  
-  (env, newCounter1)  = runState envM uniqueCounter
-  (binds,newCounter2) = runState (doBinds env progBinds) newCounter1
+  -- From the point of view of the traversals into the AST, NOTHING at top level is
+  -- unzippable during this pass:
+  topenv = M.map (\ ty -> (ty,Nothing)) typeEnv  
+  (binds,newCounter2) = runState (doBinds topenv progBinds) newCounter1
    
 
-doBinds :: Env -> [ProgBind t] -> GensymM [ProgBind (SubBinds,t)]
+doBinds :: Env -> [ProgBind t] -> GensymM [ProgBind (t)]
 doBinds env = mapM (doBind env)
 
-doBind :: Env -> ProgBind a -> GensymM (ProgBind (SubBinds, a))
-doBind env (ProgBind v t dec (Left ex))  = ProgBind v t ([],dec) . Left  <$>
+doBind :: Env -> ProgBind a -> GensymM (ProgBind (a))
+doBind env (ProgBind v t dec (Left ex))  = ProgBind v t (dec) . Left  <$>
    doSpine env ex
 
-doBind env (ProgBind v t dec (Right ae)) = ProgBind v t ([],dec) . Right <$>
+doBind env (ProgBind v t dec (Right ae)) = ProgBind v t (dec) . Right <$>
    -- The following MUST be *Nothing* because we have no way to detuple
    -- the input to kernels (i.e. array elements) at this point.
    mapMAEWithGEnv env (\ _ ty -> (ty,Nothing))
                   doSpine ae
 
    
--- | Process along the spine (which will become Stmts in the LLIR).
+-- | Process along the spine (which will become Stmts in the CLike LLIR).
 doSpine :: Env -> Exp -> GensymM Exp
 doSpine env ex =
   case ex of
@@ -107,7 +105,7 @@ doSpine env ex =
     -- In tail (or "spine") position multiple values may be returned by the branches:
     ECond e1 e2 e3        -> ECond <$> (unsing <$> doE env e1) <*> doSpine env e2 <*> doSpine env e3
 
-    -- EConds in the RHS of a let are still on the "spine":
+    -- EConds in the RHS of a let are still on the "spine" (don't untuple):
     ELet (v,t,ECond a b c) bod -> do
       [a'] <- doE env a
       b'   <- doSpine env b
@@ -115,21 +113,21 @@ doSpine env ex =
       let env' = M.insert v (t,Nothing) env
       ELet (v,t,ECond a' b' c') <$> doSpine env' bod
     
-    ELet (v,t,rhs) bod | not (isTupleTy t) -> defaultRet
+    ELet (v,t,rhs) bod | not (isTupleTy t) -> do
+                          [rhs'] <- doE env rhs
+                          let env' = M.insert v (t,Nothing) env
+                          ELet (v,t,rhs') <$> doSpine env' bod
                        | otherwise -> -- Here's where we split the variable if we can:
                          case rhs of
-                           ECond _ _ _ -> defaultRet
+                           ECond _ _ _ -> error"UnzipETups.hs: this should be impossible."
                            _ -> do let tyLs = flattenTypes t
                                    gensyms <- sequence$ replicate (length tyLs) genUnique
                                    rhsLs <- doE env rhs
-                                   let env3 = M.insert v (t,Just gensyms) env
+                                   let env' = M.insert v (t,Just gensyms) env
                                    case fragileZip3 gensyms tyLs rhsLs of
-                                     Just ls -> wrapLets ls <$> doSpine env3 bod
+                                     Just ls -> wrapLets ls <$> doSpine env' bod
                                      Nothing -> error$"UnzipETups.hs: expected tuple-producing expression to break down "
                                                 ++show(length gensyms)++" expressions, instead got: "++show rhsLs
-     where env2 = M.insert v (t,Nothing) env
-           defaultRet = do [rhs'] <- doE env rhs
-                           ELet (v,t,rhs') <$> doSpine env2 bod
     -- No PrimApp's expect tuple arguments:                                
     EPrimApp ty p els ->  EPrimApp ty p <$> mapM (fmap unsing . doE env) els
     EShape     _ -> err ex
