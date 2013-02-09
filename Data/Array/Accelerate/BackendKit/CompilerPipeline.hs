@@ -25,7 +25,7 @@ import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import qualified Data.Array.Accelerate.BackendKit.IRs.CLike     as C
 import qualified Data.Array.Accelerate.BackendKit.IRs.GPUIR     as G
-import           Data.Array.Accelerate.BackendKit.IRs.Metadata   (ArraySizeEstimate, FreeVars)
+import           Data.Array.Accelerate.BackendKit.IRs.Metadata   (FoldStrides, ArraySizeEstimate, FreeVars)
 import           Data.Array.Accelerate.BackendKit.CompilerUtils  (runPass, runOptPass)
 
 -- Phase 1 passes:
@@ -77,19 +77,19 @@ phase3 prog =
 -- forms and lower the language.
 phase2 :: S.Prog () -> C.LLProg ()
 phase2 prog =
-  runPass    "ExconvertToCLike"    convertToCLike    $     -- ()
+  runPass    "convertToCLike"    convertToCLike    $     -- ()
   -- todo: Verify final CLike here
-  runPass    "typecheck3"        typecheckPass     $     -- (size)
+  runPass    "typecheck3"        typecheckPass     $     -- (foldstrides,size)
   -- todo: UnzipArrays, here 
-  runPass    "unzipETups"        unzipETups        $     -- (size)  
-  runPass    "normalizeExps"     normalizeExps     $     -- (size)
+  runPass    "unzipETups"        unzipETups        $     -- (foldstrides,size)  
+  runPass    "normalizeExps"     normalizeExps     $     -- (foldstrides,size)
   phase2A    prog
 
 -- | Factor out this [internal] piece for use in some place(s).
-phase2A :: S.Prog () -> S.Prog ArraySizeEstimate
+phase2A :: S.Prog () -> S.Prog (FoldStrides S.Exp,ArraySizeEstimate)
 phase2A prog =
   runPass    "typecheck2"        typecheckPass     $       
-  runPass    "oneDimensionalize" oneDimensionalize $     -- (size)
+  runPass    "oneDimensionalize" oneDimensionalize $     -- (foldstrides,size)
   runOptPass "deadArrays"        deadArrays (fmap fst) $ -- (size)
   runPass    "trackUses"         trackUses         $     -- (size,uses)
    -- NOTE INLINE CHEAP IS NOT OPTIONAL PRESENTLY! (needed for copy-prop)

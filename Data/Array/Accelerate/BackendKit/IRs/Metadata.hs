@@ -50,6 +50,7 @@ instance Out FreeVars
 -- | Record the stride in the array (i.e. innermost dimension) between separate
 --   folds.  This maps each top level array variable that is the result of a fold or
 --   scan onto an expression of type TInt.
-newtype FoldStrides exp = FoldStrides (M.Map Var exp)
+-- newtype FoldStrides exp = FoldStrides (M.Map Var exp)
+newtype FoldStrides exp = FoldStrides (Maybe exp)
   deriving (Read, Show, Eq, Generic)
 instance Out a => Out (FoldStrides a)

@@ -39,12 +39,11 @@ type MyM a = ReaderT (Prog ArraySizeEstimate) GensymM a
 
 
 -- | The pass itself.
-oneDimensionalize :: Prog ArraySizeEstimate -> (Prog (ArraySizeEstimate))
+oneDimensionalize :: Prog ArraySizeEstimate -> (Prog (FoldStrides Exp, ArraySizeEstimate))
 oneDimensionalize  prog@Prog{progBinds, progType, uniqueCounter, typeEnv } =
---    (FoldStrides undefined, prog')
-      (prog')
+      prog'
   where
-    prog' = prog { progBinds    = binds,
+    prog' = prog { progBinds    = map (getFoldStride typeEnv) binds,
                    progType     = doTy progType, 
                    uniqueCounter= newCount,
                    -- Rebuild this because types change due to ranks becoming 1:
@@ -64,35 +63,38 @@ compute1DSize ndim eSz = do
 
 -- | Get the size of the inner most dimension, which is the stride between
 --   separately-folded sections.
-getFoldStride :: M.Map Var Type -> M.Map Var Exp -> ProgBind ArraySizeEstimate -> M.Map Var Exp
-getFoldStride env acc (ProgBind vo aty sz eith) =
+getFoldStride :: M.Map Var Type ->
+                 ProgBind ArraySizeEstimate ->
+                 ProgBind (FoldStrides Exp, ArraySizeEstimate)
+getFoldStride env (ProgBind vo aty sz eith) =
+  ProgBind vo aty (newdec, sz) eith
+ where
+ newdec = FoldStrides $ 
   case eith of
-    Left _ -> acc
+    Left _ -> Nothing
     Right ae -> 
      case ae of 
-       Fold _ _ vi       -> M.insert vo (innDim vi) acc
-       Fold1 _  vi       -> M.insert vo (innDim vi) acc
-       FoldSeg  _ _ vi _ -> M.insert vo (innDim vi) acc 
-       Fold1Seg _   vi _ -> M.insert vo (innDim vi) acc
-       Scanl    _ _ vi   -> M.insert vo (innDim vi) acc
-       Scanl'   _ _ vi   -> M.insert vo (innDim vi) acc
-       Scanl1   _   vi   -> M.insert vo (innDim vi) acc
-       Scanr    _ _ vi   -> M.insert vo (innDim vi) acc
-       Scanr'   _ _ vi   -> M.insert vo (innDim vi) acc
-       Scanr1   _   vi   -> M.insert vo (innDim vi) acc
-       
-       _                 -> acc
-  where
-    innDim inV = 
-      case sz of
-        KnownSize ls -> EConst$ I$ head ls
-        UnknownSize ->
-          let shp   = shapeName inV in
-          -- Take the "last" of a tuple:
-          case env M.! shp of
-            TInt      -> EVr shp
-            TTuple ls -> ETupProject 0 1 (EVr shp)
-            ty        -> error$"OneDimensionalize.hs: Should not have a shape of this type: "++show ty
+       Fold _ _ vi       -> innDim vi
+       Fold1 _  vi       -> innDim vi
+       FoldSeg  _ _ vi _ -> innDim vi
+       Fold1Seg _   vi _ -> innDim vi
+       Scanl    _ _ vi   -> innDim vi
+       Scanl'   _ _ vi   -> innDim vi
+       Scanl1   _   vi   -> innDim vi
+       Scanr    _ _ vi   -> innDim vi
+       Scanr'   _ _ vi   -> innDim vi
+       Scanr1   _   vi   -> innDim vi
+       _                 -> Nothing
+ innDim inV = Just$ 
+   case sz of
+     KnownSize ls -> EConst$ I$ head ls
+     UnknownSize ->
+       let shp   = shapeName inV in
+       -- Take the "last" of a tuple:
+       case env M.! shp of
+         TInt      -> EVr shp
+         TTuple ls -> ETupProject 0 1 (EVr shp)
+         ty        -> error$"OneDimensionalize.hs: Should not have a shape of this type: "++show ty
 
 
 -- Map Var (ProgBind (a,b,Cost)) -> 

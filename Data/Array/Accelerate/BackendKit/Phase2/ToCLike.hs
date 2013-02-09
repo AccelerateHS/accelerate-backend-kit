@@ -20,7 +20,7 @@ import           Data.Array.Accelerate.BackendKit.Utils.Helpers (genUnique, genU
 import           Data.Array.Accelerate.BackendKit.CompilerUtils (shapeName)
 import qualified Data.Array.Accelerate.BackendKit.IRs.CLike as LL
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
-import           Data.Array.Accelerate.BackendKit.IRs.Metadata   (ArraySizeEstimate(..))
+import           Data.Array.Accelerate.BackendKit.IRs.Metadata   (FoldStrides(..), ArraySizeEstimate(..))
 
 import Debug.Trace (trace)
 
@@ -40,7 +40,7 @@ type Env = M.Map Var (Type, Maybe [Var])
 -- | This pass takes a SimpleAST IR which already follows a number of
 --   conventions that make it directly convertable to the lower level
 --   IR, and it does the final conversion.
-convertToCLike :: Prog ArraySizeEstimate -> LL.LLProg ()
+convertToCLike :: Prog (FoldStrides Exp, ArraySizeEstimate) -> LL.LLProg ()
 convertToCLike Prog{progBinds,progResults,progType,uniqueCounter,typeEnv} =
   LL.LLProg
   {
@@ -59,8 +59,9 @@ convertToCLike Prog{progBinds,progResults,progType,uniqueCounter,typeEnv} =
     fn (_ ,(_,Nothing)) = []
 
     sizeEnv = M.fromList$ L.concatMap getSize binds
-    getSize :: LL.LLProgBind ArraySizeEstimate -> [(Var,(Type,TrivialExp))]
-    getSize (LL.LLProgBind votys sz _) =
+    getSize :: LL.LLProgBind (FoldStrides Exp,ArraySizeEstimate) ->
+               [(Var,(Type,TrivialExp))]
+    getSize (LL.LLProgBind votys (_,sz) _) =
       let -- Scalars must always have "size" zero:
           mkEntry v t@(TArray _ _) s = (v, (t, s))
           mkEntry v t              _ = (v, (t, TrivConst 0)) in
