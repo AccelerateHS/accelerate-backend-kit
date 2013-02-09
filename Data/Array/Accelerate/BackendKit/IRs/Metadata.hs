@@ -8,9 +8,11 @@ module Data.Array.Accelerate.BackendKit.IRs.Metadata
        (
          -- * Metadata types used to annotate ASTs during compilation.
          ArraySizeEstimate(..), Uses(..), FreeVars(..),
+         FoldStrides(FoldStrides)
          )
        where
 
+import Data.Map as M
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Var)
 import Text.PrettyPrint.GenericPretty (Out, Generic)
 
@@ -44,3 +46,10 @@ newtype FreeVars = FreeVars [Var]
   deriving (Read, Show, Eq, Generic)
 instance Out FreeVars
 
+
+-- | Record the stride in the array (i.e. innermost dimension) between separate
+--   folds.  This maps each top level array variable that is the result of a fold or
+--   scan onto an expression of type TInt.
+newtype FoldStrides exp = FoldStrides (M.Map Var exp)
+  deriving (Read, Show, Eq, Generic)
+instance Out a => Out (FoldStrides a)

@@ -21,7 +21,7 @@ import Text.PrettyPrint.GenericPretty (Out(doc))
 
 import qualified Data.Map as M
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
-import Data.Array.Accelerate.BackendKit.IRs.Metadata (ArraySizeEstimate(..))
+import Data.Array.Accelerate.BackendKit.IRs.Metadata (ArraySizeEstimate(..), FoldStrides(..))
 import Data.Array.Accelerate.BackendKit.Utils.Helpers (genUnique, genUniqueWith, GensymM, mkIndTy, mkPrj,
                                                        maybeLet, addI, mulI, quotI, remI)
 import Data.Array.Accelerate.BackendKit.CompilerUtils (shapeName)  
@@ -37,16 +37,19 @@ flattenGenerates = True
 
 type MyM a = ReaderT (Prog ArraySizeEstimate) GensymM a 
 
+
 -- | The pass itself.
-oneDimensionalize :: Prog ArraySizeEstimate -> Prog ArraySizeEstimate
-oneDimensionalize  prog@Prog{progBinds, progType, uniqueCounter, typeEnv } = 
-  prog { progBinds    = binds,
-         progType     = doTy progType, 
-         uniqueCounter= newCount,
-         -- Rebuild this because types change due to ranks becoming 1:
-         typeEnv      = M.fromList$ map (\(ProgBind v t _ _) -> (v,t)) binds
-       }
+oneDimensionalize :: Prog ArraySizeEstimate -> (Prog (ArraySizeEstimate))
+oneDimensionalize  prog@Prog{progBinds, progType, uniqueCounter, typeEnv } =
+--    (FoldStrides undefined, prog')
+      (prog')
   where
+    prog' = prog { progBinds    = binds,
+                   progType     = doTy progType, 
+                   uniqueCounter= newCount,
+                   -- Rebuild this because types change due to ranks becoming 1:
+                   typeEnv      = M.fromList$ map (\(ProgBind v t _ _) -> (v,t)) binds
+                 }
     m1 = mapM (doBind typeEnv) progBinds
     m2 = runReaderT m1 prog
     (binds,newCount) = runState m2 uniqueCounter
@@ -57,6 +60,40 @@ compute1DSize ndim eSz = do
    lift$ maybeLet eSz (mkIndTy ndim)
           (\tmp -> foldl mulI (EConst (I 1))
                    [ mkPrj i 1 ndim (EVr tmp) | i <- reverse[0 .. ndim-1] ])
+
+
+-- | Get the size of the inner most dimension, which is the stride between
+--   separately-folded sections.
+getFoldStride :: M.Map Var Type -> M.Map Var Exp -> ProgBind ArraySizeEstimate -> M.Map Var Exp
+getFoldStride env acc (ProgBind vo aty sz eith) =
+  case eith of
+    Left _ -> acc
+    Right ae -> 
+     case ae of 
+       Fold _ _ vi       -> M.insert vo (innDim vi) acc
+       Fold1 _  vi       -> M.insert vo (innDim vi) acc
+       FoldSeg  _ _ vi _ -> M.insert vo (innDim vi) acc 
+       Fold1Seg _   vi _ -> M.insert vo (innDim vi) acc
+       Scanl    _ _ vi   -> M.insert vo (innDim vi) acc
+       Scanl'   _ _ vi   -> M.insert vo (innDim vi) acc
+       Scanl1   _   vi   -> M.insert vo (innDim vi) acc
+       Scanr    _ _ vi   -> M.insert vo (innDim vi) acc
+       Scanr'   _ _ vi   -> M.insert vo (innDim vi) acc
+       Scanr1   _   vi   -> M.insert vo (innDim vi) acc
+       
+       _                 -> acc
+  where
+    innDim inV = 
+      case sz of
+        KnownSize ls -> EConst$ I$ last ls
+        UnknownSize ->
+          let shp   = shapeName inV in
+          -- Take the "last" of a tuple:
+          case env M.! shp of
+            TInt      -> EVr shp
+            TTuple ls -> ETupProject 0 1 (EVr shp)
+            ty        -> error$"OneDimensionalize.hs: Should not have a shape of this type: "++show ty
+
 
 -- Map Var (ProgBind (a,b,Cost)) -> 
 doBind :: M.Map Var Type -> ProgBind ArraySizeEstimate -> MyM (ProgBind ArraySizeEstimate)
@@ -101,12 +138,6 @@ doBind env pb@(ProgBind vo aty sz (Right ae)) =
                                         <*> doLam1 lam1 <*> return w
     Stencil  lam1 b v       -> Stencil  <$> doLam1 lam1 <*> return b <*> return v
     Stencil2 lam2 b v c w   -> Stencil2 <$> doLam2 lam2 <*> return b <*> return v <*> return c <*> return w
-    -- Reshape shE v                     -> return (Vr v)
-    -- Backpermute ex (Lam1 arg bod) vr  -> Backpermute <$> doE ex <*> (Lam1 arg <$> doE bod)  <*> return vr
-    -- Replicate template ex vr          -> Replicate template <$> doE ex <*> return vr
-    -- Index slc vr ex                   -> Index slc vr <$> doE ex
-    -- Map      (Lam1 arg bod) vr        -> Map  <$> (Lam1 arg <$> doE bod) <*> return vr
-    -- ZipWith  (Lam2 a1 a2 bod) v1 v2   -> ZipWith <$> (Lam2 a1 a2 <$> doE bod) <*> return v1 <*> return v2
     Map      _ _        -> err
     ZipWith  _ _ _      -> err
     Reshape  _ _        -> err
@@ -146,10 +177,8 @@ doExp env ex =
         ELet (tmp, mkIndTy n, indE)
          (EIndexScalar avr (makeFlatIDX pb (EVr tmp)))
     
-    EShape avr          -> return$ EShape avr
-    EShapeSize e        -> case recoverExpType env e of
-                             TTuple ls -> compute1DSize (length ls) e
-                             _         -> return e -- Otherwise the expression itself is a scalar.
+    EShape _            -> doerr ex 
+    EShapeSize _        -> doerr ex
     EVr _               -> return ex
     EConst _            -> return ex
     ECond e1 e2 e3      -> ECond   <$> doExp env e1 <*> doExp env e2 <*> doExp env e3
@@ -202,10 +231,9 @@ getIdxCoefs (ProgBind nm aty sz _) =
                     | i <- reverse [0 .. ndims-1] ] in 
       init$ scanl (mulI) (EConst (I 1)) shapeLs
 
-
-
 doerr :: Out a => a -> t
-doerr e = error$ "OneDimensionalize.hs: the following should be desugared before this pass is called:\n   "++ show (doc e)
+doerr e = error$ "OneDimensionalize.hs: the following should be desugared before this pass is called:\n   "
+          ++ show (doc e)
 
        
 ----------------------------------------------------------------------------------------------------

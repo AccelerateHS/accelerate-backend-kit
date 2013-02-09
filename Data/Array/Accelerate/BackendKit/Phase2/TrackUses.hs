@@ -117,10 +117,13 @@ doE ex mp =
     EPrimApp ty pr els   -> doEs els mp
     ECond e1 e2 e3       -> doE e1 $ doE e2 $ doE e3 mp
     EIndexScalar avr ex  -> addScalarRef avr $ doE ex mp
-    EShape avr           -> addScalarRef avr mp
-    EShapeSize ex        -> doE ex mp
+    EShape avr           -> err ex 
+    EShapeSize ex        -> err ex
     EIndex els           -> doEs els mp
     ETupProject _ _ ex   -> doE ex mp
+
+err :: Show a => a -> b
+err ex = error$"TrackUses.hs: this form should have been desugared by this point: "++show ex
 
 doEs :: [Exp] -> UseMap -> UseMap
 doEs els mp = L.foldl  (\mp ex -> doE ex mp) mp els
