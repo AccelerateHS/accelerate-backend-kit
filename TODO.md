@@ -3,6 +3,9 @@
 These should go into github issues 
 ======================================================
 
+ * Add a TupleSize variant to ArraySizeEstimate to deal with Scanl'.
+   (Or just get rid of Scanl/r'!!)
+
  * FreeVars should somehow be attached to specific Lambdas, not to
    array ops.
 

@@ -14,6 +14,7 @@ import           Data.List  as L
 import           Control.Monad.Writer
 import           Control.Applicative   ((<$>),(<*>))
 import           Control.Monad.State.Strict
+import           Text.PrettyPrint.GenericPretty (Out(doc))
 
 import           Data.Array.Accelerate.BackendKit.Utils.Helpers (genUnique, genUniqueWith, GensymM, isTupleTy)
 import           Data.Array.Accelerate.BackendKit.CompilerUtils (shapeName)
@@ -206,7 +207,8 @@ doAE env ae =
       where env' = M.insert v (t,Nothing) $
                    M.insert w (u,Nothing) env
 -- TODO/UNFINISHED: Handle other scans and folds... and convert them.
-    _ -> error$"ToCLike.hs/doAE: cannot handle array operator: "
+    _ -> error$"ToCLike.hs/doAE: cannot handle array operator:\n"++show(doc ae)
+
 
 -- Handle simple, non-spine expressions:
 doE :: Env -> Exp -> LL.Exp

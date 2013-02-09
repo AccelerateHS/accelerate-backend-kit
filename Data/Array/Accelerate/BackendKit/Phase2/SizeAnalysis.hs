@@ -43,10 +43,10 @@ doAE mp ae =
     -- the inner dimension...
     Fold _ _ vr      -> collapseInner vr
     Fold1  _ vr      -> collapseInner vr
-    FoldSeg _ _ vr _ -> useSizeof vr
-    Fold1Seg  _ vr _ -> useSizeof vr
+    FoldSeg _ _ vr w -> replaceInner (useSizeof vr) (useSizeof w)
+    Fold1Seg  _ vr w -> replaceInner (useSizeof vr) (useSizeof w)
     Scanl  _ _  vr   -> useSizeof vr
--- Not handling these because of their tuple return type:
+-- Not handling these yet because of their tuple return type:
 --    Scanl' _ _  vr   -> useSizeof vr
     Scanl1 _    vr   -> useSizeof vr
     Scanr  _ _  vr   -> useSizeof vr
@@ -97,6 +97,11 @@ doAE mp ae =
      case M.lookup vr mp of
         Nothing -> UnknownSize
         Just sz -> KnownSize (init sz)
+
+   replaceInner _ UnknownSize = UnknownSize
+   replaceInner UnknownSize _ = UnknownSize
+   replaceInner (KnownSize (_:tl)) (KnownSize [inn]) = KnownSize (inn:tl)
+   replaceInner x y = error$"SizeAnalysis/replaceInner: bad inputs: "++show(x,y)
 
    intersectVars v1 v2 = 
       case (M.lookup v1 mp, M.lookup v2 mp) of

@@ -6,39 +6,37 @@
 
 module Data.Array.Accelerate.BackendKit.Phase2.ExplicitShapes where 
 
-import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
-import Data.List as L
+import           Control.Monad.Reader
+import           Control.Monad.State.Strict (runState)
+import           Control.Applicative ((<$>), (<*>))
+import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
+import           Data.List as L
+import qualified Data.Map as M
+
 import Data.Array.Accelerate.BackendKit.IRs.Metadata (ArraySizeEstimate(..))
-import Data.Array.Accelerate.BackendKit.Utils.Helpers (mkIndTy, mkPrj, mulI)
+import Data.Array.Accelerate.BackendKit.Utils.Helpers (mkIndTy, mkPrj, mulI, genUnique, GensymM)
 import Data.Array.Accelerate.BackendKit.CompilerUtils (shapeName)
 import Text.PrettyPrint.GenericPretty (Out(doc))
 import Debug.Trace (trace)
 
-import Control.Monad.State.Strict
-import Control.Applicative ((<$>), (<*>))
+
+-- A monad to use just for this pass
+type MyM a = ReaderT (Prog ArraySizeEstimate) GensymM a
+
+--------------------------------------------------------------------------------
 
 -- | The convention is that for every array variable "A" of
 --   statically-unknown shape, a top-level binding "A_shape" will be
 --   introduced which carries a tuple describing the shape of A.
 --   Thus `(EShape A)` becomes simply `A_shape`.
 explicitShapes :: Prog ArraySizeEstimate -> Prog ArraySizeEstimate
-explicitShapes prog@Prog{progBinds, uniqueCounter } = 
+explicitShapes prog@Prog{progBinds, uniqueCounter, typeEnv } =
   prog { progBinds    = binds, 
          uniqueCounter= newCount }
   where
-    (binds,(_,newCount)) = runState (doBinds progBinds) (prog,uniqueCounter)
+    (binds,newCount) =
+      runState (runReaderT (doBinds progBinds) prog) uniqueCounter
 
--- A monad to use just for this pass:
-type MyM a = State (Prog ArraySizeEstimate, Int) a
-
--- Generate a unique name
-genUnique :: MyM Var
-genUnique =
-  do (p,cnt) <- get
-     put (p,cnt+1)
-     return$ var$ "gensym_"++show cnt
-
--- Map Var (ProgBind (a,b,Cost)) -> 
 doBinds :: [ProgBind ArraySizeEstimate] -> MyM [ProgBind ArraySizeEstimate]
 doBinds [] = return []
 doBinds (ProgBind vo t sz (Left ex) : rest) =
@@ -51,44 +49,57 @@ doBinds (ProgBind vo t sz@(KnownSize _) (Right ae) : rest) =
      rest' <- doBinds rest
      return (ProgBind vo t sz (Right ae') : rest')
 
-doBinds (ProgBind vo t (UnknownSize) (Right ae) : rest) = do
+doBinds (ProgBind vo voty (UnknownSize) (Right ae) : rest) = do
      (newBinds, szEx, ae') <- handleUnknownSize
      rest' <- doBinds rest
      return$ newBinds ++
              -- Here we inject the new shape binding:      
-             ProgBind (shapeName vo) (mkIndTy ndims) UnknownSize (Left szEx) : 
-             ProgBind vo t UnknownSize (Right ae') :     
+             ProgBind (shapeName vo) (mkIndTy vo_ndims) UnknownSize (Left szEx) : 
+             ProgBind vo voty UnknownSize (Right ae') :
              rest'      
   where
-    TArray ndims _elt = t
-          
+    TArray vo_ndims _ = voty
+
     -- handleUnknownSize returns:
     --   (1) a list of new binds
     --   (2) an expression describing the shape of the resulting array
     --   (3) a new AExp
     handleUnknownSize = do
-      (prog,_) <- get
+      prog@Prog{typeEnv} <- ask
       let getSizeE = mkSizeE prog
           -- Remove the inner dimension:
-          knockOne v = [ mkPrj i 1 (ndims-1) (getSizeE v)
-                       | i <- reverse [0..ndims-2]]
+          knockOne v = trace ("KNOCKING "++show v++" dow to "++show (ndims-1)++" = "++ show x ++" sizeE "++show (getSizeE v)) x
+            where
+              TArray ndims _ = typeEnv M.! v
+              x = [ mkPrj i 1 ndims (getSizeE v)
+                  | i <- reverse [0..ndims-2]]
+--                  | i <- reverse [1..ndims-1] ]
+                    
+          -- RRN [2013.02.09] - This looks HIGHLY suspect ^^
 
           -- Replace the inner dimension.
           -- ASSUMPTION: segs is 1D and its shape is a TInt:
-          replaceOne v segs = mkETuple$ (getSizeE segs) : knockOne v 
+          replaceOne v segs =
+            trace ("REPLACEONE "++show(v,segs) ++" = "++  show (mkETuple$ (getSizeE segs) : knockOne v )) $
+            mkETuple$ (getSizeE segs) : knockOne v 
 
           -- Beware tricky intersection semantics:
-          intersectShapes v1 v2 = 
-                mkETuple$ [ let a = mkPrj i 1 ndims (getSizeE v1)
-                                b = mkPrj i 1 ndims (getSizeE v2)
+          intersectShapes v1 v2 =
+              let TArray v1Dims _ = typeEnv M.! v1
+                  TArray v2Dims _ = typeEnv M.! v2 in
+              if v1Dims /= v2Dims || v1Dims /= vo_ndims then
+                error$"ExplicitShapes/intersectShapes: mismatched ranks: "++show (v1Dims, v2Dims, vo_ndims)
+              else   
+                mkETuple$ [ let a = mkPrj i 1 v1Dims (getSizeE v1)
+                                b = mkPrj i 1 v2Dims (getSizeE v2)
                             in EPrimApp TInt (SP Min) [a,b]
-                          | i <- reverse [0..ndims-1]]
+                          | i <- reverse [0 .. v1Dims-1]]
       case ae of
         -- Desugaring reshape is as easy as pie.  Keep the array, change the shape.
         -- FIXME -- insert dynamic error checking here:
         Vr avr                            -> return ([], getSizeE avr, ae)
         Cond a bvr cvr                    -> do a'  <- doE a
-                                                tmp <- genUnique
+                                                tmp <- lift genUnique
                                                 return ([ProgBind tmp TBool UnknownSize (Left a')],
                                                         ECond (EVr tmp) (getSizeE bvr) (getSizeE cvr),
                                                         Cond (EVr tmp) bvr cvr)
@@ -100,7 +111,7 @@ doBinds (ProgBind vo t (UnknownSize) (Right ae) : rest) = do
         Backpermute ex (Lam1 arg bod) vr  -> do bod' <- doE bod
                                                 ex'  <- doE ex                                                
                                                 return ([], ex', Backpermute (EVr$shapeName vo) (Lam1 arg bod) vr)
-        
+
         Map      (Lam1 arg bod) vr        -> do bod' <- doE bod
                                                 return ([], getSizeE vr,           Map     (Lam1 arg bod') vr)
         ZipWith  (Lam2 a1 a2 bod) v1 v2   -> do bod' <- doE bod
@@ -135,17 +146,18 @@ doBinds (ProgBind vo t (UnknownSize) (Right ae) : rest) = do
                                                         Permute (Lam2 a1 a2 bod1') v
                                                                 (Lam1 a3    bod2') w)
         Replicate template ex upV ->
-          do gensym   <- genUnique
-             (prog,_) <- get
+          do gensym   <- lift genUnique
+             prog <- ask
              let exTy = topLevelExpType prog ex
                  -- How many entries to be expect to be in 'ex' given the weird encoding:
                  numWithoutTrailing = length template - length (takeWhile (==All) (reverse template))
                  numFixed = length$ filter (==Fixed) template
+                 TArray upDims _ = typeEnv M.! upV
                  ls = [ case pr of 
                           -- The 'ex' expression will retain slots for the Alls that are ():
                           (Fixed,_,i) -> mkPrj i 1 numWithoutTrailing (EVr gensym)
                           -- The shape of the upstream will be pure numbers, no 'All' business:
-                          (All,  i,_) -> mkPrj i 1 (ndims - numFixed) (getSizeE upV)
+                          (All,  i,_) -> mkPrj i 1 (upDims - numFixed) (getSizeE upV)
                       | pr <- zip3 template indsA indsF]
                  -- Sum up the number of Alls seen so far to get the index into the original shape:
                  indsA = tail$reverse$scanl (\ ind x -> if x==All   then ind+1 else ind) 0 (reverse template)
@@ -153,7 +165,7 @@ doBinds (ProgBind vo t (UnknownSize) (Right ae) : rest) = do
              ex' <- doE ex
              return ([ProgBind gensym exTy UnknownSize (Left ex')],
                      mkETuple ls, Replicate template (EVr gensym) upV)
-            
+
         -- Later we can optimize the trivial case of all All's if we like:
         Index template vr ex   ->
           do 
@@ -169,7 +181,7 @@ doBinds (ProgBind vo t (UnknownSize) (Right ae) : rest) = do
                  indsF = reverse$ loop$ reverse template
              ex' <- doE ex 
              return ([], mkETuple ls, Index template vr ex')
-                               
+
         -- Cannot handle Scanl' because of it's tuple return type.  It's not really an "array variable":
         Scanl'   _ _ _     -> error$ "ExplicitShapes: cannot handle Scanl' because of its tuple return type"
         Scanr'   _ _ _     -> error$ "ExplicitShapes: cannot handle Scanr' because of its tuple return type"
@@ -180,7 +192,7 @@ doBinds (ProgBind vo t (UnknownSize) (Right ae) : rest) = do
 
 doE :: Exp -> MyM Exp
 doE ex = do
-  (prog,_) <- get
+  prog <- ask
   case ex of
     -- Here's the action:
     EShape avr  -> return$ mkSizeE prog avr
@@ -190,7 +202,7 @@ doE ex = do
          case topLevelExpType prog ex of
            TInt      -> doE ex
            TTuple [] -> return$ EConst (I 0)
-           TTuple ls -> do tmp <- genUnique
+           TTuple ls -> do tmp <- lift genUnique
                            ex' <- doE ex
                            let ndims = length ls
                            return$

@@ -122,8 +122,9 @@ mkPrj :: Int -> Int -> Int -> Exp -> Exp
 mkPrj ind len total e | total P.<= 0 = 
   error$"mkPrj: something's wrong, total tuple size should not be "++show total++" expr: "++show (ETupProject ind len e)
 mkPrj ind len total e | ind P.+ len P.> total = 
-  error$"mkPrj: out of bounds tuple index, total "++show total++" expr: "++show (ETupProject ind len e)
-mkPrj _ _ 1 e = e 
+  error$"mkPrj: out of bounds tuple index, total "++show total++" expr:\n  "++show (ETupProject ind len e)  
+mkPrj _ _ 1 e = e
+mkPrj ind len _total (ETuple ls) = mkETuple$ reverse $ take len $ drop ind $ reverse ls
 mkPrj ind len _total e = ETupProject ind len e 
 
 -- Convenient integer operations

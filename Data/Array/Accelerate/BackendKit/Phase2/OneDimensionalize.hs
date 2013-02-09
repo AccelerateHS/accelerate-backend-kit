@@ -85,7 +85,7 @@ getFoldStride env acc (ProgBind vo aty sz eith) =
   where
     innDim inV = 
       case sz of
-        KnownSize ls -> EConst$ I$ last ls
+        KnownSize ls -> EConst$ I$ head ls
         UnknownSize ->
           let shp   = shapeName inV in
           -- Take the "last" of a tuple:

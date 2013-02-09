@@ -30,6 +30,8 @@ module Data.Array.Accelerate.BackendKit.Tests
     p16a, p16b, p16c, p16d, p16e, p17a, p17b,
     p18a, p18b, p18c, p18d, p18e, p18f,
 
+    p20a, p20b, 
+
     -- * Reexports to make life easier:
     doc, convertToSimpleProg
    )
@@ -138,7 +140,9 @@ otherProgs =
 
   go "p16a" p16a, go "p16b" p16b, go "p16c" p16c, go "p16d" p16d, go "p16e" p16e,
   go "p17a" p17a, go "p17b" p17b,
-  go "p18a" p18a, go "p18b" p18b, go "p18c" p18c, go "p18d" p18d, go "p18e" p18e, go "p18f" p18f
+  go "p18a" p18a, go "p18b" p18b, go "p18c" p18c, go "p18d" p18d, go "p18e" p18e, go "p18f" p18f,
+
+  go "p20a" p20a ,go "p20b" p20b
   ]
 
 makeTestEntry :: forall a . (Show a, Arrays a) => String -> Acc a -> TestEntry
@@ -254,7 +258,6 @@ unindex1_int  = unindex1
 p1b :: Acc (Vector Float)
 p1b = let xs = use$ fromList (Z :. (2::Int) :. (5::Int)) [1..10::Float]
       in  fold (*) 0 xs
-
 
 -- This one is JUST a zipwith:
 p1c :: Acc (Vector Word)
@@ -828,6 +831,33 @@ p18f = let mystery = (unit (index1 7) ! index0) :: Exp (Z:.Int) in
 -- Testing all FOLD variants:
 
 -- TODO
+
+
+
+-- | Similar to p1b: fold the inner 5 elements into two.
+p20a :: Acc (Array DIM2 Float)
+p20a = let xs   = use$ fromList (Z :. (2::Int) :. (5::Int)) [1..10::Float]
+           segs :: Acc (Vector Int)
+           segs = use$ fromList (Z :. (2::Int)) [2,3::Int]
+       in  fold1Seg (+) xs segs
+-- should yield
+-- (1+2) (3+4+5)
+-- (6+7) (8+9+10)
+--------------
+--   3.0 12.0 
+--  13.0 27.0 
+
+-- | The same as 20a except with an statically unknown segment size.
+p20b :: Acc (Array DIM2 Float)
+p20b = let xs   = use$ fromList (Z :. (2::Int) :. (5::Int)) [1..10::Float]
+           segs :: Acc (Vector Int)
+           segs = use$ fromList (Z :. (2::Int)) [2,3::Int]
+
+           segs2 :: Acc (Vector Int)
+           segs2 = generate (unit (index1 2) ! index0) (\ix -> segs ! ix)
+           
+       in  fold1Seg (+) xs segs2
+
 
 --------------------------------------------------------------------------------
 -- Testing STENCILs:
