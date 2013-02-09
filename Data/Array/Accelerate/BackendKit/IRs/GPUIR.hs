@@ -22,7 +22,7 @@ import           Data.List as L
 import           Prelude as P
 import           Text.PrettyPrint.GenericPretty (Out, Generic)
 
-import           Data.Array.Accelerate.BackendKit.IRs.CLike (Direction(..))
+import           Data.Array.Accelerate.BackendKit.IRs.CLike (Direction(..), ReduceVariant(..))
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as SA
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
                    (Var,Type,AccArray, Prim(..), Const(..), Type(..), TrivialExp)
@@ -100,14 +100,27 @@ data TopLvlForm =
   ------------------------------------------------------------
   -- | Generate carries the individual dimension components [Exp]
   | Generate  [Exp] (Fun ScalarBlock)
-  | Fold (Fun ScalarBlock) [Exp] Var Segmentation -- ^ A possibly segmented fold.
-  | Scan (Fun ScalarBlock) Direction [Exp] Var    -- ^ [Exp] provides the initial accumulator value(s)
+
+  -- | The same as in CLike.hs, see docs there:
+  | GenReduce {
+      reducer    :: Fun ScalarBlock,
+      identity   :: [Exp],
+      generator  :: Fun ScalarBlock,
+      dimensions :: [Exp],
+      variant    :: ReduceVariant,
+      stride     :: Segmentation }
     
   deriving (Read,Show,Eq,Ord,Generic)
 
 data Segmentation = VariableStride Var -- The name of an array containing the strides.
-                  | ConstantStride Exp -- A constant segmentation.
+                  | ConstantStride Exp -- A constant segmentation, which might just be the whole array.
   deriving (Read,Show,Eq,Ord,Generic)
+
+
+-- data ReduceVariant = Fold
+--                    | FoldSeg Var
+--                    | Scan Direction
+--                    | ScanSeg Direction Var
 
 ------------------------------------------------------------
 -- Accelerate Scalar Expressions and Functions

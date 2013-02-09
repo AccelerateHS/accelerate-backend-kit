@@ -55,7 +55,7 @@ convertToCLike Prog{progBinds,progResults,progType,uniqueCounter,typeEnv} =
     -- Map subdivided names back onto their original counterparts
     backMap = M.fromList$ concatMap fn (M.toList finalEnv)
     fn (vr,(_,Just ls)) = map (,vr) ls
-    fn (vr,(_,Nothing)) = []
+    fn (_ ,(_,Nothing)) = []
 
     sizeEnv = M.fromList$ L.concatMap getSize binds
     getSize :: LL.LLProgBind ArraySizeEstimate -> [(Var,(Type,TrivialExp))]
@@ -64,7 +64,7 @@ convertToCLike Prog{progBinds,progResults,progType,uniqueCounter,typeEnv} =
           mkEntry v t@(TArray _ _) s = (v, (t, s))
           mkEntry v t              _ = (v, (t, TrivConst 0)) in
       case sz of
-        KnownSize ls -> zipWith (\ (vo,ty) sz -> mkEntry vo ty sz) votys (map TrivConst ls)
+        KnownSize ls -> zipWith (\ (vo,ty) s -> mkEntry vo ty s) votys (map TrivConst ls)
         UnknownSize  ->
           case votys of 
             [] -> error$ "ToCLike.hs: There should be no forms with ZERO output vars at this phase."
@@ -192,19 +192,22 @@ doAE env ae =
       LL.Generate <$> doBlock env ex
                   <*> (LL.Lam [(vr,ty)] <$> doBlock env' bod)
       where env' = M.insert vr (ty,Nothing) env
-    Fold (Lam2 (v,t) (w,u) bod) ex inV ->
-      LL.Fold <$> (LL.Lam [(v,t),(w,u)] <$> doBlock env' bod)
-              <*> doBlock env ex
-              <*> return (copyProp env inV) <*> return Nothing
+
+    -- TODO: Implement greedy fold/generate fusion RIGHT HERE:
+    Fold (Lam2 (v,t) (w,u) bod) ex inV -> do
+      let inV' = copyProp env inV
+      ix <- genUniqueWith "ix"
+      -- TODO: handle the unzipping of arguments:
+      LL.GenReduce
+        <$> (LL.Lam [(v,t),(w,u)] <$> doBlock env' bod)
+        <*> doBlock env ex        
+        <*> (LL.Lam [(ix,TInt)] <$> exp2Blk TInt (LL.EIndexScalar inV (LL.EVr ix) 0))
+        <*> error "FINISHME - need size here in ToCLike.hs"
+        <*> return LL.Fold
+
       where env' = M.insert v (t,Nothing) $
                    M.insert w (u,Nothing) env
-    Scanl (Lam2 (v,t) (w,u) bod) ex inV ->
-      LL.Scan <$> (LL.Lam [(v,t),(w,u)] <$> doBlock env' bod)
-              <*> return LL.LeftScan
-              <*> doBlock env ex      
-              <*> return (copyProp env inV)
-      where env' = M.insert v (t,Nothing) $
-                   M.insert w (u,Nothing) env
+
 -- TODO/UNFINISHED: Handle other scans and folds... and convert them.
     _ -> error$"ToCLike.hs/doAE: cannot handle array operator: "
 
@@ -285,7 +288,12 @@ t2 = (`runState` 1000) $
     ECond (EConst (B False))
           (EConst (I 32)) p1
   
-    
+-- | Introduce a temporary variable just for the purpose of lifting an Exp to a ScalarBlock.
+exp2Blk :: Type -> LL.Exp -> GensymM LL.ScalarBlock
+exp2Blk ty ex = do
+  tmp <- genUnique
+  return$ LL.ScalarBlock [(tmp,ty)] [tmp] [LL.SSet tmp ex]
+
 flattenConst :: Const -> [Const]
 flattenConst (Tup ls) = concatMap flattenConst ls
 flattenConst c        = [c]

@@ -34,8 +34,15 @@ doAE ae =
     -- The free vars for a generate binding refer to the body of the
     -- Generate, NOT the size expression.
     LL.Generate _ (Lam [(v,_)] bod)       -> S.delete v $ doBlk bod
-    LL.Fold (Lam [(x,_),(y,_)] bod) _ _ _ -> S.delete x $ S.delete y $ doBlk bod
-    LL.Scan (Lam [(x,_),(y,_)] bod) _ _ _ -> S.delete x $ S.delete y $ doBlk bod
+
+    -- FIXME: Need a better system here.
+    -- We union the freevars in BOTH the reducer and the generator:
+    LL.GenReduce { reducer= Lam binds1 bod1, generator= Lam binds2 bod2 } -> 
+      let s1 = doBlk bod1
+          s2 = doBlk bod2 in
+      S.difference (S.union s1 s2)
+       (S.fromList$ L.map fst binds1 ++ L.map fst binds2)
+      
     -- This one isn't a good fit... it has TWO lambdas:  
     -- Permute (Lam2 (x,_) (y,_) bod1) _ (Lam1 (v,_) bod2) _ -> S.union 
     --                                                          (S.delete v $ doE bod2)

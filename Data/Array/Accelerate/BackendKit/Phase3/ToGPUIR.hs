@@ -57,13 +57,15 @@ doBinds sizeEnv evEnv (LLProgBind vartys dec@(FreeVars fvs) toplvl : rest) = do
                     (_, S.TrivVarref _) -> UnknownSize
       dec' = if null vartys then (UnknownSize, FreeVars fvs)
              else (getSize (fst$ head vartys), FreeVars fvs)
-      -- </ TEMPORARY!  FIXME > 
+      -- </ TEMPORARY!  FIXME >
+      -- Put back together the progbind we are destructuring here:
       rebind deps = G.GPUProgBind newevt deps (map liftBind vartys) dec'
       evEnv' = foldl (\mp (v,_) -> M.insert v newevt mp) evEnv vartys
   rst <- doBinds sizeEnv evEnv' rest
 
   let -- shared code for cases below:
-      liftSB sb cont = do
+      -- Create a new progbind that lifts out a scalarblock:
+      liftSB sb = do
          let (ScalarBlock bnds rets _) = sb
              retTys = map snd $ filter (\ (v,_) -> elem v rets) bnds
          newVs <- sequence (replicate (length rets) genUnique)
@@ -74,32 +76,34 @@ doBinds sizeEnv evEnv (LLProgBind vartys dec@(FreeVars fvs) toplvl : rest) = do
                        G.outarrs = [(v, topLvlAddrSpc t, t) | t <- retTys | v <- newVs ], 
                        G.decor   = defaultDec,
                        G.op      = G.ScalarCode (doSB sb) }
-         otherBnd <- cont (map G.EVr newVs)
-         return (sbBnd : otherBnd : rst)      
+         return (sbBnd, map G.EVr newVs)
+--         otherBnd <- cont (map G.EVr newVs)
+--         return (sbBnd : otherBnd : rst)      
 
   case toplvl of
     Use arr       -> return$ rebind [] (G.Use arr)                       : rst
     Cond e v1 v2  -> return$ rebind (evs [v1,v2]) (G.Cond (doE e) v1 v2) : rst
     ScalarCode sb -> return$ rebind (evs fvs) (G.ScalarCode (doSB sb))   : rst
 
-    Generate sb (Lam args bod) ->
-      liftSB sb $ \ els -> return $ 
-        rebind (evs fvs) $ G.Generate els (G.Lam (map liftBind args) (doSB bod))
+    Generate sb (Lam args bod) -> do
+      (sbBnd, els) <- liftSB sb
+      let newBnd = rebind (evs fvs) $ G.Generate els (G.Lam (map liftBind args) (doSB bod))
+      return (sbBnd : newBnd : rst)
     
-    Fold (Lam args bod) sb inV seg  -> 
-      liftSB sb $ \ els -> return $
-        let seg' = case seg of
---                     Nothing -> G.ConstantStride (error "Need more information on fold stride...")
---                    Nothing -> G.ConstantStride (G.EVr (strideName nm))
-                    -- TEMP: For the moment we are ONLY supporting a "FoldAll", stride 1:
-                    Nothing -> G.ConstantStride (G.EConst (S.I 1))
-                    Just v  -> G.VariableStride v
-        in rebind (evs$ inV:fvs) $ 
-           G.Fold (G.Lam (map liftBind args) (doSB bod))
-                  els inV seg'
+    GenReduce { reducer=Lam rvs rbod, identity,
+                generator=Lam gvs gbod, dimensions, variant } -> do
+      (sbBnd1, idents) <- liftSB identity 
+      (sbBnd2, dims)   <- liftSB dimensions
+      let newBnd = 
+           rebind (evs fvs) $
+            G.GenReduce { G.reducer   = G.Lam (map liftBind rvs) (doSB rbod),
+                          G.identity  = idents,
+                          G.generator = G.Lam (map liftBind gvs) (doSB gbod),
+                          G.dimensions= dims,
+                          G.variant   = variant
+                        }
+      return (sbBnd1 : sbBnd2 : newBnd : rst)
 
-  -- Not supporting Scan yet:
-  -- | Scan (Fun ScalarBlock) Direction ScalarBlock Var  
  where
    (nm,ty) = case vartys of -- Touch this and you make the one-output-array assumption!
               [x] -> x 

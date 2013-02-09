@@ -45,8 +45,7 @@ doBinds prog (pb@GPUProgBind { outarrs, evtid, evtdeps,
      Use  _       -> deflt
      Cond _ _ _   -> deflt
      ScalarCode _ -> deflt
-     Fold _ _ _ _ -> deflt
-     Scan _ _ _ _ -> deflt
+     GenReduce {} -> deflt
      NewArray _   -> deflt
      Kernel {}    -> deflt
 
