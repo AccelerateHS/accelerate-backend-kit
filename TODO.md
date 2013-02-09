@@ -31,3 +31,9 @@ These should go into github issues
    functional interpreter for all three major IRs.
 
 
+ * Factor out the pass that gathers sizeEnv to BEFORE ToCLike.hs
+   This will ameliorate some phase ordering pain within that pass.
+
+   
+ * We need to track Fold strides between the end of OneDimensionalize
+   until the conversion to GPUIR.  

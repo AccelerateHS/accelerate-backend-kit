@@ -55,10 +55,12 @@ doBinds sizeEnv prog (pb@GPUProgBind { decor=(FreeVars arrayOpFvs), op } : rest)
      Generate _ _ -> deflt
      NewArray _   -> deflt
      Kernel {}    -> deflt
-     Scan _ _ _ _ -> error "DesugarFoldScan.hs/doBinds: FINISHME - need to handle "
+--     Scan _ _ _ _ -> error "DesugarFoldScan.hs/doBinds: FINISHME - need to handle "
      
      --------------------------------------------------------------------------------
-     Fold (Lam [(v,_,ty1),(w,_,ty2)] bod) [initE] inV (ConstantStride _) -> do
+--     Fold (Lam [(v,_,ty1),(w,_,ty2)] bod) [initE] inV (ConstantStride _) -> do
+     GenReduce {} -> do
+       error "DesugarFoldScan.hs : Rewrite for GenReduce"
 #if 0
 -- PARALLEL REDUCTION, UNFINISHED:    
        -- Not supporting tuple (multiple) accumulators:
@@ -124,7 +126,7 @@ doBinds sizeEnv prog (pb@GPUProgBind { decor=(FreeVars arrayOpFvs), op } : rest)
          GPUProgBind newevt [] outarrs () (NewArray one) :
          scalarBind : 
          GPUProgBind evtid (newevt:evtdeps) [] () newop : rst
-#else       
+-- else       
        -- Here is a serial fold as an example:
        ------------------------------------------------------------
        -- Not supporting tuple (multiple) accumulators:
@@ -148,8 +150,7 @@ doBinds sizeEnv prog (pb@GPUProgBind { decor=(FreeVars arrayOpFvs), op } : rest)
        rst <- doBinds sizeEnv prog rest 
        return (pb{ decor=(FreeVars$ S.toList newfvs), op = newop } : rst)
 #endif
-     Fold _ _ _ _ -> error$"DesugarFoldScan.hs: Fold did not match invariants for this pass: "++ show op
-
+     GenReduce {} -> error$"DesugarFoldScan.hs: GenReduce did not match invariants for this pass: "++ show op
 
   where -- Goes with doBinds above.
 

@@ -9,7 +9,8 @@
 -- is also greatly reduced.
 --
 -- Scalar computations explicitly separate statements from expressions, making code
--- generation to C-like languages easy.  
+-- generation to C-like languages easy.  ScalarBlock's effectively have multiple
+-- return values.
 --
 -- The language is still purely functional.
 
@@ -19,7 +20,7 @@ module Data.Array.Accelerate.BackendKit.IRs.CLike
          -- "Data.Array.Accelerate.SimpleAST".  Full documentation not
          -- duplicated here.
          LLProg(..), LLProgBind(..), TopLvlForm(..), ScalarBlock(..), Stmt(..), Exp(..),
-         Direction(..), Fun(..),
+         Direction(..), Fun(..), ReduceVariant(..),
 
          -- * Helper functions for the LLIR 
          lookupProgBind, expFreeVars, stmtFreeVars, scalarBlockFreeVars
@@ -28,7 +29,6 @@ module Data.Array.Accelerate.BackendKit.IRs.CLike
 
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as SA
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Var,Type,Prim,AccArray,TrivialExp)
-import           Data.Array.Accelerate.BackendKit.IRs.Metadata   (ArraySizeEstimate)
 import           Text.PrettyPrint.GenericPretty (Out, Generic)
 import qualified Data.Set  as S
 import qualified Data.Map  as M
@@ -73,18 +73,50 @@ data TopLvlForm =
   | Use       AccArray
   | Generate  ScalarBlock (Fun ScalarBlock)
 
-  | Fold (Fun ScalarBlock) ScalarBlock Var (Maybe Var) -- A possibly segmented fold.
-  | Scan (Fun ScalarBlock) Direction ScalarBlock Var   -- Var is the input array.
+  -- -- | FoldMap is parameterized first by a fold function and second by a map
+  -- -- function.  It takes one or more input arrays and produces one or more outputs.
+  -- -- The mapper function takes input array element(s) and produces intermediate
+  -- -- reduction value(s).  The reducer function takes two SETS (not individual) of
+  -- -- reduction values and returns one set.
+  -- | FoldMap { reducerF  :: (Fun ScalarBlock),
+  --          mapperF   :: (Fun ScalarBlock),
+  --          identityF :: ScalarBlock,
+  --          inArrsF   :: [Var],
+  --          segsF     :: (Maybe Var) } -- A possibly segmented fold.
+
+
+  -- | GenReduce is both produces (or fetches) elements and combines them.  It is
+  -- parameterized first by a reduce function and second by a generate function.  The
+  -- generate function takes an index position via one or more arguments and produces
+  -- intermediate reduction value(s).  The reducer function takes two SETS of
+  -- reduction values (the left and right halves of its argument list) and returns
+  -- one set.  The `GenReduce` produces the same number of output arrays as the
+  -- reduction function produces values.
+  | GenReduce {
+      reducer    :: Fun ScalarBlock,
+      identity   :: ScalarBlock,
+      generator  :: Fun ScalarBlock,
+      dimensions :: ScalarBlock,
+      variant    :: ReduceVariant }
+
+--  | Scan (Fun ScalarBlock) Direction ScalarBlock Var   -- Var is the input array.
                                                        -- ScalarBlock computes the initial value(s).
     
-  -- Coming soon: Fold and scan will handle more than one input arrays once we add arrays-of-tuples: 
-  --  Fold (Fun ScalarBlock) ScalarBlock [Var] (Maybe Var) -- A possibly segmented fold.
-  --  Scan (Fun ScalarBlock) Direction ScalarBlock [Var]
-  --  Cond Exp [Var] [Var]
-
   -- Omitted for now: forward permute and stencils:
   --  Permute (Fun ScalarBlock) Var (Fun ScalarBlock) Var
   --  Error String Exp        -- Signal an error.
+  deriving (Read,Show,Eq,Ord,Generic)
+
+-- | Segmented versions include a variable which is the name of an array containing
+-- the segment descriptor.
+data ReduceVariant = Fold
+                   | FoldSeg Var
+                   | Scan Direction
+                   | ScanSeg Direction Var
+                   -- | Forward permute also takes a default array and an
+                   -- index-permuting function:
+                   -- PROBLEM: it doesn't use the IDENTITY field:
+--                   | Permute { permfun::Fun ScalarBlock, defaults::Var }
   deriving (Read,Show,Eq,Ord,Generic)
 
 data Direction = LeftScan | RightScan
@@ -117,6 +149,7 @@ data Exp =
   | EPrimApp Type Prim [Exp]
   | ECond Exp Exp Exp        
   | EIndexScalar Var Exp Int  -- Reads a tuple from an array, and does index-from-right into that tuple.
+    -- TODO: get rid of the numeric argument when tupling is fully eliminated.
  deriving (Read,Show,Eq,Ord,Generic)
 
 
@@ -178,6 +211,7 @@ instance Out a => Out (LLProg a)
 instance Out a => Out (LLProgBind a)
 instance Out a => Out (Fun a)
 instance Out Direction
+instance Out ReduceVariant
 instance Out TopLvlForm
 instance Out Exp
 instance Out ScalarBlock
