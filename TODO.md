@@ -3,6 +3,9 @@
 These should go into github issues 
 ======================================================
 
+ * FreeVars should somehow be attached to specific Lambdas, not to
+   array ops.
+
  * types like Type, Prim, Const should probably be reexported by GPUIR
    and CLike IRs so that those modules are self contained.
    

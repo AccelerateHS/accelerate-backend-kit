@@ -12,7 +12,7 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 
 import           Data.Array.Accelerate.BackendKit.IRs.GPUIR         as G
-import           Data.Array.Accelerate.BackendKit.IRs.Metadata  (ArraySizeEstimate(..), FreeVars(..))
+import           Data.Array.Accelerate.BackendKit.IRs.Metadata  (FreeVars(..))
 import           Data.Array.Accelerate.BackendKit.Utils.Helpers (genUnique, genUniqueWith, GensymM, strideName, fragileZip)
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
                    (Const(..), Type(..), Prim(..), NumPrim(..), ScalarPrim(..), Var, TrivialExp(..))
@@ -28,7 +28,7 @@ workGroupSize = 1024
 --------------------------------------------------------------------------------
 
 -- | Desugar Generate and Fold into explicit Kernels and NewArrays.
-desugarFoldScan :: GPUProg (ArraySizeEstimate,FreeVars) -> GPUProg (ArraySizeEstimate,FreeVars)
+desugarFoldScan :: GPUProg FreeVars -> GPUProg FreeVars
 desugarFoldScan prog@GPUProg{progBinds, uniqueCounter, sizeEnv} =
   prog {
     progBinds    = binds, 
@@ -41,11 +41,11 @@ desugarFoldScan prog@GPUProg{progBinds, uniqueCounter, sizeEnv} =
 -- This procedure keeps around a "size map" from array values names to
 -- their number of elements.
 doBinds ::          M.Map Var (Type,TrivialExp) ->
-                    GPUProg     (ArraySizeEstimate,FreeVars) -> 
-                   [GPUProgBind (ArraySizeEstimate,FreeVars)] ->
-           GensymM [GPUProgBind (ArraySizeEstimate,FreeVars)]
+                    GPUProg     (FreeVars) -> 
+                   [GPUProgBind (FreeVars)] ->
+           GensymM [GPUProgBind (FreeVars)]
 doBinds _ _ [] = return []
-doBinds sizeEnv prog (pb@GPUProgBind { decor=(sz,FreeVars arrayOpFvs), op } : rest) = do  
+doBinds sizeEnv prog (pb@GPUProgBind { decor=(FreeVars arrayOpFvs), op } : rest) = do  
   let deflt = do rst <- doBinds sizeEnv prog rest
                  return $ pb : rst
   case op of
@@ -146,7 +146,7 @@ doBinds sizeEnv prog (pb@GPUProgBind { decor=(sz,FreeVars arrayOpFvs), op } : re
                      [SSet w initE,
                       forloop]
        rst <- doBinds sizeEnv prog rest 
-       return (pb{ decor=(sz,FreeVars$ S.toList newfvs), op = newop } : rst)
+       return (pb{ decor=(FreeVars$ S.toList newfvs), op = newop } : rst)
 #endif
      Fold _ _ _ _ -> error$"DesugarFoldScan.hs: Fold did not match invariants for this pass: "++ show op
 

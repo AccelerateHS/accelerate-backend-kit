@@ -24,7 +24,7 @@ import qualified Data.Set                        as S
 -- | This pass takes a SimpleAST IR which already follows a number of
 --   conventions that make it directly convertable to the lower level
 --   GPU IR, and it does the final conversion.
-convertToGPUIR :: LLProg (FreeVars) -> G.GPUProg (ArraySizeEstimate,FreeVars)
+convertToGPUIR :: LLProg (FreeVars) -> G.GPUProg FreeVars
 convertToGPUIR LLProg{progBinds,progResults,progType,uniqueCounter,sizeEnv} =
   G.GPUProg
   {
@@ -43,22 +43,15 @@ convertToGPUIR LLProg{progBinds,progResults,progType,uniqueCounter,sizeEnv} =
       map (\x -> (x,evtid)) vs
 
 -- Default decoration for new scalar binds:
-defaultDec :: (ArraySizeEstimate, FreeVars)
-defaultDec = (UnknownSize, FreeVars [])
+defaultDec :: FreeVars
+defaultDec = FreeVars []
 
 doBinds :: M.Map S.Var (S.Type, S.TrivialExp) -> M.Map S.Var G.EvtId ->
-           [LLProgBind (FreeVars)] -> GensymM [G.GPUProgBind (ArraySizeEstimate,FreeVars)]
+           [LLProgBind (FreeVars)] -> GensymM [G.GPUProgBind FreeVars]
 doBinds _ _ [] = return []
-doBinds sizeEnv evEnv (LLProgBind vartys dec@(FreeVars fvs) toplvl : rest) = do
+doBinds sizeEnv evEnv (LLProgBind vartys (FreeVars fvs) toplvl : rest) = do
   newevt <- genEvt
-  let -- < TEMPORARY!  FIXME >
-      getSize v = case sizeEnv M.! v of
-                    (_, S.TrivConst n)  -> KnownSize [n]
-                    (_, S.TrivVarref _) -> UnknownSize
-      dec' = if null vartys then (UnknownSize, FreeVars fvs)
-             else (getSize (fst$ head vartys), FreeVars fvs)
-      -- </ TEMPORARY!  FIXME > 
-      rebind deps = G.GPUProgBind newevt deps (map liftBind vartys) dec'
+  let rebind deps = G.GPUProgBind newevt deps (map liftBind vartys) (FreeVars fvs)
       evEnv' = foldl (\mp (v,_) -> M.insert v newevt mp) evEnv vartys
   rst <- doBinds sizeEnv evEnv' rest
 

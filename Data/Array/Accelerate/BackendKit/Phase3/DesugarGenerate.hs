@@ -10,7 +10,7 @@ module Data.Array.Accelerate.BackendKit.Phase3.DesugarGenerate (desugarGenerate)
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
                   (Const(..), Type(..), Prim(..), NumPrim(..), ScalarPrim(..), Var)
 import           Data.Array.Accelerate.BackendKit.IRs.GPUIR         as G
-import           Data.Array.Accelerate.BackendKit.IRs.Metadata  (ArraySizeEstimate(..), FreeVars(..))
+import           Data.Array.Accelerate.BackendKit.IRs.Metadata  (FreeVars(..))
 import           Data.Array.Accelerate.BackendKit.Utils.Helpers (genUnique, genUniqueWith, GensymM, strideName, fragileZip)
 import           Control.Monad.State.Strict (runState)
 -- import qualified Data.Set as S
@@ -22,7 +22,7 @@ import           Control.Monad.State.Strict (runState)
 --   variables inside `Generate`s are passed explicitly to Kernels.
 -- 
 --   The newly introduced Kernel forms are expected NOT to have any `FreeVars`
-desugarGenerate :: GPUProg (ArraySizeEstimate,FreeVars) -> GPUProg (FreeVars)
+desugarGenerate :: GPUProg (FreeVars) -> GPUProg (FreeVars)
 desugarGenerate prog@GPUProg{progBinds, uniqueCounter} =
   prog {
     progBinds    = binds, 
@@ -34,11 +34,11 @@ desugarGenerate prog@GPUProg{progBinds, uniqueCounter} =
 
 -- This procedure keeps around a "size map" from array values names to
 -- their number of elements.
-doBinds :: GPUProg (ArraySizeEstimate,FreeVars) ->
-           [GPUProgBind (ArraySizeEstimate,FreeVars)] -> GensymM [GPUProgBind (FreeVars)]
+doBinds :: GPUProg (FreeVars) ->
+           [GPUProgBind (FreeVars)] -> GensymM [GPUProgBind (FreeVars)]
 doBinds _ [] = return []
 doBinds prog (pb@GPUProgBind { outarrs, evtid, evtdeps,
-                               decor=(_,FreeVars arrayOpFvs), op } : rest) = do  
+                               decor=(FreeVars arrayOpFvs), op } : rest) = do  
   let deflt = do rst <- doBinds prog rest
                  return $ pb{decor=FreeVars arrayOpFvs} : rst
   case op of
