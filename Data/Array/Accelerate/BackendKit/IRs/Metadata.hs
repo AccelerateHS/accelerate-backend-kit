@@ -8,12 +8,11 @@ module Data.Array.Accelerate.BackendKit.IRs.Metadata
        (
          -- * Metadata types used to annotate ASTs during compilation.
          ArraySizeEstimate(..), Uses(..), FreeVars(..),
-         FoldStrides(FoldStrides)
+         FoldStrides(FoldStrides), SubBinds(..)
          )
        where
 
-import Data.Map as M
-import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Var)
+import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Var, TrivialExp)
 import Text.PrettyPrint.GenericPretty (Out, Generic)
 
 ----------------------------------------------------------------------------------------------------
@@ -52,5 +51,15 @@ instance Out FreeVars
 --   scan onto an expression of type TInt.
 -- newtype FoldStrides exp = FoldStrides (M.Map Var exp)
 newtype FoldStrides exp = FoldStrides (Maybe exp)
+  -- TODO: add a special case for foldAll
   deriving (Read, Show, Eq, Generic)
 instance Out a => Out (FoldStrides a)
+
+
+-- | Used for breaking named values referring to tuples down into finer-grained
+-- bindings.  This includes both a list of unzipped (detupled) names, and a size.
+-- The size is only present for array bindings.
+data SubBinds = SubBinds { subnames:: [Var],
+                           arrsize :: Maybe TrivialExp }
+  deriving (Read, Show, Eq, Generic)
+instance Out SubBinds

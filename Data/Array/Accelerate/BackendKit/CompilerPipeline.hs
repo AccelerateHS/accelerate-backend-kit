@@ -51,6 +51,7 @@ import Data.Array.Accelerate.BackendKit.Phase2.DeadArrays        (deadArrays)
 import Data.Array.Accelerate.BackendKit.Phase2.OneDimensionalize (oneDimensionalize)
 import Data.Array.Accelerate.BackendKit.Phase2.NormalizeExps     (normalizeExps)
 import Data.Array.Accelerate.BackendKit.Phase2.UnzipETups        (unzipETups)
+import Data.Array.Accelerate.BackendKit.Phase2.UnzipArrays       (unzipArrays)
 import Data.Array.Accelerate.BackendKit.Phase2.ToCLike           (convertToCLike)
 
 -- Phase 3 passes:
@@ -79,8 +80,8 @@ phase2 :: S.Prog () -> C.LLProg ()
 phase2 prog =
   runPass    "convertToCLike"    convertToCLike    $     -- ()
   -- todo: Verify final CLike here
-  runPass    "typecheck3"        typecheckPass     $     -- (foldstrides,size)
---  runPass    "unzipArrays"       typecheckPass     $     -- (foldstrides,size)  
+  runPass    "typecheck3"        typecheckPass     $     
+  runPass    "unzipArrays"       unzipArrays       $     -- (subbinds,(foldstrides,size))
   runPass    "unzipETups"        unzipETups        $     -- (subbinds,(foldstrides,size))
   runPass    "normalizeExps"     normalizeExps     $     -- (foldstrides,size)
   phase2A    prog

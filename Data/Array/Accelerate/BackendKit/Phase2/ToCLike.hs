@@ -17,10 +17,9 @@ import           Control.Monad.State.Strict
 import           Text.PrettyPrint.GenericPretty (Out(doc))
 
 import           Data.Array.Accelerate.BackendKit.Utils.Helpers (genUnique, genUniqueWith, GensymM, isTupleTy)
-import           Data.Array.Accelerate.BackendKit.CompilerUtils (shapeName)
 import qualified Data.Array.Accelerate.BackendKit.IRs.CLike as LL
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
-import           Data.Array.Accelerate.BackendKit.IRs.Metadata   (FoldStrides(..), ArraySizeEstimate(..))
+import           Data.Array.Accelerate.BackendKit.IRs.Metadata (SubBinds(..), FoldStrides(..), ArraySizeEstimate(..))
 
 import Debug.Trace (trace)
 
@@ -35,15 +34,13 @@ type Cont = [LL.Exp] -> [LL.Stmt]
 --   reused simple to alpha rename vars; i.e. a singleton [Var] list.)
 type Env = M.Map Var (Type, Maybe [Var])
 
-type SubBinds = ([Var], Maybe TrivialExp)
-
 ----------------------------------------------------------------------------------------------------
 
 -- | This pass takes a SimpleAST IR which already follows a number of
 --   conventions that make it directly convertable to the lower level
 --   IR, and it does the final conversion.
 convertToCLike :: Prog (SubBinds,(FoldStrides Exp, ArraySizeEstimate)) -> LL.LLProg ()
-convertToCLike Prog{progBinds,progResults,progType,uniqueCounter,typeEnv} =
+convertToCLike Prog{progBinds,progResults,progType,uniqueCounter} =
   LL.LLProg
   {
     LL.progBinds    = map (fmap (const ())) binds, 
@@ -55,16 +52,11 @@ convertToCLike Prog{progBinds,progResults,progType,uniqueCounter,typeEnv} =
   where
     ((finalEnv,binds),newCounter) = runState (doBinds M.empty progBinds) uniqueCounter
 
-    -- Map subdivided names back onto their original counterparts
-    backMap = M.fromList$ concatMap fn (M.toList finalEnv)
-    fn (vr,(_,Just ls)) = map (,vr) ls
-    fn (_ ,(_,Nothing)) = []
-
     sizeEnv :: M.Map Var (Type, TrivialExp)
     sizeEnv = L.foldl red M.empty progBinds
 
     -- FIXME: Scanl' breaks the assumption about TArray for array ops:
-    red acc (ProgBind vr (TArray _ elt) ((vrs,szE),_) op) =
+    red acc (ProgBind _ (TArray _ elt) (SubBinds vrs szE,_) _) =
       let Just triv = szE in
       M.union (M.fromList$ zip vrs$ zip (flattenTypes elt) (repeat triv))
               acc
@@ -164,8 +156,6 @@ doBinds env (ProgBind vr ty decor rhs : rest) = do
   -- TEMPORARY: We don't yet handle array-of-tuples.  When we do, the (vr,ty) list
   -- will not necessarily be a singleton:
   return (env', LL.LLProgBind [(vr,ty)] decor rhs' : rest')
-
-
 
 doAE :: Env -> AExp -> GensymM LL.TopLvlForm
 doAE env ae =

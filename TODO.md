@@ -37,3 +37,11 @@ These should go into github issues
    
  * We need to track Fold strides between the end of OneDimensionalize
    until the conversion to GPUIR.  
+
+ * It looks like OneDimensionalize is not doing anything with USE.
+   That needs to be fixed.  
+
+ * OneDimensionalize should probably introduce _size variables to go
+   long with the _shape ones.
+   
+   
