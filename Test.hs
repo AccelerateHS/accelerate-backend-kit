@@ -191,7 +191,8 @@ multiDimTests = words$
   "p2b p2c p2cc p2cd p2ce "++ -- a Replicate with an 'All'.   
   "p3 p4b " ++
   "p10 p10b " ++ 
-  "p17b "
+  "p17b " ++
+  "p20a p20b "   -- fold1seg
 
 
 -- | Four dimensional and above.

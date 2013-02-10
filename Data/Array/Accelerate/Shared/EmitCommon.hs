@@ -73,13 +73,9 @@ class EmitBackend e where
   emitMain :: e -> GPUProg (FreeVars) -> EasyEmit ()
   emitMain _ _ = return ()
 
-  -- | Fold is not handled by the generic codegen, but this can be overloaded.
-  emitFoldDef :: (EmitBackend e) => e -> GPUProgBind (FreeVars) -> EasyEmit ()
-  emitFoldDef _e op = error$"EmitCommon.hs: Fold not supported in this backend:\n "++ show (doc op)
-
-  -- | Scan is not handled by the generic codegen, but this can be overloaded.
-  emitScanDef :: (Out a, EmitBackend e) => e -> GPUProgBind a -> EasyEmit ()
-  emitScanDef _e op = error$"EmitCommon.hs: Scan not supported in this backend:\n "++ show (doc op)
+  -- | GenReduce (e.g. Scan/Fold) is not handled by the generic codegen, but this can be overloaded.
+  emitGenReduceDef :: (EmitBackend e) => e -> GPUProgBind (FreeVars) -> EasyEmit ()
+  emitGenReduceDef _e op = error$"EmitCommon.hs: GenReduce not supported in this backend:\n "++ show (doc op)
 
   -- | The (constant) return type for a complete array-level kernel definition. 
   kernelReturnType :: e -> Syntax
@@ -164,10 +160,8 @@ emitBindDef e (_ind, pb@GPUProgBind{ evtid, op, outarrs } ) =
                invokeKern e (varSyn sizearg) body
        return ()
      ----------------------------------------------------------------------
-     Generate _ _ -> error$"EmitCommon.hs/emitBindDef: Generate is not supported in generic backend:\n "++ show (doc op)
-     Fold _ _ _ _ -> emitFoldDef e pb
-     Scan _ _ _ _ -> emitScanDef e pb
-
+     Generate {} -> error$"EmitCommon.hs/emitBindDef: Generate is not supported in generic backend:\n "++ show (doc op)
+     Generate {} -> emitGenReduceDef e pb
 
 -- | Emit a block of scalar code, returning the variable names which hold the results.
 emitBlock :: EmitBackend e => e -> ScalarBlock -> EasyEmit [Var]

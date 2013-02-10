@@ -79,13 +79,17 @@ instance EmitBackend CEmitter where
            mapM_ (execBind e prog) (L.zip [0..] progBinds)
            comm "This code prints the final result(s):"
            forM_ (progResults prog) $ \ result -> 
-             printArray e result (lkup result progBinds)
+             printArray e prog result (lkup result progBinds)
            return_ 0
     return ()
 
   -- ARGUMENT PROTOCOL: Folds expect: ( inSize, inStride, outArrayPtr, inArrayPtr, initElems..., kernfreevars...)
-  emitFoldDef e@(CEmitter _ env) (GPUProgBind{ evtid, outarrs, decor=(FreeVars arrayOpFVs), op }) = do
-    let Fold (Lam formals bod) initEs inV _ = op
+  emitGenReduceDef e@(CEmitter _ env) (GPUProgBind{ evtid, outarrs, decor=(FreeVars arrayOpFVs), op }) = do
+    let GenReduce {reducer,identity=initEs,generator,dimensions,variant,stride} = op
+        Lam formals bod = reducer
+        inV :: Var
+        inV = error"FINISHME inV"
+        
         vs = take (length initEs) formals
         ws = drop (length initEs) formals
         initargs = map (\(vr,_,ty) -> (emitType e ty, show vr)) vs
@@ -170,7 +174,12 @@ execBind e GPUProg{sizeEnv} (_ind, GPUProgBind {evtid, outarrs, op, decor=(FreeV
       error$"EmitC.hs/execBind: We don't directly support Generate kernels, they should have been desugared."
 
     -- This is unpleasantly repetetive.  It doesn't benefit from the lowering to expose freevars and use NewArray.
-    Fold (Lam [(v,_,ty1),(w,_,ty2)] bod) [initE] inV (ConstantStride (EConst (I stride))) -> do
+    GenReduce {reducer,identity,generator,dimensions,variant,stride} -> do 
+      let (Lam [(v,_,ty1),(w,_,ty2)] bod) = reducer
+          [initE] = identity
+          inV = error "FINISHME inV 2"
+          (ConstantStride (EConst (I step))) = stride
+
       -- The builder function also needs any free variables in the size:
       let freevars = arrayOpFVs 
           initarg = 
@@ -180,50 +189,57 @@ execBind e GPUProg{sizeEnv} (_ind, GPUProgBind {evtid, outarrs, op, decor=(FreeV
           len = 1  -- Output is fully folded
           insize :: Syntax
           insize  = trivToSyntax$ P.snd$ sizeEnv M.! inV
-          allargs = insize : fromIntegral stride : varSyn outV : varSyn inV : initarg : map varSyn freevars
+          allargs = insize : fromIntegral step : varSyn outV : varSyn inV : initarg : map varSyn freevars
           
       varinit (emitType e ty) (varSyn outV) (function "malloc" [sizeof elty' * len])
       -- Call the builder to fill in the array: 
       emitStmt$ (function$ strToSyn$ builderName evtid) allargs
       return ()
             
-    Scan (Lam pls bod) dir els inV -> do
-      error$"EmitC.hs/execBind: FINISHME - Scan case "
---    _ -> error$"EmitC.hs/execBind: can't handle this array operator yet: "++show op
+    _ -> error$"EmitC.hs/execBind: can't handle this array operator yet:\n"++show (doc op)
 
 
 --------------------------------------------------------------------------------
 -- | Generate code to print out a single array of known size.
 --   Takes as input the ProgBind that produced the array.
-printArray :: (Out a, EmitBackend e) => e -> Var -> GPUProgBind a -> EasyEmit ()
-printArray e name (GPUProgBind { outarrs=[(vr,_,(TArray ndims elt))], op}) = do
+printArray :: (Out a, EmitBackend e) => e -> GPUProg a -> Var -> GPUProgBind a -> EasyEmit ()
+printArray e (GPUProg{sizeEnv}) name (GPUProgBind { outarrs, op}) = do
   len <- tmpvar (emitType e TInt)
-  let szE = case op of
-             NewArray s -> s
-             Use arr    -> EConst$ I$ product$ arrDim arr
-             -- FIXME: For now we punt and don't print anything:
-             Cond _ _ _   -> trace ("Warning: finish Cond case in printArray")$ 
-                             EConst (I 0)
-             -- A full fold:
-             Fold _ _ _ (ConstantStride (EConst (I 1))) -> EConst (I 1)
-             oth -> error$"EmitC.hs/printArray, huh, why are we printing the result of this op?: "++show oth
+  let (_,szTriv) = sizeEnv M.! vr0
+  -- TODO: Assert the sizes are all equal.
   case ndims of
-     1 -> case szE of 
-            EConst (I n) -> set len (fromIntegral n)
-            EVr v        -> set len (varSyn v)
+     1 -> case szTriv of 
+            TrivConst  n -> set len (fromIntegral n)
+            TrivVarref v -> set len (varSyn v)
      0  -> set len "1"
      oth -> error$"printArray: not yet able to handle arrays of rank: "++ show oth
   printf " [ " []
-  printit 0  
+  if numbinds == 1
+    then printit  0 vr0
+    else printtup 0 
   for 1 (E.< len) (+1) $ \ind -> do
      printf ", " []
-     printit ind
+     if numbinds == 1
+       then printit  ind vr0
+       else printtup ind
   printf " ] " []
-  where     
-    printit ind = printf (printfFlag elt) [arrsub (varSyn vr) ind]
+  where
+    (vrs,_,tys) = unzip3 outarrs
+    (vr0,_,TArray ndims elt) =
+      case outarrs of
+        h:_ -> h
+        []  -> error$"printArray: why are we printing an op with no outputs?:\n"++show(doc op)
+    numbinds = length outarrs
+    printtup ix = do
+      printf "(" []
+      printit ix vr0
+      forM_ (tail vrs) $ \vr -> do
+        printf ", " []        
+        printit ix vr
+      printf ")" []
+    printit :: Syntax -> Var -> EasyEmit ()
+    printit ind vr = printf (printfFlag elt) [arrsub (varSyn vr) ind]
 
--- printArray oth = error$ "Can only print arrays of known size currently, not this: "++show (fmap fst oth)
-printArray _ _ oth = error$ "EmitC.hs/printArray: Bad progbind:"++show (doc oth)
 
 
 --------------------------------------------------------------------------------  
