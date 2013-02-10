@@ -35,12 +35,14 @@ type Cont = [LL.Exp] -> [LL.Stmt]
 --   reused simple to alpha rename vars; i.e. a singleton [Var] list.)
 type Env = M.Map Var (Type, Maybe [Var])
 
+type SubBinds = ([Var], Maybe TrivialExp)
+
 ----------------------------------------------------------------------------------------------------
 
 -- | This pass takes a SimpleAST IR which already follows a number of
 --   conventions that make it directly convertable to the lower level
 --   IR, and it does the final conversion.
-convertToCLike :: Prog ([Var],(FoldStrides Exp, ArraySizeEstimate)) -> LL.LLProg ()
+convertToCLike :: Prog (SubBinds,(FoldStrides Exp, ArraySizeEstimate)) -> LL.LLProg ()
 convertToCLike Prog{progBinds,progResults,progType,uniqueCounter,typeEnv} =
   LL.LLProg
   {
@@ -58,35 +60,16 @@ convertToCLike Prog{progBinds,progResults,progType,uniqueCounter,typeEnv} =
     fn (vr,(_,Just ls)) = map (,vr) ls
     fn (_ ,(_,Nothing)) = []
 
-    sizeEnv = M.fromList$ L.concatMap getSize binds
-    getSize :: LL.LLProgBind (a,(b,ArraySizeEstimate)) ->
-               [(Var,(Type,TrivialExp))]
-    getSize (LL.LLProgBind votys (_,(_,sz)) _) =
-      let -- Scalars must always have "size" zero:
-          mkEntry v t@(TArray _ _) s = (v, (t, s))
-          mkEntry v t              _ = (v, (t, TrivConst 0)) in
-      case sz of
-        KnownSize ls -> zipWith (\ (vo,ty) s -> mkEntry vo ty s) votys (map TrivConst ls)
-        UnknownSize  ->
-          case votys of 
-            [] -> error$ "ToCLike.hs: There should be no forms with ZERO output vars at this phase."
-            (v1,_):_ -> 
-              let origV = backMap M.! v1  
-                  origShp = shapeName origV 
-              in case M.lookup origShp finalEnv of
-                  -- If we must refer to the size by NAME, that grows complicated if detupling has occured:
-                  Just (_, Just shpvs) -> 
-                    if length shpvs == length votys
-                    then zipWith (\ (vo,ty) shpvr -> mkEntry vo ty (TrivVarref shpvr))
-                                  votys shpvs 
-                    else error$"ToCLike.hs: internal invariant broken, mismatched len: "++show(votys,shpvs)
-                  -- If the shape has not been detupled we can use the original name:
-                  Just (_, Nothing) ->
-                    case votys of
-                      [(vo,ty)] -> [mkEntry vo ty (TrivVarref origShp)]
-                      _         -> error$ "ToCLike.hs: invariant broken, expected one output, got "++show votys
-                  Nothing -> error$"no entry for shapename "++show origShp++" in final env: "++show finalEnv
+    sizeEnv :: M.Map Var (Type, TrivialExp)
+    sizeEnv = L.foldl red M.empty progBinds
 
+    -- FIXME: Scanl' breaks the assumption about TArray for array ops:
+    red acc (ProgBind vr (TArray _ elt) ((vrs,szE),_) op) =
+      let Just triv = szE in
+      M.union (M.fromList$ zip vrs$ zip (flattenTypes elt) (repeat triv))
+              acc
+    red acc _ = acc
+      
 
 doBlock :: Env -> Exp -> GensymM LL.ScalarBlock
 doBlock env ex = do

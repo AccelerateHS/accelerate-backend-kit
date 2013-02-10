@@ -81,7 +81,7 @@ phase2 prog =
   -- todo: Verify final CLike here
   runPass    "typecheck3"        typecheckPass     $     -- (foldstrides,size)
 --  runPass    "unzipArrays"       typecheckPass     $     -- (foldstrides,size)  
-  runPass    "unzipETups"        unzipETups        $     -- (foldstrides,size)
+  runPass    "unzipETups"        unzipETups        $     -- (subbinds,(foldstrides,size))
   runPass    "normalizeExps"     normalizeExps     $     -- (foldstrides,size)
   phase2A    prog
 

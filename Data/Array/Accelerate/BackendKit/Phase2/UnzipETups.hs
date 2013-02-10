@@ -1,4 +1,5 @@
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE TupleSections #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 -- | This file contains a pass for removing scalar tuples.
@@ -18,7 +19,9 @@ import qualified Data.Map              as M
 
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import Data.Array.Accelerate.BackendKit.Utils.Helpers (GensymM, genUnique, mkPrj, mapMAEWithGEnv, isTupleTy)
+import Data.Array.Accelerate.BackendKit.CompilerUtils (shapeName)
 import Data.Array.Accelerate.BackendKit.Phase2.NormalizeExps (wrapLets)
+import Data.Array.Accelerate.BackendKit.IRs.Metadata (FoldStrides(..), ArraySizeEstimate(..))
 ----------------------------------------------------------------------------------------------------
 
 -- | Map the original possibly-tuple-valued variable names to the
@@ -27,7 +30,10 @@ import Data.Array.Accelerate.BackendKit.Phase2.NormalizeExps (wrapLets)
 --   a Nothing here.
 type Env = M.Map Var (Type,Maybe [Var])
 
-type SubBinds = [Var]
+-- | This includes both a list of unzipped (detupled) bindings, and a size.
+--   The size is only present for array bindings.
+-- type SubBinds = [Var, Maybe TrivialExp]
+type SubBinds = ([Var], Maybe TrivialExp)
 
 ----------------------------------------------------------------------------------------------------
 
@@ -58,13 +64,15 @@ type SubBinds = [Var]
 --  groundwork by producing names for the unzipped components and returning a map
 --  from old names to unzipped names.  In fact, this pass produces such names for ALL
 --  TOP-LEVEL bindings, including both scalar and array bindings.
-unzipETups :: Prog a -> Prog (SubBinds,a)
+unzipETups :: Prog (a,ArraySizeEstimate) -> Prog (SubBinds,(a,ArraySizeEstimate))
 unzipETups prog@Prog{progBinds, uniqueCounter, typeEnv} = prog'
  where
   prog' = prog{ progBinds= map addSubBinds binds, 
                 uniqueCounter= newCounter2 } 
-  addSubBinds (ProgBind v t dec op) = ProgBind v t (nextenv M.! v,dec) op
+--  addSubBinds (ProgBind v t dec op) = ProgBind v t (nextenv M.! v,dec) op
+  addSubBinds (ProgBind v t dec@(_,sz) op) = ProgBind v t (newDecor v t sz,dec) op  
   -- Compute the *future* detupled names for top-level binds in the next pass:
+  envM :: GensymM (M.Map Var [Var])
   envM = M.fromList <$> mapM fn (M.toList typeEnv)
   -- Here we introduce temporary names for the subcomponents of any top-level tuple-bindings:
   fn (vr,ty) | countVals ty == 1 = return (vr,[vr])
@@ -76,7 +84,45 @@ unzipETups prog@Prog{progBinds, uniqueCounter, typeEnv} = prog'
   -- unzippable during this pass:
   topenv = M.map (\ ty -> (ty,Nothing)) typeEnv  
   (binds,newCounter2) = runState (doBinds topenv progBinds) newCounter1
-   
+
+  -- Compute the new (SubBinds) decorator:
+  newDecor vo ty sz =
+    let vos = nextenv M.! vo in
+    (vos, head (getSize (map (,ty) vos) sz))
+
+  -- Map subdivided names back onto their original counterparts
+  backMap = M.fromList$ concatMap fn2 (M.toList nextenv)
+  fn2 (vr,ls) = map (,vr) ls
+
+  -- sizeEnv = M.fromList$ L.concatMap getSize binds
+  -- TODO: Getsize ONCE and then reuse it for subdivided components:
+  getSize :: [(Var,Type)] -> ArraySizeEstimate -> [Maybe TrivialExp]
+  getSize votys sz =
+    let -- Scalars must always have "size" zero:
+        mkEntry v t@(TArray _ _) s = Just s
+        mkEntry v t              _ = Nothing in
+    case sz of
+      KnownSize ls -> zipWith (\ (vo,ty) s -> mkEntry vo ty s) votys (map TrivConst ls)
+      UnknownSize  ->
+        case votys of 
+          [] -> error$ "UnzipETups.hs: There should be no forms with ZERO output vars at this phase."
+          (v1,_):_ -> 
+            let origV = backMap M.! v1  
+                origShp = shapeName origV 
+            in case M.lookup origShp nextenv of
+                -- If we must refer to the size by NAME, that grows complicated if detupling has occured:
+                Just shpvs -> 
+                  if length shpvs == length votys
+                  then zipWith (\ (vo,ty) shpvr -> mkEntry vo ty (TrivVarref shpvr))
+                                votys shpvs 
+                  else error$"UnzipETups.hs: internal invariant broken, mismatched len: "++show(votys,shpvs)
+                -- If the shape has not been detupled we can use the original name:
+                -- Just (_, Nothing) ->
+                --   case votys of
+                --     [(vo,ty)] -> [mkEntry vo ty (TrivVarref origShp)]
+                --     _         -> error$ "ToCLike.hs: invariant broken, expected one output, got "++show votys
+                Nothing -> error$"no entry for shapename "++show origShp++" in env: "++show nextenv
+
 
 doBinds :: Env -> [ProgBind t] -> GensymM [ProgBind (t)]
 doBinds env = mapM (doBind env)

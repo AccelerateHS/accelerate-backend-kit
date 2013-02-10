@@ -46,9 +46,8 @@ data LLProg decor = LLProg {
   uniqueCounter :: Int,
   progType    :: Type, -- Final, pre-flattened type, can be an array-tuple.
 
-  -- | Describes the type and shape of all top level binds.
-  --   All arrays are one-dimensional at this point, so size is a scalar.
-  --   Scalar variables have entries in this map, but their size is listed as zero.
+  -- | Describes the type and shape of all top level ARRAY binds (scalar binds not
+  -- included).  All arrays are one-dimensional at this point, so size is a scalar.
   sizeEnv :: M.Map Var (Type, TrivialExp)
   
 } deriving (Read,Show,Eq,Generic, Ord)

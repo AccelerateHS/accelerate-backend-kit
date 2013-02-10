@@ -952,3 +952,7 @@ uarrGenerate len fn = unsafePerformIO $
          loop i = do MA.writeArray marr i (fn i)
                      loop (i-1)
      loop (len-1)
+
+flattenTypes :: Type -> [Type]
+flattenTypes (TTuple ls) = concatMap flattenTypes ls
+flattenTypes oth         = [oth]
