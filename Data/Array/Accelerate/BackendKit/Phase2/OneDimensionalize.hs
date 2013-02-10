@@ -5,12 +5,13 @@
 -- | A pass to convert multidimensional arrays into one-dimensional
 -- arrays, including computing flat indices from multi-dimensional
 -- (tuple) ones.
+-- 
+-- This pass also introduces _size variables annalogous to the _shape variables (see
+-- sizeName, shapeName).  After this pass the original shape variables should not be
+-- counted on by future passes (e.g. they will eventually get detupled).
 --
--- NOTE: Ideally this pass would be split into two, and the first pass
--- could inject explicit index collapse/expand operations.  These
--- could be optimized, with consecutive expand/collapse or
--- collapse/expand canceling out.  Then a separate pass could inject
--- the actual conversion arithmetic.
+-- Finally, because this pass is the last one that deals with multi-dimensional
+-- shapes, it extracts the innermost dimension sizes that determine fold strides.
 
 module Data.Array.Accelerate.BackendKit.Phase2.OneDimensionalize (oneDimensionalize) where
 
@@ -18,13 +19,13 @@ import Control.Applicative ((<$>), (<*>))
 import Control.Monad.State.Strict
 import Control.Monad.Reader
 import Text.PrettyPrint.GenericPretty (Out(doc))
-
 import qualified Data.Map as M
+
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
 import Data.Array.Accelerate.BackendKit.IRs.Metadata (ArraySizeEstimate(..), FoldStrides(..))
 import Data.Array.Accelerate.BackendKit.Utils.Helpers (genUnique, genUniqueWith, GensymM, mkIndTy, mkPrj,
-                                                       maybeLet, addI, mulI, quotI, remI)
-import Data.Array.Accelerate.BackendKit.CompilerUtils (shapeName)  
+                                                       maybeLetAllowETups, addI, mulI, quotI, remI)
+import Data.Array.Accelerate.BackendKit.CompilerUtils (shapeName, sizeName)
 
 -- | Configuration parameter.  This controls whether we take advantage
 -- of OpenCL/CUDA's native support for 2D and 3D kernels.  If this is
@@ -35,15 +36,18 @@ flattenGenerates = True
 
 --------------------------------------------------------------------------------
 
-type MyM a = ReaderT (Prog ArraySizeEstimate) GensymM a 
-
-
--- | The pass itself.
+-- | The pass itself.  See the module documentation.
+--
+-- NOTE: Ideally this pass would be split into two, and the first pass
+-- could inject explicit index collapse/expand operations.  These
+-- could be optimized, with consecutive expand/collapse or
+-- collapse/expand canceling out.  Then a separate pass could inject
+-- the actual conversion arithmetic.
 oneDimensionalize :: Prog ArraySizeEstimate -> (Prog (FoldStrides Exp, ArraySizeEstimate))
 oneDimensionalize  prog@Prog{progBinds, progType, uniqueCounter, typeEnv } =
       prog'
   where
-    prog' = prog { progBinds    = map (getFoldStride typeEnv) binds,
+    prog' = prog { progBinds    = map (getFoldStride typeEnv) binds2,
                    progType     = doTy progType, 
                    uniqueCounter= newCount,
                    -- Rebuild this because types change due to ranks becoming 1:
@@ -52,14 +56,37 @@ oneDimensionalize  prog@Prog{progBinds, progType, uniqueCounter, typeEnv } =
     m1 = mapM (doBind typeEnv) progBinds
     m2 = runReaderT m1 prog
     (binds,newCount) = runState m2 uniqueCounter
+    binds2 = addSizes binds
 
-compute1DSize :: Int -> Exp -> MyM Exp
-compute1DSize ndim eSz = do
-   -- The one-dimensional size is just the product of the dimensions:
-   lift$ maybeLet eSz (mkIndTy ndim)
-          (\tmp -> foldl mulI (EConst (I 1))
-                   [ mkPrj i 1 ndim (EVr tmp) | i <- reverse[0 .. ndim-1] ])
+type MyM a = ReaderT (Prog ArraySizeEstimate) GensymM a 
 
+-- This version expects a 
+compute1DSize :: Int -> Exp -> Exp
+compute1DSize ndim ex =
+  case ex of
+    EVr    _ -> deflt
+    ETuple _ -> deflt
+    _        -> error$"compute1DSize: expected EVr or ETuple, got: "++show ex
+ where
+   -- The one-dimensional size is just the product of the dimensions:   
+   deflt = foldl mulI (EConst (I 1))
+           [ mkPrj i 1 ndim ex | i <- reverse[0 .. ndim-1] ]
+
+-- | This version also may introduce let bindings.
+compute1DSizeM :: Int -> Exp -> MyM Exp
+compute1DSizeM ndim eShp = do
+   lift$ maybeLetAllowETups eShp (mkIndTy ndim) (compute1DSize ndim)
+
+-- | After the other processing is done, this goes back and adds the size bindings.
+addSizes :: [ProgBind ArraySizeEstimate] -> [ProgBind ArraySizeEstimate]
+addSizes [] = []
+-- FIXME: Scanl' invalidates this:
+addSizes (orig@(ProgBind vo (TArray ndim _) UnknownSize _) : rest) =
+  (ProgBind (sizeName vo) TInt UnknownSize (Left$ compute1DSize ndim (EVr$ shapeName vo))) 
+  : orig : addSizes rest
+addSizes (hd:tl) = hd : addSizes tl
+
+--------------------------------------------------------------------------------
 
 -- | Get the size of the inner most dimension, which is the stride between
 --   separately-folded sections.
@@ -74,28 +101,30 @@ getFoldStride env (ProgBind vo aty sz eith) =
     Left _ -> Nothing
     Right ae -> 
      case ae of 
-       Fold _ _ vi       -> innDim vi
-       Fold1 _  vi       -> innDim vi
-       FoldSeg  _ _ vi _ -> innDim vi
-       Fold1Seg _   vi _ -> innDim vi
-       Scanl    _ _ vi   -> innDim vi
-       Scanl'   _ _ vi   -> innDim vi
-       Scanl1   _   vi   -> innDim vi
-       Scanr    _ _ vi   -> innDim vi
-       Scanr'   _ _ vi   -> innDim vi
-       Scanr1   _   vi   -> innDim vi
+       Fold _ _ vi       -> innDim vo
+       Fold1 _  vi       -> innDim vo
+       FoldSeg  _ _ vi _ -> innDim vo
+       Fold1Seg _   vi _ -> innDim vo
+       Scanl    _ _ vi   -> innDim vo
+       Scanl'   _ _ vi   -> innDim vo
+       Scanl1   _   vi   -> innDim vo
+       Scanr    _ _ vi   -> innDim vo
+       Scanr'   _ _ vi   -> innDim vo
+       Scanr1   _   vi   -> innDim vo
        _                 -> Nothing
- innDim inV = Just$ 
+ innDim theV = Just$ 
    case sz of
      KnownSize ls -> EConst$ I$ head ls
      UnknownSize ->
-       let shp   = shapeName inV in
+       let shp   = shapeName theV in
        -- Take the "last" of a tuple:
-       case env M.! shp of
-         TInt      -> EVr shp
-         TTuple ls -> ETupProject 0 1 (EVr shp)
-         ty        -> error$"OneDimensionalize.hs: Should not have a shape of this type: "++show ty
+       case M.lookup shp env of
+         Just TInt       -> EVr shp
+         Just (TTuple _) -> ETupProject 0 1 (EVr shp)
+         Just ty         -> error$"OneDimensionalize.hs: Should not have a shape of this type: "++show ty
+         Nothing         -> error$"OneDimensionalize.hs: Could not find shapename "++show shp++" in env:\n"++show env
 
+--------------------------------------------------------------------------------
 
 -- Map Var (ProgBind (a,b,Cost)) -> 
 doBind :: M.Map Var Type -> ProgBind ArraySizeEstimate -> MyM (ProgBind ArraySizeEstimate)
@@ -109,13 +138,13 @@ doBind env pb@(ProgBind vo aty sz (Right ae)) =
     -- For OpenCL/CUDA, we need to do flattening if the array is >3D anyway.
     -- Presently we always flatten to 1D, but in the future we may want to allow 2D
     -- and 3D.
-    Generate eSz (Lam1 (indV,indTy) bod) | flattenGenerates || ndim > 3 -> do
+    Generate eShp (Lam1 (indV,indTy) bod) | flattenGenerates || ndim > 3 -> do
     -- For Generate, we need to change the size argument and the type expected by the kernel.
-      eSz''  <- compute1DSize ndim =<< doE eSz
+      eShp''  <- compute1DSizeM ndim =<< doE eShp
       bod'   <- doExp (M.insert indV indTy env) bod
       tmp    <- lift$ genUniqueWith "flatidx"
       newidx <- unFlatIDX pb (EVr tmp)
-      return$ Generate eSz'' $
+      return$ Generate eShp'' $
                Lam1 (tmp,TInt) $
                 ELet (indV, indTy, newidx) bod'
 

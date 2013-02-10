@@ -17,7 +17,8 @@ module Data.Array.Accelerate.BackendKit.Utils.Helpers
          mkPrj, mapMAE, mapMAEWithEnv, mapMAEWithGEnv,
 
          -- * Helpers for constructing bits of AST syntax while incorporating small optimizations.
-         addI, mulI, quotI, remI, maybeLet,         
+         addI, mulI, quotI, remI, maybeLet, maybeLetAllowETups, 
+         -- TODO [2013.02.10] Move these ^^ to CompilerUtils.hs
          
          -- * Miscellaneous
          fragileZip,
@@ -160,6 +161,17 @@ maybeLet ex ty dobod =
     EVr v -> return (dobod v)
     _ -> do tmp <- genUnique
             return (ELet (tmp,ty,ex) (dobod tmp))
+
+-- | A variant which allows EITHER a variable or an ETuple expression without
+-- introducing a let, but introduces a let otherwise.
+maybeLetAllowETups :: Exp -> Type -> (Exp -> Exp) -> GensymM Exp
+maybeLetAllowETups ex ty dobod =
+  case ex of
+    EVr v    -> return (dobod ex)
+    ETuple v -> return (dobod ex)
+    _ -> do tmp <- genUnique
+            return (ELet (tmp,ty,ex) (dobod (EVr tmp)))
+
 
 -- | Do not allow the lists to be different lengths.
 fragileZip :: (Show t1, Show t2) =>

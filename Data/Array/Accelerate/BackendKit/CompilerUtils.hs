@@ -10,14 +10,14 @@
 module Data.Array.Accelerate.BackendKit.CompilerUtils
        (
          -- * Compiler construction, compiler conventions, and global constants:
-         runPass, runOptPass, shapeName,
+         runPass, runOptPass, shapeName, sizeName,
 
         -- * Debugging     
         maybtrace, tracePrint, dbg -- Flag for debugging output.
        )
        where
 
-import           Text.PrettyPrint.GenericPretty (Out(doc), Generic)
+import           Text.PrettyPrint.GenericPretty (Out(doc))
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import           Debug.Trace        (trace)
 import           System.IO.Unsafe   (unsafePerformIO)
@@ -28,10 +28,15 @@ import           System.Environment (getEnvironment)
 ----------------------------------------------------------------------------------------------------
 
 
--- | Given the name of an array variable, what is the name of the
--- variable which will contain its shape.
+-- | Given the name of an array variable, what is the name of the variable which will
+-- contain its shape.  This variable will refer to a tuple for rank>1 arrays.
 shapeName :: S.Var -> S.Var
 shapeName avr = S.var (show avr ++ "_shape")
+
+-- | Given the name of an array variable, what is the name of the variable which will
+-- contain its SIZE.  This variable will always be of type TInt.
+sizeName :: S.Var -> S.Var
+sizeName avr = S.var (show avr ++ "_size")
 
 ------------------------------------------------------------
 -- Compiler Construction:
@@ -78,4 +83,5 @@ tracePrint s x =
          else x
 
 -- | Trace, but only if debugging is enabled.
+maybtrace :: String -> a -> a
 maybtrace = if dbg then trace else \_ -> id 

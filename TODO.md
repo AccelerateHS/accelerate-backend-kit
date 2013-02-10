@@ -44,4 +44,7 @@ These should go into github issues
  * OneDimensionalize should probably introduce _size variables to go
    long with the _shape ones.
    
-   
+ * deadArrays should live up to its name and only do arrays.  Right
+   now it can nuke shapes.  Or at least form a rootset from shapes and
+   sizes.
+

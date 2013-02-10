@@ -21,6 +21,6 @@ import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 -- in the SubBinds decorators.
 unzipArrays :: S.Prog a -> S.Prog a
 unzipArrays p =
-  trace "FINISHME - unzipArrays" p
+  trace "! warning - finish unzipArrays" p
   
 

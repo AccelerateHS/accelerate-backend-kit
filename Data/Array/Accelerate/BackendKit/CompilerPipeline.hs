@@ -91,6 +91,7 @@ phase2A :: S.Prog () -> S.Prog (FoldStrides S.Exp,ArraySizeEstimate)
 phase2A prog =
   runPass    "typecheck2"        typecheckPass     $       
   runPass    "oneDimensionalize" oneDimensionalize $     -- (foldstrides,size)
+  -- todo: explicitFoldStride  
   runOptPass "deadArrays"        deadArrays (fmap fst) $ -- (size)
   runPass    "trackUses"         trackUses         $     -- (size,uses)
    -- NOTE INLINE CHEAP IS NOT OPTIONAL PRESENTLY! (needed for copy-prop)
