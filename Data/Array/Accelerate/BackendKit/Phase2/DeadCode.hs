@@ -1,29 +1,36 @@
 {-# LANGUAGE NamedFieldPuns #-}
--- | A pass to eliminate any arrays whose use counts have fallen to zero.
 
-module Data.Array.Accelerate.BackendKit.Phase2.DeadArrays (deadArrays) where 
+-- | A pass to eliminate any top-level array and scalar variables whose use counts
+-- have fallen to zero.
+
+module Data.Array.Accelerate.BackendKit.Phase2.DeadCode (deadCode) where 
 
 import Data.List as L
 import Data.Map  as M
 import Data.Set  as S
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
 import Data.Array.Accelerate.BackendKit.IRs.Metadata (Uses(Uses))
-import Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace)
+import Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace, isShapeName, isSizeName)
 import qualified Data.Array.Accelerate.BackendKit.Phase2.TrackUses as TU
 
-
-deadArrays :: Prog (a,Uses) -> Prog a
-deadArrays prog@Prog{progBinds} = fmap fst$
+-- | Dead code elimination.
+deadCode :: Prog (a,Uses) -> Prog a
+deadCode prog@Prog{progBinds} = fmap fst$
   prog{ progBinds= L.filter ((`S.member` survivors) . getName) progBinds }
  where
   survivors = M.keysSet $ loop M.empty progBinds
   getName (ProgBind v _ _ _) = v
 
--- We process an incoming list of ProgBinds, and each one we remove
--- can trigger further removals from the already accumulated bindings.
--- loop :: Map Var (ProgBind (a,Uses)) -> [ProgBind (a,Uses)] -> Map Var (ProgBind (a,Uses))
+-- | We process an incoming list of ProgBinds, and each one we remove
+--  can trigger further removals from the already accumulated bindings.
+--  This returns a map of *surving* variables to their #uses.
 loop :: Map Var Int -> [ProgBind (a,Uses)] -> Map Var Int  
 loop mp [] = mp
+
+loop mp (ProgBind v _ (_,Uses 0 0) rhs : rest)
+  | isSizeName v || isShapeName v =
+    maybtrace (".. deadArrays refusing to eliminate size/shape var: "++show v) $
+   loop (M.insert v 0 mp) rest
 
 loop mp (ProgBind v _ (_,Uses 0 0) rhs : rest) =
     maybtrace ("!! Victory: deadArrays, start an unraveling by eliminating: "++show v)  

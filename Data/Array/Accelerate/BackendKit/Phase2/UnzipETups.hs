@@ -15,8 +15,8 @@ import Control.Applicative ((<$>),(<*>))
 import qualified Data.Map              as M
 
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
-import Data.Array.Accelerate.BackendKit.Utils.Helpers (GensymM, genUnique, mkPrj, mapMAEWithGEnv, isTupleTy)
-import Data.Array.Accelerate.BackendKit.CompilerUtils (shapeName)
+import Data.Array.Accelerate.BackendKit.Utils.Helpers (GensymM, genUnique, genUniqueWith, mkPrj, mapMAEWithGEnv, isTupleTy)
+import Data.Array.Accelerate.BackendKit.CompilerUtils (sizeName)
 import Data.Array.Accelerate.BackendKit.Phase2.NormalizeExps (wrapLets)
 import Data.Array.Accelerate.BackendKit.IRs.Metadata (ArraySizeEstimate(..), SubBinds(..))
 ----------------------------------------------------------------------------------------------------
@@ -69,7 +69,7 @@ unzipETups prog@Prog{progBinds, uniqueCounter, typeEnv} = prog'
   envM = M.fromList <$> mapM fn (M.toList typeEnv)
   -- Here we introduce temporary names for the subcomponents of any top-level tuple-bindings:
   fn (vr,ty) | countVals ty == 1 = return (vr,[vr])
-             | otherwise = do tmps <- sequence$ replicate (countVals ty) genUnique
+             | otherwise = do tmps <- sequence$ replicate (countVals ty) (genUniqueWith$ show vr)
                               return (vr,tmps)
   -- nextenv has an entry for ALL top-level variables:
   nextenv :: M.Map Var [Var]
@@ -81,35 +81,15 @@ unzipETups prog@Prog{progBinds, uniqueCounter, typeEnv} = prog'
   (binds,newCounter2) = runState (doBinds topenv progBinds) newCounter1
 
   -- Compute the new (SubBinds) decorator:
-  newDecor vo ty sz =
+  newDecor vo (TArray _ _) sz =
     let vos = nextenv M.! vo in
-    SubBinds { subnames=vos, arrsize= getSize vo vos ty sz }
-
-  -- Map subdivided names back onto their original counterparts
-  backMap = M.fromList$ concatMap fn2 (M.toList nextenv)
-  fn2 (vr,ls) = map (,vr) ls
-
-  getSize :: Var -> [Var] -> Type -> ArraySizeEstimate -> Maybe TrivialExp
-  getSize vo subvos ty sz =
-    let -- Scalars must always have "size" zero:
-        mkEntry _ (TArray _ _) s = Just s
-        mkEntry _ _            _ = Nothing in
+    -- [safe] assumption: arrays resulting from unzipping will have the same size.
+    SubBinds vos $ Just $
     case sz of
-      KnownSize [sz] -> mkEntry vo ty (TrivConst sz)
+      UnknownSize    -> TrivVarref$ sizeName vo
+      KnownSize [sz] -> TrivConst sz
       KnownSize ls -> error$"UnzipETups.hs: arrays should be one dimensional, not: "++show ls
-
-      -- Here retrieving the size is tricky.  The original *shape*
-      -- information is available, but will have been detupled.
-      UnknownSize ->
-        let origShp = shapeName vo
-        in case M.lookup origShp nextenv of
-            -- If we must refer to the size by NAME, that grows complicated if detupling has occured:
-            Just shpvs -> 
-              if length shpvs /= length subvos
-              then error$"UnzipETups.hs: internal invariant broken, mismatched len: "++show(shpvs,subvos)
-              else error$"FINISHME -- we should introduce _size variables earlier"
---                foldl mulI (EConst (I 1)) (map EVr shpvs)
-            Nothing -> error$"no entry for shapename "++show origShp++" in env: "++show nextenv
+  newDecor vo _ _ = SubBinds (nextenv M.! vo) Nothing
 
 
 doBinds :: Env -> [ProgBind t] -> GensymM [ProgBind (t)]

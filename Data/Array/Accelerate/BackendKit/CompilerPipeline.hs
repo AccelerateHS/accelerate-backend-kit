@@ -47,7 +47,7 @@ import Data.Array.Accelerate.BackendKit.Phase2.DesugToBackperm   (desugToBackper
 import Data.Array.Accelerate.BackendKit.Phase2.DesugToGenerate   (desugToGenerate)
 import Data.Array.Accelerate.BackendKit.Phase2.EstimateCost      (estimateCost)
 import Data.Array.Accelerate.BackendKit.Phase2.InlineCheap       (inlineCheap)
-import Data.Array.Accelerate.BackendKit.Phase2.DeadArrays        (deadArrays)
+import Data.Array.Accelerate.BackendKit.Phase2.DeadCode          (deadCode)
 import Data.Array.Accelerate.BackendKit.Phase2.OneDimensionalize (oneDimensionalize)
 import Data.Array.Accelerate.BackendKit.Phase2.NormalizeExps     (normalizeExps)
 import Data.Array.Accelerate.BackendKit.Phase2.UnzipETups        (unzipETups)
@@ -92,7 +92,7 @@ phase2A prog =
   runPass    "typecheck2"        typecheckPass     $       
   runPass    "oneDimensionalize" oneDimensionalize $     -- (foldstrides,size)
   -- todo: explicitFoldStride  
-  runOptPass "deadArrays"        deadArrays (fmap fst) $ -- (size)
+  runOptPass "deadCode"          deadCode (fmap fst) $   -- (size)
   runPass    "trackUses"         trackUses         $     -- (size,uses)
    -- NOTE INLINE CHEAP IS NOT OPTIONAL PRESENTLY! (needed for copy-prop)
 --   runOptPass "inlineCheap"       inlineCheap (fmap fst) $ -- (size)

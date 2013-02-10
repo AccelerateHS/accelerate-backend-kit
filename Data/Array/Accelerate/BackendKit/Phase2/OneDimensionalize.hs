@@ -20,6 +20,7 @@ import Control.Monad.State.Strict
 import Control.Monad.Reader
 import Text.PrettyPrint.GenericPretty (Out(doc))
 import qualified Data.Map as M
+import Debug.Trace
 
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
 import Data.Array.Accelerate.BackendKit.IRs.Metadata (ArraySizeEstimate(..), FoldStrides(..))
@@ -47,22 +48,26 @@ oneDimensionalize :: Prog ArraySizeEstimate -> (Prog (FoldStrides Exp, ArraySize
 oneDimensionalize  prog@Prog{progBinds, progType, uniqueCounter, typeEnv } =
       prog'
   where
-    prog' = prog { progBinds    = map (getFoldStride typeEnv) binds2,
+    prog' = prog { progBinds    = binds3,
                    progType     = doTy progType, 
                    uniqueCounter= newCount,
                    -- Rebuild this because types change due to ranks becoming 1:
-                   typeEnv      = M.fromList$ map (\(ProgBind v t _ _) -> (v,t)) binds
+                   --  AND because of introduced _size variables:
+                   typeEnv      = M.fromList$ map (\(ProgBind v t _ _) -> (v,t)) binds3
                  }
-    m1 = mapM (doBind typeEnv) progBinds
-    m2 = runReaderT m1 prog
-    (binds,newCount) = runState m2 uniqueCounter
-    binds2 = addSizes binds
+    binds1 = addSizes progBinds
+    (binds2,newCount) = let m1 = mapM (doBind typeEnv) binds1
+                            m2 = runReaderT m1 prog
+                        in runState m2 uniqueCounter
+    binds3 = map (getFoldStride typeEnv) binds2
+
 
 type MyM a = ReaderT (Prog ArraySizeEstimate) GensymM a 
 
 -- This version expects a 
 compute1DSize :: Int -> Exp -> Exp
 compute1DSize ndim ex =
+  trace ("Computing 1D size for ndims "++show ndim++" input exp "++show ex)$  
   case ex of
     EVr    _ -> deflt
     ETuple _ -> deflt
@@ -138,9 +143,13 @@ doBind env pb@(ProgBind vo aty sz (Right ae)) =
     -- For OpenCL/CUDA, we need to do flattening if the array is >3D anyway.
     -- Presently we always flatten to 1D, but in the future we may want to allow 2D
     -- and 3D.
-    Generate eShp (Lam1 (indV,indTy) bod) | flattenGenerates || ndim > 3 -> do
+    Generate _eShp (Lam1 (indV,indTy) bod) | flattenGenerates || ndim > 3 -> do
     -- For Generate, we need to change the size argument and the type expected by the kernel.
-      eShp''  <- compute1DSizeM ndim =<< doE eShp
+--      eShp''  <- compute1DSizeM ndim =<< doE eShp
+      -- Interestingly, we need make no reference to eShp:
+      let eShp'' = case sz of
+                     UnknownSize  -> EVr$ sizeName vo
+                     KnownSize ls -> EConst$ I$ product ls
       bod'   <- doExp (M.insert indV indTy env) bod
       tmp    <- lift$ genUniqueWith "flatidx"
       newidx <- unFlatIDX pb (EVr tmp)

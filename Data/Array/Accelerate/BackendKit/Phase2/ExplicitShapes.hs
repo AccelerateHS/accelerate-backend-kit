@@ -30,9 +30,12 @@ type MyM a = ReaderT (Prog ArraySizeEstimate) GensymM a
 --   introduced which carries a tuple describing the shape of A.
 --   Thus `(EShape A)` becomes simply `A_shape`.
 explicitShapes :: Prog ArraySizeEstimate -> Prog ArraySizeEstimate
-explicitShapes prog@Prog{progBinds, uniqueCounter, typeEnv } =
+explicitShapes prog@Prog{progBinds, uniqueCounter } =
   prog { progBinds    = binds, 
-         uniqueCounter= newCount }
+         uniqueCounter= newCount,
+         -- Rebuild this cache due to new bindings:
+         typeEnv      = M.fromList$ map (\(ProgBind v t _ _) -> (v,t)) binds 
+       }
   where
     (binds,newCount) =
       runState (runReaderT (doBinds progBinds) prog) uniqueCounter

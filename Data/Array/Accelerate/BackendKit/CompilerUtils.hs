@@ -10,7 +10,8 @@
 module Data.Array.Accelerate.BackendKit.CompilerUtils
        (
          -- * Compiler construction, compiler conventions, and global constants:
-         runPass, runOptPass, shapeName, sizeName,
+         runPass, runOptPass,
+         shapeName, sizeName, isShapeName, isSizeName,
 
         -- * Debugging     
         maybtrace, tracePrint, dbg -- Flag for debugging output.
@@ -33,10 +34,16 @@ import           System.Environment (getEnvironment)
 shapeName :: S.Var -> S.Var
 shapeName avr = S.var (show avr ++ "_shape")
 
+isShapeName :: S.Var -> Bool
+isShapeName v = reverse "_shape" == take 6 (reverse$ show v)
+
 -- | Given the name of an array variable, what is the name of the variable which will
 -- contain its SIZE.  This variable will always be of type TInt.
 sizeName :: S.Var -> S.Var
 sizeName avr = S.var (show avr ++ "_size")
+
+isSizeName :: S.Var -> Bool
+isSizeName v = reverse "_size" == take 5 (reverse$ show v)
 
 ------------------------------------------------------------
 -- Compiler Construction:
