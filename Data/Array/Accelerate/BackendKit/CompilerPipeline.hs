@@ -25,7 +25,7 @@ import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import qualified Data.Array.Accelerate.BackendKit.IRs.CLike     as C
 import qualified Data.Array.Accelerate.BackendKit.IRs.GPUIR     as G
-import           Data.Array.Accelerate.BackendKit.IRs.Metadata   (FoldStrides, ArraySizeEstimate, FreeVars)
+import           Data.Array.Accelerate.BackendKit.IRs.Metadata   (Stride, ArraySizeEstimate, FreeVars)
 import           Data.Array.Accelerate.BackendKit.CompilerUtils  (runPass, runOptPass)
 
 -- Phase 1 passes:
@@ -56,12 +56,10 @@ import Data.Array.Accelerate.BackendKit.Phase2.ToCLike           (convertToCLike
 
 -- Phase 3 passes:
 ----------------------------------------
-{-
 import Data.Array.Accelerate.BackendKit.Phase3.KernFreeVars      (kernFreeVars)
 import Data.Array.Accelerate.BackendKit.Phase3.ToGPUIR           (convertToGPUIR)
 import Data.Array.Accelerate.BackendKit.Phase3.DesugarGenerate   (desugarGenerate)
 import Data.Array.Accelerate.BackendKit.Phase3.DesugarFoldScan   (desugarFoldScan)
--}
 
 --------------------------------------------------------------------------------
 -- Exposed entrypoints for this module:
@@ -70,13 +68,11 @@ import Data.Array.Accelerate.BackendKit.Phase3.DesugarFoldScan   (desugarFoldSca
 -- | The final step: Lower to a GPU-targetting language.
 phase3 :: C.LLProg () -> G.GPUProg (FreeVars)
 phase3 prog =
-  error "restore phase3 " {-
   runPass    "desugarGenerate"   desugarGenerate   $     -- (freevars)
   runPass    "desugarFoldScan"   desugarFoldScan   $     -- (freevars)
   runPass    "convertToGPUIR"    convertToGPUIR    $     -- (freevars)
   runPass    "kernFreeVars"      kernFreeVars      $     -- (freevars)
   prog
--}
   
 -- | The bulk of the compilation process -- eliminate unnecessary
 -- forms and lower the language.
@@ -84,17 +80,17 @@ phase2 :: S.Prog () -> C.LLProg ()
 phase2 prog =
   runPass    "convertToCLike"    convertToCLike    $     -- ()
   -- todo: Verify final CLike here
-  runPass    "unzipArrays"       unzipArrays       $     -- (opinputs,(subbinds,(foldstrides,size)))
-  runPass    "unzipETups"        unzipETups        $     -- (subbinds,(foldstrides,size))
+  runPass    "unzipArrays"       unzipArrays       $     -- (opinputs,(subbinds,(foldstride,size)))
+  runPass    "unzipETups"        unzipETups        $     -- (subbinds,(foldstride,size))
                                  typecheckPass     $     
-  runPass    "normalizeExps"     normalizeExps     $     -- (foldstrides,size)
+  runPass    "normalizeExps"     normalizeExps     $     -- (foldstride,size)
   phase2A    prog
 
 -- | Factor out this [internal] piece for use in some place(s).
-phase2A :: S.Prog () -> S.Prog (FoldStrides S.Exp,ArraySizeEstimate)
+phase2A :: S.Prog () -> S.Prog (Maybe (Stride S.Exp),ArraySizeEstimate)
 phase2A prog =
   runPass    "typecheck2"        typecheckPass     $       
-  runPass    "oneDimensionalize" oneDimensionalize $     -- (foldstrides,size)
+  runPass    "oneDimensionalize" oneDimensionalize $     -- (foldstride,size)
   -- todo: explicitFoldStride  
   runOptPass "deadCode"          deadCode (fmap fst) $   -- (size)
   runPass    "trackUses"         trackUses         $     -- (size,uses)

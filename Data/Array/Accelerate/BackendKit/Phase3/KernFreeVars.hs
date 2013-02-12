@@ -56,7 +56,7 @@ doAE ae =
 doBlk :: ScalarBlock -> Set SA.Var
 doBlk  = LL.scalarBlockFreeVars
 
-doGenerator :: Generator -> Set SA.Var
+doGenerator :: Generator (Fun ScalarBlock) -> Set SA.Var
 doGenerator (Gen _ (Lam args bod)) = 
       S.difference (doBlk bod)
                    (S.fromList$ L.map fst args)

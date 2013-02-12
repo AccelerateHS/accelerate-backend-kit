@@ -19,7 +19,7 @@ import Text.PrettyPrint.GenericPretty (Out(doc))
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import Data.Array.Accelerate.BackendKit.CompilerUtils (sizeName)
 import Data.Array.Accelerate.BackendKit.Phase2.NormalizeExps (wrapLets)
-import Data.Array.Accelerate.BackendKit.IRs.Metadata (ArraySizeEstimate(..), SubBinds(..))
+import Data.Array.Accelerate.BackendKit.IRs.Metadata (ArraySizeEstimate(..), SubBinds(..), Stride(..))
 import Data.Array.Accelerate.BackendKit.Utils.Helpers
        (GensymM, genUnique, genUniqueWith, mkPrj, mapMAEWithGEnv, isTupleTy, fragileZip, fragileZip3)
 ----------------------------------------------------------------------------------------------------
@@ -66,7 +66,8 @@ type Env = M.Map Var (Type,Maybe [Var])
 --  redirected to the finer grained detupled names stored in SubBinds.  The
 --  Prog types limits our ability to encode this in the AST, so we destroy
 --  the normal ProgBind names to ensure that future passes use the SubBinds.
-unzipETups :: Prog (a,ArraySizeEstimate) -> Prog (SubBinds,(a,ArraySizeEstimate))
+unzipETups :: Prog           (Maybe(Stride Exp),ArraySizeEstimate) ->
+              Prog (SubBinds,(Maybe(Stride Exp),ArraySizeEstimate))
 unzipETups prog@Prog{progBinds, uniqueCounter, typeEnv} =
     trace ("NEXTENV "++show (doc nextenv)) $ 
     prog'
@@ -123,22 +124,37 @@ unzipETups prog@Prog{progBinds, uniqueCounter, typeEnv} =
 nukedVar :: Var
 nukedVar = var ""
 
-doBinds :: Env -> [ProgBind t] -> GensymM [ProgBind (t)]
+doBinds :: Env ->  [ProgBind (Maybe(Stride Exp),ArraySizeEstimate)] ->
+           GensymM [ProgBind (Maybe(Stride Exp),ArraySizeEstimate)]
 doBinds env = mapM (doBind env)
 
-doBind :: Env -> ProgBind a -> GensymM (ProgBind (a))
+doBind :: Env ->   ProgBind (Maybe(Stride Exp),ArraySizeEstimate) ->
+          GensymM (ProgBind (Maybe(Stride Exp),ArraySizeEstimate))
 
 -- Don't nuke the scalar vars YET:
 doBind env (ProgBind v t dec (Left ex))  = ProgBind v t (dec) . Left  <$>
-   doSpine env ex
+   case dec of
+     (Nothing,_) -> doSpine env ex
+     oth         -> error$"invariant broken: found scalar bind ("
+                    ++show v++") with Stride set: "++show oth
 
-doBind env (ProgBind v t dec (Right ae)) = ProgBind v t (dec) . Right <$>
-   -- The following MUST be *Nothing* because we have no way to detuple
-   -- the input to kernels (i.e. array elements) at this point.
-   -- (The environment is only extended by mapMAEWithGEnv at one point: Lam1/Lam2 kernel args.)
-   mapMAEWithGEnv env (\ _ ty -> (ty,Nothing))
-                  doSpine ae
+doBind env (ProgBind v t dec (Right ae)) = do
 
+   -- We need to also process expressions that are buried inside fold-strides:
+   dec' <- case dec of
+            (Nothing,_)        -> return dec
+            (Just StrideAll,_) -> return dec
+            (Just (StrideConst e),sz) -> do
+              [e'] <- doE env e
+              return (Just (StrideConst e'),sz)
+   ProgBind v t (dec') . Right <$> 
+     -- The following MUST be *Nothing* because we have no way to detuple
+     -- the input to kernels (i.e. array elements) at this point.
+     -- (The environment is only extended by mapMAEWithGEnv at one point: Lam1/Lam2 kernel args.)
+     mapMAEWithGEnv env (\ _ ty -> (ty,Nothing))
+                    doSpine ae
+
+ where
    
 -- | Process along the spine (which will become Stmts in the CLike LLIR).
 doSpine :: Env -> Exp -> GensymM Exp

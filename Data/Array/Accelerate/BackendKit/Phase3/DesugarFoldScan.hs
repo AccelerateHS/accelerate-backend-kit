@@ -49,12 +49,12 @@ doBinds sizeEnv prog (pb@GPUProgBind { decor=(FreeVars arrayOpFvs), op } : rest)
   let deflt = do rst <- doBinds sizeEnv prog rest
                  return $ pb : rst
   case op of
-     Use  _       -> deflt
-     Cond _ _ _   -> deflt
-     ScalarCode _ -> deflt
-     Generate _ _ -> deflt
-     NewArray _   -> deflt
-     Kernel {}    -> deflt
+     Use  _        -> deflt
+     Cond _ _ _    -> deflt
+     ScalarCode _  -> deflt
+     GenManifest _ -> deflt
+     NewArray _    -> deflt
+     Kernel {}     -> deflt
 --     Scan _ _ _ _ -> error "DesugarFoldScan.hs/doBinds: FINISHME - need to handle "
      
      --------------------------------------------------------------------------------

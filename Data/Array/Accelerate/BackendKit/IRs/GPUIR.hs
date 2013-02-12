@@ -6,10 +6,13 @@ module Data.Array.Accelerate.BackendKit.IRs.GPUIR
        (
          -- * GPUIR: intermediate representation isomorphic to GPU code
          GPUProg(..), GPUProgBind(..), TopLvlForm(..), ScalarBlock(..), Stmt(..), Exp(..),
-         Fun(..), MemLocation(..), Direction(..), Segmentation(..), EvtId,
+         MemLocation(..), EvtId,
+
+         -- * Reexport for completeness:
+         Fun(..), Direction(..), ReduceVariant(..), MGenerator(..), Generator(..), Stride(..),
 
          -- * Helper functions for the GPUIR
-         lookupProgBind, expFreeVars, stmtFreeVars, scalarBlockFreeVars,
+         lookupProgBind, expFreeVars, stmtFreeVars, scalarBlockFreeVars, trivToExp,
 
          -- * Helpers for constructing bits of AST syntax while incorporating small optimizations.
          addI, mulI, quotI, remI, maxI, minI, 
@@ -22,7 +25,9 @@ import           Data.List as L
 import           Prelude as P
 import           Text.PrettyPrint.GenericPretty (Out, Generic)
 
-import           Data.Array.Accelerate.BackendKit.IRs.CLike (Direction(..), ReduceVariant(..))
+import           Data.Array.Accelerate.BackendKit.IRs.Metadata (Stride(..))
+import           Data.Array.Accelerate.BackendKit.IRs.CLike (Direction(..), ReduceVariant(..),
+                                                             MGenerator(..), Generator(..))
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as SA
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
                    (Var,Type,AccArray, Prim(..), Const(..), Type(..), TrivialExp)
@@ -94,22 +99,19 @@ data TopLvlForm =
               kernbod   :: Fun ScalarBlock, -- *Closed* function.  The arguments here are kernargs NOT the indices.
               kernargs  :: [Exp] }
 
-  -- These rest of the operators are ONLY, here to support initial
-  -- translation and possible additional optimization.  They must be
-  -- eliminated before a GPU backend is expected to run.
-  ------------------------------------------------------------
-  -- | Generate carries the individual dimension components [Exp]
-  | Generate  [Exp] (Fun ScalarBlock)
+  -- These rest of the operators are ONLY here to support initial
+  -- translation and possible additional optimization.  They MUST be
+  -- converted to raw `Kernel`s before a GPU backend is expected to run.
+  ----------------------------------------------------------------------
+  | GenManifest (Generator (Fun ScalarBlock))
 
   -- | The same as in CLike.hs, see docs there:
   | GenReduce {
       reducer    :: Fun ScalarBlock,
-      identity   :: [Exp],
-      generator  :: Fun ScalarBlock,
-      dimensions :: [Exp],
-      variant    :: ReduceVariant,
-      stride     :: Segmentation }
-    
+      generator  :: MGenerator ScalarBlock, 
+      variant    :: ReduceVariant Fun ScalarBlock,
+      stride     :: Stride Exp }
+        
   deriving (Read,Show,Eq,Ord,Generic)
 
 data Segmentation = VariableStride Var -- The name of an array containing the strides.
@@ -117,16 +119,12 @@ data Segmentation = VariableStride Var -- The name of an array containing the st
   deriving (Read,Show,Eq,Ord,Generic)
 
 
--- data ReduceVariant = Fold
---                    | FoldSeg Var
---                    | Scan Direction
---                    | ScanSeg Direction Var
-
 ------------------------------------------------------------
 -- Accelerate Scalar Expressions and Functions
 ------------------------------------------------------------
 
--- | Arbitrary arity functions
+-- | Arbitrary arity functions.  Differs from CLike.hs in that memory location is
+-- also tracked.
 data Fun a = Lam [(Var,MemLocation,Type)] a
  deriving (Read,Show,Eq,Ord,Generic)
 
@@ -176,6 +174,11 @@ data Exp =
 -- Helpers
 --------------------------------------------------------------------------------
 
+-- | A simple conversion to the GPUIR version of `Exp`.
+trivToExp :: SA.TrivialExp -> Exp
+trivToExp (SA.TrivConst n)  = EConst (I n)
+trivToExp (SA.TrivVarref v) = EVr v
+
 -- | O(N): look up a specific binding in a list of bindings.
 --
 -- In most cases you will want to create a Data.Map rather than using
@@ -208,7 +211,7 @@ doStmt st =
     SSet _ rhs     -> doE rhs
     SCond e1 s1 s2 -> S.union (doE e1) $ 
                       S.union (doStmts s1) (doStmts s2)
-    SArrSet _ ind rhs     -> S.union (doE ind) (doE rhs) 
+    SArrSet _ ind rhs -> doE ind `S.union` doE rhs
     SFor v accinit test incr bod -> S.delete v $
                                     S.unions [doE accinit, doE test, doE incr,
                                               doStmts bod]

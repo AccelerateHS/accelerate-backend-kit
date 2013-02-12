@@ -8,7 +8,7 @@ module Data.Array.Accelerate.BackendKit.IRs.Metadata
        (
          -- * Metadata types used to annotate ASTs during compilation.
          ArraySizeEstimate(..), Uses(..), FreeVars(..),
-         FoldStrides(FoldStrides), SubBinds(..), OpInputs(..)
+         Stride(..), SubBinds(..), OpInputs(..)
          )
        where
 
@@ -46,14 +46,14 @@ newtype FreeVars = FreeVars [Var]
 instance Out FreeVars
 
 
--- | Record the stride in the array (i.e. innermost dimension) between separate
---   folds.  This maps each top level array variable that is the result of a fold or
---   scan onto an expression of type TInt.
--- newtype FoldStrides exp = FoldStrides (M.Map Var exp)
-newtype FoldStrides exp = FoldStrides (Maybe exp)
-  -- TODO: add a special case for foldAll
-  deriving (Read, Show, Eq, Generic)
-instance Out a => Out (FoldStrides a)
+-- | The 'stride' for fold and scan operations describes the size of the innermost
+-- dimension (NOT segmentation).  This is how far apart /separate/ reductions are in
+-- the row-major array.  `StrideAll` means we shouldn't worry about how big the array
+-- is, everything goes into a single reduction.
+data Stride exp = StrideConst exp
+                | StrideAll 
+  deriving (Read, Show, Eq, Ord, Generic)
+instance Out a => Out (Stride a)
 
 
 -- | Used for breaking named values referring to tuples down into finer-grained

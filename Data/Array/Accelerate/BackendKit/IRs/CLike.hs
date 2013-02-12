@@ -1,5 +1,6 @@
 
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 -- | A lower-level intermediate representation that has certain notable differences
 -- from Accelerate's front-end representation.  Everything is one dimensional, and
@@ -29,6 +30,7 @@ module Data.Array.Accelerate.BackendKit.IRs.CLike
 
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as SA
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Var,Type,Prim,AccArray,TrivialExp)
+import           Data.Array.Accelerate.BackendKit.IRs.Metadata (Stride(..))
 import           Text.PrettyPrint.GenericPretty (Out, Generic)
 import qualified Data.Set  as S
 import qualified Data.Map  as M
@@ -71,7 +73,7 @@ data TopLvlForm =
   | Cond Exp Var Var
   | Use       AccArray
 --  | Generate  ScalarBlock (Fun ScalarBlock)
-  | GenManifest Generator
+  | GenManifest (Generator (Fun ScalarBlock))
 
   -- | GenReduce is both produces (or fetches) elements and combines them.  It is
   -- parameterized first by a reduce function and second by a generate function.  The
@@ -82,43 +84,33 @@ data TopLvlForm =
   -- reduction function produces values.
   | GenReduce {
       reducer    :: Fun ScalarBlock,
---      identity   :: ScalarBlock,
---      generator  :: Fun ScalarBlock,
---      dimensions :: ScalarBlock,
-      generator  :: MGenerator, 
-      variant    :: ReduceVariant,
-      stride     :: Stride }
-  -- Omitted for now: forward permute
+      generator  :: MGenerator ScalarBlock, 
+      variant    :: ReduceVariant Fun ScalarBlock,
+      stride     :: Stride Exp }
   -- Omitted for now: STENCILS:
   deriving (Read,Show,Eq,Ord,Generic)
 
--- | The 'stride' for fold and scan operations describes the size of the innermost
--- dimension (NOT segmentation).  This is how far apart /separate/ reductions are in
--- the row-major array.
-data Stride = All -- ^ Designates the special case where the WHOLE array is reduced (irrespective of size)
-            | Exp
-  deriving (Read,Show,Eq,Ord,Generic)
-
 -- | A Generate construct: a functional description of an array.
-data Generator = Gen TrivialExp (Fun ScalarBlock)
+data Generator fun = Gen TrivialExp fun
   deriving (Read,Show,Eq,Ord,Generic)
 
 -- | A reference to /either/ a manifest (existing in memory) array, or a functional
 -- description of an array.
-data MGenerator = Manifest [Var] 
-                | NonManifest Generator
+data MGenerator a = Manifest [Var] 
+                  | NonManifest (Generator a)
   deriving (Read,Show,Eq,Ord,Generic)
            
 -- | All the kinds of array ops that involve /reduction/.  All fold/scan variants
 -- carry an initial element (`ScalarBlock`). Segmented variants include also include
 -- an array containing the segment descriptor.
-data ReduceVariant = Fold              ScalarBlock
-                   | FoldSeg           ScalarBlock MGenerator
-                   | Scan    Direction ScalarBlock 
-                   | ScanSeg Direction ScalarBlock MGenerator
-                   -- | Forward permute also takes a default array and an
-                   -- index-permuting function:
-                   | Permute { permfun::Fun ScalarBlock, defaults::MGenerator }
+data ReduceVariant fn sb =
+    Fold              sb
+  | FoldSeg           sb (MGenerator (fn sb))
+  | Scan    Direction sb 
+  | ScanSeg Direction sb (MGenerator (fn sb))
+    -- | Forward permute also takes a default array and an
+    -- index-permuting function:
+  | Permute { permfun::Fun sb, defaults::MGenerator (fn sb) }
   deriving (Read,Show,Eq,Ord,Generic)
 
 data Direction = LeftScan | RightScan
@@ -211,7 +203,6 @@ simpleBlockToExp _ = Nothing
 -- TODO: invariant checker
 -- checkValidProg
 
-
 --------------------------------------------------------------------------------
 -- BoilerPlate
 --------------------------------------------------------------------------------
@@ -220,10 +211,9 @@ instance Out a => Out (LLProg a)
 instance Out a => Out (LLProgBind a)
 instance Out a => Out (Fun a)
 instance Out Direction
-instance Out ReduceVariant
-instance Out Stride
-instance Out Generator
-instance Out MGenerator
+instance (Out a, Out (fn a)) => Out (ReduceVariant fn a)
+instance Out a => Out (Generator a)
+instance Out a => Out (MGenerator a)
 instance Out TopLvlForm
 instance Out Exp
 instance Out ScalarBlock

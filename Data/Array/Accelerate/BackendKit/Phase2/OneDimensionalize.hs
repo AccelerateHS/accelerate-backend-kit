@@ -23,7 +23,7 @@ import qualified Data.Map as M
 import Debug.Trace
 
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
-import Data.Array.Accelerate.BackendKit.IRs.Metadata (ArraySizeEstimate(..), FoldStrides(..))
+import Data.Array.Accelerate.BackendKit.IRs.Metadata (ArraySizeEstimate(..), Stride(..))
 import Data.Array.Accelerate.BackendKit.Utils.Helpers (genUnique, genUniqueWith, GensymM, mkIndTy, mkPrj,
                                                        maybeLetAllowETups, addI, mulI, quotI, remI)
 import Data.Array.Accelerate.BackendKit.CompilerUtils (shapeName, sizeName)
@@ -44,7 +44,7 @@ flattenGenerates = True
 -- could be optimized, with consecutive expand/collapse or
 -- collapse/expand canceling out.  Then a separate pass could inject
 -- the actual conversion arithmetic.
-oneDimensionalize :: Prog ArraySizeEstimate -> (Prog (FoldStrides Exp, ArraySizeEstimate))
+oneDimensionalize :: Prog ArraySizeEstimate -> (Prog (Maybe (Stride Exp), ArraySizeEstimate))
 oneDimensionalize  prog@Prog{progBinds, progType, uniqueCounter, typeEnv } =
       prog'
   where
@@ -97,27 +97,28 @@ addSizes (hd:tl) = hd : addSizes tl
 --   separately-folded sections.
 getFoldStride :: M.Map Var Type ->
                  ProgBind ArraySizeEstimate ->
-                 ProgBind (FoldStrides Exp, ArraySizeEstimate)
+                 ProgBind (Maybe (Stride Exp), ArraySizeEstimate)
 getFoldStride env (ProgBind vo aty sz eith) =
   ProgBind vo aty (newdec, sz) eith
  where
- newdec = FoldStrides $ 
+ newdec :: Maybe (Stride Exp)  
+ newdec = 
   case eith of
     Left _ -> Nothing
     Right ae -> 
      case ae of 
-       Fold _ _ vi       -> innDim vo
-       Fold1 _  vi       -> innDim vo
-       FoldSeg  _ _ vi _ -> innDim vo
-       Fold1Seg _   vi _ -> innDim vo
-       Scanl    _ _ vi   -> innDim vo
-       Scanl'   _ _ vi   -> innDim vo
-       Scanl1   _   vi   -> innDim vo
-       Scanr    _ _ vi   -> innDim vo
-       Scanr'   _ _ vi   -> innDim vo
-       Scanr1   _   vi   -> innDim vo
+       Fold _ _ vi       -> Just$ StrideAll
+       Fold1 _  vi       -> Just$ StrideAll 
+       FoldSeg  _ _ vi _ -> Just$ StrideConst $ innDim vo
+       Fold1Seg _   vi _ -> Just$ StrideConst $ innDim vo
+       Scanl    _ _ vi   -> Just$ StrideAll 
+       Scanl'   _ _ vi   -> Just$ StrideAll 
+       Scanl1   _   vi   -> Just$ StrideAll 
+       Scanr    _ _ vi   -> Just$ StrideAll 
+       Scanr'   _ _ vi   -> Just$ StrideAll 
+       Scanr1   _   vi   -> Just$ StrideAll 
        _                 -> Nothing
- innDim theV = Just$ 
+ innDim theV = 
    case sz of
      KnownSize ls -> EConst$ I$ head ls
      UnknownSize ->

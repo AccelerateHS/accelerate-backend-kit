@@ -76,12 +76,12 @@ doBinds sizeEnv evEnv (LLProgBind vartys (FreeVars fvs) toplvl : rest) = do
     ScalarCode sb -> return$ rebind (evs fvs) (G.ScalarCode (doSB sb))   : rst
 
 -- FINISH ME
-{-
-    Generate sb (Lam args bod) -> do
-      (sbBnd, els) <- liftSB sb
-      let newBnd = rebind (evs fvs) $ G.Generate els (G.Lam (map liftBind args) (doSB bod))
-      return (sbBnd : newBnd : rst)
-    
+    GenManifest (Gen tr (Lam args bod)) -> do
+      -- (sbBnd, els) <- liftSB sb -- Easier now that it's not a full ScalarBlock
+      let newBnd = rebind (evs fvs) $ G.GenManifest (G.Gen tr (G.Lam (map liftBind args) (doSB bod)))
+      -- return (sbBnd : newBnd : rst)
+      return (newBnd : rst)
+{-    
     GenReduce { reducer=Lam rvs rbod, identity,
                 generator=Lam gvs gbod, dimensions, variant } -> do
       (sbBnd1, idents) <- liftSB identity 
@@ -112,6 +112,7 @@ doSB :: ScalarBlock -> G.ScalarBlock
 doSB (ScalarBlock ls rets stmts) =
   G.ScalarBlock (map liftBind ls) rets (doStmts stmts)
 
+-- | Stick in a default memory location based on the type:
 liftBind :: (S.Var, S.Type) -> (S.Var, G.MemLocation, S.Type)
 liftBind (v,t) = (v, typeToAddrSpc t, t)
 

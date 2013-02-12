@@ -19,7 +19,7 @@ import           Text.PrettyPrint.GenericPretty (Out(doc))
 import qualified Data.Array.Accelerate.BackendKit.IRs.CLike as LL
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import           Data.Array.Accelerate.BackendKit.IRs.Metadata
-                   (OpInputs(..),SubBinds(..), FoldStrides(..), ArraySizeEstimate(..))
+                   (OpInputs(..),SubBinds(..), Stride(..), ArraySizeEstimate(..))
 import           Data.Array.Accelerate.BackendKit.Utils.Helpers
                    (genUnique, genUniqueWith, GensymM, isTupleTy, (#), fragileZip)
 
@@ -41,7 +41,9 @@ type Cont = [LL.Exp] -> [LL.Stmt]
 --   non-top-level scalar bindings that are being detupled *by this pass*.
 type Env = M.Map Var (Type, [Var], Maybe TrivialExp)
 
-type FullMeta = (OpInputs,(SubBinds,(FoldStrides Exp, ArraySizeEstimate)))
+-- | We have a hefty pile of metadata at this point.  Fortunately we get to discharge
+-- it during this pass.
+type FullMeta = (OpInputs,(SubBinds,(Maybe (Stride Exp), ArraySizeEstimate)))
 ----------------------------------------------------------------------------------------------------
 
 -- | This pass takes a SimpleAST IR which already follows a number of
@@ -144,59 +146,63 @@ doStmts k env ex =
      else tell ls
 
 doBind :: Env -> ProgBind FullMeta -> GensymM (LL.LLProgBind FullMeta)
-doBind env (ProgBind _ ty decor@(OpInputs vis, (SubBinds vos _,_)) rhs) = do 
+doBind env (ProgBind _ ty decor@(OpInputs vis, (SubBinds vos _, (foldstride, _))) rhs) = do 
   rhs' <- case rhs of
             Left  ex -> LL.ScalarCode <$> doBlock env ex
-            Right ae -> doAE vis env ae
+            Right ae -> doAE ae
 
   let outBinds = fragileZip vos (flattenTy ty)
   return (LL.LLProgBind outBinds decor rhs')
 
-doAE :: [[Var]] -> Env -> AExp -> GensymM LL.TopLvlForm
-doAE vis env ae =
-  case ae of
-    Vr v          -> error$ "ToCLike.hs: Array variable should have been eliminated by copy-prop: "++show v
-    Cond a _ _    ->
-      case vis of
-        [[b'],[c']] -> return$ LL.Cond (doE env a) b' c'
-        _           -> error$"ToCLike.hs: cannot yet handle array Cond with array-of-tuples in branches: "++show vis
-    Use  arr      -> return$ LL.Use  arr
-
-    Generate ex (Lam1 (vr,ty) bod) -> do
-      -- Because arrays are 1D at this point, ex and vr are scalar.
-      -- 'ex' should be of type TInt, and it should be trivial.
-      let env' = M.insert vr (ty,[vr],error"SIZE") env
-      LL.GenManifest <$>
-        LL.Gen (doTriv ex)
-          <$> (LL.Lam [(vr,ty)] <$> doBlock env' bod)
-
-    -- TODO: Implement greedy fold/generate fusion RIGHT HERE:
-    Fold  lam2 ex _     -> foldHelp (head vis) lam2 =<< (LL.Fold <$> doBlock env ex)
-    FoldSeg lam2 ex _ _ -> do let [inVs,segVs] = vis 
-                              initSB <- doBlock env ex 
-                              foldHelp inVs lam2 (LL.FoldSeg initSB (LL.Manifest segVs))
-    Fold1    {}     -> err
-    Fold1Seg {}     -> err
-    Scanl lam2 ex _ -> foldHelp (head vis) lam2 =<< (LL.Scan LL.LeftScan  <$> doBlock env ex)
-    Scanr lam2 ex _ -> foldHelp (head vis) lam2 =<< (LL.Scan LL.RightScan <$> doBlock env ex)    
-    Scanl1 {}       -> err
-    Scanr1 {}       -> err
-    Scanl' {}       -> err
-    Scanr' {}       -> err
-    Unit         {} -> err
-    Replicate    {} -> err
-    Reshape      {} -> err
-    Permute      {} -> err
-    Backpermute  {} -> err
-    Index        {} -> err
-    Map          {} -> err
-    ZipWith      {} -> err
-    Stencil      {} -> err
-    Stencil2     {} -> err
  where
-   err = error$"ToCLike.hs/doAE: this form should be desugared by now: "++show ae
+   -- Uses 'vis' and 'foldstride' above:
+   doAE :: AExp -> GensymM LL.TopLvlForm
+   doAE ae =
+     case ae of
+       Vr v          -> error$ "ToCLike.hs: Array variable should have been eliminated by copy-prop: "++show v
+       Cond a _ _    ->
+         case vis of
+           [[b'],[c']] -> return$ LL.Cond (doE env a) b' c'
+           _           -> error$"ToCLike.hs: cannot yet handle array Cond with array-of-tuples in branches: "++show vis
+       Use  arr      -> return$ LL.Use  arr
+
+       Generate ex (Lam1 (vr,ty) bod) -> do
+         -- Because arrays are 1D at this point, ex and vr are scalar.
+         -- 'ex' should be of type TInt, and it should be trivial.
+         let env' = M.insert vr (ty,[vr],error"SIZE") env
+         LL.GenManifest <$>
+           LL.Gen (doTriv ex)
+             <$> (LL.Lam [(vr,ty)] <$> doBlock env' bod)
+
+       -- TODO: Implement greedy fold/generate fusion RIGHT HERE:
+       Fold  lam2 ex _     -> foldHelp (head vis) LL.StrideAll lam2 =<< (LL.Fold <$> doBlock env ex)
+       FoldSeg lam2 ex _ _ -> do let [inVs,segVs] = vis
+                                     Just (StrideConst strideE) = foldstride
+                                 initSB <- doBlock env ex 
+                                 foldHelp inVs (StrideConst$ doE env strideE) lam2
+                                   (LL.FoldSeg initSB (LL.Manifest segVs))
+       Fold1    {}     -> err
+       Fold1Seg {}     -> err
+       Scanl lam2 ex _ -> foldHelp (head vis) LL.StrideAll lam2 =<< (LL.Scan LL.LeftScan  <$> doBlock env ex)
+       Scanr lam2 ex _ -> foldHelp (head vis) LL.StrideAll lam2 =<< (LL.Scan LL.RightScan <$> doBlock env ex)    
+       Scanl1 {}       -> err
+       Scanr1 {}       -> err
+       Scanl' {}       -> err
+       Scanr' {}       -> err
+       Unit         {} -> err
+       Replicate    {} -> err
+       Reshape      {} -> err
+       Permute      {} -> err
+       Backpermute  {} -> err
+       Index        {} -> err
+       Map          {} -> err
+       ZipWith      {} -> err
+       Stencil      {} -> err
+       Stencil2     {} -> err
+     where
+      err = error$"ToCLike.hs/doAE: this form should be desugared by now: "++show ae
    
-   foldHelp inVs' (Lam2 (v,t) (w,u) bod) variant = do
+   foldHelp inVs' stride (Lam2 (v,t) (w,u) bod) variant = do
       let vtys = flattenTy t
           wtys = flattenTy u
       vs' <- genUniques v (length vtys)
@@ -207,8 +213,7 @@ doAE vis env ae =
       LL.GenReduce <$> (LL.Lam args <$> doBlock env' bod)
                    <*> return (LL.Manifest inVs')
                    <*> return variant
-                   <*> return LL.All
-
+                   <*> return stride
 
 
 doTriv :: Exp -> TrivialExp

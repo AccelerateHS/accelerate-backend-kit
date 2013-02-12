@@ -51,19 +51,20 @@ doBinds prog (pb@GPUProgBind { outarrs, evtid, evtdeps,
 
      -- A Generate breaks down into a separate NewArray and Kernel:      
      -- Assumes trivial (duplicatable) els:
-     Generate els (Lam iterargs bod) -> do
+     GenManifest (Gen tr (Lam iterargs bod)) -> do
        -- Here is where we establish the protocol on additional kernel arguments.
        -- Kernels take their index argument(s) PLUS free vars:
        let iterVs = map (\ (v, _, TInt) -> v) iterargs
-           iters  = fragileZip iterVs els
-
+           iters  = fragileZip iterVs [szE]
+           -- szE = foldl mulI one els
+           szE = G.trivToExp tr
            -- After this transformation in this pass, the output variable itself becomes a "free var":
            freebinds' = outarr1 : corefreebinds
            
        newevt <- genUniqueWith "evtNew"
        rst <- doBinds prog rest
        return $ 
-         GPUProgBind newevt [] outarrs (FreeVars []) (NewArray (foldl mulI one els)) :
+         GPUProgBind newevt [] outarrs (FreeVars []) (NewArray szE) :
          GPUProgBind evtid (newevt:evtdeps) [] (FreeVars [])
                      (Kernel iters (Lam freebinds' (doBod iterVs bod))
                                    (map (EVr . fst3) freebinds')) :
