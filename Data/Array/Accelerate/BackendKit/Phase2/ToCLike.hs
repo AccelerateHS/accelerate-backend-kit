@@ -171,28 +171,45 @@ doAE vis env ae =
           <$> (LL.Lam [(vr,ty)] <$> doBlock env' bod)
 
     -- TODO: Implement greedy fold/generate fusion RIGHT HERE:
-    Fold (Lam2 (v,t) (w,u) bod) ex _ -> do
-      let [inV'] = vis
-          vtys = flattenTy t
+    Fold  lam2 ex _     -> foldHelp (head vis) lam2 =<< (LL.Fold <$> doBlock env ex)
+    FoldSeg lam2 ex _ _ -> do let [inVs,segVs] = vis 
+                              initSB <- doBlock env ex 
+                              foldHelp inVs lam2 (LL.FoldSeg initSB (LL.Manifest segVs))
+    Fold1    {}     -> err
+    Fold1Seg {}     -> err
+    Scanl lam2 ex _ -> foldHelp (head vis) lam2 =<< (LL.Scan LL.LeftScan  <$> doBlock env ex)
+    Scanr lam2 ex _ -> foldHelp (head vis) lam2 =<< (LL.Scan LL.RightScan <$> doBlock env ex)    
+    Scanl1 {}       -> err
+    Scanr1 {}       -> err
+    Scanl' {}       -> err
+    Scanr' {}       -> err
+    Unit         {} -> err
+    Replicate    {} -> err
+    Reshape      {} -> err
+    Permute      {} -> err
+    Backpermute  {} -> err
+    Index        {} -> err
+    Map          {} -> err
+    ZipWith      {} -> err
+    Stencil      {} -> err
+    Stencil2     {} -> err
+ where
+   err = error$"ToCLike.hs/doAE: this form should be desugared by now: "++show ae
+   
+   foldHelp inVs' (Lam2 (v,t) (w,u) bod) variant = do
+      let vtys = flattenTy t
           wtys = flattenTy u
       vs' <- genUniques v (length vtys)
       ws' <- genUniques w (length wtys)
-
-      -- Fold arguments are not necessarily scalar:
-      -- let env' = insertAll (zip vs' (zip3 vtys (map (\x->[x]) vs') (repeat Nothing))) $
-      --            insertAll (zip ws' (zip3 wtys (map (\x->[x]) ws') (repeat Nothing))) $
-      --            env
       let env' = M.insert v (t,vs',Nothing) $
                  M.insert w (u,ws',Nothing) env
           args = zip vs' vtys ++ zip ws' wtys
       LL.GenReduce <$> (LL.Lam args <$> doBlock env' bod)
-                   <*> return (LL.Manifest inV')
-                   <*> (LL.Fold <$> doBlock env ex)
+                   <*> return (LL.Manifest inVs')
+                   <*> return variant
                    <*> return LL.All
 
 
--- TODO/UNFINISHED: Handle other scans and folds... and convert them.
-    _ -> error$"ToCLike.hs/doAE: cannot handle array operator:\n"++show(doc ae)
 
 doTriv :: Exp -> TrivialExp
 doTriv (EVr v)       = TrivVarref v

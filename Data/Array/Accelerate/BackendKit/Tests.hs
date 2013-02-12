@@ -30,7 +30,7 @@ module Data.Array.Accelerate.BackendKit.Tests
     p16a, p16b, p16c, p16d, p16e, p17a, p17b,
     p18a, p18b, p18c, p18d, p18e, p18f,
 
-    p20a, p20b, 
+    p20a, p20b, p20c, 
 
     -- * Reexports to make life easier:
     doc, convertToSimpleProg
@@ -142,7 +142,7 @@ otherProgs =
   go "p17a" p17a, go "p17b" p17b,
   go "p18a" p18a, go "p18b" p18b, go "p18c" p18c, go "p18d" p18d, go "p18e" p18e, go "p18f" p18f,
 
-  go "p20a" p20a ,go "p20b" p20b
+  go "p20a" p20a, go "p20b" p20b, go "p20c" p20c
   ]
 
 makeTestEntry :: forall a . (Show a, Arrays a) => String -> Acc a -> TestEntry
@@ -839,7 +839,7 @@ p20a :: Acc (Array DIM2 Float)
 p20a = let xs   = use$ fromList (Z :. (2::Int) :. (5::Int)) [1..10::Float]
            segs :: Acc (Vector Int)
            segs = use$ fromList (Z :. (2::Int)) [2,3::Int]
-       in  fold1Seg (+) xs segs
+       in  foldSeg (+) 0 xs segs
 -- should yield
 -- (1+2) (3+4+5)
 -- (6+7) (8+9+10)
@@ -850,6 +850,17 @@ p20a = let xs   = use$ fromList (Z :. (2::Int) :. (5::Int)) [1..10::Float]
 -- | The same as 20a except with an statically unknown segment size.
 p20b :: Acc (Array DIM2 Float)
 p20b = let xs   = use$ fromList (Z :. (2::Int) :. (5::Int)) [1..10::Float]
+           segs :: Acc (Vector Int)
+           segs = use$ fromList (Z :. (2::Int)) [2,3::Int]
+
+           segs2 :: Acc (Vector Int)
+           segs2 = generate (unit (index1 2) ! index0) (\ix -> segs ! ix)
+           
+       in  foldSeg (+) 0 xs segs2
+
+-- | Ditto with fold1seg.
+p20c :: Acc (Array DIM2 Float)
+p20c = let xs   = use$ fromList (Z :. (2::Int) :. (5::Int)) [1..10::Float]
            segs :: Acc (Vector Int)
            segs = use$ fromList (Z :. (2::Int)) [2,3::Int]
 

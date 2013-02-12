@@ -23,7 +23,7 @@ module Data.Array.Accelerate.BackendKit.IRs.CLike
          Direction(..), Fun(..), ReduceVariant(..), Stride(..), MGenerator(..), Generator(..),
 
          -- * Helper functions for the LLIR 
-         lookupProgBind, expFreeVars, stmtFreeVars, scalarBlockFreeVars
+         lookupProgBind, expFreeVars, stmtFreeVars, scalarBlockFreeVars, simpleBlockToExp
        )
        where
 
@@ -105,7 +105,8 @@ data Generator = Gen TrivialExp (Fun ScalarBlock)
 
 -- | A reference to /either/ a manifest (existing in memory) array, or a functional
 -- description of an array.
-data MGenerator = Manifest [Var] | NonManifest Generator
+data MGenerator = Manifest [Var] 
+                | NonManifest Generator
   deriving (Read,Show,Eq,Ord,Generic)
            
 -- | All the kinds of array ops that involve /reduction/.  All fold/scan variants
@@ -199,6 +200,13 @@ fvE ex =
  where
   fvEs = L.foldl (\ acc e -> S.union acc (fvE e)) S.empty 
 
+-- | Simple blocks are really just expressions in disguise.
+simpleBlockToExp :: ScalarBlock -> Maybe Exp
+simpleBlockToExp sb@(ScalarBlock [(v1,t)] [v2] [SSet v3 e]) =
+  if v1 == v2 && v2 == v3
+  then Just e
+  else error$"simpleBlockToExp: ScalarBlock looks corrupt: "++show sb
+simpleBlockToExp _ = Nothing
 
 -- TODO: invariant checker
 -- checkValidProg

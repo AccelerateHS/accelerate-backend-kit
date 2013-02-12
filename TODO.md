@@ -42,9 +42,17 @@ These should go into github issues
    That needs to be fixed.  
 
  * OneDimensionalize should probably introduce _size variables to go
-   long with the _shape ones.
-   
- * deadArrays should live up to its name and only do arrays.  Right
-   now it can nuke shapes.  Or at least form a rootset from shapes and
-   sizes.
+   long with the _shape ones.   
 
+ * Improve UnzipETups so that it actually unzips top level ETuple
+   expressions, avoiding the need for them to become ugly
+   ScalarBlocks.  Likewise, could add a case to ScalarBlock in
+   CLike.hs to avoid all the ugliness when it is a simple expression
+   (but that would be a redundant encoding).  Maybe better to introdue
+   helpers to deal with trivial scalar blocks.
+
+ * Improve OneDimensionalize to use maybeLet everywhere.
+
+ * (BUG) p20* was exposing a bug where a singleton ETuple would appear
+   out of OneDimensionalize.
+   
