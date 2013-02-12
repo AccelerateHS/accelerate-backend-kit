@@ -20,7 +20,7 @@ module Data.Array.Accelerate.BackendKit.IRs.CLike
          -- "Data.Array.Accelerate.SimpleAST".  Full documentation not
          -- duplicated here.
          LLProg(..), LLProgBind(..), TopLvlForm(..), ScalarBlock(..), Stmt(..), Exp(..),
-         Direction(..), Fun(..), ReduceVariant(..),
+         Direction(..), Fun(..), ReduceVariant(..), Stride(..), MGenerator(..), Generator(..),
 
          -- * Helper functions for the LLIR 
          lookupProgBind, expFreeVars, stmtFreeVars, scalarBlockFreeVars
@@ -70,19 +70,8 @@ data TopLvlForm =
     ScalarCode ScalarBlock -- A block of Scalar code binding one or more variables.
   | Cond Exp Var Var
   | Use       AccArray
-  | Generate  ScalarBlock (Fun ScalarBlock)
-
-  -- -- | FoldMap is parameterized first by a fold function and second by a map
-  -- -- function.  It takes one or more input arrays and produces one or more outputs.
-  -- -- The mapper function takes input array element(s) and produces intermediate
-  -- -- reduction value(s).  The reducer function takes two SETS (not individual) of
-  -- -- reduction values and returns one set.
-  -- | FoldMap { reducerF  :: (Fun ScalarBlock),
-  --          mapperF   :: (Fun ScalarBlock),
-  --          identityF :: ScalarBlock,
-  --          inArrsF   :: [Var],
-  --          segsF     :: (Maybe Var) } -- A possibly segmented fold.
-
+--  | Generate  ScalarBlock (Fun ScalarBlock)
+  | GenManifest Generator
 
   -- | GenReduce is both produces (or fetches) elements and combines them.  It is
   -- parameterized first by a reduce function and second by a generate function.  The
@@ -93,30 +82,42 @@ data TopLvlForm =
   -- reduction function produces values.
   | GenReduce {
       reducer    :: Fun ScalarBlock,
-      identity   :: ScalarBlock,
-      generator  :: Fun ScalarBlock,
-      dimensions :: ScalarBlock,
+--      identity   :: ScalarBlock,
+--      generator  :: Fun ScalarBlock,
+--      dimensions :: ScalarBlock,
+      generator  :: MGenerator, 
       variant    :: ReduceVariant,
-      stride     :: Exp }
-
---  | Scan (Fun ScalarBlock) Direction ScalarBlock Var   -- Var is the input array.
-                                                       -- ScalarBlock computes the initial value(s).
-    
-  -- Omitted for now: forward permute and stencils:
-  --  Permute (Fun ScalarBlock) Var (Fun ScalarBlock) Var
-  --  Error String Exp        -- Signal an error.
+      stride     :: Stride }
+  -- Omitted for now: forward permute
+  -- Omitted for now: STENCILS:
   deriving (Read,Show,Eq,Ord,Generic)
 
--- | Segmented versions include a variable which is the name of an array containing
--- the segment descriptor.
-data ReduceVariant = Fold
-                   | FoldSeg Var
-                   | Scan Direction
-                   | ScanSeg Direction Var
+-- | The 'stride' for fold and scan operations describes the size of the innermost
+-- dimension (NOT segmentation).  This is how far apart /separate/ reductions are in
+-- the row-major array.
+data Stride = All -- ^ Designates the special case where the WHOLE array is reduced (irrespective of size)
+            | Exp
+  deriving (Read,Show,Eq,Ord,Generic)
+
+-- | A Generate construct: a functional description of an array.
+data Generator = Gen TrivialExp (Fun ScalarBlock)
+  deriving (Read,Show,Eq,Ord,Generic)
+
+-- | A reference to /either/ a manifest (existing in memory) array, or a functional
+-- description of an array.
+data MGenerator = Manifest [Var] | NonManifest Generator
+  deriving (Read,Show,Eq,Ord,Generic)
+           
+-- | All the kinds of array ops that involve /reduction/.  All fold/scan variants
+-- carry an initial element (`ScalarBlock`). Segmented variants include also include
+-- an array containing the segment descriptor.
+data ReduceVariant = Fold              ScalarBlock
+                   | FoldSeg           ScalarBlock MGenerator
+                   | Scan    Direction ScalarBlock 
+                   | ScanSeg Direction ScalarBlock MGenerator
                    -- | Forward permute also takes a default array and an
                    -- index-permuting function:
-                   -- PROBLEM: it doesn't use the IDENTITY field:
---                   | Permute { permfun::Fun ScalarBlock, defaults::Var }
+                   | Permute { permfun::Fun ScalarBlock, defaults::MGenerator }
   deriving (Read,Show,Eq,Ord,Generic)
 
 data Direction = LeftScan | RightScan
@@ -212,6 +213,9 @@ instance Out a => Out (LLProgBind a)
 instance Out a => Out (Fun a)
 instance Out Direction
 instance Out ReduceVariant
+instance Out Stride
+instance Out Generator
+instance Out MGenerator
 instance Out TopLvlForm
 instance Out Exp
 instance Out ScalarBlock

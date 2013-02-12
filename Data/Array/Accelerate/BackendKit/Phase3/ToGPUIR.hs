@@ -75,6 +75,8 @@ doBinds sizeEnv evEnv (LLProgBind vartys (FreeVars fvs) toplvl : rest) = do
     Cond e v1 v2  -> return$ rebind (evs [v1,v2]) (G.Cond (doE e) v1 v2) : rst
     ScalarCode sb -> return$ rebind (evs fvs) (G.ScalarCode (doSB sb))   : rst
 
+-- FINISH ME
+{-
     Generate sb (Lam args bod) -> do
       (sbBnd, els) <- liftSB sb
       let newBnd = rebind (evs fvs) $ G.Generate els (G.Lam (map liftBind args) (doSB bod))
@@ -93,6 +95,8 @@ doBinds sizeEnv evEnv (LLProgBind vartys (FreeVars fvs) toplvl : rest) = do
                           G.variant   = variant
                         }
       return (sbBnd1 : sbBnd2 : newBnd : rst)
+
+-}
 
  where
    (nm,ty) = case vartys of -- Touch this and you make the one-output-array assumption!

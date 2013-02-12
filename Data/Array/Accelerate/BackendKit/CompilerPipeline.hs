@@ -56,10 +56,12 @@ import Data.Array.Accelerate.BackendKit.Phase2.ToCLike           (convertToCLike
 
 -- Phase 3 passes:
 ----------------------------------------
+{-
 import Data.Array.Accelerate.BackendKit.Phase3.KernFreeVars      (kernFreeVars)
 import Data.Array.Accelerate.BackendKit.Phase3.ToGPUIR           (convertToGPUIR)
 import Data.Array.Accelerate.BackendKit.Phase3.DesugarGenerate   (desugarGenerate)
 import Data.Array.Accelerate.BackendKit.Phase3.DesugarFoldScan   (desugarFoldScan)
+-}
 
 --------------------------------------------------------------------------------
 -- Exposed entrypoints for this module:
@@ -67,12 +69,14 @@ import Data.Array.Accelerate.BackendKit.Phase3.DesugarFoldScan   (desugarFoldSca
 
 -- | The final step: Lower to a GPU-targetting language.
 phase3 :: C.LLProg () -> G.GPUProg (FreeVars)
-phase3 prog = 
+phase3 prog =
+  error "restore phase3 " {-
   runPass    "desugarGenerate"   desugarGenerate   $     -- (freevars)
   runPass    "desugarFoldScan"   desugarFoldScan   $     -- (freevars)
   runPass    "convertToGPUIR"    convertToGPUIR    $     -- (freevars)
   runPass    "kernFreeVars"      kernFreeVars      $     -- (freevars)
   prog
+-}
   
 -- | The bulk of the compilation process -- eliminate unnecessary
 -- forms and lower the language.

@@ -22,9 +22,11 @@ kernFreeVars prog@LLProg{progBinds} =
 
 doBind :: LLProgBind () -> LLProgBind (FreeVars)
 -- This pass measures KERNEL free vars, these scalar expressions don't count:
-doBind (LLProgBind vrs d op) = LLProgBind vrs (FreeVars (S.toList (doAE op))) op
+doBind (LLProgBind vrs () op) = LLProgBind vrs (FreeVars (S.toList (doAE op))) op
 
--- Update a usemap with new usages found in an AExp.
+-- | Free variables for ONLY the kernel of an AE:
+--
+-- FIXME: This is screwed up by multi-kernel forms like Permute.
 doAE :: LL.TopLvlForm -> S.Set SA.Var
 doAE ae =
   case ae of
@@ -33,22 +35,28 @@ doAE ae =
     LL.ScalarCode blk   -> doBlk blk
     -- The free vars for a generate binding refer to the body of the
     -- Generate, NOT the size expression.
-    LL.Generate _ (Lam [(v,_)] bod)       -> S.delete v $ doBlk bod
+    LL.GenManifest gen  -> doGenerator gen
 
     -- FIXME: Need a better system here.
     -- We union the freevars in BOTH the reducer and the generator:
-    LL.GenReduce { reducer= Lam binds1 bod1, generator= Lam binds2 bod2 } -> 
-      let s1 = doBlk bod1
-          s2 = doBlk bod2 in
-      S.difference (S.union s1 s2)
-       (S.fromList$ L.map fst binds1 ++ L.map fst binds2)
+    LL.GenReduce { reducer= Lam binds1 bod1, generator } ->
+
+      -- TEMPORARY: At this pass we currently assume that all GenReduce args are MANIFEST:
+      case generator of
+        Manifest inVs  -> 
+         let s1 = doBlk bod1 in
+   --          s2 = doBlk bod2 in
+         S.difference s1 -- (S.union s1 s2)
+          (S.fromList$ L.map fst binds1) -- ++ L.map fst binds2)
       
     -- This one isn't a good fit... it has TWO lambdas:  
-    -- Permute (Lam2 (x,_) (y,_) bod1) _ (Lam1 (v,_) bod2) _ -> S.union 
-    --                                                          (S.delete v $ doE bod2)
-    --                                                          (S.delete x $ S.delete y $ doE bod1)
-    -- Stencil (Lam1 (v,_) bod) _ _            -> S.delete v $ doE bod
-    -- Stencil2 (Lam2 (x,_) (y,_) bod) _ _ _ _ -> S.delete x $ S.delete y $ doE bod
-    _ -> error$"KernelFreeVars.hs: Misformed TopLvlForm: "++show ae
- where 
-  doBlk  = LL.scalarBlockFreeVars
+    -- Permute (Lam2 (x,_) (y,_) bod1) _ (Lam1 (v,_) bod2) _ 
+
+
+doBlk :: ScalarBlock -> Set SA.Var
+doBlk  = LL.scalarBlockFreeVars
+
+doGenerator :: Generator -> Set SA.Var
+doGenerator (Gen _ (Lam args bod)) = 
+      S.difference (doBlk bod)
+                   (S.fromList$ L.map fst args)
