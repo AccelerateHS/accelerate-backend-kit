@@ -318,7 +318,9 @@ data OtherPrim = Ord | Chr | BoolToInt | FromIntegral
 -- | This is a table of primitive arities.
 primArity :: Prim -> Int 
 -- Note: this would be safer with a normal case expression, but would be rather long:
-primArity p = mp M.! p
+primArity p = case M.lookup p mp of
+                Nothing -> error$"SimpleAST.hs/primArity: prim was missing from table: "++show p
+                Just x  -> x
  where 
   mp = M.fromList $ 
    zip binaries (repeat 2) ++
@@ -769,7 +771,10 @@ typecheckProg prog@Prog{progBinds, progResults, progType } =
     mismatchErr "Result type" resTys expectedTys
     else Nothing -- FINISHME
   where
-    resTys      = map (env M.!) progResults
+    resTys      = map envlkp progResults
+    envlkp vr   = case M.lookup vr env of
+                    Nothing -> error$"SimpleAcc.hs/typeCheckProg: no binding for progResult: "++show vr
+                    Just x  -> x 
     expectedTys = flattenTy progType
     env         = progToEnv prog
 
