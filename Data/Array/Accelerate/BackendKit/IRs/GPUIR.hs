@@ -13,7 +13,8 @@ module Data.Array.Accelerate.BackendKit.IRs.GPUIR
 
          -- * Helper functions for the GPUIR
          lookupProgBind, expFreeVars, stmtFreeVars, scalarBlockFreeVars, trivToExp,
-
+         simpleBlockToExp, expsToBlock,
+         
          -- * Helpers for constructing bits of AST syntax while incorporating small optimizations.
          addI, mulI, quotI, remI, maxI, minI, 
        )
@@ -25,6 +26,7 @@ import           Data.List as L
 import           Prelude as P
 import           Text.PrettyPrint.GenericPretty (Out, Generic)
 
+import           Data.Array.Accelerate.BackendKit.Utils.Helpers (GensymM, genUnique)
 import           Data.Array.Accelerate.BackendKit.IRs.Metadata (Stride(..))
 import           Data.Array.Accelerate.BackendKit.IRs.CLike (Direction(..), ReduceVariant(..),
                                                              MGenerator(..), Generator(..))
@@ -108,7 +110,7 @@ data TopLvlForm =
   -- | The same as in CLike.hs, see docs there:
   | GenReduce {
       reducer    :: Fun ScalarBlock,
-      generator  :: MGenerator ScalarBlock, 
+      generator  :: MGenerator (Fun ScalarBlock), 
       variant    :: ReduceVariant Fun ScalarBlock,
       stride     :: Stride Exp }
         
@@ -239,6 +241,28 @@ fst3 (a,_,_) = a
 -- TODO: invariant checker
 -- checkValidProg
 
+--------------------------------------------------------------------------------
+-- <DUPLICATED CODE FROM CLike.hs>
+
+-- | Simple blocks are really just expressions in disguise.
+simpleBlockToExp :: ScalarBlock -> Maybe Exp
+simpleBlockToExp sb@(ScalarBlock [(v1,Default,t)] [v2] [SSet v3 e]) =
+  if v1 == v2 && v2 == v3
+  then Just e
+  else error$"simpleBlockToExp: ScalarBlock looks corrupt: "++show sb
+simpleBlockToExp _ = Nothing
+
+-- | Take any number of Exps (with types) and package them as a `ScalarBlock`.
+expsToBlock :: [(Exp,Type)] -> GensymM ScalarBlock
+expsToBlock binds = do
+  -- u <- genUnique
+  -- return $ ScalarBlock [(u,ty)] [u] [SSet u ex]
+  let (exs,tys) = unzip binds
+  us <- sequence$ replicate (length binds) genUnique
+  return $ ScalarBlock (zip3 us (repeat Default) tys) us
+                       (zipWith SSet us exs)
+
+-- </DUPLICATED CODE FROM CLike.hs>
 --------------------------------------------------------------------------------
 
 -- Convenient integer operations

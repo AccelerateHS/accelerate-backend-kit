@@ -24,13 +24,16 @@ module Data.Array.Accelerate.BackendKit.IRs.CLike
          Direction(..), Fun(..), ReduceVariant(..), Stride(..), MGenerator(..), Generator(..),
 
          -- * Helper functions for the LLIR 
-         lookupProgBind, expFreeVars, stmtFreeVars, scalarBlockFreeVars, simpleBlockToExp
+         lookupProgBind, expFreeVars, stmtFreeVars, scalarBlockFreeVars,
+         simpleBlockToExp, expsToBlock
        )
        where
 
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as SA
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Var,Type,Prim,AccArray,TrivialExp)
 import           Data.Array.Accelerate.BackendKit.IRs.Metadata (Stride(..))
+import           Data.Array.Accelerate.BackendKit.Utils.Helpers (GensymM, genUnique)
+
 import           Text.PrettyPrint.GenericPretty (Out, Generic)
 import qualified Data.Set  as S
 import qualified Data.Map  as M
@@ -84,7 +87,7 @@ data TopLvlForm =
   -- reduction function produces values.
   | GenReduce {
       reducer    :: Fun ScalarBlock,
-      generator  :: MGenerator ScalarBlock, 
+      generator  :: MGenerator (Fun ScalarBlock), 
       variant    :: ReduceVariant Fun ScalarBlock,
       stride     :: Stride Exp }
   -- Omitted for now: STENCILS:
@@ -96,8 +99,8 @@ data Generator fun = Gen TrivialExp fun
 
 -- | A reference to /either/ a manifest (existing in memory) array, or a functional
 -- description of an array.
-data MGenerator a = Manifest [Var] 
-                  | NonManifest (Generator a)
+data MGenerator fn = Manifest [Var] 
+                   | NonManifest (Generator fn)
   deriving (Read,Show,Eq,Ord,Generic)
            
 -- | All the kinds of array ops that involve /reduction/.  All fold/scan variants
@@ -107,10 +110,9 @@ data ReduceVariant fn sb =
     Fold              sb
   | FoldSeg           sb (MGenerator (fn sb))
   | Scan    Direction sb 
-  | ScanSeg Direction sb (MGenerator (fn sb))
     -- | Forward permute also takes a default array and an
     -- index-permuting function:
-  | Permute { permfun::Fun sb, defaults::MGenerator (fn sb) }
+  | Permute { permfun:: fn sb, defaults::MGenerator (fn sb) }
   deriving (Read,Show,Eq,Ord,Generic)
 
 data Direction = LeftScan | RightScan
@@ -199,6 +201,16 @@ simpleBlockToExp sb@(ScalarBlock [(v1,t)] [v2] [SSet v3 e]) =
   then Just e
   else error$"simpleBlockToExp: ScalarBlock looks corrupt: "++show sb
 simpleBlockToExp _ = Nothing
+
+-- | Take any number of Exps (with types) and package them as a `ScalarBlock`.
+expsToBlock :: [(Exp,Type)] -> GensymM ScalarBlock
+expsToBlock binds = do
+  -- u <- genUnique
+  -- return $ ScalarBlock [(u,ty)] [u] [SSet u ex]
+  let (exs,tys) = unzip binds
+  us <- sequence$ replicate (length binds) genUnique
+  return $ ScalarBlock (zip us tys) us (zipWith SSet us exs)
+
 
 -- TODO: invariant checker
 -- checkValidProg

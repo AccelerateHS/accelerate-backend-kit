@@ -48,7 +48,9 @@ doAE ae =
    --          s2 = doBlk bod2 in
          S.difference s1 -- (S.union s1 s2)
           (S.fromList$ L.map fst binds1) -- ++ L.map fst binds2)
-      
+
+        NonManifest _  -> error "KernFreeVars.hs: FIXME - not yet supporting NonManifest generates in GenReduce"
+
     -- This one isn't a good fit... it has TWO lambdas:  
     -- Permute (Lam2 (x,_) (y,_) bod1) _ (Lam1 (v,_) bod2) _ 
 

@@ -1,6 +1,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ParallelListComp #-}
+{-# LANGUAGE TupleSections #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 -- | This pass does the conversion to an abstract GPU program.  That
@@ -17,6 +18,7 @@ import           Control.Applicative   ((<$>))
 import           Control.Monad.State.Strict (runState)
 import qualified Data.Map                        as M
 import qualified Data.Set                        as S
+import           Text.PrettyPrint.GenericPretty (Out(doc))
 
 ----------------------------------------------------------------------------------------------------
 
@@ -57,6 +59,7 @@ doBinds sizeEnv evEnv (LLProgBind vartys (FreeVars fvs) toplvl : rest) = do
 
   let -- shared code for cases below:
       -- Create a new progbind that lifts out a scalarblock:
+      liftSB :: ScalarBlock -> GensymM (G.GPUProgBind FreeVars, [S.Var])
       liftSB sb = do
          let (ScalarBlock bnds rets _) = sb
              retTys = map snd $ filter (\ (v,_) -> elem v rets) bnds
@@ -68,35 +71,51 @@ doBinds sizeEnv evEnv (LLProgBind vartys (FreeVars fvs) toplvl : rest) = do
                        G.outarrs = [(v, topLvlAddrSpc t, t) | t <- retTys | v <- newVs ], 
                        G.decor   = defaultDec,
                        G.op      = G.ScalarCode (doSB sb) }
-         return (sbBnd, map G.EVr newVs)
+         return (sbBnd, newVs)
 
+      goSB sb = do (pb,vrs) <- liftSB sb
+                   sb' <- G.expsToBlock (zip (map G.EVr vrs)
+                                             (error "need vr types..."))
+                   return (pb,sb')
+  
+      -- May have to handle scalar blocks and thus return new ProgBinds:
+      doVariant ::                              ReduceVariant Fun ScalarBlock ->
+                   GensymM ([G.GPUProgBind FreeVars], ReduceVariant G.Fun G.ScalarBlock)
+      doVariant rvar =
+        case rvar of
+          Fold sb -> do (pb,sb') <- goSB sb
+                        return ([pb], Fold sb')
+          FoldSeg sb gen2  -> do (pb,sb') <- goSB sb
+                                 return ([pb], FoldSeg sb' (doMGen gen2))
+          Scan dir sb      -> do (pb,sb') <- goSB sb
+                                 return ([pb], Scan dir sb')
+          Permute lam mgen -> return ([], Permute (doLam lam) (doMGen mgen))
+  
   case toplvl of
     Use arr       -> return$ rebind [] (G.Use arr)                       : rst
     Cond e v1 v2  -> return$ rebind (evs [v1,v2]) (G.Cond (doE e) v1 v2) : rst
     ScalarCode sb -> return$ rebind (evs fvs) (G.ScalarCode (doSB sb))   : rst
 
 -- FINISH ME
-    GenManifest (Gen tr (Lam args bod)) -> do
+    GenManifest gen -> do
       -- (sbBnd, els) <- liftSB sb -- Easier now that it's not a full ScalarBlock
-      let newBnd = rebind (evs fvs) $ G.GenManifest (G.Gen tr (G.Lam (map liftBind args) (doSB bod)))
+      let newBnd = rebind (evs fvs) $
+                    G.GenManifest (doGen gen)
       -- return (sbBnd : newBnd : rst)
       return (newBnd : rst)
-{-    
-    GenReduce { reducer=Lam rvs rbod, identity,
-                generator=Lam gvs gbod, dimensions, variant } -> do
-      (sbBnd1, idents) <- liftSB identity 
-      (sbBnd2, dims)   <- liftSB dimensions
+
+    GenReduce { reducer, generator, variant, stride } -> do
+      let gen' = doMGen generator
+      (sbs, var') <- doVariant variant 
       let newBnd = 
            rebind (evs fvs) $
-            G.GenReduce { G.reducer   = G.Lam (map liftBind rvs) (doSB rbod),
-                          G.identity  = idents,
-                          G.generator = G.Lam (map liftBind gvs) (doSB gbod),
-                          G.dimensions= dims,
-                          G.variant   = variant
+            G.GenReduce { G.reducer   = doLam reducer,
+                          G.generator = gen',
+                          G.variant   = var'
                         }
-      return (sbBnd1 : sbBnd2 : newBnd : rst)
+      return (sbs ++ newBnd : rst)
 
--}
+    _ -> error$"ToGPUIR.hs: Incomplete, must handle top level form:\n "++show(doc toplvl)
 
  where
    (nm,ty) = case vartys of -- Touch this and you make the one-output-array assumption!
@@ -106,6 +125,12 @@ doBinds sizeEnv evEnv (LLProgBind vartys (FreeVars fvs) toplvl : rest) = do
    -- Convert variable references to event ids:
    evs = map (evEnv M.!)
    genEvt = genUniqueWith "evt"
+
+   doMGen mgen = case mgen of
+                   Manifest vs     -> Manifest vs
+                   NonManifest gen -> NonManifest $ doGen gen
+   doGen (Gen tr lam) = G.Gen tr (doLam lam)
+   doLam (Lam args bod) = G.Lam (map liftBind args) (doSB bod)
 
 
 doSB :: ScalarBlock -> G.ScalarBlock
