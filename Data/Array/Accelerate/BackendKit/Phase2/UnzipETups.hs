@@ -13,6 +13,8 @@ module Data.Array.Accelerate.BackendKit.Phase2.UnzipETups (unzipETups) where
 import Control.Monad.State.Strict
 import Control.Applicative ((<$>),(<*>))
 import qualified Data.Map              as M
+import Debug.Trace
+import Text.PrettyPrint.GenericPretty (Out(doc))
 
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import Data.Array.Accelerate.BackendKit.Utils.Helpers (GensymM, genUnique, genUniqueWith, mkPrj, mapMAEWithGEnv, isTupleTy)
@@ -39,31 +41,43 @@ type Env = M.Map Var (Type,Maybe [Var])
 --        (i.e. in RHS of Let).  In this case the ELet IS still allowed to 
 --        bind a tuple variable, and specific (ETupProject _ 1 (EVr _)) forms
 --        will refer to its components.
---        (TOP-LEVEL scalar bindings are likewise allowed to remain tuples.)
 --    (4) ETuple may occur directly as an argument to EIndexScalar.
+--        (But NOT if arrays have been OneDimensionalize'd)
 --    (5) Unit values, ETuple [], persist.
+--
+--    (RRN) What about detupling the args to Lam's!!? [2013.02.11]
 --
 --  ALL ETupProject's after this pass must have length=1.
 --
---  The reason for the first two bulets that we are not yet
---  /committing/ to having an unzipped array representation in the
---  backend.  The language of this pass's output represents the last
---  point at which we could employ an array-of-structs backend.  The
---  scalar tuples are gone *within* kernels, but the association
---  between the components of an array-of-structs is still there.
---
---  While this pass cannot actually split top-level bindings, it lays the
---  groundwork by producing names for the unzipped components and returning
---  a map from old names to unzipped names (SubBinds).  It also does the
---  work of computing the sizes for array bindings that would be split in
---  such a way.  (Yet this pass does not COMMIT to using an unzipped
---  representation of arrays.)
+--  The reason for the first bullet (4) is that we are not yet /committing/
+--  to having an unzipped array representation in the backend.  The
+--  language of this pass's output represents the last point at which we
+--  could employ an array-of-structs backend.  The scalar tuples are gone
+--  *within* kernels, but the association between the components of an
+--  array-of-structs is still there.  (Yet this pass lays the groundwork
+--  for unzipArr by producing names for the unzipped components and
+--  returning them in the SubBinds decorator -- the same way unzipped
+--  top-level scalar binds are stored.  This pass also does the work of
+--  computing the sizes for [new] array bindings.)
+-- 
+--  While EIndexScalar still refers to zipped array variables, all
+--  references to top-level scalar variables are ELIMINATED.  They are
+--  redirected to the finer grained detupled names stored in SubBinds.  The
+--  Prog types limits our ability to encode this in the AST, so we destroy
+--  the normal ProgBind names to ensure that future passes use the SubBinds.
 unzipETups :: Prog (a,ArraySizeEstimate) -> Prog (SubBinds,(a,ArraySizeEstimate))
-unzipETups prog@Prog{progBinds, uniqueCounter, typeEnv} = prog'
+unzipETups prog@Prog{progBinds, uniqueCounter, typeEnv} =
+    trace ("NEXTENV "++show (doc nextenv)) $ 
+    prog'
  where
   prog' = prog{ progBinds= map addSubBinds binds, 
-                uniqueCounter= newCounter2 } 
-  addSubBinds (ProgBind v t dec@(_,sz) op) = ProgBind v t (newDecor v t sz,dec) op  
+                uniqueCounter= newCounter2 }
+
+  -- This adds the sub-binds AND nukes the scalar vars:
+  addSubBinds (ProgBind v t dec@(_,sz) op) =
+    let v' = if isArrayType t then v else nukedVar in
+    ProgBind v' t (newDecor v t sz,dec) op
+  
   -- Compute the *future* detupled names for top-level binds in the next pass:
   envM :: GensymM (M.Map Var [Var])
   envM = M.fromList <$> mapM fn (M.toList typeEnv)
@@ -71,37 +85,49 @@ unzipETups prog@Prog{progBinds, uniqueCounter, typeEnv} = prog'
   fn (vr,ty) | countVals ty == 1 = return (vr,[vr])
              | otherwise = do tmps <- sequence$ replicate (countVals ty) (genUniqueWith$ show vr)
                               return (vr,tmps)
-  -- nextenv has an entry for ALL top-level variables:
+  -- nextenv has an entry for ALL top-level variables (pre-detupling):
   nextenv :: M.Map Var [Var]
   (nextenv, newCounter1)  = runState envM uniqueCounter
 
-  -- From the point of view of the traversals into the AST, NOTHING at top level is
-  -- unzippable during this pass:
-  topenv = M.map (\ ty -> (ty,Nothing)) typeEnv  
+  lkup vo = 
+    case M.lookup vo nextenv of
+      Nothing -> error $"UnzipETups.hs: could not find \""++show vo++"\" in:\n"++show nextenv
+      Just vos -> vos
+        
+  -- From the perspective of THIS pass, only the top-level scalar binds are detupled:
+  topenv = M.mapWithKey mp typeEnv
+  mp _  ty@(TArray _ _) = (ty,Nothing)
+  mp vr ty              = (ty,Just$ lkup vr)
   (binds,newCounter2) = runState (doBinds topenv progBinds) newCounter1
 
   -- Compute the new (SubBinds) decorator:
   newDecor vo (TArray _ _) sz =
-    let vos = nextenv M.! vo in
+    let vos = lkup vo in
     -- [safe] assumption: arrays resulting from unzipping will have the same size.
     SubBinds vos $ Just $
     case sz of
-      UnknownSize    -> TrivVarref$ sizeName vo
-      KnownSize [sz] -> TrivConst sz
-      KnownSize ls -> error$"UnzipETups.hs: arrays should be one dimensional, not: "++show ls
-  newDecor vo _ _ = SubBinds (nextenv M.! vo) Nothing
+      UnknownSize   -> TrivVarref$ sizeName vo
+      KnownSize [s] -> TrivConst s
+      KnownSize ls  -> error$"UnzipETups.hs: arrays should be one dimensional, not: "++show ls
+  newDecor vo _ _ = SubBinds (lkup vo) Nothing
 
+
+nukedVar :: Var
+nukedVar = var ""
 
 doBinds :: Env -> [ProgBind t] -> GensymM [ProgBind (t)]
 doBinds env = mapM (doBind env)
 
 doBind :: Env -> ProgBind a -> GensymM (ProgBind (a))
+
+-- Don't nuke the scalar vars YET:
 doBind env (ProgBind v t dec (Left ex))  = ProgBind v t (dec) . Left  <$>
    doSpine env ex
 
 doBind env (ProgBind v t dec (Right ae)) = ProgBind v t (dec) . Right <$>
    -- The following MUST be *Nothing* because we have no way to detuple
    -- the input to kernels (i.e. array elements) at this point.
+   -- (The environment is only extended by mapMAEWithGEnv at one point: Lam1/Lam2 kernel args.)
    mapMAEWithGEnv env (\ _ ty -> (ty,Nothing))
                   doSpine ae
 
@@ -236,3 +262,7 @@ fragileZip3 a b c = loop a b c
     loop [] [] []                = Just []
     loop (h1:t1) (h2:t2) (h3:t3) = ((h1,h2,h3) :) <$> loop t1 t2 t3
     loop _ _ _                   = Nothing
+
+isArrayType :: Type -> Bool
+isArrayType (TArray _ _) = True
+isArrayType _ = False

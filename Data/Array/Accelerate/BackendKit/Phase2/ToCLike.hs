@@ -16,10 +16,11 @@ import           Control.Applicative   ((<$>),(<*>))
 import           Control.Monad.State.Strict
 import           Text.PrettyPrint.GenericPretty (Out(doc))
 
-import           Data.Array.Accelerate.BackendKit.Utils.Helpers (genUnique, genUniqueWith, GensymM, isTupleTy)
+import           Data.Array.Accelerate.BackendKit.Utils.Helpers (genUnique, genUniqueWith, GensymM, isTupleTy, (#))
 import qualified Data.Array.Accelerate.BackendKit.IRs.CLike as LL
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
-import           Data.Array.Accelerate.BackendKit.IRs.Metadata (SubBinds(..), FoldStrides(..), ArraySizeEstimate(..))
+import           Data.Array.Accelerate.BackendKit.IRs.Metadata
+                   (OpInputs(..),SubBinds(..), FoldStrides(..), ArraySizeEstimate(..))
 
 import Debug.Trace (trace)
 
@@ -32,15 +33,21 @@ type Cont = [LL.Exp] -> [LL.Stmt]
 --   too.  For this it carries an environment that maps tupled variables to
 --   their detupled subcomponents.  (Note that the same mechanism can also be
 --   reused simple to alpha rename vars; i.e. a singleton [Var] list.)
-type Env = M.Map Var (Type, Maybe [Var])
+--
+--   The Env tracks size as well (for array binds only).  Note that TOP LEVEL
+--   bindings have ALREADY been split, so they will appear in this environment in
+--   their detupled form.  The [Var] component will only be non-singleton for
+--   non-top-level scalar bindings that are being detupled *by this pass*.
+type Env = M.Map Var (Type, [Var], Maybe TrivialExp)
+-- type Env = M.Map Var (Type, Maybe TrivialExp)
 
 ----------------------------------------------------------------------------------------------------
 
 -- | This pass takes a SimpleAST IR which already follows a number of
 --   conventions that make it directly convertable to the lower level
 --   IR, and it does the final conversion.
-convertToCLike :: Prog (SubBinds,(FoldStrides Exp, ArraySizeEstimate)) -> LL.LLProg ()
-convertToCLike Prog{progBinds,progResults,progType,uniqueCounter} =
+convertToCLike :: Prog (OpInputs,(SubBinds,(FoldStrides Exp, ArraySizeEstimate))) -> LL.LLProg ()
+convertToCLike Prog{progBinds,progResults,progType,uniqueCounter,typeEnv} =
   LL.LLProg
   {
     LL.progBinds    = map (fmap (const ())) binds, 
@@ -50,13 +57,27 @@ convertToCLike Prog{progBinds,progResults,progType,uniqueCounter} =
     LL.sizeEnv      = sizeEnv
   }
   where
-    ((finalEnv,binds),newCounter) = runState (doBinds M.empty progBinds) uniqueCounter
+    ((finalEnv,binds),newCounter) = runState (doBinds initEnv progBinds) uniqueCounter
 
+    -- TODO: include both tupled and detupled binds here?
+    -- initEnv = M.fromList $ L.map
+    --   (\ (ProgBind vo ty (SubBinds vos szT,_) _) -> (vo,(ty,vos,szT)))
+    --   progBinds
+
+    -- Bindings for (detupled) scalar and array variables:
+    initEnv :: Env
+    -- initEnv = M.mapWithKey (\ v ty -> (ty, fmap snd$ M.lookup v sizeEnv)) typeEnv
+    initEnv = M.fromList $
+              L.map (\(v,sz) -> (v,(typeEnv#v, [v], sz))) $
+              -- All top-level (detupled) bindings, throwing out any tupled ones:
+              L.concatMap (\(ProgBind _ _ (_,(SubBinds vrs sz,_)) _) -> map (,sz) vrs)
+                          progBinds
+
+    -- Collect the size environment for the detupled bindings (easy):
     sizeEnv :: M.Map Var (Type, TrivialExp)
     sizeEnv = L.foldl red M.empty progBinds
-
     -- FIXME: Scanl' breaks the assumption about TArray for array ops:
-    red acc (ProgBind _ (TArray _ elt) (SubBinds vrs szE,_) _) =
+    red acc (ProgBind _ (TArray _ elt) (_,(SubBinds vrs szE,_)) _) =
       let Just triv = szE in
       M.union (M.fromList$ zip vrs$ zip (flattenTypes elt) (repeat triv))
               acc
@@ -95,8 +116,9 @@ doStmts k env ex =
       -- Introduce a new temporaries and a continuation for the non-tail conditional:
       (binds,cont) <- lift$ makeResultWriterCont ty
       tell$ binds
-      let env' = M.insert vr (ty,subcomps) env
-          subcomps = Just$ L.map fst binds
+      
+      let env' = M.insert vr (ty,subcomps,Nothing) env
+          subcomps = L.map fst binds
           -- subcomps = if isTupleTy ty
           --            then Just$ L.map fst binds
           --            else Nothing 
@@ -113,7 +135,7 @@ doStmts k env ex =
 
     ELet (vr,ty,rhs) bod ->
       do tell [(vr,ty)]
-         let env' = M.insert vr (ty,Nothing) env
+         let env' = M.insert vr (ty,[vr],Nothing) env
          rest <- doStmts k env' bod
          return (LL.SSet vr (doE env rhs) : rest)
 
@@ -129,20 +151,29 @@ doStmts k env ex =
 doBinds :: Env -> [ProgBind a] -> GensymM (Env, [LL.LLProgBind a])
 doBinds env [] = return (env,[])
 
--- Reuse the tuple-unzipping machinery to also do copy propagation:
+{-
+-- Reuse the tuple-unzipping machinery to also do ARRAY copy propagation:
 doBinds env (ProgBind vr ty _ (Right (Vr vr2)) : rest) = do
   when (isTupleTy ty) $
-    error$ "ToCLike.hs/doBinds: array of tuples should have been desugared long ago: "++show(vr,ty)
-  doBinds (M.insert vr (ty,Just [vr2]) env) rest
+    error$ "ToCLike.hs/doBinds: array tuples should have been desugared long ago: "++show(vr,ty)
+
+-- TODO: we could do the copy-prop at both levels here I suppose...
+  doBinds (M.insert vr (ty,[vr2],error"fINISHME") env) rest
+-}
 
 -- Top-level scalar-tuple binding:  This is the Detupling case.
 doBinds env (ProgBind vr ty decor (Left rhs) : rest)
   | isTupleTy ty = do 
     blk@(LL.ScalarBlock _ results _) <- doBlock env rhs
     let componentTys = flattenTypes ty
+
+        
     -- We split the top-level var into similarly named fresh variables:
-    fresh <- replicateM (length componentTys) $ genUniqueWith (show vr)
-    let env' = M.insert vr (ty, Just fresh) env
+    -- fresh <- replicateM (length componentTys) $ genUniqueWith (show vr)
+
+    let env' = error "ToCLike.hs FINISHME - use decor for names"
+               -- M.insert vr (ty, [vr], Just fresh) env
+        fresh = error "FINISHME -fresh"
     (env'',rest') <- doBinds env' rest
     return (env'', LL.LLProgBind (zip fresh componentTys)
                                  decor (LL.ScalarCode blk) : rest')
@@ -151,7 +182,10 @@ doBinds env (ProgBind vr ty decor rhs : rest) = do
   rhs' <- case rhs of
             Left  ex -> LL.ScalarCode <$> doBlock env ex
             Right ae -> doAE env ae
-  (env',rest') <- doBinds (M.insert vr (ty,Nothing) env) rest
+
+  error "ToCLike.hs FINISHME2 - use decor for names"
+            
+  (env',rest') <- doBinds (M.insert vr (ty,[vr],error"SIZE") env) rest
 
   -- TEMPORARY: We don't yet handle array-of-tuples.  When we do, the (vr,ty) list
   -- will not necessarily be a singleton:
@@ -164,12 +198,16 @@ doAE env ae =
     Cond a b c    -> return$ LL.Cond (doE env a) b c
     Use  arr      -> return$ LL.Use  arr
     Generate ex (Lam1 (vr,ty) bod) ->
+      error "ToCLike.hs FINISHME3 - need to detuple Generate args..." $
       LL.Generate <$> doBlock env ex
                   <*> (LL.Lam [(vr,ty)] <$> doBlock env' bod)
-      where env' = M.insert vr (ty,Nothing) env
+      where env' = M.insert vr (ty,[vr],error"SIZE") env
 
     -- TODO: Implement greedy fold/generate fusion RIGHT HERE:
     Fold (Lam2 (v,t) (w,u) bod) ex inV -> do
+
+      error "ToCLike.hs FINISHME4 - need to detuple Fold args..." 
+      
       let inV' = copyProp env inV
       ix <- genUniqueWith "ix"
       -- TODO: handle the unzipping of arguments:
@@ -181,8 +219,8 @@ doAE env ae =
         <*> return LL.Fold
         <*> return (error "NEED STRIDE")
 
-      where env' = M.insert v (t,Nothing) $
-                   M.insert w (u,Nothing) env
+      where env' = M.insert v (t,[v],Nothing) $
+                   M.insert w (u,[w],Nothing) env
 
 -- TODO/UNFINISHED: Handle other scans and folds... and convert them.
     _ -> error$"ToCLike.hs/doAE: cannot handle array operator:\n"++show(doc ae)
@@ -193,14 +231,14 @@ doE :: Env -> Exp -> LL.Exp
 doE env ex =
   case ex of
     EVr vr           -> case M.lookup vr env of
-                         Just (_,Nothing) -> LL.EVr vr
-                         Just (_,Just [vr2])   -> LL.EVr vr2
-                         Just (_,Just ls) -> error$"ToCLike.hs/doE: uncaught raw reference to tuple-bound variable: "
+--                         Just (_,_,Nothing)    -> LL.EVr vr
+                         Just (_,[vr2],_) -> LL.EVr vr2
+                         Just (_, ls , _) -> error$"ToCLike.hs/doE: uncaught raw reference to tuple-bound variable: "
                                                   ++show vr++" subcomponents "++show ls
                          Nothing -> error$"ToCLike.hs/doE: internal error, var not in env: "++show vr
     ETupProject ind 1 (EVr vr) ->
       case M.lookup vr env of
-        Just (_,Just ls) -> LL.EVr$ (reverse ls) !! ind
+        Just (_,ls,_) -> LL.EVr$ (reverse ls) !! ind
         oth -> error$"ToCLike.hs/doE: internal error, tuple project of field "++show ind++
                      " of var: "++show vr++", env binding: "++show oth
 
@@ -232,8 +270,9 @@ flattenTypes oth         = [oth]
 sing :: t -> [t]
 sing x = [x]
 
-unliftEnv :: M.Map k (b, t) -> M.Map k b
-unliftEnv = M.map (\ (t,_) -> t)
+-- Lift our extended environment down to a basic type env
+unliftEnv :: M.Map Var (Type, a,b) -> M.Map Var Type
+unliftEnv = M.map (\ (t,_,_) -> t)
 
 
 -- Do copy propagation for any array-level references:
@@ -242,12 +281,12 @@ copyProp env vr1 =
   case M.lookup vr1 env of
     -- Array variables have already been detupled, so if there is any entry in
     -- this Env at all, it must be an alias:
-    Just (_, Just [vr2]) -> copyProp env vr2
-    Just (_, Just ls)    -> error$"ToCLike.hs/copyProp: should not see array variable bound to: "++show ls
-    Just _               -> vr1
-    Nothing              -> error$"ToCLike.hs/copyProp: internal error, variable "++show vr1++" unbound in environment: "++show (M.keys env)
+    Just (_, [vr2], _) -> copyProp env vr2
+    Just (_,  ls  , _) -> error$"ToCLike.hs/copyProp: should not see array variable bound to: "++show ls
+--    Just _             -> vr1
+    Nothing            -> error$"ToCLike.hs/copyProp: internal error, variable "++show vr1++" unbound in environment: "++show (M.keys env)
 
-   
+
 ----------------------------------------------------------------------------------------------------
 -- Unit testing:
 
@@ -278,3 +317,4 @@ flattenConst c        = [c]
 mkTup :: [Const] -> Const
 mkTup [x] = x
 mkTup ls  = Tup ls
+

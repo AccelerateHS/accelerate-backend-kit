@@ -8,7 +8,7 @@ module Data.Array.Accelerate.BackendKit.IRs.Metadata
        (
          -- * Metadata types used to annotate ASTs during compilation.
          ArraySizeEstimate(..), Uses(..), FreeVars(..),
-         FoldStrides(FoldStrides), SubBinds(..)
+         FoldStrides(FoldStrides), SubBinds(..), OpInputs(..)
          )
        where
 
@@ -63,3 +63,13 @@ data SubBinds = SubBinds { subnames:: [Var],
                            arrsize :: Maybe TrivialExp }
   deriving (Read, Show, Eq, Generic)
 instance Out SubBinds
+
+-- | Working around the limitations of the SimpleAcc `Prog` type.  At one point in
+-- the compiler, this decorator is used to encode the (unzipped) arguments to each
+-- array operator.  The encoding is a list-of-lists because some array operators
+-- (e.g. `FoldSeg`) have multiple logical inputs, each of which gets subdivided
+-- during unzipping.
+data OpInputs = OpInputs [[Var]]
+  deriving (Read, Show, Eq, Generic)
+instance Out OpInputs
+

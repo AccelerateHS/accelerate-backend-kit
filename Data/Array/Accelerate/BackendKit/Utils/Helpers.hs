@@ -21,7 +21,7 @@ module Data.Array.Accelerate.BackendKit.Utils.Helpers
          -- TODO [2013.02.10] Move these ^^ to CompilerUtils.hs
          
          -- * Miscellaneous
-         fragileZip,
+         fragileZip, (#), 
 
          -- * Constants and functions for use in cost estimation:
          ifCost, derefCost, costPrim, costConst,
@@ -173,15 +173,6 @@ maybeLetAllowETups ex ty dobod =
             return (ELet (tmp,ty,ex) (dobod (EVr tmp)))
 
 
--- | Do not allow the lists to be different lengths.
-fragileZip :: (Show t1, Show t2) =>
-              [t1] -> [t2] -> [(t1, t2)]
-fragileZip a b = loop a b
-  where
-    loop [] []           = []
-    loop (h1:t1) (h2:t2) = (h1,h2) : loop t1 t2
-    loop _ _             = error$"JIT.hs/fragileZip: lists were not the same length: "++show a++" "++show b
-
 --------------------------------------------------------------------------------
 -- Traversals
 
@@ -240,3 +231,20 @@ traceFun msg fn =
   \ x ->
     let y = fn x in 
     trace (msg ++ " input: " ++ show x ++ " output: " ++ show y) y
+
+-- | For debugging purposes we should really never use Data.Map.!  This is an
+-- alternative with a better error message.
+(#) :: (Ord a1, Show a, Show a1) => M.Map a1 a -> a1 -> a
+mp # k = case M.lookup k mp of
+          Nothing -> error$"Map.lookup: key "++show k++" is not in map:\n  "++show mp
+          Just x  -> x
+
+-- | Like `Prelude.zipWith`, but do not allow the lists to be different lengths.
+-- Catches more bugs.
+fragileZip :: (Show t1, Show t2) =>
+              [t1] -> [t2] -> [(t1, t2)]
+fragileZip a b = loop a b
+  where
+    loop [] []           = []
+    loop (h1:t1) (h2:t2) = (h1,h2) : loop t1 t2
+    loop _ _             = error$"JIT.hs/fragileZip: lists were not the same length: "++show a++" "++show b
