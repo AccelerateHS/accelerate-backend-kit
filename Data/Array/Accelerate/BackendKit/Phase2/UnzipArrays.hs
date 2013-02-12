@@ -31,8 +31,18 @@ import Data.Array.Accelerate.BackendKit.IRs.Metadata (SubBinds(..), OpInputs(..)
 --
 -- This pass eliminates ETupProject's around EIndexScalar's.
 unzipArrays :: S.Prog (SubBinds,a) -> S.Prog (OpInputs,(SubBinds,a))
-unzipArrays prog@Prog{progBinds} =
-  prog { progBinds = doBinds M.empty progBinds }
+unzipArrays prog@Prog{progBinds,progResults} =
+  prog { progBinds = doBinds M.empty progBinds,
+         progResults = concatMap ((env #)) progResults
+         -- Note: typeEnv already has the unzipped types.              
+       }
+  where
+--    env = progToEnvWithDec progBinds -- inefficient    
+--    fn (_,(SubBinds vrs _,_)) = vrs
+    env = M.fromList$
+          map (\(ProgBind v _ (SubBinds vrs _,_) _) -> (v,vrs)) progBinds
+
+    
 
 -- type Env = M.Map Var SubBinds
 type Env = M.Map Var [Var]

@@ -17,10 +17,11 @@ import Debug.Trace
 import Text.PrettyPrint.GenericPretty (Out(doc))
 
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
-import Data.Array.Accelerate.BackendKit.Utils.Helpers (GensymM, genUnique, genUniqueWith, mkPrj, mapMAEWithGEnv, isTupleTy)
 import Data.Array.Accelerate.BackendKit.CompilerUtils (sizeName)
 import Data.Array.Accelerate.BackendKit.Phase2.NormalizeExps (wrapLets)
 import Data.Array.Accelerate.BackendKit.IRs.Metadata (ArraySizeEstimate(..), SubBinds(..))
+import Data.Array.Accelerate.BackendKit.Utils.Helpers
+       (GensymM, genUnique, genUniqueWith, mkPrj, mapMAEWithGEnv, isTupleTy, fragileZip, fragileZip3)
 ----------------------------------------------------------------------------------------------------
 
 -- | Map the original possibly-tuple-valued variable names to the
@@ -71,29 +72,19 @@ unzipETups prog@Prog{progBinds, uniqueCounter, typeEnv} =
     prog'
  where
   prog' = prog{ progBinds= map addSubBinds binds, 
-                uniqueCounter= newCounter2 }
+                uniqueCounter= newCounter2,
+                -- After this pass we keep type entries for BOTH tupled and detupled versions:
+                typeEnv = M.union typeEnv $
+                          M.fromList$
+                          concatMap (\(v,t) -> fragileZip (lkup v) (S.flattenTy t)) $
+                          M.toList typeEnv
+                }
 
   -- This adds the sub-binds AND nukes the scalar vars:
   addSubBinds (ProgBind v t dec@(_,sz) op) =
-    let v' = if isArrayType t then v else nukedVar in
+    let v' = if S.hasArrayType t then v else nukedVar in
     ProgBind v' t (newDecor v t sz,dec) op
   
-  -- Compute the *future* detupled names for top-level binds in the next pass:
-  envM :: GensymM (M.Map Var [Var])
-  envM = M.fromList <$> mapM fn (M.toList typeEnv)
-  -- Here we introduce temporary names for the subcomponents of any top-level tuple-bindings:
-  fn (vr,ty) | countVals ty == 1 = return (vr,[vr])
-             | otherwise = do tmps <- sequence$ replicate (countVals ty) (genUniqueWith$ show vr)
-                              return (vr,tmps)
-  -- nextenv has an entry for ALL top-level variables (pre-detupling):
-  nextenv :: M.Map Var [Var]
-  (nextenv, newCounter1)  = runState envM uniqueCounter
-
-  lkup vo = 
-    case M.lookup vo nextenv of
-      Nothing -> error $"UnzipETups.hs: could not find \""++show vo++"\" in:\n"++show nextenv
-      Just vos -> vos
-        
   -- From the perspective of THIS pass, only the top-level scalar binds are detupled:
   topenv = M.mapWithKey mp typeEnv
   mp _  ty@(TArray _ _) = (ty,Nothing)
@@ -110,6 +101,23 @@ unzipETups prog@Prog{progBinds, uniqueCounter, typeEnv} =
       KnownSize [s] -> TrivConst s
       KnownSize ls  -> error$"UnzipETups.hs: arrays should be one dimensional, not: "++show ls
   newDecor vo _ _ = SubBinds (lkup vo) Nothing
+
+  -- Compute the *future* detupled names for ALL top-level binds:
+  ----------------------------------------
+  envM :: GensymM (M.Map Var [Var])
+  envM = M.fromList <$> mapM fn (M.toList typeEnv)
+  fn (vr,ty) | countVals ty == 1 = return (vr,[vr])
+             | otherwise = do tmps <- sequence$ replicate (countVals ty) (genUniqueWith$ show vr)
+                              return (vr,tmps)
+  nextenv :: M.Map Var [Var]
+  (nextenv, newCounter1)  = runState envM uniqueCounter
+  -- Map old names onto detupled names:  
+  lkup vo = 
+    case M.lookup vo nextenv of
+      Nothing -> error $"UnzipETups.hs: could not find \""++show vo++"\" in:\n"++show nextenv
+      Just vos -> vos
+  ----------------------------------------
+
 
 
 nukedVar :: Var
@@ -160,7 +168,7 @@ doSpine env ex =
                        | otherwise -> -- Here's where we split the variable if we can:
                          case rhs of
                            ECond _ _ _ -> error"UnzipETups.hs: this should be impossible."
-                           _ -> do let tyLs = flattenTypes t
+                           _ -> do let tyLs = S.flattenTy t
                                    gensyms <- sequence$ replicate (length tyLs) genUnique
                                    rhsLs <- doE env rhs
                                    let env' = M.insert v (t,Just gensyms) env
@@ -177,7 +185,7 @@ doSpine env ex =
 -- | Expand a varref to a tuple to a tuple of varrefs to the components.
 blowUpVarref :: Var -> Type -> [Exp]
 blowUpVarref vr ty = 
-  let size = length $ flattenTypes ty 
+  let size = length $ S.flattenTy ty 
   in reverse [ mkPrj ind 1 size (EVr vr) | ind <- [ 0 .. size-1 ]]
 
 -- | A variable reference either uses the old name or uses one of the
@@ -232,10 +240,6 @@ doProject env i l e =
 -- Little helpers:
 --------------------------------------------------------------------------------
 
-flattenTypes :: Type -> [Type]
-flattenTypes (TTuple ls) = concatMap flattenTypes ls
-flattenTypes oth         = [oth]
-
 flattenConst :: Const -> [Const]
 flattenConst (Tup ls) = concatMap flattenConst ls
 flattenConst c        = [c]
@@ -254,15 +258,3 @@ unsing ls  = error$"UnzipETups.hs: expected singleton list, got: "++show ls
 sing :: a -> [a]
 sing x = [x]
 
-
--- This one mandates that all three lists be the same 
-fragileZip3 :: [t] -> [t1] -> [t2] -> Maybe [(t, t1, t2)]
-fragileZip3 a b c = loop a b c
-  where
-    loop [] [] []                = Just []
-    loop (h1:t1) (h2:t2) (h3:t3) = ((h1,h2,h3) :) <$> loop t1 t2 t3
-    loop _ _ _                   = Nothing
-
-isArrayType :: Type -> Bool
-isArrayType (TArray _ _) = True
-isArrayType _ = False

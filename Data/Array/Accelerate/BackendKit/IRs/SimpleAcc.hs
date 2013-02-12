@@ -28,7 +28,7 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
      -- * Helper routines and predicates:
      primArity, constToInteger, constToRational, constToNum, mkZeroConst,
      isIntType, isFloatType, isNumType, 
-     isIntConst, isFloatConst, isNumConst, 
+     isIntConst, isFloatConst, isNumConst, hasArrayType, flattenTy, 
 
      var, progToEnv, lookupProgBind, expFreeVars,
      
@@ -527,6 +527,12 @@ isFloatType ty =
   }
  where t = True
 
+-- | Does the type contain TArray?  I.e. is it either an array or a tuple of arrays?
+hasArrayType :: Type -> Bool
+hasArrayType (TArray _ _) = True
+hasArrayType (TTuple ls) = any hasArrayType ls
+hasArrayType _ = False
+
 -- | Is it a numeric constant representing an exact integer?  This
 -- includes words as well as signed ints as well as C types.
 isIntConst :: Const -> Bool
@@ -728,7 +734,7 @@ topLevelExpType pr exp = recoverExpType (progToEnv pr) exp
 -- | For creating an initial environment in which to use `recoverExpType`
 progToEnv :: Prog a -> M.Map Var Type
 -- Note this is highly INEFFICIENT -- it creates a map from the list every time:
--- Memoization would be useful here:
+-- Caching this when its needed repeatedly would be good.
 progToEnv p = M.fromList$ map (\(ProgBind v ty _ _) -> (v,ty)) (progBinds p)
 
 -- | Recover the type of an expression, given an environment.  The
@@ -782,6 +788,7 @@ typecheckProg prog@Prog{progBinds, progResults, progType } =
                                    "\nGot:      "++show got ++
                                    "\nExpected: "++show expected
 
+-- | Recursively concatenate tuple types into a flat list.
 flattenTy :: Type -> [Type]
 flattenTy (TTuple ls) = concatMap flattenTy ls
 flattenTy ty          = [ty]
@@ -958,6 +965,3 @@ uarrGenerate len fn = unsafePerformIO $
                      loop (i-1)
      loop (len-1)
 
-flattenTypes :: Type -> [Type]
-flattenTypes (TTuple ls) = concatMap flattenTypes ls
-flattenTypes oth         = [oth]

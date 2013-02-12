@@ -39,7 +39,6 @@ type Cont = [LL.Exp] -> [LL.Stmt]
 --   their detupled form.  The [Var] component will only be non-singleton for
 --   non-top-level scalar bindings that are being detupled *by this pass*.
 type Env = M.Map Var (Type, [Var], Maybe TrivialExp)
--- type Env = M.Map Var (Type, Maybe TrivialExp)
 
 ----------------------------------------------------------------------------------------------------
 
@@ -59,14 +58,8 @@ convertToCLike Prog{progBinds,progResults,progType,uniqueCounter,typeEnv} =
   where
     ((finalEnv,binds),newCounter) = runState (doBinds initEnv progBinds) uniqueCounter
 
-    -- TODO: include both tupled and detupled binds here?
-    -- initEnv = M.fromList $ L.map
-    --   (\ (ProgBind vo ty (SubBinds vos szT,_) _) -> (vo,(ty,vos,szT)))
-    --   progBinds
-
     -- Bindings for (detupled) scalar and array variables:
     initEnv :: Env
-    -- initEnv = M.mapWithKey (\ v ty -> (ty, fmap snd$ M.lookup v sizeEnv)) typeEnv
     initEnv = M.fromList $
               L.map (\(v,sz) -> (v,(typeEnv#v, [v], sz))) $
               -- All top-level (detupled) bindings, throwing out any tupled ones:

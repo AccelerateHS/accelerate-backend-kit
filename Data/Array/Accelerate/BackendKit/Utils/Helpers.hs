@@ -21,7 +21,7 @@ module Data.Array.Accelerate.BackendKit.Utils.Helpers
          -- TODO [2013.02.10] Move these ^^ to CompilerUtils.hs
          
          -- * Miscellaneous
-         fragileZip, (#), 
+         fragileZip, fragileZip3, (#), 
 
          -- * Constants and functions for use in cost estimation:
          ifCost, derefCost, costPrim, costConst,
@@ -248,3 +248,11 @@ fragileZip a b = loop a b
     loop [] []           = []
     loop (h1:t1) (h2:t2) = (h1,h2) : loop t1 t2
     loop _ _             = error$"JIT.hs/fragileZip: lists were not the same length: "++show a++" "++show b
+
+-- | This one mandates that all three lists be the same 
+fragileZip3 :: [t] -> [t1] -> [t2] -> Maybe [(t, t1, t2)]
+fragileZip3 a b c = loop a b c
+  where
+    loop [] [] []                = Just []
+    loop (h1:t1) (h2:t2) (h3:t3) = ((h1,h2,h3) :) <$> loop t1 t2 t3
+    loop _ _ _                   = Nothing
