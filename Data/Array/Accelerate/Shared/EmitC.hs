@@ -29,15 +29,15 @@ import Data.Array.Accelerate.BackendKit.IRs.Metadata  (FreeVars(..))
 import Data.Array.Accelerate.BackendKit.IRs.GPUIR as G
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Type(..), Const(..), Var, AccArray(arrDim), TrivialExp(..))
 import Data.Array.Accelerate.BackendKit.CompilerUtils (dbg)
-
-
-
+--------------------------------------------------------------------------------
 
 -- | Here is a new type just to create a new instance and implement the type class methods:
 --   We also keep around an environment that we extract from the top level program.
 data CEmitter = CEmitter ParMode Env
 data ParMode = CilkParallel | Sequential
 type Env = M.Map Var Type
+
+--------------------------------------------------------------------------------
 
 -- | The final pass in a compiler pipeline.  It emit a GPUProg as a C
 -- program meant for ICC (the Intel C Compiler).
@@ -85,13 +85,16 @@ instance EmitBackend CEmitter where
 
   -- ARGUMENT PROTOCOL: Folds expect: ( inSize, inStride, outArrayPtr, inArrayPtr, initElems..., kernfreevars...)
   emitGenReduceDef e@(CEmitter _ env) (GPUProgBind{ evtid, outarrs, decor=(FreeVars arrayOpFVs), op }) = do
-    let GenReduce {reducer,identity=initEs,generator,dimensions,variant,stride} = op
+    let GenReduce {reducer,generator,variant,stride} = op
+        Fold initSB@(ScalarBlock _ initVs _) = variant
         Lam formals bod = reducer
-        inV :: Var
-        inV = error"FINISHME inV"
+        Manifest inVs = generator
+
+        -- TEMPORARY restriction:
+        [inV] = inVs
         
-        vs = take (length initEs) formals
-        ws = drop (length initEs) formals
+        vs = take (length initVs) formals
+        ws = drop (length initVs) formals
         initargs = map (\(vr,_,ty) -> (emitType e ty, show vr)) vs
         [(outV,_,outTy)] = outarrs 
         outarg   = (emitType e outTy, show outV)
@@ -170,26 +173,28 @@ execBind e GPUProg{sizeEnv} (_ind, GPUProgBind {evtid, outarrs, op, decor=(FreeV
       return ()
 
     -- TODO: Should we keep just Kernel or just Generate or both?
-    Generate els (Lam pls bod) -> do
-      error$"EmitC.hs/execBind: We don't directly support Generate kernels, they should have been desugared."
+    GenManifest {} -> do
+      error$"EmitC.hs/execBind: We don't directly support Generate kernels, they should have been desugared:\n"++show(doc op)
 
     -- This is unpleasantly repetetive.  It doesn't benefit from the lowering to expose freevars and use NewArray.
-    GenReduce {reducer,identity,generator,dimensions,variant,stride} -> do 
+    GenReduce {reducer,generator,variant,stride} -> do 
       let (Lam [(v,_,ty1),(w,_,ty2)] bod) = reducer
-          [initE] = identity
-          inV = error "FINISHME inV 2"
-          (ConstantStride (EConst (I step))) = stride
+          Fold initSB = variant
+          Manifest inVs = generator
+          StrideConst step = stride
 
+          -- TEMPORARY:
+          [inV] = inVs
+      
+      initVs <- emitBlock e initSB
+      
       -- The builder function also needs any free variables in the size:
       let freevars = arrayOpFVs 
-          initarg = 
-            case initE of
-              EConst (I n) -> fromIntegral n
-              EVr v        -> varSyn v
+          initargs = map varSyn initVs 
           len = 1  -- Output is fully folded
           insize :: Syntax
           insize  = trivToSyntax$ P.snd$ sizeEnv M.! inV
-          allargs = insize : fromIntegral step : varSyn outV : varSyn inV : initarg : map varSyn freevars
+          allargs = insize : emitE e step : varSyn outV : varSyn inV : initargs ++ map varSyn freevars
           
       varinit (emitType e ty) (varSyn outV) (function "malloc" [sizeof elty' * len])
       -- Call the builder to fill in the array: 

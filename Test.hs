@@ -192,7 +192,7 @@ multiDimTests = words$
   "p3 p4b " ++
   "p10 p10b " ++ 
   "p17b " ++
-  "p20a p20b "   -- fold1seg
+  "p20a p20b p20c "   -- fold1seg
 
 
 -- | Four dimensional and above.

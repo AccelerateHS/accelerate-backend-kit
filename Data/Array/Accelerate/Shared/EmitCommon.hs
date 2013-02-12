@@ -19,8 +19,7 @@ module Data.Array.Accelerate.Shared.EmitCommon
          -- * Other bits and pieces
          emitE, emitS, emitBlock, emitConst,
          printfFlag, printf, eprintf,
-         varSyn, strToSyn, lkup,
-         getSizeE, getSizeOfPB
+         varSyn, strToSyn, lkup
        ) where
 
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
@@ -70,11 +69,11 @@ class EmitBackend e where
   emitType :: e -> Type -> Syntax
 
   -- | Emit a main() function that invokes the kernels.  Not relevant in some backends.
-  emitMain :: e -> GPUProg (FreeVars) -> EasyEmit ()
+  emitMain :: e -> GPUProg FreeVars -> EasyEmit ()
   emitMain _ _ = return ()
 
   -- | GenReduce (e.g. Scan/Fold) is not handled by the generic codegen, but this can be overloaded.
-  emitGenReduceDef :: (EmitBackend e) => e -> GPUProgBind (FreeVars) -> EasyEmit ()
+  emitGenReduceDef :: (EmitBackend e) => e -> GPUProgBind FreeVars -> EasyEmit ()
   emitGenReduceDef _e op = error$"EmitCommon.hs: GenReduce not supported in this backend:\n "++ show (doc op)
 
   -- | The (constant) return type for a complete array-level kernel definition. 
@@ -160,8 +159,8 @@ emitBindDef e (_ind, pb@GPUProgBind{ evtid, op, outarrs } ) =
                invokeKern e (varSyn sizearg) body
        return ()
      ----------------------------------------------------------------------
-     Generate {} -> error$"EmitCommon.hs/emitBindDef: Generate is not supported in generic backend:\n "++ show (doc op)
-     Generate {} -> emitGenReduceDef e pb
+     GenManifest {} -> error$"EmitCommon.hs/emitBindDef: Generate is not supported in generic backend:\n "++ show (doc op)
+     GenReduce {} -> emitGenReduceDef e pb
 
 -- | Emit a block of scalar code, returning the variable names which hold the results.
 emitBlock :: EmitBackend e => e -> ScalarBlock -> EasyEmit [Var]
@@ -203,7 +202,7 @@ emitS e stmt =
 
 -- FIXME: maps an expression onto Syntax... this doesn't allow multi-line.
 emitE :: EmitBackend e => e -> Exp -> Syntax
-emitE e expr = loop M.empty expr
+emitE e = loop M.empty 
  where 
    loop mp exr = 
     case exr of    
@@ -223,7 +222,7 @@ emitE e expr = loop M.empty expr
 
    -- | Add a cast around an expression.
    castit :: Type -> Syntax -> Syntax
-   castit ty exp = ((E.parens (emitType e ty)) +++ E.parens exp)
+   castit ty exp = (E.parens (emitType e ty)) +++ E.parens exp
 
 
 emitConst :: Const -> Syntax
@@ -238,20 +237,6 @@ emitConst cnst = strToSyn$
     Tup _  -> error "emitConst: no support for tuple constants presently."
     _ -> error "internal error: this can never happen"
 
-
---------------------------------------------------------------------------------
-
--- Get an expression representing the size of an output array:
-getSizeE :: EmitBackend e => e -> TopLvlForm -> [Exp]
-getSizeE _ ae = 
-  case ae of 
-    Generate exs _ -> exs
-    -- Uh oh, we may need to keep around more information earlier...
-    _ -> error$"EmitC.hs/getSizeE: cannot handle this yet: "++show ae
-
-
-getSizeOfPB :: EmitBackend e => e -> GPUProgBind a -> [Exp]
-getSizeOfPB e (GPUProgBind{op}) = getSizeE e op
 
 --------------------------------------------------------------------------------  
 -- Helpers and Junk
