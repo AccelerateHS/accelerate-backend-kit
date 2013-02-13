@@ -27,7 +27,7 @@ deadCode prog@Prog{progBinds} = fmap fst$
 loop :: Map Var Int -> [ProgBind (a,Uses)] -> Map Var Int  
 loop mp [] = mp
 
-loop mp (ProgBind v _ (_,Uses 0 0) rhs : rest)
+loop mp (ProgBind v _ (_,Uses 0 0) _ : rest)
   | isSizeName v || isShapeName v =
     maybtrace (".. deadArrays refusing to eliminate size/shape var: "++show v) $
    loop (M.insert v 0 mp) rest
@@ -40,7 +40,7 @@ loop mp (ProgBind v _ (_,Uses 0 0) rhs : rest) =
     -- bindings appropriately, remove if necessary:
     mp' = L.foldl (\ acc (fv,Uses su au) ->
                    let (_,x) = M.updateLookupWithKey
-                               (\ k cnt ->
+                               (\ _k cnt ->
                                  case cnt - su - au of
                                    0 ->
                                         maybtrace ("!! Victory: deadArrays, continuing in that thread: "++show v)

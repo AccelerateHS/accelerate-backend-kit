@@ -73,22 +73,24 @@ doBinds sizeEnv evEnv (LLProgBind vartys (FreeVars fvs) toplvl : rest) = do
                        G.op      = G.ScalarCode (doSB sb) }
          return (sbBnd, newVs)
 
-      goSB sb = do (pb,vrs) <- liftSB sb
-                   sb' <- G.expsToBlock (zip (map G.EVr vrs)
-                                             (error "need vr types..."))
-                   return (pb,sb')
+      -- Lift out an SB AND repack it as a new SB.
+      -- goSB sb = do (pb,vrs) <- liftSB sb
+      --              sb' <- G.expsToBlock (zip (map G.EVr vrs)
+      --                                        (error "need vr types..."))
+      --              return (pb,sb')
   
       -- May have to handle scalar blocks and thus return new ProgBinds:
       doVariant ::                              ReduceVariant Fun ScalarBlock ->
                    GensymM ([G.GPUProgBind FreeVars], ReduceVariant G.Fun G.ScalarBlock)
+      -- TODO: progbind return val is obselete:
       doVariant rvar =
         case rvar of
-          Fold sb -> do (pb,sb') <- goSB sb
-                        return ([pb], Fold sb')
-          FoldSeg sb gen2  -> do (pb,sb') <- goSB sb
-                                 return ([pb], FoldSeg sb' (doMGen gen2))
-          Scan dir sb      -> do (pb,sb') <- goSB sb
-                                 return ([pb], Scan dir sb')
+          Fold sb -> do let sb' = doSB sb -- (pb,sb') <- goSB sb
+                        return ([], Fold sb')
+          FoldSeg sb gen2  -> do let sb' = doSB sb -- (pb,sb') <- goSB sb
+                                 return ([], FoldSeg sb' (doMGen gen2))
+          Scan dir sb      -> do let sb' = doSB sb -- (pb,sb') <- goSB sb
+                                 return ([], Scan dir sb')
           Permute lam mgen -> return ([], Permute (doLam lam) (doMGen mgen))
   
   case toplvl of
@@ -106,12 +108,16 @@ doBinds sizeEnv evEnv (LLProgBind vartys (FreeVars fvs) toplvl : rest) = do
 
     GenReduce { reducer, generator, variant, stride } -> do
       let gen' = doMGen generator
-      (sbs, var') <- doVariant variant 
+      (sbs, var') <- doVariant variant
+      let stride' = case stride of
+                      StrideAll     -> StrideAll
+                      StrideConst e -> StrideConst$ doE e
       let newBnd = 
            rebind (evs fvs) $
             G.GenReduce { G.reducer   = doLam reducer,
                           G.generator = gen',
-                          G.variant   = var'
+                          G.variant   = var',
+                          G.stride    = stride'
                         }
       return (sbs ++ newBnd : rst)
 
