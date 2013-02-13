@@ -7,7 +7,7 @@ module Data.Array.Accelerate.Shared.EmitHelpers
          builderName,
 
          -- * Miscellaneous helpers
-         fragileZip
+         fragileZip, (#)
        )
        where
 
@@ -19,10 +19,10 @@ import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc  as S
 import Text.PrettyPrint.HughesPJ as PP
 import Foreign.Storable (sizeOf)
 import qualified Prelude as P
-import Prelude (error, ($), (.))
+import Prelude (error, ($), (.), (++), show, return, Show, Maybe(..))
 import Data.Int (Int)
 import Data.Word (Word)
-import Prelude ((++), show, return, Show)
+
 import Control.Monad.State.Strict (State, get, put)
 import Control.Applicative ((<$>),(<*>),pure,Applicative)
 
@@ -229,3 +229,10 @@ fragileZip a b = loop a b
     loop (h1:t1) (h2:t2) = (h1,h2) : loop t1 t2
     loop _ _             = error$"JIT.hs/fragileZip: lists were not the same length: "++show a++" "++show b
 
+
+-- | For debugging purposes we should really never use Data.Map.!  This is an
+-- alternative with a better error message.
+(#) :: (P.Ord a1, Show a, Show a1) => M.Map a1 a -> a1 -> a
+mp # k = case M.lookup k mp of
+          Nothing -> error$"Map.lookup: key "++show k++" is not in map:\n  "++show mp
+          Just x  -> x

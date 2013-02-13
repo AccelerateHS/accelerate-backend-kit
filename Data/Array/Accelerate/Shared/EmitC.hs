@@ -23,7 +23,7 @@ import Text.PrettyPrint.GenericPretty (Out(doc))
 import Debug.Trace (trace)
 
 import Data.Array.Accelerate.Shared.EasyEmit as E
-import Data.Array.Accelerate.Shared.EmitHelpers (builderName, emitCType, fragileZip)
+import Data.Array.Accelerate.Shared.EmitHelpers (builderName, emitCType, fragileZip, (#))
 import Data.Array.Accelerate.Shared.EmitCommon
 import Data.Array.Accelerate.BackendKit.IRs.Metadata  (FreeVars(..))
 import Data.Array.Accelerate.BackendKit.IRs.GPUIR as G
@@ -98,8 +98,8 @@ instance EmitBackend CEmitter where
         initargs = map (\(vr,_,ty) -> (emitType e ty, show vr)) vs
         [(outV,_,outTy)] = outarrs 
         outarg   = (emitType e outTy, show outV)
-        inarg    = (emitType e (env M.! inV), show inV)
-        freeargs = map (\fv -> (emitType e (env M.! fv), show fv))
+        inarg    = (emitType e (env # inV), show inV)
+        freeargs = map (\fv -> (emitType e (env # fv), show fv))
                        arrayOpFVs
         int_t = emitType e TInt
     
@@ -181,7 +181,9 @@ execBind e GPUProg{sizeEnv} (_ind, GPUProgBind {evtid, outarrs, op, decor=(FreeV
       let (Lam [(v,_,ty1),(w,_,ty2)] bod) = reducer
           Fold initSB = variant
           Manifest inVs = generator
-          StrideConst step = stride
+          step = case stride of
+                   StrideConst s -> emitE e s
+                   StrideAll     -> 1
 
           -- TEMPORARY:
           [inV] = inVs
@@ -193,8 +195,8 @@ execBind e GPUProg{sizeEnv} (_ind, GPUProgBind {evtid, outarrs, op, decor=(FreeV
           initargs = map varSyn initVs 
           len = 1  -- Output is fully folded
           insize :: Syntax
-          insize  = trivToSyntax$ P.snd$ sizeEnv M.! inV
-          allargs = insize : emitE e step : varSyn outV : varSyn inV : initargs ++ map varSyn freevars
+          insize  = trivToSyntax$ P.snd$ sizeEnv # inV
+          allargs = insize : step : varSyn outV : varSyn inV : initargs ++ map varSyn freevars
           
       varinit (emitType e ty) (varSyn outV) (function "malloc" [sizeof elty' * len])
       -- Call the builder to fill in the array: 
@@ -210,7 +212,7 @@ execBind e GPUProg{sizeEnv} (_ind, GPUProgBind {evtid, outarrs, op, decor=(FreeV
 printArray :: (Out a, EmitBackend e) => e -> GPUProg a -> Var -> GPUProgBind a -> EasyEmit ()
 printArray e (GPUProg{sizeEnv}) name (GPUProgBind { outarrs, op}) = do
   len <- tmpvar (emitType e TInt)
-  let (_,szTriv) = sizeEnv M.! vr0
+  let (_,szTriv) = sizeEnv # vr0
   -- TODO: Assert the sizes are all equal.
   case ndims of
      1 -> case szTriv of 
