@@ -14,10 +14,9 @@ import           Data.List as L
 import qualified Data.Map as M
 
 import Data.Array.Accelerate.BackendKit.IRs.Metadata (ArraySizeEstimate(..))
-import Data.Array.Accelerate.BackendKit.Utils.Helpers (mkIndTy, mkPrj, mulI, genUnique, GensymM)
-import Data.Array.Accelerate.BackendKit.CompilerUtils (shapeName)
+import Data.Array.Accelerate.BackendKit.Utils.Helpers (mkIndTy, mkPrj, mulI, genUnique, GensymM, (#))
+import Data.Array.Accelerate.BackendKit.CompilerUtils (shapeName, maybtrace)
 import Text.PrettyPrint.GenericPretty (Out(doc))
-import Debug.Trace (trace)
 
 
 -- A monad to use just for this pass
@@ -39,6 +38,9 @@ explicitShapes prog@Prog{progBinds, uniqueCounter } =
   where
     (binds,newCount) =
       runState (runReaderT (doBinds progBinds) prog) uniqueCounter
+
+mkPrj2 :: Int -> Int -> Int -> Exp -> Exp
+mkPrj2 a b c d = error$ "mkPrj2: "++show(a,b,c,d)
 
 doBinds :: [ProgBind ArraySizeEstimate] -> MyM [ProgBind ArraySizeEstimate]
 doBinds [] = return []
@@ -71,9 +73,10 @@ doBinds (ProgBind vo voty (UnknownSize) (Right ae) : rest) = do
       prog@Prog{typeEnv} <- ask
       let getSizeE = mkSizeE prog
           -- Remove the inner dimension:
-          knockOne v = trace ("KNOCKING "++show v++" dow to "++show (ndims-1)++" = "++ show x ++" sizeE "++show (getSizeE v)) x
+          knockOne v = maybtrace ("TEMPMSG - KNOCKING "++show v++" dow to "++show (ndims-1)++" = "++ show x ++" sizeE "++show (getSizeE v))
+                       x
             where
-              TArray ndims _ = typeEnv M.! v
+              TArray ndims _ = typeEnv # v
               x = [ mkPrj i 1 ndims (getSizeE v)
                   | i <- reverse [0..ndims-2]]
 --                  | i <- reverse [1..ndims-1] ]
@@ -83,13 +86,14 @@ doBinds (ProgBind vo voty (UnknownSize) (Right ae) : rest) = do
           -- Replace the inner dimension.
           -- ASSUMPTION: segs is 1D and its shape is a TInt:
           replaceOne v segs =
-            trace ("REPLACEONE "++show(v,segs) ++" = "++  show (mkETuple$ (getSizeE segs) : knockOne v )) $
+            maybtrace ("TEMPMSG - REPLACEONE "++show(v,segs) ++" = "++  show (mkETuple$ (getSizeE segs) : knockOne v )) $
             mkETuple$ (getSizeE segs) : knockOne v 
 
           -- Beware tricky intersection semantics:
           intersectShapes v1 v2 =
-              let TArray v1Dims _ = typeEnv M.! v1
-                  TArray v2Dims _ = typeEnv M.! v2 in
+              maybtrace ("TEMPMSG - INTERSECT SHAPES "++show(v1,v2) ++" supposed sizes "++show((getSizeE v1),(getSizeE v2)) ) $            
+              let TArray v1Dims _ = typeEnv # v1
+                  TArray v2Dims _ = typeEnv # v2 in
               if v1Dims /= v2Dims || v1Dims /= vo_ndims then
                 error$"ExplicitShapes/intersectShapes: mismatched ranks: "++show (v1Dims, v2Dims, vo_ndims)
               else   
@@ -155,12 +159,12 @@ doBinds (ProgBind vo voty (UnknownSize) (Right ae) : rest) = do
                  -- How many entries to be expect to be in 'ex' given the weird encoding:
                  numWithoutTrailing = length template - length (takeWhile (==All) (reverse template))
                  numFixed = length$ filter (==Fixed) template
-                 TArray upDims _ = typeEnv M.! upV
+                 TArray upDims _ = typeEnv # upV
                  ls = [ case pr of 
                           -- The 'ex' expression will retain slots for the Alls that are ():
                           (Fixed,_,i) -> mkPrj i 1 numWithoutTrailing (EVr gensym)
                           -- The shape of the upstream will be pure numbers, no 'All' business:
-                          (All,  i,_) -> mkPrj i 1 (upDims - numFixed) (getSizeE upV)
+                          (All,  i,_) -> mkPrj i 1 upDims (getSizeE upV)
                       | pr <- zip3 template indsA indsF]
                  -- Sum up the number of Alls seen so far to get the index into the original shape:
                  indsA = tail$reverse$scanl (\ ind x -> if x==All   then ind+1 else ind) 0 (reverse template)
@@ -208,7 +212,8 @@ doE ex = do
            TTuple ls -> do tmp <- lift genUnique
                            ex' <- doE ex
                            let ndims = length ls
-                           return$
+                           maybtrace (" TEMPMSG ESHAPESIZE of "++ show ex ++" - we think it has ndims = "++show ndims) $ return() 
+                           return$ 
                              ELet (tmp, TTuple ls, ex') $
                               foldl (\ acc i -> mulI acc (mkPrj i 1 ndims (EVr tmp)))
                                     (EConst (I 1))

@@ -13,7 +13,6 @@ module Data.Array.Accelerate.BackendKit.Phase2.UnzipETups (unzipETups) where
 import Control.Monad.State.Strict
 import Control.Applicative ((<$>),(<*>))
 import qualified Data.Map              as M
-import Debug.Trace
 import Text.PrettyPrint.GenericPretty (Out(doc))
 
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
@@ -69,7 +68,6 @@ type Env = M.Map Var (Type,Maybe [Var])
 unzipETups :: Prog           (Maybe(Stride Exp),ArraySizeEstimate) ->
               Prog (SubBinds,(Maybe(Stride Exp),ArraySizeEstimate))
 unzipETups prog@Prog{progBinds, uniqueCounter, typeEnv} =
-    trace ("NEXTENV "++show (doc nextenv)) $ 
     prog'
  where
   prog' = prog{ progBinds= map addSubBinds binds, 
