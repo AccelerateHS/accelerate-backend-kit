@@ -58,7 +58,11 @@ import qualified Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone as T
 -- | Convert from the internal Acc representation to the temporary
 -- (isomorphic) `AccClone` representation.
 accToAccClone :: Sug.Arrays a => Sug.Acc a -> TAExp
-accToAccClone = runEnvM . convertAcc . Cvt.convertAcc
+accToAccClone = runEnvM . convertAcc .
+                Cvt.convertAcc
+                  True -- recover sharing of array computations ?
+                  True -- recover sharing of scalar expressions ?
+                  True -- always float array computations out of expressions?
 
 type TAExp = T.AExp S.Type
 
@@ -270,7 +274,7 @@ convertAcc (OpenAcc cacc) =
                   (cvtSlice sliceIndex) 
                   <$> convertExp slix
                   <*> convertAcc a
-    Index sliceIndex acc slix -> 
+    Slice sliceIndex acc slix -> 
       T.Index (getAccTypePre eacc) (cvtSlice sliceIndex) <$> convertAcc acc
                                           <*> convertExp slix
     Reshape e acc -> T.Reshape (getAccTypePre eacc) <$> convertExp e <*> convertAcc acc
@@ -293,6 +297,8 @@ convertAcc (OpenAcc cacc) =
                  <*> return (convertBoundary bndy1) <*> convertAcc acc1
                  <*> return (convertBoundary bndy2) <*> convertAcc acc2
 
+
+    -- TODO: Transform
 
 
 --------------------------------------------------------------------------------
@@ -368,12 +374,15 @@ convertExp e =
     IndexAny       -> error "convertToSimpleProg: not expecting to observe IndexAny value."
       -- return T.EIndexAny
 
+    -- TODO: IndexSlice, IndexFull, ToIndex, FromIndex, LinearIndex, Intersect
+    -- TODO: Iterate
+
     Cond c t ex -> T.ECond <$> convertExp c 
                            <*> convertExp t
                            <*> convertExp ex
     
-    IndexScalar acc eix -> T.EIndexScalar <$> convertAcc acc
-                                          <*> convertExp eix
+    Index acc eix -> T.EIndexScalar <$> convertAcc acc
+                                    <*> convertExp eix
       
     Shape acc -> T.EShape <$> convertAcc acc
     ShapeSize  acc -> T.EShapeSize  <$> convertExp acc
@@ -467,10 +476,10 @@ tupleNumLeaves _             = 1
 -------------------------------------------------------------------------------
 
 convertType :: TupleType a -> S.Type
-convertType ty = 
+convertType origty = 
 --  tracePrint ("CONVERTTYPE of "++show ty++":  ") $
   tupleTy $ flattenTupTy $ 
-  loop ty
+  loop origty
  where   
   loop :: TupleType a -> S.Type
   loop ty =  
@@ -520,13 +529,13 @@ convertType ty =
 --   That is, an array of ints will come out as just an array of ints
 --   with no extra fuss.
 convertArrayType :: forall arrs . Sug.ArraysR arrs -> S.Type
-convertArrayType ty = 
+convertArrayType origty = 
 #ifndef SURFACE_TUPLES
      removeOuterEndcap $ 
 #endif
-     tupleTy $ flattenTupTy $ loop ty
+     tupleTy $ flattenTupTy $ loop origty
   where 
-    loop :: forall arrs . Sug.ArraysR arrs -> S.Type
+    loop :: forall ar . Sug.ArraysR ar -> S.Type
     loop ty = 
       case ty of 
        Sug.ArraysRunit  -> S.TTuple []
@@ -566,8 +575,6 @@ flattenTupTy ty =
   loop (S.TTuple ls) = error$"flattenTupTy: expecting binary-tree tuples as input, recieved: "++show(S.TTuple ls)
   loop oth           = [oth]
 
-removeOuterEndcap (S.TTuple [S.TTuple [], ty]) = ty
-removeOuterEndcap oth                          = oth
 
 tupleTy [ty] = ty
 tupleTy ls = S.TTuple ls

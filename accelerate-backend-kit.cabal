@@ -41,7 +41,7 @@ Library
                      Data.Array.Accelerate.BackendKit.Phase1.RemoveArrayTuple
                      Data.Array.Accelerate.BackendKit.Phase1.StaticTuples
                      Data.Array.Accelerate.BackendKit.Phase1.ToAccClone
-                     Data.Array.Accelerate.BackendKit.Phase2.DeadArrays
+                     Data.Array.Accelerate.BackendKit.Phase2.DeadCode
                      Data.Array.Accelerate.BackendKit.Phase2.DesugarUnit
                      Data.Array.Accelerate.BackendKit.Phase2.DesugToBackperm
                      Data.Array.Accelerate.BackendKit.Phase2.DesugToGenerate
