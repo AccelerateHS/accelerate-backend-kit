@@ -136,12 +136,16 @@ emitCType :: Type -> Syntax
 emitCType (TArray dim elt) = emitCType elt +++ str "*"
 emitCType ty = toSyntax$ text$ 
   case ty of
-    TInt   -> "int"
+    TInt   -> case sizeOf (0::Int) of
+                4 -> "int32_t"
+                8 -> "int64_t"
     TInt8  -> "int8_t"
     TInt16 -> "int16_t"
     TInt32 -> "int32_t"
     TInt64 -> "int64_t"
-    TWord   -> "unsigned int"
+    TWord  -> case sizeOf (0::Word) of
+                4 -> "uint32_t"
+                8 -> "uint64_t"    
     TWord8  -> "uint8_t"
     TWord16 -> "uint16_t"
     TWord32 -> "uint32_t"

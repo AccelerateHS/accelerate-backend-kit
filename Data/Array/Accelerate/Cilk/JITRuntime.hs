@@ -195,7 +195,7 @@ loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv } soName =
     resultsRec <- mkCreateRecord crr    
     forM_ (zip [1..] useBinds) $ \ (ix,(vr,ty,S.AccArray { S.arrDim, S.arrPayloads })) -> do
 
-      putStrLn$" [JIT] Attempting to load Use array arg of type "++show ty++" and size "++show arrDim
+      dbgPrint$"[JIT] Attempting to load Use array arg of type "++show ty++" and size "++show arrDim
       
       oneLoad <- dlsym dl ("LoadArg_"++show vr) 
       case arrPayloads of
@@ -206,18 +206,18 @@ loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv } soName =
           let ptr = SA.payloadToPtr payload
               [len] = arrDim
           (mkLoadArg oneLoad) argsRec len ptr
-          putStrLn$" [JIT] successfully loaded Use arg "++show ix++", type "++show ty          
+          dbgPrint$"[JIT] successfully loaded Use arg "++show ix++", type "++show ty          
           return ()
 
     (mkMainProg main) argsRec resultsRec
-    putStrLn$" [JIT] Finished executing dynamically loaded Acc computation!"
+    dbgPrint$"[JIT] Finished executing dynamically loaded Acc computation!"
     
     arrs <- forM progResults $ \ rname -> do
       oneFetch <- dlsym dl ("GetResult_"++show rname)
       oneSize  <- dlsym dl ("GetResultSize_"++show rname)
       ptr  <- mkGetResult oneFetch resultsRec
       size <- mkGetResultSize oneSize resultsRec
-      putStrLn$" [JIT] Fetched result ptr: "++show rname++" = "++show ptr++" and size "++show size
+      dbgPrint$"[JIT] Fetched result ptr: "++show rname++" = "++show ptr++" and size "++show size
       payl <- payloadFromPtr (fst$ sizeEnv # rname) size (castPtr ptr)
       return (S.AccArray [size] [payl])
     
