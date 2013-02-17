@@ -28,10 +28,13 @@ module Data.Array.Accelerate.Shared.EasyEmit
     emitStmt, block, set, (+=), (-=), if_, return_, sizeof, assert,
     for, forRange, forStridedRange, cilkForRange, cilkForStridedRange, 
     var, varinit, tmpvar, tmpvarinit, 
-
+    
     -- * Defining functions in C/C++ code using HOAS.
     funDef, rawFunDef, rawFunDefProto, function, ObjFun, 
 
+    -- * Defining types in C/C++
+    cppStruct, 
+    
     -- * Comments in generated code.
     comm,
 
@@ -47,6 +50,7 @@ module Data.Array.Accelerate.Shared.EasyEmit
     
     -- * Redefined `Ord` and `Eq` classes that uses the `Boolean` class.
     Ord(..)
+    
   )
   where
 

@@ -68,7 +68,12 @@ class EmitBackend e where
   -- | Convert the type into a printed type in the output language.
   emitType :: e -> Type -> Syntax
 
-  -- | Emit a main() function that invokes the kernels.  Not relevant in some backends.
+  -- | Not relevant in some backends.  Emit a MainProg(void* argR) function that
+  -- invokes the kernels, together with other functions `CreateArgRecord()`,
+  -- `LoadArg_<name>(void* argR, int numelems, void* ptr)`, and `DestroyArgRecord(void* argR)` for
+  --   (1) creating a record to store program inputs (`Use` arrays),
+  --   (2) filling each of its slots with an array
+  --   (3) destroying the record after MainProg has been called with it
   emitMain :: e -> GPUProg FreeVars -> EasyEmit ()
   emitMain _ _ = return ()
 

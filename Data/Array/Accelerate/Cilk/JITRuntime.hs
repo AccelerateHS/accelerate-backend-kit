@@ -1,4 +1,6 @@
-
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE MagicHash #-}
+{-# LANGUAGE NamedFieldPuns  #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | A JIT to compile and run programs via Cilk.  This constitutes a full Accelerate
@@ -13,21 +15,30 @@ import           Data.Array.Accelerate (Acc)
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc   as S
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Type(..), Const(..))
+import qualified Data.Array.Accelerate.BackendKit.SimpleArray     as SA
 import           Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace, dbg)
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase1, phase2, repackAcc)
-import           Data.Array.Accelerate.Shared.EmitC (emitC, ParMode(..))
+import           Data.Array.Accelerate.Shared.EmitC (emitC, ParMode(..), getUseBinds)
 import           Data.Array.Accelerate.BackendKit.SimpleArray (payloadsFromList)
 
 
 -- import qualified Data.Map                          as M
 import           Data.Char        (isAlphaNum)
-import           Control.Monad    (when)
+import           Control.Monad    (when, forM_)
 import           System.IO.Unsafe (unsafePerformIO)
 import           System.Process   (readProcess, system)
 import           System.Exit      (ExitCode(..))
 import           System.Directory (removeFile, doesFileExist)
 import           System.IO        (stdout, hFlush)
-import           System.Posix.DynamicLinker (withDL)
+
+import           GHC.Prim           (byteArrayContents#)
+import           GHC.Ptr            (Ptr(Ptr))
+import           Data.Array.Base    (UArray(UArray))
+import           Foreign.Ptr        (FunPtr)
+-- import           Foreign.C.Types    (CInt)
+import           System.Posix.DynamicLinker (withDL, RTLDFlags(..), dlsym)
+-- import Foreign.Ptr        (Ptr)
+--import Data.Array.Unboxed (UArray)
 
 --------------------------------------------------------------------------------
 
@@ -89,20 +100,23 @@ rawRunIO pm name prog = do
              _   -> dbgPrint $"[JIT] Using ICC at: "++ (head (lines whichICC))
            return "icc"
 
-  let ccCmd = cc++" -std=c99 "++thisprog++".c -o "++thisprog++".exe"
+  let ccCmd = cc++" -shared -fPIC -std=c99 "++thisprog++".c -o "++thisprog++".so"
   dbgPrint$ "[JIT]   Compiling with: "++ ccCmd
   cd <- system$ ccCmd
   case cd of
     ExitSuccess -> return ()
     ExitFailure c -> error$"C Compiler failed with code "++show c
   -- Run the program and capture its output:
-  dbgPrint$ "[JIT] Invoking external executable: "++ thisprog++".exe"
---  ExitSuccess <- system$"./"++thisprog++".exe"
+#if 0     
+  dbgPrint$ "[JIT] Invoking external executable: "++ thisprog++".exe"  
   result <- readProcess ("./"++thisprog++".exe") [] ""
   let elts = tyToElts (S.progType prog)
   dbgPrint$ "[JIT] Executable completed, parsing results, element types "++
      show elts++", "++show (length result)++" characters:\n "++take 80 result
   return$ parseMultiple result elts
+#else
+  loadAndRunSharedObj (getUseBinds prog2) (thisprog++".so")
+#endif
  where
    parseMultiple _ [] = []
    parseMultiple str (elt:rst) = 
@@ -161,3 +175,68 @@ dbgPrint :: String -> IO ()
 dbgPrint str = if not dbg then return () else do
     putStrLn str
     hFlush stdout
+
+
+--------------------------------------------------------------------------------
+
+-- | Follow the protocol for creating an argument record (of arrays), running the
+-- program, and retrieving the results (see `emitMain`s docs).
+loadAndRunSharedObj :: [(S.Var,S.Type,S.AccArray)] -> FilePath -> IO [S.AccArray]
+loadAndRunSharedObj useBinds soName =
+  withDL soName [RTLD_LOCAL,RTLD_LAZY] $ \ dl ->  do
+    car  <- dlsym dl "CreateArgRecord"
+    dar  <- dlsym dl "DestroyArgRecord"
+    main <- dlsym dl "MainProg"
+
+    argsRec <- mkCreateArgRecord car
+    forM_ (zip [1..] useBinds) $ \ (ix,(vr,ty,S.AccArray { S.arrDim, S.arrPayloads })) -> do
+
+      putStrLn$" [JIT] Attempting to load Use array arg of type "++show ty++" and size "++show arrDim
+      
+      oneLoad <- dlsym dl ("LoadArg_"++show vr) 
+      case arrPayloads of
+        [] -> error $ "loadAndRunSharedObj: empty payload list for array " ++ show vr
+        _:_:_ -> error$ "loadAndRunSharedObj: cannot handle multi-payload arrays presently: "
+                 ++show vr++" with payloads: "++show (length arrPayloads)
+        [payload] -> do          
+          let ptr = SA.payloadToPtr payload
+              [len] = arrDim
+          (mkLoadArg oneLoad) argsRec len ptr
+          putStrLn$" [JIT] successfully loaded Use arg "++show ix++", type "++show ty          
+          return ()
+
+    (mkMainProg main) argsRec
+    putStrLn$" [JIT] Finished executing dynamically loaded Acc computation!"
+    (mkDestroyArgRecord dar) argsRec
+    
+    error$"FINISH SO LOADING, get RESULTS: "++show (car,dar)
+
+
+type CreateArgRecordT = IO (Ptr ())
+foreign import ccall "dynamic" 
+   mkCreateArgRecord :: FunPtr CreateArgRecordT -> CreateArgRecordT
+
+type DestroyArgRecordT = Ptr () -> IO ()
+foreign import ccall "dynamic" 
+   mkDestroyArgRecord :: FunPtr DestroyArgRecordT -> DestroyArgRecordT
+
+type LoadArgT = Ptr () -> Int -> Ptr () -> IO ()
+foreign import ccall "dynamic" 
+   mkLoadArg :: FunPtr LoadArgT -> LoadArgT
+
+-- TODO: Needs to return something.
+type MainProgT = Ptr () -> IO ()
+foreign import ccall "dynamic" 
+   mkMainProg :: FunPtr MainProgT -> MainProgT
+
+
+
+
+-- Obtains a pointer to the payload of an unboxed array.
+--
+-- PRECONDITION: The unboxed array must be pinned.
+--  (THIS SHOULD ONLY BE USED WITH Accelerate Arrays)
+--
+{-# INLINE uArrayPtr #-}
+uArrayPtr :: UArray Int a -> Ptr a
+uArrayPtr (UArray _ _ _ ba) = Ptr (byteArrayContents# ba)

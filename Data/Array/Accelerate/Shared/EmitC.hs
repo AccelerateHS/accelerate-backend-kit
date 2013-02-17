@@ -1,5 +1,6 @@
 {-# LANGUAGE NamedFieldPuns, CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 -- | This module contains a specialization of the generic code
@@ -11,7 +12,7 @@
 -- See `emitC` below and `emitOpenCL` for details.
 
 module Data.Array.Accelerate.Shared.EmitC
-       (emitC, ParMode(..)) where
+       (emitC, ParMode(..), getUseBinds) where
 
 import           Control.Monad (forM_, when)
 import           Data.List as L
@@ -52,6 +53,21 @@ emitC pm prog@GPUProg{progBinds} =
     binds = L.map (\(v,_,ty) -> (v,ty)) $
             concatMap outarrs progBinds
 
+-- The name of the arguments record with Use-imported arrays:
+globalArgs :: String
+globalArgs = "argsRec"
+
+
+-- | Find only the Use-bindings among the `progBinds`.  This standardizes the ORDER
+-- in which Use bindings are fed to the compiled program.
+getUseBinds :: GPUProg a -> [(Var,Type,AccArray)]
+getUseBinds GPUProg{progBinds} = concatMap fn progBinds
+ where
+   fn (GPUProgBind{ outarrs, op= Use arr }) =
+     let [(vr,_,arrty)] = outarrs
+     in [(vr,arrty,arr)]
+   fn _ = []
+  
 -- | We fill in the plain-C-specific code generation methods:
 instance EmitBackend CEmitter where
   emitIncludes e = do 
@@ -73,13 +89,35 @@ instance EmitBackend CEmitter where
   scalarKernelReturnType (CEmitter CilkParallel _) = "__declspec(vector) void"
   scalarKernelReturnType (CEmitter Sequential _)   = "void"
 
-  emitMain e prog@GPUProg{progBinds} = do 
-    _ <- funDef "int" "main" [] $ \ () -> do
+  emitMain e prog@GPUProg{progBinds} = do
+
+    let useBinds = getUseBinds prog
+    ----------------------------------------
+    cppStruct "ArgRecord" "" $ do
+      comm "These are all the Use arrays gathered from the Acc computation:"
+      forM_ useBinds $ \ (vr,arrty,_) -> 
+        E.emitStmt$ (emitType e arrty) +++ " " +++ varSyn vr
+    rawFunDef "struct ArgRecord*" "CreateArgRecord" [] $ do
+      return_ "malloc(sizeof(struct ArgRecord))"
+    funDef "void" "DestroyArgRecord" ["struct ArgRecord*"] $ \arg -> do
+      E.emitStmt$ function "free" [arg]
+
+    forM_ useBinds $ \ (vr,ty,_) -> 
+      funDef "struct ArgRecord*" ("LoadArg_" ++ show vr) ["struct ArgRecord*", "int", emitType e ty] $ \ (args,size,ptr) -> do
+        comm$ "In the future we could do something with the size argument."
+        let _ = size::Syntax
+        set (args `arrow` (varSyn vr)) ptr
+        return ()
+    ----------------------------------------
+      
+    _ <- rawFunDef "int" "MainProg" [("struct ArgRecord*",globalArgs)] $ do    
            comm "First we EXECUTE the program by executing each array op in order:"
            mapM_ (execBind e prog) (L.zip [0..] progBinds)
+#if 0           
            comm "This code prints the final result(s):"
            forM_ (progResults prog) $ \ result -> 
              printArray e prog result (lkup result progBinds)
+#endif             
            return_ 0
     return ()
 
@@ -145,7 +183,13 @@ execBind e GPUProg{sizeEnv} (_ind, GPUProgBind {evtid, outarrs, op, decor=(FreeV
   let [(outV,_,ty)] = outarrs -- FIXME -- only handling one-output arrays for now...
       TArray _ elty = ty 
       elty' = emitType e elty in
-  case op of 
+  case op of
+
+    -- Nothing to do here because the ArgRecord will already contain Use
+    Use _ -> do comm$ "'Use'd arrays are already available in the arguments record:"
+                varinit (emitType e ty) (varSyn outV) (strToSyn globalArgs `arrow` (varSyn outV))
+                return ()
+    
     -- In the case of array conditionals we need to run the scalar
     -- code, then assign the result accordingly.  TODO: this is a
     -- broken kind of eager evaluation currently.  It executes EVERYTHING:
