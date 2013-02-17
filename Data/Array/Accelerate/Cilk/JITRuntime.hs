@@ -18,11 +18,11 @@ import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Type(..), Const
 import qualified Data.Array.Accelerate.BackendKit.SimpleArray     as SA
 import           Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace, dbg)
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase1, phase2, repackAcc)
-import           Data.Array.Accelerate.Shared.EmitC (emitC, ParMode(..), getUseBinds)
+import           Data.Array.Accelerate.Shared.EmitC (emitC, ParMode(..), getUseBinds, standardResultOrder)
 import           Data.Array.Accelerate.BackendKit.SimpleArray (payloadsFromList, payloadFromPtr)
 import           Data.Array.Accelerate.Shared.EmitHelpers ((#))
 
--- import qualified Data.Map                          as M
+import qualified Data.Map         as M
 import           Data.Char        (isAlphaNum)
 import           Control.Monad    (when, forM_, forM)
 import           System.IO.Unsafe (unsafePerformIO)
@@ -100,7 +100,8 @@ rawRunIO pm name prog = do
              _   -> dbgPrint $"[JIT] Using ICC at: "++ (head (lines whichICC))
            return "icc"
 
-  let ccCmd = cc++" -shared -fPIC -std=c99 "++thisprog++".c -o "++thisprog++".so"
+  let suppress = if dbg then "" else " -w " -- No warnings leaking through to the user.
+      ccCmd = cc++suppress++" -shared -fPIC -std=c99 "++thisprog++".c -o "++thisprog++".so"
   dbgPrint$ "[JIT]   Compiling with: "++ ccCmd
   cd <- system$ ccCmd
   case cd of
@@ -183,7 +184,8 @@ dbgPrint str = if not dbg then return () else do
 -- program, and retrieving the results (see `emitMain`s docs).
 loadAndRunSharedObj :: G.GPUProg a -> FilePath -> IO [S.AccArray]
 loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv } soName =
-  let useBinds = getUseBinds prog in
+  let useBinds   = getUseBinds prog 
+      allResults = standardResultOrder progResults in
   withDL soName [RTLD_LOCAL,RTLD_LAZY] $ \ dl ->  do
     car  <- dlsym dl "CreateArgRecord"
     dar  <- dlsym dl "DestroyArgRecord"
@@ -212,7 +214,7 @@ loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv } soName =
     (mkMainProg main) argsRec resultsRec
     dbgPrint$"[JIT] Finished executing dynamically loaded Acc computation!"
     
-    arrs <- forM progResults $ \ rname -> do
+    arrs <- forM allResults $ \ rname -> do
       oneFetch <- dlsym dl ("GetResult_"++show rname)
       oneSize  <- dlsym dl ("GetResultSize_"++show rname)
       ptr  <- mkGetResult oneFetch resultsRec
@@ -223,7 +225,8 @@ loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv } soName =
     
     (mkDestroyRecord dar) argsRec
     (mkDestroyRecord drr) resultsRec
-    return arrs
+    let table = M.fromList $ zip allResults arrs
+    return$ map (table #) progResults
 
 
 -- | Shared for CreateArgRecord and CreateResultRecord

@@ -12,11 +12,12 @@
 -- See `emitC` below and `emitOpenCL` for details.
 
 module Data.Array.Accelerate.Shared.EmitC
-       (emitC, ParMode(..), getUseBinds) where
+       (emitC, ParMode(..), getUseBinds, standardResultOrder) where
 
 import           Control.Monad (forM_, when)
 import           Data.List as L
 import qualified Data.Map  as M
+import qualified Data.Set  as S
 import qualified Prelude   as P
 import Prelude (($), show, error, return, mapM_, String, fromIntegral, Int)
 import Text.PrettyPrint.HughesPJ       (text)
@@ -70,7 +71,14 @@ getUseBinds GPUProg{progBinds} = concatMap fn progBinds
      let [(vr,_,arrty)] = outarrs
      in [(vr,arrty,arr)]
    fn _ = []
-  
+
+-- | `progResults` is not a set, the same variable may be returned at different
+-- locations in the output "tuple".  This makes it into a set and returns it in a
+-- canonical order.
+standardResultOrder :: [Var] -> [Var]
+standardResultOrder vrs = S.toList $ S.fromList vrs
+
+
 -- | We fill in the plain-C-specific code generation methods:
 instance EmitBackend CEmitter where
   emitIncludes e = do 
@@ -94,7 +102,8 @@ instance EmitBackend CEmitter where
 
   emitMain e prog@GPUProg{progBinds, progResults, sizeEnv} = do
 
-    let useBinds = getUseBinds prog
+    let useBinds   = getUseBinds prog
+        allResults = standardResultOrder progResults
     ----------------------------------------
     ------    Argument Initialization  -----
     cppStruct "ArgRecord" "" $ do
@@ -115,7 +124,7 @@ instance EmitBackend CEmitter where
     --------    Results Retrieval   --------
     cppStruct "ResultRecord" "" $ do
       comm "These are all the progResults arrays output from the Acc computation: "
-      forM_ progResults $ \ name -> do
+      forM_ allResults $ \ name -> do
         let elt = P.fst$ sizeEnv # name 
         E.var (emitType e (TArray 1 elt)) (varSyn name)
         E.var "int" (strToSyn (show name ++ "_size"))
@@ -124,10 +133,10 @@ instance EmitBackend CEmitter where
       return_ "malloc(sizeof(struct ResultRecord))"
     funDef "void" "DestroyResultRecord" ["struct ResultRecord*"] $ \arg -> do
       comm "In the CURRENT protocol, we free all results SIMULTANEOUSLY, here:"
-      forM_ progResults $ \ name -> do
+      forM_ allResults $ \ name -> do
         E.emitStmt$ function "free" [arg `arrow` varSyn name]
       E.emitStmt$ function "free" [arg]
-    forM_ progResults $ \ name -> do 
+    forM_ allResults $ \ name -> do 
       let elt = P.fst $ sizeEnv#name
       funDef (emitType e (TArray 1 elt)) ("GetResult_" ++ show name) ["struct ResultRecord*"] $ \ results -> do
         return_ (results `arrow` (varSyn name))
@@ -139,13 +148,13 @@ instance EmitBackend CEmitter where
     _ <- rawFunDef "void" "MainProg" [("struct ArgRecord*",globalArgs), ("struct ResultRecord*",globalResults)] $ do    
            comm "First we EXECUTE the program by executing each array op in order:"
            mapM_ (execBind e prog) (L.zip [0..] progBinds)
-#if 1
+#if 0
            comm "This code prints the final result(s):"
-           forM_ progResults $ \ result -> 
+           forM_ allResults $ \ result -> 
              printArray e prog result (lkup result progBinds)
---else              
+#else              
            comm "We write the final output to the results record:"
-           forM_ progResults $ \ rname -> do 
+           forM_ allResults $ \ rname -> do 
              E.set (strToSyn globalResults `arrow` varSyn rname) (varSyn rname)
              E.set (strToSyn globalResults `arrow` (varSyn rname+++"_size")) $
                case sizeEnv # rname of 
