@@ -79,8 +79,10 @@ class EmitBackend e where
   --   (2) filling each of its slots with an array
   --   (3) destroying the record after MainProg has been called with it
   --
-  --  Likewise, there is a mirroring protocol for result retrieval.  CreateResultRecord,
-  --  GetResult_<name>(void*), and DestroyResultRecord are the functions in question.
+  --  Likewise, there is a mirroring protocol for result retrieval.
+  --  CreateResultRecord, GetResult_<name>(void*), and DestroyResultRecord are the
+  --  functions.  There is also a function GetResultSize_<name>(void*), for returning
+  --  the number of elements in the result array.
   --
   --  TODO: Standardize when the results are freed so that we can read them back one
   --  at a time.  Presently all are freed simultaneously by DestroyResultRecord.

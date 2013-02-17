@@ -117,7 +117,9 @@ instance EmitBackend CEmitter where
       comm "These are all the progResults arrays output from the Acc computation: "
       forM_ progResults $ \ name -> do
         let elt = P.fst$ sizeEnv # name 
-        E.emitStmt$ (emitType e (TArray 1 elt)) +++ " " +++ varSyn name
+        E.var (emitType e (TArray 1 elt)) (varSyn name)
+        E.var "int" (strToSyn (show name ++ "_size"))
+        return ()
     rawFunDef "struct ResultRecord*" "CreateResultRecord" [] $ do
       return_ "malloc(sizeof(struct ResultRecord))"
     funDef "void" "DestroyResultRecord" ["struct ResultRecord*"] $ \arg -> do
@@ -129,17 +131,28 @@ instance EmitBackend CEmitter where
       let elt = P.fst $ sizeEnv#name
       funDef (emitType e (TArray 1 elt)) ("GetResult_" ++ show name) ["struct ResultRecord*"] $ \ results -> do
         return_ (results `arrow` (varSyn name))
+      funDef "int" ("GetResultSize_" ++ show name) ["struct ResultRecord*"] $ \ results -> do
+        return_ (results `arrow` (varSyn name +++ "_size"))
+        
     ----------------------------------------
       
-    _ <- rawFunDef "int" "MainProg" [("struct ArgRecord*",globalArgs), ("struct ResultRecord*",globalResults)] $ do    
+    _ <- rawFunDef "void" "MainProg" [("struct ArgRecord*",globalArgs), ("struct ResultRecord*",globalResults)] $ do    
            comm "First we EXECUTE the program by executing each array op in order:"
            mapM_ (execBind e prog) (L.zip [0..] progBinds)
 #if 0           
            comm "This code prints the final result(s):"
-           forM_ (progResults prog) $ \ result -> 
+           forM_ progResults $ \ result -> 
              printArray e prog result (lkup result progBinds)
+#else              
+           comm "We write the final output to the results record:"
+           forM_ progResults $ \ rname -> do 
+             E.set (strToSyn globalResults `arrow` varSyn rname) (varSyn rname)
+             E.set (strToSyn globalResults `arrow` (varSyn rname+++"_size")) $
+               case sizeEnv # rname of 
+                 (_, TrivVarref vr) -> (varSyn vr)
+                 (_, TrivConst  n)  -> fromIntegral n
 #endif             
-           return_ 0
+--           return_ 0
     return ()
 
   -- ARGUMENT PROTOCOL: Folds expect: ( inSize, inStride, outArrayPtr, inArrayPtr, initElems..., kernfreevars...)

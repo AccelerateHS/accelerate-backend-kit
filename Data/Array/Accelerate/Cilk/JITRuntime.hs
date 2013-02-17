@@ -19,12 +19,12 @@ import qualified Data.Array.Accelerate.BackendKit.SimpleArray     as SA
 import           Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace, dbg)
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase1, phase2, repackAcc)
 import           Data.Array.Accelerate.Shared.EmitC (emitC, ParMode(..), getUseBinds)
-import           Data.Array.Accelerate.BackendKit.SimpleArray (payloadsFromList)
-
+import           Data.Array.Accelerate.BackendKit.SimpleArray (payloadsFromList, payloadFromPtr)
+import           Data.Array.Accelerate.Shared.EmitHelpers ((#))
 
 -- import qualified Data.Map                          as M
 import           Data.Char        (isAlphaNum)
-import           Control.Monad    (when, forM_)
+import           Control.Monad    (when, forM_, forM)
 import           System.IO.Unsafe (unsafePerformIO)
 import           System.Process   (readProcess, system)
 import           System.Exit      (ExitCode(..))
@@ -32,7 +32,7 @@ import           System.Directory (removeFile, doesFileExist)
 import           System.IO        (stdout, hFlush)
 
 import           GHC.Prim           (byteArrayContents#)
-import           GHC.Ptr            (Ptr(Ptr))
+import           GHC.Ptr            (Ptr(Ptr), castPtr)
 import           Data.Array.Base    (UArray(UArray))
 import           Foreign.Ptr        (FunPtr)
 -- import           Foreign.C.Types    (CInt)
@@ -115,7 +115,7 @@ rawRunIO pm name prog = do
      show elts++", "++show (length result)++" characters:\n "++take 80 result
   return$ parseMultiple result elts
 #else
-  loadAndRunSharedObj (getUseBinds prog2) (thisprog++".so")
+  loadAndRunSharedObj prog2 (thisprog++".so")
 #endif
  where
    parseMultiple _ [] = []
@@ -181,13 +181,15 @@ dbgPrint str = if not dbg then return () else do
 
 -- | Follow the protocol for creating an argument record (of arrays), running the
 -- program, and retrieving the results (see `emitMain`s docs).
-loadAndRunSharedObj :: [(S.Var,S.Type,S.AccArray)] -> FilePath -> IO [S.AccArray]
-loadAndRunSharedObj useBinds soName =
+loadAndRunSharedObj :: G.GPUProg a -> FilePath -> IO [S.AccArray]
+loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv } soName =
+  let useBinds = getUseBinds prog in
   withDL soName [RTLD_LOCAL,RTLD_LAZY] $ \ dl ->  do
     car  <- dlsym dl "CreateArgRecord"
     dar  <- dlsym dl "DestroyArgRecord"
     main <- dlsym dl "MainProg"
     crr  <- dlsym dl "CreateResultRecord"
+    drr  <- dlsym dl "DestroyResultRecord"
 
     argsRec    <- mkCreateRecord car
     resultsRec <- mkCreateRecord crr    
@@ -209,9 +211,19 @@ loadAndRunSharedObj useBinds soName =
 
     (mkMainProg main) argsRec resultsRec
     putStrLn$" [JIT] Finished executing dynamically loaded Acc computation!"
-    (mkDestroyArgRecord dar) argsRec
     
-    error$"FINISH SO LOADING, get RESULTS: "++show (car,dar)
+    arrs <- forM progResults $ \ rname -> do
+      oneFetch <- dlsym dl ("GetResult_"++show rname)
+      oneSize  <- dlsym dl ("GetResultSize_"++show rname)
+      ptr  <- mkGetResult oneFetch resultsRec
+      size <- mkGetResultSize oneSize resultsRec
+      putStrLn$" [JIT] Fetched result ptr: "++show rname++" = "++show ptr++" and size "++show size
+      payl <- payloadFromPtr (fst$ sizeEnv # rname) 10 (castPtr ptr)
+      return (S.AccArray [size] [payl])
+    
+    (mkDestroyRecord dar) argsRec
+    (mkDestroyRecord drr) resultsRec
+    return arrs
 
 
 -- | Shared for CreateArgRecord and CreateResultRecord
@@ -219,9 +231,9 @@ type CreateRecordT = IO (Ptr ())
 foreign import ccall "dynamic" 
    mkCreateRecord :: FunPtr CreateRecordT -> CreateRecordT
 
-type DestroyArgRecordT = Ptr () -> IO ()
+type DestroyRecordT = Ptr () -> IO ()
 foreign import ccall "dynamic" 
-   mkDestroyArgRecord :: FunPtr DestroyArgRecordT -> DestroyArgRecordT
+   mkDestroyRecord :: FunPtr DestroyRecordT -> DestroyRecordT
 
 type LoadArgT = Ptr () -> Int -> Ptr () -> IO ()
 foreign import ccall "dynamic" 
@@ -231,6 +243,15 @@ foreign import ccall "dynamic"
 type MainProgT = Ptr () -> Ptr () -> IO ()
 foreign import ccall "dynamic" 
    mkMainProg :: FunPtr MainProgT -> MainProgT
+
+type GetResultT = Ptr () -> IO (Ptr ())
+foreign import ccall "dynamic" 
+   mkGetResult :: FunPtr GetResultT -> GetResultT
+
+type GetResultSizeT = Ptr () -> IO Int
+foreign import ccall "dynamic" 
+   mkGetResultSize :: FunPtr GetResultSizeT -> GetResultSizeT
+
 
 
 -- Obtains a pointer to the payload of an unboxed array.
