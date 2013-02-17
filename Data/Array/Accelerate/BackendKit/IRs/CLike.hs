@@ -51,7 +51,7 @@ data LLProg decor = LLProg {
   uniqueCounter :: Int,
   progType    :: Type, -- Final, pre-flattened type, can be an array-tuple.
 
-  -- | Describes the type and shape of all top level ARRAY binds (scalar binds not
+  -- | Describes the ELEMENT type and shape of all top level ARRAY binds (scalar binds not
   -- included).  All arrays are one-dimensional at this point, so size is a scalar.
   sizeEnv :: M.Map Var (Type, TrivialExp)
   

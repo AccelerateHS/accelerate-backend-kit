@@ -53,3 +53,5 @@ These should go into github issues
  * (BUG) p20* was exposing a bug where a singleton ETuple would appear
    out of OneDimensionalize.
    
+ * Need to track the FULL SHAPE of any progResults for reconstructing
+   the final thing.  (Fix OneDimensionalize & downstream)

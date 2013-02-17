@@ -26,7 +26,7 @@ import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
 import Data.Array.Accelerate.BackendKit.IRs.Metadata (ArraySizeEstimate(..), Stride(..))
 import Data.Array.Accelerate.BackendKit.Utils.Helpers (genUnique, genUniqueWith, GensymM, mkIndTy, mkPrj,
                                                        maybeLetAllowETups, addI, mulI, quotI, remI)
-import Data.Array.Accelerate.BackendKit.CompilerUtils (shapeName, sizeName)
+import Data.Array.Accelerate.BackendKit.CompilerUtils (shapeName, sizeName, maybtrace)
 
 -- | Configuration parameter.  This controls whether we take advantage
 -- of OpenCL/CUDA's native support for 2D and 3D kernels.  If this is
@@ -67,7 +67,7 @@ type MyM a = ReaderT (Prog ArraySizeEstimate) GensymM a
 -- This version expects a 
 compute1DSize :: Int -> Exp -> Exp
 compute1DSize ndim ex =
-  trace ("Computing 1D size for ndims "++show ndim++" input exp "++show ex)$  
+  maybtrace ("[DBG OneDimensionalize]Computing 1D size for ndims "++show ndim++" input exp "++show ex)$  
   case ex of
     EVr    _ -> deflt
     ETuple _ -> deflt
@@ -161,7 +161,7 @@ doBind env pb@(ProgBind vo aty sz (Right ae)) =
     -- BOILERPLATE:
     ------------------------------------------------------------
     Generate e lam1         -> Generate <$> doE e <*> doLam1 lam1
-    Use _                   -> return ae
+    Use (AccArray dims payls) -> return$ Use$ AccArray [product dims] payls
     Vr _                    -> return ae
     Unit ex                 -> Unit <$> doE ex
     Cond a b c              -> Cond <$> doE a <*> return b <*> return c

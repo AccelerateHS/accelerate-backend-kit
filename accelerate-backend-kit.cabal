@@ -55,6 +55,7 @@ Library
                      Data.Array.Accelerate.BackendKit.Phase2.ToCLike
                      Data.Array.Accelerate.BackendKit.Phase2.TrackUses
                      Data.Array.Accelerate.BackendKit.Phase2.UnzipETups
+                     Data.Array.Accelerate.BackendKit.Phase2.UnzipArrays
                      Data.Array.Accelerate.BackendKit.Phase3.KernFreeVars
                      Data.Array.Accelerate.BackendKit.Phase3.DesugarGenerate
                      Data.Array.Accelerate.BackendKit.Phase3.DesugarFoldScan

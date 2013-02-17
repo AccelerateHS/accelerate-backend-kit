@@ -45,6 +45,7 @@ data GPUProg decor = GPUProg {
   progResults   :: [Var],
   uniqueCounter :: Int,
   progType      :: Type, -- ^ Final, pre-flattened type, can be an array-tuple.
+  
   sizeEnv :: M.Map Var (Type, TrivialExp), -- ^ Same as CLike IR (LLProg)
   
   -- | A table mapping the name of a top-level array to the last event

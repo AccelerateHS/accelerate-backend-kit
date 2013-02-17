@@ -2,6 +2,7 @@
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | Utilities for working with the simplified representation of
 --   Accelerate arrays on the Haskell heap.
@@ -24,7 +25,7 @@ module Data.Array.Accelerate.BackendKit.SimpleArray
      Data.Array.Accelerate.BackendKit.SimpleArray.replicate,      
      
      -- * Functions for operating on payloads (internal components of AccArrays)
-     payloadToPtr,
+     payloadToPtr, payloadFromPtr,
      payloadToList, payloadsFromList, payloadsFromList1,
      payloadLength, 
      mapPayload, indexPayload,
@@ -37,7 +38,8 @@ where
 
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
 import Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace)
-  
+
+import           Control.Applicative ((<$>))
 import           Debug.Trace
 import           Data.Int
 import           Data.Word
@@ -46,15 +48,20 @@ import           Data.Array.Unboxed as U
 import qualified Data.Array.Unsafe as Un
 import qualified Data.Array.MArray as MA
 import qualified Data.Array.IO     as IA
-import           Foreign.C.Types 
--- import           Pretty (text) -- ghc api
+import           Foreign.C.Types
+import           Foreign.Storable      (Storable, sizeOf)
+import           Foreign.Marshal.Array (copyArray)
 import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
 import           System.IO.Unsafe (unsafePerformIO)
 import qualified Data.Map          as M
 
 import           GHC.Ptr          (Ptr(Ptr), castPtr)
-import           GHC.Prim         (byteArrayContents#)
+import           GHC.Prim         (byteArrayContents#, newPinnedByteArray#)
 import           Data.Array.Base  (UArray(UArray))
+import qualified Data.Primitive.ByteArray as BA
+import           Data.Primitive.Types (Addr(Addr))
+-- import GHC.Prim           (newPinnedByteArray#, byteArrayContents#,
+--                            unsafeFreezeByteArray#, Int#, (*#))
 ----------------------------------------------------------------------------------------------------
 -- Helper functions for working with Array data living on the Haskell heap:
 ----------------------------------------------------------------------------------------------------
@@ -351,6 +358,47 @@ payloadToPtr payl =
     ArrayPayloadDouble arr -> castPtr$uArrayPtr arr
     ArrayPayloadChar   arr -> castPtr$uArrayPtr arr
     ArrayPayloadBool   arr -> castPtr$uArrayPtr arr
+
+
+-- | Copy from foreign memory (O(N)) to reconstruct a payload with the given type and
+-- number of *elements* (not bytes).  The bytesize is determined based on the type
+-- argument supplied.
+--
+-- TODO: This can be replaced with an O(1) operation if we make sure to always
+-- allocate space for results within Haskell as UArrays.
+payloadFromPtr :: Type -> Int -> Ptr Word8 -> IO ArrayPayload
+payloadFromPtr ty len srcPtr =
+  case ty of 
+    TInt    -> ArrayPayloadInt    <$> uarr
+    TInt8   -> ArrayPayloadInt8   <$> uarr
+    TInt16  -> ArrayPayloadInt16  <$> uarr
+    TInt32  -> ArrayPayloadInt32  <$> uarr
+    TInt64  -> ArrayPayloadInt64  <$> uarr
+    TWord   -> ArrayPayloadWord   <$> uarr
+    TWord8  -> ArrayPayloadWord8  <$> uarr
+    TWord16 -> ArrayPayloadWord16 <$> uarr
+    TWord32 -> ArrayPayloadWord32 <$> uarr
+    TWord64 -> ArrayPayloadWord64 <$> uarr
+    TFloat  -> ArrayPayloadFloat  <$> uarr
+    TDouble -> ArrayPayloadDouble <$> uarr
+    TChar   -> ArrayPayloadChar   <$> uarr
+    TBool   -> ArrayPayloadBool   <$> uarr
+    -- TTuple tys -> concatMap (uncurry payloadsFromList)                 
+    --                         (zip tys (L.transpose $ map unTup ls))
+    _ -> error$"payloadsFromPtr: Unexpected array type: "++show ty
+  where
+    uarr :: forall elt . Storable elt => IO (UArray Int elt)
+    uarr = do let bytes = len * sizeOf (undefined::elt)
+              maybtrace (" [dbg] !! Copying back "++show bytes++" bytes (array len "++show len++") into haskell heap!" )$return()
+              b1 <- BA.newPinnedByteArray bytes
+              b2 <- BA.unsafeFreezeByteArray b1
+              case BA.byteArrayContents b2 of
+                Addr addr# -> do
+                  maybtrace(" [dbg] !! Copying to "++show (Ptr addr#)++" from "++show srcPtr)$return()
+                  copyArray (Ptr addr#) srcPtr bytes
+              case b2 of
+                BA.ByteArray ba# -> return (UArray 0 (len - 1) len ba# )
+
 
 -- Obtains a pointer to the payload of an unboxed array.
 --
