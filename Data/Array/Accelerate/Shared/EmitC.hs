@@ -139,11 +139,11 @@ instance EmitBackend CEmitter where
     _ <- rawFunDef "void" "MainProg" [("struct ArgRecord*",globalArgs), ("struct ResultRecord*",globalResults)] $ do    
            comm "First we EXECUTE the program by executing each array op in order:"
            mapM_ (execBind e prog) (L.zip [0..] progBinds)
-#if 0           
+#if 1
            comm "This code prints the final result(s):"
            forM_ progResults $ \ result -> 
              printArray e prog result (lkup result progBinds)
-#else              
+--else              
            comm "We write the final output to the results record:"
            forM_ progResults $ \ rname -> do 
              E.set (strToSyn globalResults `arrow` varSyn rname) (varSyn rname)

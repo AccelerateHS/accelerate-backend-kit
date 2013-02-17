@@ -218,7 +218,7 @@ loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv } soName =
       ptr  <- mkGetResult oneFetch resultsRec
       size <- mkGetResultSize oneSize resultsRec
       putStrLn$" [JIT] Fetched result ptr: "++show rname++" = "++show ptr++" and size "++show size
-      payl <- payloadFromPtr (fst$ sizeEnv # rname) 10 (castPtr ptr)
+      payl <- payloadFromPtr (fst$ sizeEnv # rname) size (castPtr ptr)
       return (S.AccArray [size] [payl])
     
     (mkDestroyRecord dar) argsRec
