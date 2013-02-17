@@ -44,7 +44,7 @@ import qualified Data.Array.Accelerate.Array.Sugar as Sug
 
 import           Data.Array.Accelerate.BackendKit.IRs.Metadata     (ArraySizeEstimate(..), FreeVars(..))
 import           Data.Array.Accelerate.BackendKit.CompilerUtils    (dbg,maybtrace)
-import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase1, phase2, phase3, repackAcc)
+import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1, phase2, phase3, repackAcc)
 import           Data.Array.Accelerate.BackendKit.SimpleArray      (payloadToPtr)
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter (Value(..))
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc   as S
@@ -76,7 +76,7 @@ run acc =
    -- full "run" interface to work properly.  The LLIR should probably
    -- track the final shape.
 --   TArray dim _ = S.progType simple
-   simple = phase1 acc
+   simple = phase1$ phase0 acc
    arrays = unsafePerformIO $
             rawRunIO "" simple
 
