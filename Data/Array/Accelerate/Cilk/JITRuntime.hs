@@ -27,6 +27,7 @@ import           System.Process   (readProcess, system)
 import           System.Exit      (ExitCode(..))
 import           System.Directory (removeFile, doesFileExist)
 import           System.IO        (stdout, hFlush)
+import           System.Posix.DynamicLinker (withDL)
 
 --------------------------------------------------------------------------------
 
