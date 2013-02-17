@@ -67,7 +67,7 @@ class Show b => Backend b where
   -- | Take a copy action immediately if the data is available.  This implies `wait`;
   -- if the data is not available `copyToHost` blocks until it becomes ready and is
   -- copied.
-  copyToHost   :: b -> Remote b a -> IO a
+  copyToHost   :: Arrays a => b -> Remote b a -> IO a
   -- TODO: Consider adding a separate malloc and overwriting copy.
 
   -- | Wait until the result is computed, but do not copy it back.  
@@ -75,7 +75,7 @@ class Show b => Backend b where
 
   -- | If the device uses a separate memory space, allocate memory in the remote
   -- space and transfer the contents of the array to it.
-  copyToDevice :: b -> Arrays a => a -> IO (Remote b a)
+  copyToDevice :: Arrays a => b -> a -> IO (Remote b a)
 
   -- | Use already-Remote b memory in an Accelerate computation.
   useRemote :: b -> Remote b a -> IO (Acc a)

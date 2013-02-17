@@ -37,7 +37,7 @@ module Data.Array.Accelerate.BackendKit.Tests
    )
    where 
 
-import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase1, unpackArray, Phantom)
+import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0,phase1, unpackArray, Phantom)
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter as I
 import qualified Data.Array.Accelerate.Smart       as Sm
@@ -912,5 +912,5 @@ instance Show a => NiceShow (Array DIM2 a) where
 --------------------------------------------------------------------------------
 
 convertToSimpleProg :: Sug.Arrays a => Sm.Acc a -> S.Prog ()
-convertToSimpleProg = phase1
+convertToSimpleProg = phase1 . phase0
 

@@ -18,7 +18,7 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter
        where
 
 import           Data.Array.Accelerate.BackendKit.CompilerUtils    (maybtrace, tracePrint)
-import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase1, repackAcc)
+import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1, repackAcc)
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as T
 import           Data.Array.Accelerate.BackendKit.SimpleArray   as SA
@@ -38,7 +38,7 @@ run :: forall a . Sug.Arrays a => Acc a -> a
 run acc = 
           maybtrace ("[dbg] Repacking AccArray(s): "++show arrays) $ 
           repackAcc acc arrays
- where arrays = evalSimpleAcc (phase1 acc)
+ where arrays = evalSimpleAcc (phase1 (phase0 acc))
 
 --------------------------------------------------------------------------------
 -- Values and Environments:

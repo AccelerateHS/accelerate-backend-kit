@@ -8,7 +8,7 @@
 module Data.Array.Accelerate.BackendKit.CompilerPipeline
        (
          -- * Major compiler phases:
-         phase1, phase2, phase3,
+         phase0, phase1, phase2, phase3,
          -- * Reexport from ToAccClone:
          unpackArray, packArray, repackAcc, Phantom,
          -- * Internal bits, exported for now:
@@ -20,8 +20,10 @@ import           Text.PrettyPrint.GenericPretty (Out(..))
 import           Text.PrettyPrint.HughesPJ (text)
 import           Debug.Trace (trace)
 
+import qualified Data.Array.Accelerate.AST         as AST
 import qualified Data.Array.Accelerate.Smart       as Smt
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
+import           Data.Array.Accelerate.Trafo.Sharing (convertAcc)
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import qualified Data.Array.Accelerate.BackendKit.IRs.CLike     as C
 import qualified Data.Array.Accelerate.BackendKit.IRs.GPUIR     as G
@@ -110,7 +112,7 @@ phase2A prog =
 -- | Convert the sophisticate Accelerate-internal AST representation
 --   into something very simple for external consumption.  Note: this
 --   involves applying a number of lowering compiler passes.
-phase1 :: (Sug.Arrays a) => Smt.Acc a -> S.Prog ()
+phase1 :: (Sug.Arrays a) => AST.Acc a -> S.Prog ()
 phase1 prog =
   runPass "typecheck1"           typecheckPass     $       
   runPass "removeArrayTuple"     removeArrayTuple  $ -- convert to S.Prog
@@ -121,6 +123,15 @@ phase1 prog =
 --  runPass "preConversion"        id                $
   prog
 
+-- | This simply calls the Accelerate front-end with the default settings for a
+-- backend-kit compiler.
+phase0 :: Sug.Arrays a => Smt.Acc a -> AST.Acc a
+phase0 = convertAcc
+          True -- recover sharing of array computations ?
+          True -- recover sharing of scalar expressions ?
+          True -- always float array computations out of expressions?
+
+  
 typecheckPass :: S.Prog a -> S.Prog a
 typecheckPass prog =
   case S.typecheckProg prog of

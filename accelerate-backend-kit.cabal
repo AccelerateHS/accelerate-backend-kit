@@ -84,7 +84,7 @@ Library
                         deepseq         >= 1.3,
                         test-framework, test-framework-hunit, HUnit,
                         split >= 0.2,
-                        bytestring
+                        bytestring, primitive
 
   Default-Language:     Haskell2010
 
@@ -101,4 +101,4 @@ Test-Suite test-accelerate-backend-kit
                    deepseq         >= 1.3,
                    test-framework, test-framework-hunit, HUnit,
                    split >= 0.2,
-                   bytestring
+                   bytestring, primitive

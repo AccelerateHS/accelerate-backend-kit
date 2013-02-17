@@ -40,7 +40,7 @@ import           Text.PrettyPrint.GenericPretty (Out(doc), Generic)
 import           Data.Array.Accelerate.Type
 import           Data.Array.Accelerate.Array.Data
 import           Data.Array.Accelerate.Array.Representation  hiding (sliceIndex)
-import           Data.Array.Accelerate.AST
+import           Data.Array.Accelerate.AST         as AST
 import           Data.Array.Accelerate.Tuple
 import qualified Data.Array.Accelerate.Smart       as Sug
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
@@ -57,12 +57,8 @@ import qualified Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone as T
 
 -- | Convert from the internal Acc representation to the temporary
 -- (isomorphic) `AccClone` representation.
-accToAccClone :: Sug.Arrays a => Sug.Acc a -> TAExp
-accToAccClone = runEnvM . convertAcc .
-                Cvt.convertAcc
-                  True -- recover sharing of array computations ?
-                  True -- recover sharing of scalar expressions ?
-                  True -- always float array computations out of expressions?
+accToAccClone :: Sug.Arrays a => AST.Acc a -> TAExp
+accToAccClone = runEnvM . convertAcc 
 
 type TAExp = T.AExp S.Type
 
