@@ -60,6 +60,8 @@ Library
                      Data.Array.Accelerate.BackendKit.Phase3.DesugarGenerate
                      Data.Array.Accelerate.BackendKit.Phase3.DesugarFoldScan
                      Data.Array.Accelerate.BackendKit.Phase3.ToGPUIR
+
+                     Data.Array.Accelerate.BackendClass                     
   
   -- Modules not exported by this package:
   Other-modules:       
@@ -81,7 +83,8 @@ Library
                         vector          >= 0.9,
                         deepseq         >= 1.3,
                         test-framework, test-framework-hunit, HUnit,
-                        split >= 0.2
+                        split >= 0.2,
+                        bytestring
 
   Default-Language:     Haskell2010
 
@@ -97,4 +100,5 @@ Test-Suite test-accelerate-backend-kit
                    GenericPretty   >= 1.0,
                    deepseq         >= 1.3,
                    test-framework, test-framework-hunit, HUnit,
-                   split >= 0.2
+                   split >= 0.2,
+                   bytestring
