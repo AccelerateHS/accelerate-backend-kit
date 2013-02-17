@@ -22,6 +22,9 @@ import           Data.Array.Accelerate.Shared.EmitC (emitC, ParMode(..), getUseB
 import           Data.Array.Accelerate.BackendKit.SimpleArray (payloadsFromList, payloadFromPtr)
 import           Data.Array.Accelerate.Shared.EmitHelpers ((#))
 
+import           Data.Array.Accelerate.BackendClass (Backend(..))
+
+
 import qualified Data.Map         as M
 import           Data.Char        (isAlphaNum)
 import           Control.Monad    (when, forM_, forM)
@@ -40,8 +43,7 @@ import           System.Posix.DynamicLinker (withDL, RTLDFlags(..), dlsym)
 -- import Foreign.Ptr        (Ptr)
 --import Data.Array.Unboxed (UArray)
 
---------------------------------------------------------------------------------
-
+----------------------------------------
 -- Phase 3 passes:
 import Data.Array.Accelerate.BackendKit.Phase3.KernFreeVars      (kernFreeVars)
 import Data.Array.Accelerate.BackendKit.Phase3.ToGPUIR           (convertToGPUIR)
@@ -51,6 +53,29 @@ import qualified Data.Array.Accelerate.BackendKit.IRs.CLike     as C
 import qualified Data.Array.Accelerate.BackendKit.IRs.GPUIR     as G
 import           Data.Array.Accelerate.BackendKit.IRs.Metadata   (ArraySizeEstimate, FreeVars)
 
+----------------------------------------------------------------------------------------------------
+-- The main purpose of this file is to define a new Backend type
+
+{-
+-- | This is an abstract type representing the internal state of the backend.
+data CilkBackend = CilkBackend
+
+-- | Create a new Cilk backend based on the configuration information.
+
+-- | Cilk data is not really very "remote", it just lives on the C heap.
+-- newtype CilkRemote a = ForeignPtr a 
+
+newtype CilkRemote a = CilkRemote SA.AccArray
+
+instance Backend CilkBackend where
+  type Remote CilkBackend a = CilkRemote a
+  
+  runRaw _ acc _blob =
+    rawRunIO CilkParallel "" (phase1 acc)
+
+-}
+
+----------------------------------------------------------------------------------------------------
 -- | Run a cut-down version of phase3 of the compiler:
 --   WARNING: CODE DUPLICATION.
 -- 
