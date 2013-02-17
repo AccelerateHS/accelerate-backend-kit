@@ -222,8 +222,10 @@ loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv } soName =
       dbgPrint$"[JIT] Fetched result ptr: "++show rname++" = "++show ptr++" and size "++show size
       payl <- payloadFromPtr (fst$ sizeEnv # rname) size (castPtr ptr)
       return (S.AccArray [size] [payl])
-    
+
+    dbgPrint$"[JIT] Destroying args record: "++show argsRec
     (mkDestroyRecord dar) argsRec
+    dbgPrint$"[JIT] Destroying results record: "++show resultsRec
     (mkDestroyRecord drr) resultsRec
     let table = M.fromList $ zip allResults arrs
     return$ map (table #) progResults

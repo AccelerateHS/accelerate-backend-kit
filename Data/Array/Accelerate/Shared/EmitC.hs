@@ -104,6 +104,7 @@ instance EmitBackend CEmitter where
 
     let useBinds   = getUseBinds prog
         allResults = standardResultOrder progResults
+        allUses    = S.fromList $ map (\(a,b,c) -> a) useBinds
     ----------------------------------------
     ------    Argument Initialization  -----
     cppStruct "ArgRecord" "" $ do
@@ -134,7 +135,10 @@ instance EmitBackend CEmitter where
     funDef "void" "DestroyResultRecord" ["struct ResultRecord*"] $ \arg -> do
       comm "In the CURRENT protocol, we free all results SIMULTANEOUSLY, here:"
       forM_ allResults $ \ name -> do
-        E.emitStmt$ function "free" [arg `arrow` varSyn name]
+        let elt = P.fst$ sizeEnv # name 
+        if S.member name allUses
+        then comm$"NOT freeing "++show name++" because it came in from Haskell."
+        else freeCStorage elt (arg `arrow` varSyn name)
       E.emitStmt$ function "free" [arg]
     forM_ allResults $ \ name -> do 
       let elt = P.fst $ sizeEnv#name
@@ -160,8 +164,13 @@ instance EmitBackend CEmitter where
                case sizeEnv # rname of 
                  (_, TrivVarref vr) -> (varSyn vr)
                  (_, TrivConst  n)  -> fromIntegral n
-#endif             
---           return_ 0
+#endif
+           comm "Finally, we free all arrays that are NOT either input or outputs:"
+           forM_ progBinds $ \ GPUProgBind { outarrs } -> do
+             forM_ outarrs  $ \ (vr,_,ty) ->
+               if S.member vr allUses P.|| elem vr allResults
+               then return ()
+               else freeCStorage ty (varSyn vr)
     return ()
 
   -- ARGUMENT PROTOCOL: Folds expect: ( inSize, inStride, outArrayPtr, inArrayPtr, initElems..., kernfreevars...)
@@ -200,6 +209,14 @@ instance EmitBackend CEmitter where
             return () -- End rawFunDef
     return () -- End emitFoldDef
    
+-- | This abstracts out the calls to reclaim storage.  If the policy changes on what
+-- is heap allocated (currently only TArray), then this needs to change.
+freeCStorage :: Type -> Syntax -> EasyEmit ()
+freeCStorage ty exp = 
+  case ty of
+    TArray _ _ -> E.emitStmt$ function "free" [exp]
+    _          -> return () -- This is stack allocated.
+
 
 --------------------------------------------------------------------------------
 
