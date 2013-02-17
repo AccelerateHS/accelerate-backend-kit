@@ -53,10 +53,13 @@ emitC pm prog@GPUProg{progBinds} =
     binds = L.map (\(v,_,ty) -> (v,ty)) $
             concatMap outarrs progBinds
 
--- The name of the arguments record with Use-imported arrays:
+-- | Internal: The name of the arguments record with Use-imported arrays:
 globalArgs :: String
 globalArgs = "argsRec"
 
+-- | Internal: 
+globalResults :: String
+globalResults = "resultsRec"
 
 -- | Find only the Use-bindings among the `progBinds`.  This standardizes the ORDER
 -- in which Use bindings are fed to the compiled program.
@@ -89,10 +92,11 @@ instance EmitBackend CEmitter where
   scalarKernelReturnType (CEmitter CilkParallel _) = "__declspec(vector) void"
   scalarKernelReturnType (CEmitter Sequential _)   = "void"
 
-  emitMain e prog@GPUProg{progBinds} = do
+  emitMain e prog@GPUProg{progBinds, progResults, sizeEnv} = do
 
     let useBinds = getUseBinds prog
     ----------------------------------------
+    ------    Argument Initialization  -----
     cppStruct "ArgRecord" "" $ do
       comm "These are all the Use arrays gathered from the Acc computation:"
       forM_ useBinds $ \ (vr,arrty,_) -> 
@@ -101,16 +105,33 @@ instance EmitBackend CEmitter where
       return_ "malloc(sizeof(struct ArgRecord))"
     funDef "void" "DestroyArgRecord" ["struct ArgRecord*"] $ \arg -> do
       E.emitStmt$ function "free" [arg]
-
     forM_ useBinds $ \ (vr,ty,_) -> 
-      funDef "struct ArgRecord*" ("LoadArg_" ++ show vr) ["struct ArgRecord*", "int", emitType e ty] $ \ (args,size,ptr) -> do
+      funDef "void" ("LoadArg_" ++ show vr) ["struct ArgRecord*", "int", emitType e ty] $ \ (args,size,ptr) -> do
         comm$ "In the future we could do something with the size argument."
         let _ = size::Syntax
         set (args `arrow` (varSyn vr)) ptr
         return ()
     ----------------------------------------
+    --------    Results Retrieval   --------
+    cppStruct "ResultRecord" "" $ do
+      comm "These are all the progResults arrays output from the Acc computation: "
+      forM_ progResults $ \ name -> do
+        let elt = P.fst$ sizeEnv # name 
+        E.emitStmt$ (emitType e (TArray 1 elt)) +++ " " +++ varSyn name
+    rawFunDef "struct ResultRecord*" "CreateResultRecord" [] $ do
+      return_ "malloc(sizeof(struct ResultRecord))"
+    funDef "void" "DestroyResultRecord" ["struct ResultRecord*"] $ \arg -> do
+      comm "In the CURRENT protocol, we free all results SIMULTANEOUSLY, here:"
+      forM_ progResults $ \ name -> do
+        E.emitStmt$ function "free" [arg `arrow` varSyn name]
+      E.emitStmt$ function "free" [arg]
+    forM_ progResults $ \ name -> do 
+      let elt = P.fst $ sizeEnv#name
+      funDef (emitType e (TArray 1 elt)) ("GetResult_" ++ show name) ["struct ResultRecord*"] $ \ results -> do
+        return_ (results `arrow` (varSyn name))
+    ----------------------------------------
       
-    _ <- rawFunDef "int" "MainProg" [("struct ArgRecord*",globalArgs)] $ do    
+    _ <- rawFunDef "int" "MainProg" [("struct ArgRecord*",globalArgs), ("struct ResultRecord*",globalResults)] $ do    
            comm "First we EXECUTE the program by executing each array op in order:"
            mapM_ (execBind e prog) (L.zip [0..] progBinds)
 #if 0           

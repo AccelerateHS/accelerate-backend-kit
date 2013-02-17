@@ -187,8 +187,10 @@ loadAndRunSharedObj useBinds soName =
     car  <- dlsym dl "CreateArgRecord"
     dar  <- dlsym dl "DestroyArgRecord"
     main <- dlsym dl "MainProg"
+    crr  <- dlsym dl "CreateResultRecord"
 
-    argsRec <- mkCreateArgRecord car
+    argsRec    <- mkCreateRecord car
+    resultsRec <- mkCreateRecord crr    
     forM_ (zip [1..] useBinds) $ \ (ix,(vr,ty,S.AccArray { S.arrDim, S.arrPayloads })) -> do
 
       putStrLn$" [JIT] Attempting to load Use array arg of type "++show ty++" and size "++show arrDim
@@ -205,16 +207,17 @@ loadAndRunSharedObj useBinds soName =
           putStrLn$" [JIT] successfully loaded Use arg "++show ix++", type "++show ty          
           return ()
 
-    (mkMainProg main) argsRec
+    (mkMainProg main) argsRec resultsRec
     putStrLn$" [JIT] Finished executing dynamically loaded Acc computation!"
     (mkDestroyArgRecord dar) argsRec
     
     error$"FINISH SO LOADING, get RESULTS: "++show (car,dar)
 
 
-type CreateArgRecordT = IO (Ptr ())
+-- | Shared for CreateArgRecord and CreateResultRecord
+type CreateRecordT = IO (Ptr ())
 foreign import ccall "dynamic" 
-   mkCreateArgRecord :: FunPtr CreateArgRecordT -> CreateArgRecordT
+   mkCreateRecord :: FunPtr CreateRecordT -> CreateRecordT
 
 type DestroyArgRecordT = Ptr () -> IO ()
 foreign import ccall "dynamic" 
@@ -225,11 +228,9 @@ foreign import ccall "dynamic"
    mkLoadArg :: FunPtr LoadArgT -> LoadArgT
 
 -- TODO: Needs to return something.
-type MainProgT = Ptr () -> IO ()
+type MainProgT = Ptr () -> Ptr () -> IO ()
 foreign import ccall "dynamic" 
    mkMainProg :: FunPtr MainProgT -> MainProgT
-
-
 
 
 -- Obtains a pointer to the payload of an unboxed array.

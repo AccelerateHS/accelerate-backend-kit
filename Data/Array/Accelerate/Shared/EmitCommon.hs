@@ -68,12 +68,25 @@ class EmitBackend e where
   -- | Convert the type into a printed type in the output language.
   emitType :: e -> Type -> Syntax
 
-  -- | Not relevant in some backends.  Emit a MainProg(void* argR) function that
-  -- invokes the kernels, together with other functions `CreateArgRecord()`,
-  -- `LoadArg_<name>(void* argR, int numelems, void* ptr)`, and `DestroyArgRecord(void* argR)` for
-  --   (1) creating a record to store program inputs (`Use` arrays),
+  -- | Not relevant in some backends.  Emit a MainProg(void* argR, void* resultR) function that
+  -- invokes the kernels.
+  -- 
+  -- Supporting functions enable argument packaging.  The functions
+  -- `CreateArgRecord()`, `LoadArg_<name>(void* argR, int numelems, void* ptr)`, and
+  -- `DestroyArgRecord(void* argR)` perform the following functions:
+  --   
+  --   (1) creating a record to store program inputs (the `Use` arrays),
   --   (2) filling each of its slots with an array
   --   (3) destroying the record after MainProg has been called with it
+  --
+  --  Likewise, there is a mirroring protocol for result retrieval.  CreateResultRecord,
+  --  GetResult_<name>(void*), and DestroyResultRecord are the functions in question.
+  --
+  --  TODO: Standardize when the results are freed so that we can read them back one
+  --  at a time.  Presently all are freed simultaneously by DestroyResultRecord.
+  -- 
+  --  TODO: For some backends we'll want to preallocate the final results on the
+  --  Haskell side.
   emitMain :: e -> GPUProg FreeVars -> EasyEmit ()
   emitMain _ _ = return ()
 
