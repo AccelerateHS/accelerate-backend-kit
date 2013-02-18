@@ -200,8 +200,8 @@ instance EmitBackend CEmitter where
               let [(wvr, _, wty)] = ws
               varinit (emitType e wty) (varSyn wvr) (arrsub (varSyn inV) ix)
               tmps <- emitBlock e bod
-              eprintf " ** Folding in position %d (it was %d) intermediate result %d\n"
-                      [ix, (arrsub (varSyn inV) ix), varSyn$ head tmps]
+              -- eprintf " ** Folding in position %d (it was %d) intermediate result %d\n"
+              --         [ix, (arrsub (varSyn inV) ix), varSyn$ head tmps]
               forM_ (fragileZip tmps vs) $ \ (tmp,(v,_,_)) ->
                  set (varSyn v) (varSyn tmp)
               return ()

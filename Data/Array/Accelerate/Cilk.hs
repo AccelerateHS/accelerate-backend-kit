@@ -75,12 +75,9 @@ instance Backend CilkBackend where
   separateMemorySpace _ = False
   compilesToDisk _ = True
 
-
-
 -- For now copying just means repacking
 hostCopy :: forall a . Sug.Arrays a => CilkBackend -> CilkRemote a -> IO a
 hostCopy _ (CilkRemote arrays) =
   return$
     repackAcc (undefined :: Acc a) arrays
 
--- repackAcc :: forall a . Sug.Arrays a => Sug.Acc a -> [S.AccArray] -> a
