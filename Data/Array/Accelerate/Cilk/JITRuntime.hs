@@ -116,7 +116,8 @@ rawRunIO pm name prog = do
      show elts++", "++show (length result)++" characters:\n "++take 80 result
   return$ parseMultiple result elts
 #else
-  loadAndRunSharedObj prog2 (thisprog++".so")
+  dbgPrint $ "[JIT]: Working directory: " ++ (unsafePerformIO $ readProcess "pwd" [] [])
+  loadAndRunSharedObj prog2 ("./" ++ thisprog++".so")
 #endif
  where
    parseMultiple _ [] = []
