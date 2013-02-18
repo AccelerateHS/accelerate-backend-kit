@@ -211,7 +211,9 @@ loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv } soName =
           dbgPrint$"[JIT] successfully loaded Use arg "++show ix++", type "++show ty          
           return ()
 
+    
     (mkMainProg main) argsRec resultsRec
+    
     dbgPrint$"[JIT] Finished executing dynamically loaded Acc computation!"
     
     arrs <- forM allResults $ \ rname -> do
