@@ -63,7 +63,9 @@ phase3_ltd prog =
   runPass    "convertToGPUIR"    convertToGPUIR    $     -- (size,freevars)
   runPass    "kernFreeVars"      kernFreeVars      $     -- (freevars)
   prog
-  
+
+cOptLvl = " -O3 "
+
 --------------------------------------------------------------------------------
 
 
@@ -101,7 +103,7 @@ rawRunIO pm name prog = do
            return "icc"
 
   let suppress = if dbg then "" else " -w " -- No warnings leaking through to the user.
-      ccCmd = cc++suppress++" -shared -fPIC -std=c99 "++thisprog++".c -o "++thisprog++".so"
+      ccCmd = cc++suppress++cOptLvl++" -shared -fPIC -std=c99 "++thisprog++".c -o "++thisprog++".so"
   dbgPrint$ "[JIT]   Compiling with: "++ ccCmd
   cd <- system$ ccCmd
   case cd of
