@@ -239,15 +239,13 @@ execBind e _prog (_ind, GPUProgBind {outarrs=resultBinds, op=(ScalarCode blk)}) 
    when dbg$ forM_ resultBinds $ \ (vr,_,ty) -> do
      eprintf (" [dbg] Top lvl scalar binding: "++show vr++" = "++ printfFlag ty++"\n") [varSyn vr]
    return ()
-     
+
 execBind e GPUProg{sizeEnv} (_ind, GPUProgBind {evtid, outarrs, op, decor=(FreeVars arrayOpFVs)}) =
-  let [(outV,_,ty)] = outarrs -- FIXME -- only handling one-output arrays for now...
-      TArray _ elty = ty 
-      elty' = emitType e elty in
   case op of
 
     -- Nothing to do here because the ArgRecord will already contain Use
     Use _ -> do comm$ "'Use'd arrays are already available in the arguments record:"
+                let [(outV,_,ty)] = outarrs -- Only one output Use's at this point.
                 varinit (emitType e ty) (varSyn outV) (strToSyn globalArgs `arrow` (varSyn outV))
                 return ()
     
@@ -256,14 +254,19 @@ execBind e GPUProg{sizeEnv} (_ind, GPUProgBind {evtid, outarrs, op, decor=(FreeV
     -- broken kind of eager evaluation currently.  It executes EVERYTHING:
     Cond etest bvr cvr -> do 
       comm "Declare an array (pointer) that will be set based on a conditional:"
-      E.var (emitType e ty) (varSyn outV)
-      if_ (emitE e etest)
-        (set (varSyn outV) (varSyn bvr))
-        (set (varSyn outV) (varSyn cvr))
+      case outarrs of
+        [(outV,_,ty)] -> do
+          E.var (emitType e ty) (varSyn outV)
+          if_ (emitE e etest)
+            (set (varSyn outV) (varSyn bvr))
+            (set (varSyn outV) (varSyn cvr))
+        _ -> error$"EmitC.hs: Cond should have been unzipped, should not have multiple outputs: "++show outarrs
 
     NewArray numelems -> do
       let len   = emitE e numelems
-      varinit (emitType e ty) (varSyn outV) (function "malloc" [sizeof elty' * len])
+          [(outV,_,ty)] = outarrs -- Only one output NewArray's at this point.
+          TArray _ elty = ty
+      varinit (emitType e ty) (varSyn outV) (function "malloc" [sizeof (emitType e elty) * len])
       return ()
   
     Kernel dimSzs (Lam formals _) args -> do
@@ -289,9 +292,6 @@ execBind e GPUProg{sizeEnv} (_ind, GPUProgBind {evtid, outarrs, op, decor=(FreeV
           step = case stride of
                    StrideConst s -> emitE e s
                    StrideAll     -> 1
-
-          -- TEMPORARY:
-          [inV] = inVs
       
       initVs <- emitBlock e initSB
       
@@ -299,11 +299,15 @@ execBind e GPUProg{sizeEnv} (_ind, GPUProgBind {evtid, outarrs, op, decor=(FreeV
       let freevars = arrayOpFVs 
           initargs = map varSyn initVs 
           len = 1  -- Output is fully folded
-          insize :: Syntax
-          insize  = trivToSyntax$ P.snd$ sizeEnv # inV
-          allargs = insize : step : varSyn outV : varSyn inV : initargs ++ map varSyn freevars
-          
-      varinit (emitType e ty) (varSyn outV) (function "malloc" [sizeof elty' * len])
+          insize :: Syntax -- All inputs are the SAME SIZE:
+          insize  = trivToSyntax$ P.snd$ sizeEnv # head inVs
+          outVs   = [ outV | (outV,_,_) <- outarrs ]
+          allargs = insize : step : map varSyn outVs ++ map varSyn inVs ++ initargs ++ map varSyn freevars
+
+      comm "Allocate all ouput space for the reduction operation:"
+      P.sequence$ [ varinit (emitType e (TArray nd elty)) (varSyn outV)
+                            (function "malloc" [sizeof (emitType e elty) * len])
+                  | (outV,_,TArray nd elty) <- outarrs ]
       -- Call the builder to fill in the array: 
       emitStmt$ (function$ strToSyn$ builderName evtid) allargs
       return ()
