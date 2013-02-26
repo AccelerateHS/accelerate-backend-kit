@@ -1,4 +1,5 @@
 {-# Language NamedFieldPuns #-}
+{-# Language ParallelListComp #-}
 
 module Data.Array.Accelerate.BackendKit.Phase2.UnzipArrays (unzipArrays) where
 import Control.Monad.State.Strict
@@ -51,17 +52,30 @@ doBinds _ [] = []
 doBinds env (ProgBind vo _ _ (Right (Vr v1)) : rest) =
   -- Copy propagataion:
   doBinds (M.insert vo (env#v1) env) rest
-  
+
+-- Unzip Use to make things easier for future passes:
+doBinds env (ProgBind vo aty (SubBinds {subnames,arrsize},d2) (Right (Use (AccArray {arrDim,arrPayloads}))) : rest) 
+  | length subnames > 1 = 
+    [ ProgBind subname arrty
+               (OpInputs [], (SubBinds {subnames=[subname], arrsize=arrsize},d2))
+               (Right (Use (AccArray { arrDim, arrPayloads = [onepayl] })))
+    | subname <- subnames
+    | arrty   <- S.flattenArrTy aty
+    | onepayl <- arrPayloads  
+    ]
+    ++ doBinds (M.insert vo subnames env) rest
+
 doBinds env (ProgBind vo ty dec@(SubBinds {subnames},_) op : rest) =
   ProgBind nukedVar ty (dec',dec) op' :
   doBinds (M.insert vo subnames env) rest
   where
     (dec',op') =
       case op of
-        Left  ex -> (OpInputs[], Left$  doE  env ex)
+        Left  ex -> (OpInputs[], Left$  doE  env ex)        
         Right ae -> let (ls,ae') = doAE env ae in
                     (OpInputs ls,Right ae')
 
+-- Returns (unzipped) operator INPUTS
 doAE :: Env -> AExp -> ([[Var]], AExp)
 doAE env ae =
   case ae of

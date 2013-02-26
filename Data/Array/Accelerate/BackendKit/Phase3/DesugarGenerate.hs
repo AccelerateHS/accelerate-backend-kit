@@ -1,5 +1,6 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE ParallelListComp #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 
@@ -58,8 +59,8 @@ doBinds prog (pb@GPUProgBind { outarrs, evtid, evtdeps,
            iters  = fragileZip iterVs [szE]
            -- szE = foldl mulI one els
            szE = G.trivToExp tr
-           -- After this transformation in this pass, the output variable itself becomes a "free var":
-           freebinds' = outarr1 : corefreebinds
+           -- After this transformation in this pass, the output variables become "free vars":
+           freebinds' = outarrs ++ corefreebinds
            
        newevt <- genUniqueWith "evtNew"
        rst <- doBinds prog rest
@@ -70,7 +71,7 @@ doBinds prog (pb@GPUProgBind { outarrs, evtid, evtdeps,
                                    (map (EVr . fst3) freebinds')) :
          rst 
  where
-   [outarr1@(arrnm,_spc,_ty)] = outarrs -- Touch this and you make the one-output-array assumption!
+--   [outarr1@(arrnm,_spc,_ty)] = outarrs -- Touch this and you make the one-output-array assumption!
 
    -- All the free variables must be explicitly passed to the kernel:
    corefreebinds = map
@@ -86,9 +87,14 @@ doBinds prog (pb@GPUProgBind { outarrs, evtid, evtdeps,
    -- Convert a Generate body into a Kernel body.  Rather than
    -- returning a value, this writes it to an output arr.
    doBod [ixV] (ScalarBlock bnds results stmts) =
+     -- Only one ixV because we're one-dimensional now:
      case results of
-       [outv] -> ScalarBlock bnds []
-                 (stmts ++ [SArrSet arrnm (EVr ixV) (EVr outv)])
+       outvs -> ScalarBlock bnds []
+                 (stmts ++
+                  [ SArrSet arrnm (EVr ixV) (EVr outv)
+                  | outv <- outvs
+                  | (arrnm,_,_) <- outarrs
+                  ])
        ls -> error$"DesugarGenerate.hs/doBod: not handling multi-result Generates presently: "++show ls
 
    doBod indexVs _ = error$"DesugarGenerate.hs/doBod: handling only 1D Generates, not dimension "++show (length indexVs)
