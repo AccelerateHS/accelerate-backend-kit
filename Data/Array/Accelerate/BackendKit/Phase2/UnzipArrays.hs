@@ -44,7 +44,6 @@ unzipArrays prog@Prog{progBinds,progResults} =
 
     
 
--- type Env = M.Map Var SubBinds
 type Env = M.Map Var [Var]
 
 doBinds :: Env -> [ProgBind (SubBinds,a)] -> [ProgBind (OpInputs,(SubBinds,a))]
@@ -104,7 +103,9 @@ doE env ex =
   case ex of
     ETupProject ix len (EIndexScalar avr ind) ->
       if len /= 1 then error$"UnzipArrays.hs: ETupProject with len/=1: "++show ex
-      else EIndexScalar (reverse (env # avr) !! ix) (doE env ind)
+      else
+        trace ("Projecing out of "++show (env # avr)++" for avr "++show avr++" want index "++show ix)$
+        EIndexScalar (reverse (env # avr) !! ix) (doE env ind)
     EIndexScalar avr e  -> EIndexScalar avr (doE env e)
     ETupProject ix l e  -> ETupProject ix l (doE env e) 
     EShape _            -> err ex

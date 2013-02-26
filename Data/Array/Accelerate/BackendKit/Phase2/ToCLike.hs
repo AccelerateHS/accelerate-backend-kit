@@ -79,7 +79,7 @@ convertToCLike Prog{progBinds,progResults,progType,uniqueCounter,typeEnv} =
     -- FIXME: Scanl' breaks the assumption about TArray for array ops:
     red acc (ProgBind _ (TArray _ elt) (_,(SubBinds vrs szE,_)) _) =
       let Just triv = szE in
-      M.union (M.fromList$ zip vrs$ zip (flattenTypes elt) (repeat triv))
+      M.union (M.fromList$ zip vrs$ zip (S.flattenTy elt) (repeat triv))
               acc
     red acc _ = acc
       
@@ -95,8 +95,8 @@ doBlock env ex = do
 -- | Create temporary bindings and the callback/continuation that writes them.
 makeResultWriterCont :: Type -> GensymM ([(Var,Type)], Cont)
 makeResultWriterCont ty = do 
-  tmps <- sequence$ replicate (countVals ty) genUnique
-  let binds = zip tmps (flattenTypes ty)
+  tmps <- sequence$ replicate (S.countTyScalars ty) genUnique
+  let binds = zip tmps (S.flattenTy ty)
       cont results =
         L.zipWith (\ tmp result -> LL.SSet tmp (result))
           tmps results
@@ -151,7 +151,7 @@ doBind env (ProgBind _ ty decor@(OpInputs vis, (SubBinds vos _, (foldstride, _))
             Left  ex -> LL.ScalarCode <$> doBlock env ex
             Right ae -> doAE ae
 
-  let outBinds = fragileZip vos (flattenTy ty)
+  let outBinds = fragileZip vos (flattenEither ty)
   return (LL.LLProgBind outBinds decor rhs')
 
  where
@@ -203,8 +203,8 @@ doBind env (ProgBind _ ty decor@(OpInputs vis, (SubBinds vos _, (foldstride, _))
       err = error$"ToCLike.hs/doAE: this form should be desugared by now: "++show ae
    
    foldHelp inVs' stride (Lam2 (v,t) (w,u) bod) variant = do
-      let vtys = flattenTy t
-          wtys = flattenTy u
+      let vtys = S.flattenTy t
+          wtys = S.flattenTy u
       vs' <- genUniques v (length vtys)
       ws' <- genUniques w (length wtys)
       let env' = M.insert v (t,vs',Nothing) $
@@ -254,14 +254,6 @@ doE env ex =
 ----------------------------------------------------------------------------------------------------
 -- Little Helpers:
 
-countVals :: Type -> Int
-countVals (TTuple ls) = sum$ L.map countVals ls
-countVals _           = 1 
-
-flattenTypes :: Type -> [Type]
-flattenTypes (TTuple ls) = concatMap flattenTypes ls
-flattenTypes oth         = [oth]
-
 sing :: t -> [t]
 sing x = [x]
 
@@ -310,3 +302,9 @@ mkTup ls  = Tup ls
 insertAll []         mp = mp
 insertAll ((k,v):tl) mp = M.insert k v (insertAll tl mp)
 -- Need to test whether this is faster than fromList + union.
+
+-- Flatting that handles either array or scalar types.
+flattenEither :: Type -> [Type]
+flattenEither ty@(TArray _ _) = S.flattenArrTy ty
+flattenEither ty              = S.flattenTy ty
+

@@ -6,6 +6,7 @@ module Data.Array.Accelerate.BackendKit.Phase2.DesugToGenerate (desugToGenerate)
 
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
 import Data.Array.Accelerate.BackendKit.IRs.Metadata (Uses(..), ArraySizeEstimate(..))
+import Data.Array.Accelerate.BackendKit.CompilerUtils (shapeName)
 import qualified Data.Map as M
 import Debug.Trace
 
@@ -31,13 +32,13 @@ doBinds n mp (ProgBind arOut ty (size, _) (Right ae) : rest) = this : doBinds (n
      ProgBind arOut ty size $ Right $ 
      case ae of 
        Map (Lam1 (evr, ety) bod) arIn ->
-         Generate (mkETuple shapels)
+         Generate (EVr (shapeName arOut)) -- (mkETuple shapels)
           (Lam1 (ind, indty)
            (ELet (evr, ety, EIndexScalar arIn (EVr ind))
                  bod))
 
        ZipWith (Lam2 (evr1, ety1) (evr2, ety2) bod) arIn1 arIn2 ->
-         Generate (mkETuple shapels)
+         Generate (EVr (shapeName arOut)) -- (mkETuple shapels)
           (Lam1 (ind, indty)
            (ELet (evr1,ety1, EIndexScalar arIn1 (EVr ind)) $
             ELet (evr2,ety2, EIndexScalar arIn2 (EVr ind)) $ 
@@ -51,23 +52,26 @@ doBinds n mp (ProgBind arOut ty (size, _) (Right ae) : rest) = this : doBinds (n
        oth -> oth -- Other AExps are unchanged.
 
    ind = var$"indG_"++show n
-   indty = mkTTuple$ map (\_ -> TInt) shapels
+   indty = case ty of
+            TArray n _ -> mkTTuple$ replicate n TInt
+--   indty = mkTTuple$ map (\_ -> TInt) shapels
 
-   -- A list of expressions *which will compute the shape at runtime*:
-   shapels :: [Exp]
-   shapels = 
-     case size of               
-       KnownSize ls -> map (EConst . I) ls 
-       UnknownSize -> 
-         (error$"DesugarMaps: not handling Map/ZipWith of UnknownSize yet...")$ 
-         -- TEMP: This is there for later:
-         let numDims = error "desguToGenerate: UNFINISHED -- need numDims" in
-         createShapeIntersection numDims $         
-           map (\v -> case M.lookup v mp of
-                        Nothing -> Left v
-                        Just ls -> Right ls
-                       )
-               [] -- <- all of the input array-vars go here
+   -- -- A list of expressions *which will compute the shape at runtime*:
+   -- shapels :: [Exp]
+   -- shapels = 
+   --   case size of               
+   --     KnownSize ls -> map (EConst . I) ls 
+   --     UnknownSize -> 
+   --       (error$"DesugarToGenerate: not handling Map/ZipWith of UnknownSize yet...")$ 
+   --       -- TEMP: This is there for later:
+   --       let numDims = error "desguToGenerate: UNFINISHED -- need numDims" in
+   --       createShapeIntersection numDims $         
+   --         map (\v -> case M.lookup v mp of
+   --                      Nothing -> Left v
+   --                      Just ls -> Right ls
+   --                     )
+   --             [] -- <- all of the input array-vars go here
+
 
 -- TODO FIXME: Handle unknown sizes and intersections:
 createShapeIntersection :: Int -> [Either Var [Int]] -> [Exp]

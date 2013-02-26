@@ -28,7 +28,7 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
      -- * Helper routines and predicates:
      primArity, constToInteger, constToRational, constToNum, mkZeroConst,
      isIntType, isFloatType, isNumType, 
-     isIntConst, isFloatConst, isNumConst, hasArrayType, flattenTy, 
+     isIntConst, isFloatConst, isNumConst, hasArrayType, flattenTy, flattenArrTy, countTyScalars,
 
      var, progToEnv, lookupProgBind, expFreeVars,
      
@@ -327,7 +327,7 @@ primArity p = case M.lookup p mp of
    zip unaries  (repeat 1)
   binaries = 
     [BP And, BP Or] ++
-    [NP Add, NP Mul, IP BNot] ++
+    [NP Add, NP Sub, NP Mul, IP BNot] ++
     map IP [Quot, Rem, IDiv, Mod, BOr, BXor, BShiftL, BShiftR, BRotateL, BRotateR] ++
     map FP [FDiv, FPow, LogBase, Atan2, Truncate, Round, Floor, Ceiling] ++
     map SP [Lt, Gt, LtEq, GtEq, Eq, NEq, Max, Min]
@@ -788,11 +788,34 @@ typecheckProg prog@Prog{progBinds, progResults, progType } =
                                    "\nGot:      "++show got ++
                                    "\nExpected: "++show expected
 
--- | Recursively concatenate tuple types into a flat list.
+-- | Flatten any outer layers of tupling from a type.
 flattenTy :: Type -> [Type]
-flattenTy (TTuple ls) = concatMap flattenTy ls
-flattenTy ty          = [ty]
-  
+flattenTy (TTuple ls)  = concatMap flattenTy ls
+flattenTy         ty  = [ty]
+
+-- | Recursively concatenate tuple types into a flat list.  If given an array type,
+-- flatten inside the array type and return a list of array types.
+-- flattenArrTy :: Type -> [Type]
+-- flattenArrTy (TTuple ls)    = concatMap flattenArrTy ls
+-- flattenArrTy (TArray d elt) = map (TArray d) (flattenArrTy elt)
+-- flattenArrTy         ty     = [ty]
+
+
+-- | Only accept Array types.  Recursively concatenate tuple types into a flat list,
+-- and split the array into separate (unzipped) arrays.
+flattenArrTy :: Type -> [Type]
+flattenArrTy (TArray d elt) = map (TArray d) (flattenTy elt)
+flattenArrTy ty = error$"flattenArrTy should only take an array type: "++show ty
+
+
+-- | Count the number of values when the type is flattened.  Equilavent to `length
+-- (flattenTy ty)`.
+countTyScalars :: Type -> Int
+countTyScalars (TArray _ elt) = countTyScalars elt
+countTyScalars (TTuple ls) = sum$ map countTyScalars ls
+countTyScalars _           = 1 
+
+
 ----------------------------------------------------------------------------------------------------
 -- End Type Checking 
 ----------------------------------------------------------------------------------------------------

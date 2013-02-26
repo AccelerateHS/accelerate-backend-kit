@@ -9,7 +9,7 @@ import Control.Applicative ((<$>),(<*>))
 import Control.Monad.State.Strict
 import Data.Map                   as M
 
-import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
+import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import Data.Array.Accelerate.BackendKit.Utils.Helpers (mapMAEWithEnv,GensymM, genUnique)
 --------------------------------------------------------------------------------
 
@@ -31,6 +31,7 @@ type Env = M.Map Var Type
 --  (3) ECond may not occur in any operand position IF
 --      * either of it's branches contains ELet
 --      * OR its branches return a tuple type.
+--  (4) The index expression of EIndexScalar is trivial. TODO FINISHME
 normalizeExps :: Prog a -> Prog a 
 normalizeExps prog@Prog{progBinds,uniqueCounter} =
   prog{ progBinds= binds, uniqueCounter= newCounter }
@@ -92,7 +93,7 @@ doE env ex =
                                                 (y,bnds3) <- runWriterT$ doE env e3
                                                 return (x,y,bnds2++bnds3)
                          -- We lift out the ECond either due to it containing lets or returning tuples:
-                         case (bnds, flattenTypes (recoverExpType env e2)) of
+                         case (bnds, S.flattenTy (recoverExpType env e2)) of
                            ([],[_]) -> return$ ECond e1' x y 
                            -- Otherwise the rule is that the ECond can stay part of the 
                            -- "spine" if it is lifted into the RHS of a let binding:
@@ -134,10 +135,6 @@ discharge = wrapLets
 wrapLets :: [Binding] -> Exp -> Exp
 wrapLets []                bod = bod
 wrapLets ((v,t,rhs) :rest) bod = ELet (v,t,rhs) $ discharge rest bod
-
-flattenTypes :: Type -> [Type]
-flattenTypes (TTuple ls) = concatMap flattenTypes ls
-flattenTypes oth         = [oth]
 
 
 err :: Show a => a -> t

@@ -247,7 +247,7 @@ fragileZip a b = loop a b
   where
     loop [] []           = []
     loop (h1:t1) (h2:t2) = (h1,h2) : loop t1 t2
-    loop _ _             = error$"JIT.hs/fragileZip: lists were not the same length: "++show a++" "++show b
+    loop _ _             = error$"fragileZip: lists were not the same length:\n  "++show a++"\n  "++show b
 
 -- | This one mandates that all three lists be the same 
 fragileZip3 :: [t] -> [t1] -> [t2] -> Maybe [(t, t1, t2)]

@@ -1,5 +1,6 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE ParallelListComp #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 -- | This file contains a pass for removing scalar tuples.
@@ -20,7 +21,9 @@ import Data.Array.Accelerate.BackendKit.CompilerUtils (sizeName)
 import Data.Array.Accelerate.BackendKit.Phase2.NormalizeExps (wrapLets)
 import Data.Array.Accelerate.BackendKit.IRs.Metadata (ArraySizeEstimate(..), SubBinds(..), Stride(..))
 import Data.Array.Accelerate.BackendKit.Utils.Helpers
-       (GensymM, genUnique, genUniqueWith, mkPrj, mapMAEWithGEnv, isTupleTy, fragileZip, fragileZip3)
+       (GensymM, genUnique, genUniqueWith, mkPrj, mapMAEWithGEnv, isTupleTy, fragileZip, fragileZip3, (#))
+
+import Debug.Trace (trace)
 ----------------------------------------------------------------------------------------------------
 
 -- | Map the original possibly-tuple-valued variable names to the
@@ -70,12 +73,13 @@ unzipETups :: Prog           (Maybe(Stride Exp),ArraySizeEstimate) ->
 unzipETups prog@Prog{progBinds, uniqueCounter, typeEnv} =
     prog'
  where
-  prog' = prog{ progBinds= map addSubBinds binds, 
+  prog' = trace ("Got typenv "++show typeEnv)$
+          prog{ progBinds= map addSubBinds binds, 
                 uniqueCounter= newCounter2,
                 -- After this pass we keep type entries for BOTH tupled and detupled versions:
                 typeEnv = M.union typeEnv $
                           M.fromList$
-                          concatMap (\(v,t) -> fragileZip (lkup v) (S.flattenTy t)) $
+                          concatMap (\(v,t) -> fragileZip (lkup v) (flattenEither t)) $
                           M.toList typeEnv
                 }
 
@@ -105,8 +109,9 @@ unzipETups prog@Prog{progBinds, uniqueCounter, typeEnv} =
   ----------------------------------------
   envM :: GensymM (M.Map Var [Var])
   envM = M.fromList <$> mapM fn (M.toList typeEnv)
-  fn (vr,ty) | countVals ty == 1 = return (vr,[vr])
-             | otherwise = do tmps <- sequence$ replicate (countVals ty) (genUniqueWith$ show vr)
+  fn (vr,ty) | S.countTyScalars ty == 1 = return (vr,[vr])
+             | otherwise = do tmps <- sequence$ replicate (S.countTyScalars ty)
+                                                          (genUniqueWith$ show vr)
                               return (vr,tmps)
   nextenv :: M.Map Var [Var]
   (nextenv, newCounter1)  = runState envM uniqueCounter
@@ -164,6 +169,7 @@ doSpine env ex =
     ETuple els            -> (mkETuple . concat) <$> mapM (doE env) els
     ETupProject i l e     -> mkETuple <$> doProject env i l e 
     EIndexScalar avr indE -> (EIndexScalar avr . mkETuple) <$> doE env indE
+
     -- In tail (or "spine") position multiple values may be returned by the branches:
     ECond e1 e2 e3        -> ECond <$> (unsing <$> doE env e1) <*> doSpine env e2 <*> doSpine env e3
 
@@ -182,7 +188,7 @@ doSpine env ex =
                        | otherwise -> -- Here's where we split the variable if we can:
                          case rhs of
                            ECond _ _ _ -> error"UnzipETups.hs: this should be impossible."
-                           _ -> do let tyLs = S.flattenTy t
+                           _ -> do let tyLs = flattenOnlyScalar t
                                    gensyms <- sequence$ replicate (length tyLs) genUnique
                                    rhsLs <- doE env rhs
                                    let env' = M.insert v (t,Just gensyms) env
@@ -196,10 +202,10 @@ doSpine env ex =
     EShapeSize _ -> err ex
     EIndex     _ -> err ex
 
--- | Expand a varref to a tuple to a tuple of varrefs to the components.
+-- | Expand a (scalar) varref to a tuple to a tuple of varrefs to the components.
 blowUpVarref :: Var -> Type -> [Exp]
 blowUpVarref vr ty = 
-  let size = length $ S.flattenTy ty 
+  let size = length $ flattenOnlyScalar ty 
   in reverse [ mkPrj ind 1 size (EVr vr) | ind <- [ 0 .. size-1 ]]
 
 -- | A variable reference either uses the old name or uses one of the
@@ -223,8 +229,15 @@ doE env ex =
     ETupProject i l e    -> doProject env i l e
     EVr vr               -> return$ handleVarref env vr
     --------------------------------------------------------------------------------
-    -- As long as arrays remain multidimensional, indices can remain tuples:
-    EIndexScalar avr indE -> (sing . EIndexScalar avr . mkETuple) <$> doE env indE 
+    -- As long as arrays remain multidimensional, array derefs can remain tuples:
+    -- EIndexScalar avr indE -> (sing . EIndexScalar avr . mkETuple) <$> doE env indE 
+
+    EIndexScalar avr indE
+      -- Maintain invariant that this function return a list of the correct length.
+      | isTrivial indE -> do let (TArray _ elt,_) = env # avr
+                                 width = length$ flattenOnlyScalar elt
+                             return [ ETupProject ix 1 (EIndexScalar avr indE) | ix <- reverse [0..width-1] ]
+      | otherwise -> error$ "UnzipETups.hs: Incoming grammar invariants not satisfied, EIndexScalar should have trivial index: "++show indE
 
     -- Because of the normalization phase, we know this conditional
     -- has no Lets in its branches, AND it does *not* have a tuple return type:
@@ -258,10 +271,18 @@ flattenConst :: Const -> [Const]
 flattenConst (Tup ls) = concatMap flattenConst ls
 flattenConst c        = [c]
 
-countVals :: Type -> Int
-countVals (TTuple ls) = sum$ map countVals ls
-countVals _           = 1 
-  
+-- Flatting that handles either array or scalar types.
+flattenEither :: Type -> [Type]
+flattenEither ty@(TArray _ _) = S.flattenArrTy ty
+flattenEither ty              = S.flattenTy ty
+
+-- Restrictive version that verifies we don't hit an array type:
+flattenOnlyScalar :: Type -> [Type]
+flattenOnlyScalar (TTuple ls)  = concatMap flattenTy ls
+flattenOnlyScalar ty@(TArray _ _) = error$"flattenOnlyScalar: shouldn't get a TArray: "++show ty
+flattenOnlyScalar          ty  = [ty]
+
+
 err :: Show a => a -> t
 err ex = error$"UnzipETups.hs: this form should have been desugared before this pass: "++show ex
 
@@ -272,3 +293,7 @@ unsing ls  = error$"UnzipETups.hs: expected singleton list, got: "++show ls
 sing :: a -> [a]
 sing x = [x]
 
+isTrivial :: Exp -> Bool
+isTrivial (EVr _)    = True
+isTrivial (EConst _) = True
+isTrivial _          = False
