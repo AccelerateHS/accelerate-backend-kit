@@ -61,12 +61,16 @@ doBinds prog (pb@GPUProgBind { outarrs, evtid, evtdeps,
            szE = G.trivToExp tr
            -- After this transformation in this pass, the output variables become "free vars":
            freebinds' = outarrs ++ corefreebinds
+           numNew = length outarrs
            
-       newevt <- genUniqueWith "evtNew"
+       newevts <- sequence$ replicate numNew (genUniqueWith "evtNew")
        rst <- doBinds prog rest
        return $ 
-         GPUProgBind newevt [] outarrs (FreeVars []) (NewArray szE) :
-         GPUProgBind evtid (newevt:evtdeps) [] (FreeVars [])
+         [ GPUProgBind newevt [] [outarr] (FreeVars []) (NewArray szE)
+         | outarr <- outarrs
+         | newevt <- newevts
+         ] ++ 
+         GPUProgBind evtid (newevts ++ evtdeps) [] (FreeVars [])
                      (Kernel iters (Lam freebinds' (doBod iterVs bod))
                                    (map (EVr . fst3) freebinds')) :
          rst 
