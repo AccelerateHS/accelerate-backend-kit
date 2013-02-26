@@ -160,11 +160,16 @@ doBind env (ProgBind v t dec (Right ae)) = do
  where
    
 -- | Process along the spine (which will become Stmts in the CLike LLIR).
+--   Note that this INCLUDES scalar args to array ops (e.g. init value for Fold).   
 doSpine :: Env -> Exp -> GensymM Exp
 doSpine env ex =
   case ex of
     EVr vr                -> return$ mkETuple $ handleVarref env vr
-    EConst _c             -> return ex
+
+    -- Normalize the representation of tuple constants at this point:
+    EConst (Tup c)        -> return$ mkETuple $ map EConst (flattenConst (Tup c))
+    EConst c              -> return ex
+    
     -- In all three of the following we allow tuples to remain:
     ETuple els            -> (mkETuple . concat) <$> mapM (doE env) els
     ETupProject i l e     -> mkETuple <$> doProject env i l e 

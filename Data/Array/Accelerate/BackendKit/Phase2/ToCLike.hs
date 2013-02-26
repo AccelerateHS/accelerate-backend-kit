@@ -239,7 +239,9 @@ doE env ex =
 
     ETupProject _ _ _ -> error"FINISHME -- ETupProject"
     
-    EConst c         -> LL.EConst$ mkTup$ flattenConst c
+    EConst c         -> case c of
+                          Tup _ -> error$"ToCLike.hs: should not have remaining tuple constants: "++show c
+                          oth   -> LL.EConst c
     EPrimApp ty p ls -> LL.EPrimApp ty p $ L.map (doE env) ls
     ECond a b c      -> LL.ECond (doE env a) (doE env b) (doE env c)
     EIndexScalar v e -> LL.EIndexScalar v (doE env e) 0
@@ -289,10 +291,6 @@ exp2Blk :: Type -> LL.Exp -> GensymM LL.ScalarBlock
 exp2Blk ty ex = do
   tmp <- genUnique
   return$ LL.ScalarBlock [(tmp,ty)] [tmp] [LL.SSet tmp ex]
-
-flattenConst :: Const -> [Const]
-flattenConst (Tup ls) = concatMap flattenConst ls
-flattenConst c        = [c]
 
 mkTup :: [Const] -> Const
 mkTup [x] = x
