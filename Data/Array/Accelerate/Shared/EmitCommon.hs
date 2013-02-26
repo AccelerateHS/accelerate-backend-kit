@@ -138,9 +138,6 @@ emitBindDef e (_ind, pb@GPUProgBind{ evtid, op, outarrs } ) =
      -- Do NOTHING for scalar binds presently, they will be interpreted CPU-side by JIT.hs:
      ScalarCode _ -> return ()
 
-     _ | length outarrs P.> 1 -> 
-       error$"EmitCommon.hs/emitBindDef: cannot handle multi-array-variable bindings yet:\n"++show (doc pb)
-
      -- Cond does not create a *kernel* just more work for the driver/launcher:
      Cond _ _ _ -> return ()
      Use      _ -> return () -- This is also the job of the driver.
@@ -156,7 +153,7 @@ emitBindDef e (_ind, pb@GPUProgBind{ evtid, op, outarrs } ) =
            idxargs = [(ix, G.Default, TInt)]
 
        -- ARGUMENT PROTOCOL: Extra arguments are expected:
-       --   * The scalar kernel expects (indices ..., formals ...)
+       --   * The scalar kernel expects (indices ..., formals ...)  (one index for 1D)
        --   * The array builder expects (size, formals ...)
        -- Thus the caller of the builder function is expected to evaluate the size.
            
@@ -254,7 +251,7 @@ emitConst cnst = strToSyn$
     B True  -> "1"
     B False -> "0"
     Tup []  -> "0" -- Unit type. 
-    Tup _  -> error "emitConst: no support for tuple constants presently."
+    Tup _  -> error$"emitConst: no support for tuple constants presently: "++show cnst
     _ -> error "internal error: this can never happen"
 
 

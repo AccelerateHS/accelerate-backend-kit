@@ -22,6 +22,7 @@ import qualified Prelude as P
 import Prelude (error, ($), (.), (++), show, return, Show, Maybe(..))
 import Data.Int (Int)
 import Data.Word (Word)
+import Debug.Trace (trace)
 
 import Control.Monad.State.Strict (State, get, put)
 import Control.Applicative ((<$>),(<*>),pure,Applicative)
@@ -85,7 +86,7 @@ emitPrimApp p args =
               Acosh -> unary "acosh"
               Atanh -> unary "atanh"
               ExpFloating -> binop ""
-              Sqrt  -> binop "sqrt"
+              Sqrt  -> unary "sqrt"
               Log   -> binop "log" -- natural log
               FDiv    -> binop "/"
               FPow    -> binfun "expt"

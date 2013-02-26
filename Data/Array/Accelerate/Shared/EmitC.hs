@@ -1,6 +1,7 @@
 {-# LANGUAGE NamedFieldPuns, CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ParallelListComp #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 -- | This module contains a specialization of the generic code
@@ -179,33 +180,33 @@ instance EmitBackend CEmitter where
         Fold initSB@(ScalarBlock _ initVs _) = variant
         Lam formals bod = reducer
         Manifest inVs = generator
-
-        -- TEMPORARY restriction:
-        [inV] = inVs
         
         vs = take (length initVs) formals
         ws = drop (length initVs) formals
         initargs = map (\(vr,_,ty) -> (emitType e ty, show vr)) vs
-        [(outV,_,outTy)] = outarrs 
-        outarg   = (emitType e outTy, show outV)
-        inarg    = (emitType e (env # inV), show inV)
+        outargs  = [ (emitType e outTy, show outV) | (outV,_,outTy) <- outarrs ]
+        inargs   = [ (emitType e (env # inV), show inV)
+                   | inV <- inVs ]
         freeargs = map (\fv -> (emitType e (env # fv), show fv))
                        arrayOpFVs
         int_t = emitType e TInt
     
     _ <- rawFunDef "void" (builderName evtid) ((int_t, "inSize") : (int_t, "inStride") : 
-                                               outarg : inarg : initargs ++ freeargs) $ 
+                                               outargs ++ inargs ++ initargs ++ freeargs) $ 
          do E.comm$"Fold loop, reduction variable(s): "++show vs
             E.forStridedRange (0, "inStride", "inSize") $ \ ix -> do
-              let [(wvr, _, wty)] = ws
-              varinit (emitType e wty) (varSyn wvr) (arrsub (varSyn inV) ix)
+              P.sequence$ [ varinit (emitType e wty) (varSyn wvr) (arrsub (varSyn inV) ix)
+                          | inV <- inVs
+                          | (wvr, _, wty) <- ws ]
               tmps <- emitBlock e bod
               -- eprintf " ** Folding in position %d (it was %d) intermediate result %d\n"
               --         [ix, (arrsub (varSyn inV) ix), varSyn$ head tmps]
               forM_ (fragileZip tmps vs) $ \ (tmp,(v,_,_)) ->
                  set (varSyn v) (varSyn tmp)
               return ()
-            arrset (varSyn outV) 0 (varSyn$ fst3$ head vs) 
+            comm "Write a single output (element 0) of each output array (no high-dim folds yet!!):"
+            P.sequence $ [ arrset (varSyn outV) 0 (varSyn$ fst3$ v)
+                         | (outV,_,_) <- outarrs | v <- vs ] 
             return () -- End rawFunDef
     return () -- End emitFoldDef
    
