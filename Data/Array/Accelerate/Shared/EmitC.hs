@@ -16,14 +16,15 @@ module Data.Array.Accelerate.Shared.EmitC
        (emitC, ParMode(..), getUseBinds, standardResultOrder) where
 
 import           Control.Monad (forM_, when)
+import qualified Control.Exception as CE 
 import           Data.List as L
 import qualified Data.Map  as M
 import qualified Data.Set  as S
 import qualified Prelude   as P
-import Prelude (($), (.), show, error, return, mapM_, String, fromIntegral, Int)
-import Text.PrettyPrint.HughesPJ       (text)
-import Text.PrettyPrint.GenericPretty (Out(doc))
-import Debug.Trace (trace)
+import           Prelude (($), (.), show, error, return, mapM_, String, fromIntegral, Int)
+import           Text.PrettyPrint.HughesPJ       (text)
+import           Text.PrettyPrint.GenericPretty (Out(doc))
+import           Debug.Trace (trace)
 
 import Data.Array.Accelerate.Shared.EasyEmit as E
 import Data.Array.Accelerate.Shared.EmitHelpers (builderName, emitCType, fragileZip, (#))
@@ -102,39 +103,44 @@ instance EmitBackend CEmitter where
   scalarKernelReturnType (CEmitter CilkParallel _) = "__declspec(vector) void"
   scalarKernelReturnType (CEmitter Sequential _)   = "void"
 
-  -- ARGUMENT PROTOCOL: Folds expect: ( inSize, inStride, outArrayPtr, inArrayPtr, initElems..., kernfreevars...)
+  -- ARGUMENT PROTOCOL: Folds expect: ( inSize, inStride, outArrayPtr ..., inArrayPtr ..., initElems..., kernfreevars...)
   emitGenReduceDef e@(CEmitter _ env) (GPUProgBind{ evtid, outarrs, decor=(FreeVars arrayOpFVs), op }) = do
     let GenReduce {reducer,generator,variant,stride} = op
+        -- ONLY work for Fold for now:
         Fold initSB@(ScalarBlock _ initVs _) = variant
         Lam formals bod = reducer
         Manifest inVs = generator
-        
+
         vs = take (length initVs) formals
         ws = drop (length initVs) formals
         initargs = map (\(vr,_,ty) -> (emitType e ty, show vr)) vs
-        outargs  = [ (emitType e outTy, show outV) | (outV,_,outTy) <- outarrs ]
-        inargs   = [ (emitType e (env # inV), show inV)
-                   | inV <- inVs ]
+        outargs  = [ (emitType e outTy, show outV)      | (outV,_,outTy) <- outarrs ]
+        inargs   = [ (emitType e (env # inV), show inV) | inV <- inVs ]
         freeargs = map (\fv -> (emitType e (env # fv), show fv))
                        arrayOpFVs
         int_t = emitType e TInt
+
+    CE.assert (length initVs == length ws) $ return()
+    CE.assert (length outarrs == length inVs) $ return()    
     
     _ <- rawFunDef "void" (builderName evtid) ((int_t, "inSize") : (int_t, "inStride") : 
                                                outargs ++ inargs ++ initargs ++ freeargs) $ 
          do E.comm$"Fold loop, reduction variable(s): "++show vs
-            E.forStridedRange (0, "inStride", "inSize") $ \ ix -> do
-              P.sequence$ [ varinit (emitType e wty) (varSyn wvr) (arrsub (varSyn inV) ix)
-                          | inV <- inVs
-                          | (wvr, _, wty) <- ws ]
-              tmps <- emitBlock e bod
-              -- eprintf " ** Folding in position %d (it was %d) intermediate result %d\n"
-              --         [ix, (arrsub (varSyn inV) ix), varSyn$ head tmps]
-              forM_ (fragileZip tmps vs) $ \ (tmp,(v,_,_)) ->
-                 set (varSyn v) (varSyn tmp)
-              return ()
-            comm "Write a single output (element 0) of each output array (no high-dim folds yet!!):"
-            P.sequence $ [ arrset (varSyn outV) 0 (varSyn$ fst3$ v)
-                         | (outV,_,_) <- outarrs | v <- vs ] 
+            E.forStridedRange (0, "inStride", "inSize") $ \ round -> do
+              E.forStridedRange (round, 1, "inSize") $ \ ix -> do  
+                P.sequence$ [ varinit (emitType e wty) (varSyn wvr) (arrsub (varSyn inV) ix)
+                            | inV <- inVs
+                            | (wvr, _, wty) <- ws ]
+                tmps <- emitBlock e bod
+                eprintf " ** Folding in position %d, chunk %d (it was %f) intermediate result %f\n"
+                        [ix, round, (arrsub (varSyn (head inVs)) ix), varSyn$ head tmps]
+                forM_ (fragileZip tmps vs) $ \ (tmp,(v,_,_)) ->
+                   set (varSyn v) (varSyn tmp)
+                return ()
+              comm "Write the single reduction result to each output array:"
+              P.sequence $ [ arrset (varSyn outV) (round / "inStride") (varSyn$ fst3$ v)
+                           | (outV,_,_) <- outarrs | v <- vs ]
+              return () -- End outer loop
             return () -- End rawFunDef
     return () -- End emitFoldDef
 
@@ -306,24 +312,31 @@ execBind e GPUProg{sizeEnv} (_ind, GPUProgBind {evtid, outarrs, op, decor=(FreeV
       let (Lam [(v,_,ty1),(w,_,ty2)] bod) = reducer
           Fold initSB = variant
           Manifest inVs = generator
-          step = case stride of
-                   StrideConst s -> emitE e s
-                   StrideAll     -> 1
       
       initVs <- emitBlock e initSB
       
-      -- The builder function also needs any free variables in the size:
       let freevars = arrayOpFVs 
-          initargs = map varSyn initVs 
-          len = 1  -- Output is fully folded
+          initargs = map varSyn initVs
+          outVs   = [ outV | (outV,_,_) <- outarrs ]          
           insize :: Syntax -- All inputs are the SAME SIZE:
           insize  = trivToSyntax$ P.snd$ sizeEnv # head inVs
-          outVs   = [ outV | (outV,_,_) <- outarrs ]
+          step = case stride of
+                   StrideConst s -> emitE e s
+                   StrideAll     -> insize
+      
+          -- ARGUMENT PROTOCOL, for reduction builder:
+          --   (1)  Size in #elements of the complete input array(s)
+          --   (2)  Step: how many elements are in each individual reduction.
+          --        Size/Step should be equal to the output array(s) size
+          --   (3*) Pointers to all output arrays.
+          --   (4*) Pointers to all input arrays.
+          --   (5*) All components of the initial reduction value
+          --   (6*) All free variables in the array kernel (arrayOpFVs)
           allargs = insize : step : map varSyn outVs ++ map varSyn inVs ++ initargs ++ map varSyn freevars
 
       comm "Allocate all ouput space for the reduction operation:"
       P.sequence$ [ varinit (emitType e (TArray nd elty)) (varSyn outV)
-                            (function "malloc" [sizeof (emitType e elty) * len])
+                            (function "malloc" [sizeof (emitType e elty) * (insize / step)])
                   | (outV,_,TArray nd elty) <- outarrs ]
       -- Call the builder to fill in the array: 
       emitStmt$ (function$ strToSyn$ builderName evtid) allargs
