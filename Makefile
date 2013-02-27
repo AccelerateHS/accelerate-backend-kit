@@ -1,6 +1,8 @@
 
 
-GHC=ghc
+ifeq ($(GHC),)
+  GHC=ghc
+endif
 
 opencl:
 	$(GHC) -DENABLE_OPENCL -i../accelerate-backend-kit/ --make Test.hs -o Test.exe

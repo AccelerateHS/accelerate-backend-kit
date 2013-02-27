@@ -176,13 +176,15 @@ oneDimOrLessTests = words$
   ++ " p18a p18b p18d p18e p18f "            -- dynamically sized array
 
   ++ " p1 " -- This adds a FOLD.
+  ++ " p1d p6 " -- Array of tuples
+
+-- These tests are waiting on arrays of tuples:
 
 useTests :: [String]
 useTests = words$ 
   " p0 p1c " ++
   -- These are ALSO multidim:
   " p7 "
-
 
 -- | Two and three dimensional tests.
 multiDimTests :: [String]
@@ -192,22 +194,20 @@ multiDimTests = words$
   "p3 p4b " ++
   "p10 p10b " ++ 
   "p17b " ++
-  "p20a p20b p20c "   -- fold1seg
-
+  "p20a p20b p20c " ++  -- fold1seg
+  "p1b "++ -- fold 2D to 1D
+  "p2g p2h " -- Multidim and array-of-tuple
 
 -- | Four dimensional and above.
 highDimTests :: [String]
 highDimTests = words$ 
   " p18c " ++ -- This internally uses an array-of-tuples but it ends up being dead code.
-  " p2i  "
+  " p2i  "++
+   "p2d " -- requires array-of-tuple AND >3D
 
+   
 ------------------------------------------------------------
 -- Tests we can't handle yet:
 ------------------------------------------------------------
--- p1b  -- requires fold
 
--- These tests are waiting on arrays of tuples:
--- p1d p6 
--- p2g  p2h
---  "p2d "++ -- requires array-of-tuple AND >3D 
 
