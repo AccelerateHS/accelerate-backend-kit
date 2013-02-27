@@ -18,7 +18,7 @@ module Data.Array.Accelerate.BackendKit.Tests
 
     -- * Individual tests:
     p1a, p1aa, p1ab, p1ac, p1ba,
-    p2aa, p2a, p2f, p4, p4b, p4c, p5, p0, p1, p1b, p1c, p1d,
+    p2aa, p2a, p2f, p4, p4b, p4c, p5, p0, p1, p1b, p1bb, p1c, p1d,
     p2, p2b, p2bb, p2c, p2cc, p2cd, p2ce, p2d, p2e, p2g, p2h, p2i, 
     p3,
     p6, p6b,
@@ -101,7 +101,7 @@ generateOnlyProgs :: [TestEntry]
 generateOnlyProgs = [ 
   go "p1a"  p1a,  
   go "p1aa" p1aa,
-  go "p1ba" p1ba,  
+  go "p1ba" p1ba,
   -- go "p1a" p1a,
   go "p1ab" p1ab,
   go "p1ac" p1ac
@@ -121,7 +121,8 @@ otherProgs =
   [
   go "p0" p0,                
   go "p1" p1, 
-  go "p1b" p1b, go "p1c" p1c, go "p1d" p1d,
+  go "p1b" p1b,  go "p1bb" p1bb,
+  go "p1c" p1c, go "p1d" p1d,
   go "p2" p2, go "p2aa" p2aa, go "p2b" p2b, go "p2bb" p2bb,
   go "p2c" p2c, go "p2cc" p2cc, go "p2cd" p2cd, go "p2ce" p2ce,
   go "p2d" p2d, go "p2e" p2e, go "p2g" p2g, go "p2h" p2h,  go "p2i" p2i,
@@ -257,7 +258,12 @@ unindex1_int  = unindex1
 -- | And again with a 2D array:
 p1b :: Acc (Vector Float)
 p1b = let xs = use$ fromList (Z :. (2::Int) :. (5::Int)) [1..10::Float]
-      in  fold (*) 0 xs
+      in  fold (*) 1 xs
+
+-- | Same 2D->1D fold test but with generate instead of use...
+p1bb :: Acc (Vector Float)
+p1bb = fold (+) 0 p17b
+
 
 -- This one is JUST a zipwith:
 p1c :: Acc (Vector Word)
