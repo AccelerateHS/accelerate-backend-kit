@@ -34,6 +34,7 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
      
      -- * Building and normalizing pieces of syntax
      normalizeEConst, mkTTuple, mkETuple,
+     freshenExpNames, GensymM, genUnique, genUniqueWith, 
      
      -- * Type recovery and type checking:
      constToType, recoverExpType, topLevelExpType,
@@ -41,7 +42,9 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
     )
  where
 
-import Control.DeepSeq (NFData(..))
+import           Control.DeepSeq (NFData(..))
+import           Control.Monad.State.Strict (State, get, put)
+import           Control.Applicative  ((<$>),(<*>))
 import qualified Data.Array.IO     as IA
 import qualified Data.Array.MArray as MA
 import           Data.Array.Unboxed as U
@@ -864,6 +867,45 @@ expFreeVars ex =
     EIndex els          -> fs els 
 
 
+-- | Alpha-rename all variables to fresh names.
+freshenExpNames :: Exp -> GensymM Exp
+freshenExpNames = lp M.empty
+  where
+    lp env ex =
+     let f = lp env in
+     case ex of
+      ELet (v,ty,rhs) bod  -> do v' <- genUniqueWith (show v)
+                                 rhs' <- f rhs
+                                 bod' <- lp (M.insert v v' env) bod
+                                 return (ELet (v',ty,rhs') bod')
+      EVr vr              -> case M.lookup vr env of
+                               Nothing -> return ex
+                               Just v' -> return (EVr v')
+       
+      EShape _avr         -> return ex
+      EConst _            -> return ex
+      ECond e1 e2 e3      -> ECond <$> f e1 <*> f e2 <*> f e3
+      EIndexScalar avr e  -> EIndexScalar avr <$> f e
+      EShapeSize e        -> EShapeSize       <$> f e
+      ETupProject i l e   -> ETupProject i l  <$> f e
+      ETuple els          -> ETuple       <$> mapM f els
+      EPrimApp t p els    -> EPrimApp t p <$> mapM f els
+      EIndex els          -> EIndex       <$> mapM f els
+
+-- Lifting these here from Helpers.hs to avoid import cycles:
+------------------------------------------------------------
+-- | A monad to use just for gensyms:
+type GensymM = State Int 
+-- | Generate a unique name
+genUnique :: GensymM Var
+genUnique = genUniqueWith "gensym_"
+-- | Generate a unique name with user-provided "meaningful" prefix.
+genUniqueWith :: String -> GensymM Var
+genUniqueWith prefix =
+  do cnt <- get
+     put (cnt+1)
+     return$ var$ prefix ++ show cnt
+------------------------------------------------------------
 
 --------------------------------------------------------------------------------
 -- Boilerplate for generic pretty printing:

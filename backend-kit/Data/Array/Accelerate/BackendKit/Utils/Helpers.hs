@@ -11,7 +11,7 @@ module Data.Array.Accelerate.BackendKit.Utils.Helpers
        (          
          -- * Helpers that capture certain conventions that the compiler follows:
          strideName, mkIndTy, isTupleTy,
-         GensymM, genUnique, genUniqueWith,
+         S.GensymM, S.genUnique, S.genUniqueWith,
          
          -- * Other AST Helpers
          mkPrj, mapMAE, mapMAEWithEnv, mapMAEWithGEnv,
@@ -62,21 +62,6 @@ isTupleTy :: Type -> P.Bool
 isTupleTy t@(TTuple [_]) = error$"isTupleTy: corrupt type found, singleton tuple: "++show t
 isTupleTy (TTuple _) = P.True
 isTupleTy _          = P.False
-
-
--- | A monad to use just for gensyms:
-type GensymM = State Int 
-
--- | Generate a unique name
-genUnique :: GensymM Var
-genUnique = genUniqueWith "gensym_"
-
--- | Generate a unique name with user-provided "meaningful" prefix.
-genUniqueWith :: P.String -> GensymM Var
-genUniqueWith prefix =
-  do cnt <- get
-     put (cnt+1)
-     return$ S.var$ prefix ++ show cnt
 
 
 ----------------------------------------------------------------------------------------------------

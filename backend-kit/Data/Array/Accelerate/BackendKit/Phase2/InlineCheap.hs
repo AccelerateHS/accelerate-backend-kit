@@ -38,6 +38,7 @@ doBind mp (ProgBind v t (a,_) (Right ae)) = ProgBind v t a (Right (doAE mp ae))
 doAE :: Map Var (ProgBind (a,Cost)) -> AExp -> AExp
 doAE mp ae =
   case ae of
+    -- <boilerplate>    
     Use _                             -> ae
     Vr v                              -> Vr$ cp v
     Cond a b c                        -> Cond (doE a) (cp b) (cp c)
@@ -78,6 +79,7 @@ doEx :: Map Var (ProgBind (a,Cost)) -> Exp -> Exp
 doEx mp ex = 
   case ex of
     -- Where we reference other arrays is where inlining may occur:
+    ---------------------------------------------------------------
     EIndexScalar avr ex -> let pb  = mp ! avr
                                ex' = doE ex in
                            -- This will also do copyProp, btw:
@@ -85,10 +87,12 @@ doEx mp ex =
                               case inline pb ex' of
                                 Nothing -> EIndexScalar avr ex'
                                 -- Reprocess the result of inlining:
-                                Just x  ->
+                                Just code ->
                                   maybtrace ("!! Victory, inlineCheap: inlining reference to "++show avr) $
-                                  doEx mp x 
+                                  doEx mp code -- (freshenExpNames code)
+                                  
                            else EIndexScalar avr ex'
+    ---------------------------------------------------------------                             
     EVr vr              -> ex
     EConst c            -> ex
     ECond e1 e2 e3      -> ECond (doE e1) (doE e2) (doE e3)
