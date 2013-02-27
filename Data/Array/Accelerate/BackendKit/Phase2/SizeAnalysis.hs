@@ -96,7 +96,7 @@ doAE mp ae =
    collapseInner vr =
      case M.lookup vr mp of
         Nothing -> UnknownSize
-        Just sz -> KnownSize (init sz)
+        Just (_:tl) -> KnownSize tl
 
    replaceInner _ UnknownSize = UnknownSize
    replaceInner UnknownSize _ = UnknownSize
