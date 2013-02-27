@@ -102,6 +102,43 @@ instance EmitBackend CEmitter where
   scalarKernelReturnType (CEmitter CilkParallel _) = "__declspec(vector) void"
   scalarKernelReturnType (CEmitter Sequential _)   = "void"
 
+  -- ARGUMENT PROTOCOL: Folds expect: ( inSize, inStride, outArrayPtr, inArrayPtr, initElems..., kernfreevars...)
+  emitGenReduceDef e@(CEmitter _ env) (GPUProgBind{ evtid, outarrs, decor=(FreeVars arrayOpFVs), op }) = do
+    let GenReduce {reducer,generator,variant,stride} = op
+        Fold initSB@(ScalarBlock _ initVs _) = variant
+        Lam formals bod = reducer
+        Manifest inVs = generator
+        
+        vs = take (length initVs) formals
+        ws = drop (length initVs) formals
+        initargs = map (\(vr,_,ty) -> (emitType e ty, show vr)) vs
+        outargs  = [ (emitType e outTy, show outV) | (outV,_,outTy) <- outarrs ]
+        inargs   = [ (emitType e (env # inV), show inV)
+                   | inV <- inVs ]
+        freeargs = map (\fv -> (emitType e (env # fv), show fv))
+                       arrayOpFVs
+        int_t = emitType e TInt
+    
+    _ <- rawFunDef "void" (builderName evtid) ((int_t, "inSize") : (int_t, "inStride") : 
+                                               outargs ++ inargs ++ initargs ++ freeargs) $ 
+         do E.comm$"Fold loop, reduction variable(s): "++show vs
+            E.forStridedRange (0, "inStride", "inSize") $ \ ix -> do
+              P.sequence$ [ varinit (emitType e wty) (varSyn wvr) (arrsub (varSyn inV) ix)
+                          | inV <- inVs
+                          | (wvr, _, wty) <- ws ]
+              tmps <- emitBlock e bod
+              -- eprintf " ** Folding in position %d (it was %d) intermediate result %d\n"
+              --         [ix, (arrsub (varSyn inV) ix), varSyn$ head tmps]
+              forM_ (fragileZip tmps vs) $ \ (tmp,(v,_,_)) ->
+                 set (varSyn v) (varSyn tmp)
+              return ()
+            comm "Write a single output (element 0) of each output array (no high-dim folds yet!!):"
+            P.sequence $ [ arrset (varSyn outV) 0 (varSyn$ fst3$ v)
+                         | (outV,_,_) <- outarrs | v <- vs ] 
+            return () -- End rawFunDef
+    return () -- End emitFoldDef
+
+
   emitMain e prog@GPUProg{progBinds, progResults, sizeEnv} = do
 
     let useBinds   = getUseBinds prog
@@ -150,66 +187,45 @@ instance EmitBackend CEmitter where
         return_ (results `arrow` (varSyn name +++ "_size"))
         
     ----------------------------------------
-      
-    _ <- rawFunDef "void" "MainProg" [("struct ArgRecord*",globalArgs), ("struct ResultRecord*",globalResults)] $ do    
+    mainBody P.False e prog 
+
+    when (null useBinds) $ do 
+      comm "As a bonus, we produce a normal main function when there are no Use AST nodes."
+      mainBody P.True e prog 
+
+mainBody :: P.Bool -> CEmitter -> GPUProg FreeVars -> EasyEmit ()
+mainBody isCMain e prog@GPUProg{progBinds, progResults, sizeEnv} = do 
+    let useBinds   = getUseBinds prog
+        allResults = standardResultOrder progResults
+        allUses    = S.fromList $ map (\(a,b,c) -> a) useBinds
+        body       = do            
            comm "First we EXECUTE the program by executing each array op in order:"
            mapM_ (execBind e prog) (L.zip [0..] progBinds)
-#if 0
-           comm "This code prints the final result(s):"
-           forM_ allResults $ \ result -> 
-             printArray e prog result (lkup result progBinds)
-#else              
-           comm "We write the final output to the results record:"
-           forM_ allResults $ \ rname -> do 
-             E.set (strToSyn globalResults `arrow` varSyn rname) (varSyn rname)
-             E.set (strToSyn globalResults `arrow` (varSyn rname+++"_size")) $
-               case sizeEnv # rname of 
-                 (_, TrivVarref vr) -> (varSyn vr)
-                 (_, TrivConst  n)  -> fromIntegral n
-#endif
+
+           if isCMain then do 
+              comm "This code prints the final result(s):"
+              forM_ allResults $ \ result -> 
+                printArray e prog result (lkup result progBinds)
+            else do 
+              comm "We write the final output to the results record:"
+              forM_ allResults $ \ rname -> do 
+                E.set (strToSyn globalResults `arrow` varSyn rname) (varSyn rname)
+                E.set (strToSyn globalResults `arrow` (varSyn rname+++"_size")) $
+                  case sizeEnv # rname of 
+                    (_, TrivVarref vr) -> (varSyn vr)
+                    (_, TrivConst  n)  -> fromIntegral n
+
            comm "Finally, we free all arrays that are NOT either input or outputs:"
            forM_ progBinds $ \ GPUProgBind { outarrs } -> do
              forM_ outarrs  $ \ (vr,_,ty) ->
                if S.member vr allUses P.|| elem vr allResults
                then return ()
                else freeCStorage ty (varSyn vr)
+    _ <- if isCMain
+         then rawFunDef "int" "main" [] (do body; return_ 0)
+         else rawFunDef "void" "MainProg" [("struct ArgRecord*",globalArgs), ("struct ResultRecord*",globalResults)] body
     return ()
 
-  -- ARGUMENT PROTOCOL: Folds expect: ( inSize, inStride, outArrayPtr, inArrayPtr, initElems..., kernfreevars...)
-  emitGenReduceDef e@(CEmitter _ env) (GPUProgBind{ evtid, outarrs, decor=(FreeVars arrayOpFVs), op }) = do
-    let GenReduce {reducer,generator,variant,stride} = op
-        Fold initSB@(ScalarBlock _ initVs _) = variant
-        Lam formals bod = reducer
-        Manifest inVs = generator
-        
-        vs = take (length initVs) formals
-        ws = drop (length initVs) formals
-        initargs = map (\(vr,_,ty) -> (emitType e ty, show vr)) vs
-        outargs  = [ (emitType e outTy, show outV) | (outV,_,outTy) <- outarrs ]
-        inargs   = [ (emitType e (env # inV), show inV)
-                   | inV <- inVs ]
-        freeargs = map (\fv -> (emitType e (env # fv), show fv))
-                       arrayOpFVs
-        int_t = emitType e TInt
-    
-    _ <- rawFunDef "void" (builderName evtid) ((int_t, "inSize") : (int_t, "inStride") : 
-                                               outargs ++ inargs ++ initargs ++ freeargs) $ 
-         do E.comm$"Fold loop, reduction variable(s): "++show vs
-            E.forStridedRange (0, "inStride", "inSize") $ \ ix -> do
-              P.sequence$ [ varinit (emitType e wty) (varSyn wvr) (arrsub (varSyn inV) ix)
-                          | inV <- inVs
-                          | (wvr, _, wty) <- ws ]
-              tmps <- emitBlock e bod
-              -- eprintf " ** Folding in position %d (it was %d) intermediate result %d\n"
-              --         [ix, (arrsub (varSyn inV) ix), varSyn$ head tmps]
-              forM_ (fragileZip tmps vs) $ \ (tmp,(v,_,_)) ->
-                 set (varSyn v) (varSyn tmp)
-              return ()
-            comm "Write a single output (element 0) of each output array (no high-dim folds yet!!):"
-            P.sequence $ [ arrset (varSyn outV) 0 (varSyn$ fst3$ v)
-                         | (outV,_,_) <- outarrs | v <- vs ] 
-            return () -- End rawFunDef
-    return () -- End emitFoldDef
    
 -- | This abstracts out the calls to reclaim storage.  If the policy changes on what
 -- is heap allocated (currently only TArray), then this needs to change.
@@ -285,7 +301,7 @@ execBind e GPUProg{sizeEnv} (_ind, GPUProgBind {evtid, outarrs, op, decor=(FreeV
     GenManifest {} -> do
       error$"EmitC.hs/execBind: We don't directly support Generate kernels, they should have been desugared:\n"++show(doc op)
 
-    -- This is unpleasantly repetetive.  It doesn't benefit from the lowering to expose freevars and use NewArray.
+    -- This is unpleasantly repetitive.  It doesn't benefit from the lowering to expose freevars and use NewArray.
     GenReduce {reducer,generator,variant,stride} -> do 
       let (Lam [(v,_,ty1),(w,_,ty2)] bod) = reducer
           Fold initSB = variant
