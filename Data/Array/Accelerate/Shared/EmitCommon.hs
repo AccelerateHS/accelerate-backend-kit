@@ -228,7 +228,7 @@ emitE e = loop M.empty
       EConst c              -> castit (constToType c) (emitConst c)
       ECond e1 e2 e3        -> loop mp e1 ? loop mp e2 .: loop mp e3
       EPrimApp ty p es      -> castit ty
-                               (emitPrimApp p (L.map (loop mp) es))
+                               (emitPrimApp ty p (L.map (loop mp) es))
       EIndexScalar vr ex    -> varSyn vr ! loop mp ex
 
       EGetLocalID  i -> function "get_local_id"  [fromIntegral i]

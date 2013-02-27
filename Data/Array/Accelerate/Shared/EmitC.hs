@@ -20,7 +20,7 @@ import           Data.List as L
 import qualified Data.Map  as M
 import qualified Data.Set  as S
 import qualified Prelude   as P
-import Prelude (($), show, error, return, mapM_, String, fromIntegral, Int)
+import Prelude (($), (.), show, error, return, mapM_, String, fromIntegral, Int)
 import Text.PrettyPrint.HughesPJ       (text)
 import Text.PrettyPrint.GenericPretty (Out(doc))
 import Debug.Trace (trace)
@@ -91,7 +91,8 @@ instance EmitBackend CEmitter where
       CEmitter Sequential   _ -> return ()
       CEmitter CilkParallel _ -> do include "cilk/cilk.h"
                                     include "cilk/reducer.h"
-      
+    mapM_ (emitLine . strToSyn) $ P.lines headerCode 
+
   invokeKern (CEmitter CilkParallel _) len body = E.cilkForRange (0,len) body
   invokeKern (CEmitter Sequential _)   len body = E.forRange (0,len) body
 
@@ -357,6 +358,19 @@ printArray e (GPUProg{sizeEnv}) name (GPUProgBind { outarrs, op}) = do
     printit ind vr = printf (printfFlag elt) [arrsub (varSyn vr) ind]
 
 
+
+--------------------------------------------------------------------------------  
+-- C code to include with all generated files:
+
+-- If this gets any longer, we'd better put it in a separate file read at compile or
+-- runtime (or quasiquote).  Unfortunately, all of those options add extra headaches.
+headerCode :: String
+headerCode =
+  P.unlines
+  [ "#define max(a,b) ({ __typeof__ (a) _a = (a); __typeof__ (b) _b = (b); _a > _b ? _a : _b; })"
+  , "#define min(a,b) ({ __typeof__ (a) _a = (a); __typeof__ (b) _b = (b); _a < _b ? _a : _b; })"
+    --  "int min(int a, int b) { return (((a)<(b))?(a):(b)) } "
+  ]
 
 --------------------------------------------------------------------------------  
 -- Helpers and Junk
