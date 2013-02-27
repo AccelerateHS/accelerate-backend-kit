@@ -65,7 +65,11 @@ doAE mp ae =
     Index _ _ _       -> err      
  where err = doerr ae
        doE = doEx mp
-       cp  = copyProp mp
+-- RRN: [2013.02.27] Disabling copy-prop.  It's unsound at this juncture because the
+-- different bindings may refer to the same data but have different SHAPES until one
+-- dimensionalize.
+--     cp = copyProp mp
+       cp  = id
 
 doerr e = error$ "InlineCheap: the following should be desugared before this pass is called:\n   "++ show (doc e)
     

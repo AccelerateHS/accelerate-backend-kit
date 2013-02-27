@@ -124,22 +124,30 @@ instance EmitBackend CEmitter where
     CE.assert (length outarrs == length inVs) $ return()    
     
     _ <- rawFunDef "void" (builderName evtid) ((int_t, "inSize") : (int_t, "inStride") : 
-                                               outargs ++ inargs ++ initargs ++ freeargs) $ 
+                                               outargs ++ inargs ++ initargs ++ freeargs) $         
          do E.comm$"Fold loop, reduction variable(s): "++show vs
+            E.comm$"First, some temporaries to back up the inital state"
+            E.comm$" (we're going to stomp on the reduction vars / formal params):"
+            tmps <- P.sequence [ E.tmpvarinit (emitType e vty) (varSyn v) | (v,_,vty) <- vs ] 
             E.forStridedRange (0, "inStride", "inSize") $ \ round -> do
-              E.forStridedRange (round, 1, "inSize") $ \ ix -> do  
+              E.comm$"Fresh round, restore the state of the accumulator to the initial/identity:"
+              P.sequence [ set (varSyn v) tmp | (v,_,vty) <- vs | tmp <- tmps ]
+              E.forStridedRange (round, 1, round+"inStride") $ \ ix -> do  
                 P.sequence$ [ varinit (emitType e wty) (varSyn wvr) (arrsub (varSyn inV) ix)
                             | inV <- inVs
                             | (wvr, _, wty) <- ws ]
-                tmps <- emitBlock e bod
-                eprintf " ** Folding in position %d, chunk %d (it was %f) intermediate result %f\n"
+                ----------------------- 
+                tmps <- emitBlock e bod -- Here's the body, already wired to use vs/ws
+                -----------------------                 
+                eprintf " ** Folding in position %d, offset %d (it was %f) intermediate result %f\n"
                         [ix, round, (arrsub (varSyn (head inVs)) ix), varSyn$ head tmps]
                 forM_ (fragileZip tmps vs) $ \ (tmp,(v,_,_)) ->
                    set (varSyn v) (varSyn tmp)
                 return ()
               comm "Write the single reduction result to each output array:"
-              P.sequence $ [ arrset (varSyn outV) (round / "inStride") (varSyn$ fst3$ v)
-                           | (outV,_,_) <- outarrs | v <- vs ]
+              P.sequence $ [ arrset (varSyn outV) (round / "inStride") (varSyn v)
+                           | (outV,_,_) <- outarrs
+                           | (v,_,_)    <- vs ]
               return () -- End outer loop
             return () -- End rawFunDef
     return () -- End emitFoldDef

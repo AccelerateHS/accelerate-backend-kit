@@ -11,6 +11,7 @@ module Data.Array.Accelerate.BackendKit.Phase2.ToCLike (convertToCLike) where
 
 import qualified Data.Map   as M
 import           Data.List  as L
+import           Data.Maybe (fromJust)
 import           Control.Monad.Writer
 import           Control.Applicative   ((<$>),(<*>))
 import           Control.Monad.State.Strict
@@ -175,11 +176,11 @@ doBind env (ProgBind _ ty decor@(OpInputs vis, (SubBinds vos _, (foldstride, _))
              <$> (LL.Lam [(vr,ty)] <$> doBlock env' bod)
 
        -- TODO: Implement greedy fold/generate fusion RIGHT HERE:
-       Fold  lam2 ex _     -> foldHelp (head vis) LL.StrideAll lam2 =<< (LL.Fold <$> doBlock env ex)
-       FoldSeg lam2 ex _ _ -> do let [inVs,segVs] = vis
-                                     Just (StrideConst strideE) = foldstride
+       Fold  lam2 ex _     -> foldHelp (head vis) (doStride foldstride) lam2
+                                       =<< (LL.Fold <$> doBlock env ex)
+       FoldSeg lam2 ex _ _ -> do let [inVs,segVs] = vis                                 
                                  initSB <- doBlock env ex 
-                                 foldHelp inVs (StrideConst$ doE env strideE) lam2
+                                 foldHelp inVs (doStride foldstride) lam2
                                    (LL.FoldSeg initSB (LL.Manifest segVs))
        Fold1    {}     -> err
        Fold1Seg {}     -> err
@@ -201,6 +202,9 @@ doBind env (ProgBind _ ty decor@(OpInputs vis, (SubBinds vos _, (foldstride, _))
        Stencil2     {} -> err
      where
       err = error$"ToCLike.hs/doAE: this form should be desugared by now: "++show ae
+
+   doStride (Just (StrideConst ex)) = LL.StrideConst$ doE env ex
+   doStride (Just (StrideAll))      = LL.StrideAll 
    
    foldHelp inVs' stride (Lam2 (v,t) (w,u) bod) variant = do
       let vtys = S.flattenTy t

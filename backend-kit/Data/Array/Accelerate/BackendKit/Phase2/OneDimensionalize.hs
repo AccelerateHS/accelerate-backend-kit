@@ -59,7 +59,7 @@ oneDimensionalize  prog@Prog{progBinds, progType, uniqueCounter, typeEnv } =
     (binds2,newCount) = let m1 = mapM (doBind typeEnv) binds1
                             m2 = runReaderT m1 prog
                         in runState m2 uniqueCounter
-    binds3 = map (getFoldStride typeEnv) binds2
+    binds3 = map (getFoldStride typeEnv progBinds) binds2
 
 
 type MyM a = ReaderT (Prog ArraySizeEstimate) GensymM a 
@@ -82,7 +82,8 @@ compute1DSizeM :: Int -> Exp -> MyM Exp
 compute1DSizeM ndim eShp = do
    lift$ maybeLetAllowETups eShp (mkIndTy ndim) (compute1DSize ndim)
 
--- | After the other processing is done, this goes back and adds the size bindings.
+-- | After the other processing is done, this goes back and adds the scalar bindings
+-- to hold the (1D) sizes.
 addSizes :: [ProgBind ArraySizeEstimate] -> [ProgBind ArraySizeEstimate]
 addSizes [] = []
 -- FIXME: Scanl' invalidates this:
@@ -95,22 +96,23 @@ addSizes (hd:tl) = hd : addSizes tl
 
 -- | Get the size of the inner most dimension, which is the stride between
 --   separately-folded sections.
-getFoldStride :: M.Map Var Type ->
+getFoldStride :: M.Map Var Type -> [ProgBind ArraySizeEstimate] -> 
                  ProgBind ArraySizeEstimate ->
                  ProgBind (Maybe (Stride Exp), ArraySizeEstimate)
-getFoldStride env (ProgBind vo aty sz eith) =
-  ProgBind vo aty (newdec, sz) eith
+getFoldStride env allbinds (ProgBind vo outTy osz eith) =
+  ProgBind vo outTy (newdec, osz) eith
  where
+   
  newdec :: Maybe (Stride Exp)  
  newdec = 
   case eith of
     Left _ -> Nothing
     Right ae -> 
      case ae of 
-       Fold _ _ vi       -> Just$ StrideAll
-       Fold1 _  vi       -> Just$ StrideAll 
-       FoldSeg  _ _ vi _ -> Just$ StrideConst $ innDim vo
-       Fold1Seg _   vi _ -> Just$ StrideConst $ innDim vo
+       Fold _ _ vi       -> Just$ deftl vi
+       Fold1 _  vi       -> Just$ deftl vi
+       FoldSeg  _ _ vi _ -> Just$ error "OneDimensionalize.hs: UNFINISHED need to compute strides for foldsegs"
+       Fold1Seg _   vi _ -> Just$ error "OneDimensionalize.hs: UNFINISHED need to compute strides for foldsegs"
        Scanl    _ _ vi   -> Just$ StrideAll 
        Scanl'   _ _ vi   -> Just$ StrideAll 
        Scanl1   _   vi   -> Just$ StrideAll 
@@ -118,11 +120,22 @@ getFoldStride env (ProgBind vo aty sz eith) =
        Scanr'   _ _ vi   -> Just$ StrideAll 
        Scanr1   _   vi   -> Just$ StrideAll 
        _                 -> Nothing
- innDim theV = 
-   case sz of
-     KnownSize ls -> EConst$ I$ head ls
+
+ deftl inArr =
+   case outTy of
+     -- When we're folding up the whole array, we just encode that as
+     -- StrideAll, not bothering to track exactly how many elements it is.
+     TArray 0 _ -> StrideAll
+     _          -> StrideConst $ innDim inArr
+            
+ innDim inArr =
+   let Just (ProgBind _ _ inSz _) = lookupProgBind inArr allbinds in   
+   case inSz of
+     KnownSize ls ->
+       trace ("KNOWN SIZE OF INBOUND TO FOLD: "++show (inArr,ls))$
+       EConst$ I$ head ls
      UnknownSize ->
-       let shp   = shapeName theV in
+       let shp   = shapeName inArr in
        -- Take the "last" of a tuple:
        case M.lookup shp env of
          Just TInt       -> EVr shp
