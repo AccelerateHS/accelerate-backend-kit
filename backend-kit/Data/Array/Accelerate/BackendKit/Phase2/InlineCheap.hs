@@ -36,7 +36,7 @@ copyProp env vr = case env M.! vr of
 
 
 doBind :: Map Var (ProgBind (a,Cost)) -> ProgBind (a,Cost) -> GensymM (ProgBind a)
-doBind mp (ProgBind v t (a,_) (Left ex))  = ProgBind v t a . Left <$> return (doEx mp ex)
+doBind mp (ProgBind v t (a,_) (Left ex))  = ProgBind v t a . Left  <$> doEx mp ex
 doBind mp (ProgBind v t (a,_) (Right ae)) = ProgBind v t a . Right <$> doAE mp ae
 
 -- Update a usemap with new usages found in an AExp.
@@ -50,47 +50,53 @@ doAE mp ae =
     Reshape _ _       -> err
     Replicate _ _ _   -> err
     Index _ _ _       -> err
-    _                 -> mapMAE (return . doEx mp) ae
+    _                 -> mapMAE (doEx mp) ae
  where err = doerr ae
 
 doerr :: Out a => a -> t
 doerr e = error$ "InlineCheap: the following should be desugared before this pass is called:\n   "++ show (doc e)
     
 
-doEx :: Map Var (ProgBind (a,Cost)) -> Exp -> Exp
+doEx :: Map Var (ProgBind (a,Cost)) -> Exp -> GensymM Exp
 doEx mp ex = 
   case ex of
     -- Where we reference other arrays is where inlining may occur:
     ---------------------------------------------------------------
-    EIndexScalar avr ex -> let pb  = mp ! avr
-                               ex' = doE ex in
-                           -- This will also do copyProp, btw:
-                           if getCost pb <= defaultDupThreshold then 
-                              case inline pb ex' of
-                                Nothing -> EIndexScalar avr ex'
-                                -- Reprocess the result of inlining:
-                                Just code ->
-                                  maybtrace ("!! Victory, inlineCheap: inlining reference to "++show avr) $
-                                  doEx mp code -- (freshenExpNames code)
-                                  
-                           else EIndexScalar avr ex'
-    ---------------------------------------------------------------                             
-    EVr vr              -> ex
-    EConst c            -> ex
-    ECond e1 e2 e3      -> ECond (doE e1) (doE e2) (doE e3)
-    ELet (v,t,rhs) bod  -> ELet (v,t,doE rhs) (doE bod)
-    ETupProject i l ex  -> ETupProject i l (doE ex)
-    EPrimApp p t els    -> EPrimApp p t (map doE els)
-    ETuple els          -> ETuple (map doE els)
-    EShapeSize ex       -> doerr ex    
+
+    EIndexScalar avr ex -> do
+      let pb  = mp ! avr
+      ex' <- doE ex 
+      -- This will also do copyProp, btw:
+      if getCost pb <= defaultDupThreshold then do
+         mb <- inline pb ex'
+         case mb of
+           Nothing -> return$ EIndexScalar avr ex'
+           -- Reprocess the result of inlining:
+           Just code -> do
+             code' <- freshenExpNames code
+             maybtrace ("!! Victory, inlineCheap: inlining reference to "++show avr) $
+              doEx mp code'
+      else return$ EIndexScalar avr ex'
+
+    -- Boilerplate:     
+    ----------------------------------------
+    EVr _               -> return ex
+    EConst _            -> return ex
+    ECond e1 e2 e3      -> ECond   <$> doE e1 <*> doE e2 <*> doE e3
+    ELet (v,t,rhs) bod  -> (\r b -> ELet (v,t,r) b) <$> doE rhs <*> doE bod
+    ETupProject i l e   -> ETupProject i l  <$> doE e
+    EPrimApp p t els    -> EPrimApp    p t  <$> mapM doE els
+    ETuple els          -> ETuple           <$> mapM doE els
+    EIndex _            -> doerr ex
+    EShapeSize ex       -> doerr ex 
     EShape avr          -> doerr ex
-    EIndex els          -> doerr ex
+    
  where
    -- Inline ONLY low-cost generates and variable refs:
    inline (ProgBind _ _ _ (Right (Generate ex (Lam1 (v,ty) bod)))) indE = 
-      Just$ ELet (v,ty,indE) (doE bod)
-   inline (ProgBind _ _ _ (Right (Vr vrUp))) indE = Just$ EIndexScalar vrUp indE   
-   inline _ _ = Nothing
+      Just . ELet (v,ty,indE) <$> doE bod
+   inline (ProgBind _ _ _ (Right (Vr vrUp))) indE = return (Just$ EIndexScalar vrUp indE)
+   inline _ _ = return Nothing
    
    doE = doEx mp   
    getCost (ProgBind _ _ (_,Cost c) _) = c
