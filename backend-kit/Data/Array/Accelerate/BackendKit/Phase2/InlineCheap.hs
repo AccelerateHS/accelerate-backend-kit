@@ -5,21 +5,26 @@ module Data.Array.Accelerate.BackendKit.Phase2.InlineCheap (inlineCheap) where
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
 import Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace)
 import Text.PrettyPrint.GenericPretty (Out(doc,docPrec))
-import Data.Map as M hiding (map) 
+import Data.Map as M hiding (map)
+import Control.Applicative ((<$>),(<*>))
+import Control.Monad.State.Strict (runState)
 
-import Data.Array.Accelerate.BackendKit.Utils.Helpers (defaultDupThreshold)
-import Data.Array.Accelerate.BackendKit.IRs.Metadata  (Uses(..), ArraySizeEstimate(..))
+import Data.Array.Accelerate.BackendKit.Utils.Helpers (defaultDupThreshold,GensymM)
+import Data.Array.Accelerate.BackendKit.IRs.Metadata  (ArraySizeEstimate(..))
 import Data.Array.Accelerate.BackendKit.Phase2.EstimateCost (Cost(Cost))
 
--- | This pass serves two purposes:
---   (1) inlines any Generate expressions 
---   (2) does copy-propagation at the array level (cost 0 inlining)
+-- | This pass serves two purposes inlines `Generate` into their consumers, if the
+-- computation in their bodies are deemed cheap.
 inlineCheap :: Prog (ArraySizeEstimate,Cost) -> Prog ArraySizeEstimate
-inlineCheap prog@Prog{progBinds, progResults} =
-  prog{ progBinds  = map (doBind env) progBinds, 
-        progResults= map (copyProp env) progResults }
+inlineCheap prog@Prog{progBinds, progResults, uniqueCounter } =
+  prog{ progBinds  = newbinds, 
+        progResults= map (copyProp env) progResults,
+        uniqueCounter= newCount }
  where
   env = M.fromList$ map (\ pb@(ProgBind v _ _ _) -> (v,pb)) progBinds  
+  (newbinds,newCount) =
+    runState (mapM (doBind env) progBinds) uniqueCounter
+
 
 
 -- Do copy propagation for any array-level references:
@@ -30,33 +35,36 @@ copyProp env vr = case env M.! vr of
                     _ -> vr
 
 
-doBind :: Map Var (ProgBind (a,Cost)) -> ProgBind (a,Cost) -> ProgBind a
-doBind mp (ProgBind v t (a,_) (Left ex))  = ProgBind v t a (Left  (doEx mp ex))
-doBind mp (ProgBind v t (a,_) (Right ae)) = ProgBind v t a (Right (doAE mp ae))
+doBind :: Map Var (ProgBind (a,Cost)) -> ProgBind (a,Cost) -> GensymM (ProgBind a)
+doBind mp (ProgBind v t (a,_) (Left ex))  = ProgBind v t a . Left <$> return (doEx mp ex)
+doBind mp (ProgBind v t (a,_) (Right ae)) = ProgBind v t a . Right <$> doAE mp ae
 
 -- Update a usemap with new usages found in an AExp.
-doAE :: Map Var (ProgBind (a,Cost)) -> AExp -> AExp
-doAE mp ae =
+doAE :: Map Var (ProgBind (a,Cost)) -> AExp -> GensymM AExp
+doAE mp ae = 
   case ae of
-    -- <boilerplate>    
-    Use _                             -> ae
-    Vr v                              -> Vr$ cp v
-    Cond a b c                        -> Cond (doE a) (cp b) (cp c)
-    Generate e (Lam1 arg bod)         -> Generate (doE e) (Lam1 arg (doE bod))
-    Stencil  (Lam1 a1    bod) b v     -> Stencil  (Lam1 a1    (doE bod)) b (cp v)
-    Stencil2 (Lam2 a1 a2 bod) b v c w -> Stencil2 (Lam2 a1 a2 (doE bod)) b (cp v) c (cp w)
-    Fold     (Lam2 a1 a2 bod) e v     -> Fold     (Lam2 a1 a2 (doE bod)) (doE e) (cp v)
-    Fold1    (Lam2 a1 a2 bod) v       -> Fold1    (Lam2 a1 a2 (doE bod)) (cp v)
-    FoldSeg  (Lam2 a1 a2 bod) e v w   -> FoldSeg  (Lam2 a1 a2 (doE bod)) (doE e) (cp v) (cp w)
-    Fold1Seg (Lam2 a1 a2 bod) v w     -> Fold1Seg (Lam2 a1 a2 (doE bod)) (cp v) (cp w)
-    Scanl    (Lam2 a1 a2 bod) e v     -> Scanl    (Lam2 a1 a2 (doE bod)) (doE e) (cp v)
-    Scanl'   (Lam2 a1 a2 bod) e v     -> Scanl'   (Lam2 a1 a2 (doE bod)) (doE e) (cp v)
-    Scanl1   (Lam2 a1 a2 bod)   v     -> Scanl1   (Lam2 a1 a2 (doE bod))         (cp v)
-    Scanr    (Lam2 a1 a2 bod) e v     -> Scanr    (Lam2 a1 a2 (doE bod)) (doE e) (cp v)
-    Scanr'   (Lam2 a1 a2 bod) e v     -> Scanr'   (Lam2 a1 a2 (doE bod)) (doE e) (cp v)
-    Scanr1   (Lam2 a1 a2 bod)   v     -> Scanr1   (Lam2 a1 a2 (doE bod))         (cp v)
-    Permute (Lam2 a1 a2 bod1) v (Lam1 a3 bod2) w -> Permute (Lam2 a1 a2 (doE bod1)) (cp v)
-                                                            (Lam1 a3    (doE bod2)) (cp w)
+    -- EVERYTHING BELOW IS BOILERPLATE:
+    ------------------------------------------------------------
+    Use _                             -> return ae
+    Vr _                              -> return ae
+    Cond a b c                        -> Cond <$> doE a <*> return b <*> return c
+    Generate e (Lam1 arg bod)         -> Generate <$> doE e <*> (Lam1 arg <$> doE bod)
+    Fold     (Lam2 a1 a2 bod) e v     -> Fold     <$> (Lam2 a1 a2 <$> doE bod) <*> doE e <*> return v
+    Fold1    (Lam2 a1 a2 bod) v       -> Fold1    <$> (Lam2 a1 a2 <$> doE bod) <*> return v
+    FoldSeg  (Lam2 a1 a2 bod) e v w   -> FoldSeg  <$> (Lam2 a1 a2 <$> doE bod) <*> doE e <*> return v <*> return w
+    Fold1Seg (Lam2 a1 a2 bod) v w     -> Fold1Seg <$> (Lam2 a1 a2 <$> doE bod) <*> return v <*> return w
+    Scanl    (Lam2 a1 a2 bod) e v     -> Scanl    <$> (Lam2 a1 a2 <$> doE bod) <*> doE e <*> return v
+    Scanl'   (Lam2 a1 a2 bod) e v     -> Scanl'   <$> (Lam2 a1 a2 <$> doE bod) <*> doE e <*> return v
+    Scanl1   (Lam2 a1 a2 bod)   v     -> Scanl1   <$> (Lam2 a1 a2 <$> doE bod)           <*> return v
+    Scanr    (Lam2 a1 a2 bod) e v     -> Scanr    <$> (Lam2 a1 a2 <$> doE bod) <*> doE e <*> return v
+    Scanr'   (Lam2 a1 a2 bod) e v     -> Scanr'   <$> (Lam2 a1 a2 <$> doE bod) <*> doE e <*> return v
+    Scanr1   (Lam2 a1 a2 bod)   v     -> Scanr1   <$> (Lam2 a1 a2 <$> doE bod)           <*> return v
+    Permute (Lam2 a1 a2 bod1) v (Lam1 a3 bod2) w -> Permute <$> (Lam2 a1 a2 <$> doE bod1) <*> return v
+                                                            <*> (Lam1 a3    <$> doE bod2) <*> return w
+    Stencil  (Lam1 a1    bod) b v     -> do bod' <- doE bod
+                                            return$ Stencil  (Lam1 a1    bod') b v
+    Stencil2 (Lam2 a1 a2 bod) b v c w -> do bod' <- doE bod
+                                            return$ Stencil2 (Lam2 a1 a2 bod') b v c w
     Map _ _           -> err
     ZipWith _ _ _     -> err
     Unit _            -> err
@@ -65,13 +73,9 @@ doAE mp ae =
     Replicate _ _ _   -> err
     Index _ _ _       -> err      
  where err = doerr ae
-       doE = doEx mp
--- RRN: [2013.02.27] Disabling copy-prop.  It's unsound at this juncture because the
--- different bindings may refer to the same data but have different SHAPES until one
--- dimensionalize.
---     cp = copyProp mp
-       cp  = id
+       doE = return . doEx mp
 
+doerr :: Out a => a -> t
 doerr e = error$ "InlineCheap: the following should be desugared before this pass is called:\n   "++ show (doc e)
     
 
