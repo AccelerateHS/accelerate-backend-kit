@@ -9,7 +9,7 @@ import Data.Map as M hiding (map)
 import Control.Applicative ((<$>),(<*>))
 import Control.Monad.State.Strict (runState)
 
-import Data.Array.Accelerate.BackendKit.Utils.Helpers (defaultDupThreshold,GensymM)
+import Data.Array.Accelerate.BackendKit.Utils.Helpers (defaultDupThreshold,GensymM,mapMAE)
 import Data.Array.Accelerate.BackendKit.IRs.Metadata  (ArraySizeEstimate(..))
 import Data.Array.Accelerate.BackendKit.Phase2.EstimateCost (Cost(Cost))
 
@@ -43,37 +43,15 @@ doBind mp (ProgBind v t (a,_) (Right ae)) = ProgBind v t a . Right <$> doAE mp a
 doAE :: Map Var (ProgBind (a,Cost)) -> AExp -> GensymM AExp
 doAE mp ae = 
   case ae of
-    -- EVERYTHING BELOW IS BOILERPLATE:
-    ------------------------------------------------------------
-    Use _                             -> return ae
-    Vr _                              -> return ae
-    Cond a b c                        -> Cond <$> doE a <*> return b <*> return c
-    Generate e (Lam1 arg bod)         -> Generate <$> doE e <*> (Lam1 arg <$> doE bod)
-    Fold     (Lam2 a1 a2 bod) e v     -> Fold     <$> (Lam2 a1 a2 <$> doE bod) <*> doE e <*> return v
-    Fold1    (Lam2 a1 a2 bod) v       -> Fold1    <$> (Lam2 a1 a2 <$> doE bod) <*> return v
-    FoldSeg  (Lam2 a1 a2 bod) e v w   -> FoldSeg  <$> (Lam2 a1 a2 <$> doE bod) <*> doE e <*> return v <*> return w
-    Fold1Seg (Lam2 a1 a2 bod) v w     -> Fold1Seg <$> (Lam2 a1 a2 <$> doE bod) <*> return v <*> return w
-    Scanl    (Lam2 a1 a2 bod) e v     -> Scanl    <$> (Lam2 a1 a2 <$> doE bod) <*> doE e <*> return v
-    Scanl'   (Lam2 a1 a2 bod) e v     -> Scanl'   <$> (Lam2 a1 a2 <$> doE bod) <*> doE e <*> return v
-    Scanl1   (Lam2 a1 a2 bod)   v     -> Scanl1   <$> (Lam2 a1 a2 <$> doE bod)           <*> return v
-    Scanr    (Lam2 a1 a2 bod) e v     -> Scanr    <$> (Lam2 a1 a2 <$> doE bod) <*> doE e <*> return v
-    Scanr'   (Lam2 a1 a2 bod) e v     -> Scanr'   <$> (Lam2 a1 a2 <$> doE bod) <*> doE e <*> return v
-    Scanr1   (Lam2 a1 a2 bod)   v     -> Scanr1   <$> (Lam2 a1 a2 <$> doE bod)           <*> return v
-    Permute (Lam2 a1 a2 bod1) v (Lam1 a3 bod2) w -> Permute <$> (Lam2 a1 a2 <$> doE bod1) <*> return v
-                                                            <*> (Lam1 a3    <$> doE bod2) <*> return w
-    Stencil  (Lam1 a1    bod) b v     -> do bod' <- doE bod
-                                            return$ Stencil  (Lam1 a1    bod') b v
-    Stencil2 (Lam2 a1 a2 bod) b v c w -> do bod' <- doE bod
-                                            return$ Stencil2 (Lam2 a1 a2 bod') b v c w
     Map _ _           -> err
     ZipWith _ _ _     -> err
     Unit _            -> err
     Backpermute _ _ _ -> err
     Reshape _ _       -> err
     Replicate _ _ _   -> err
-    Index _ _ _       -> err      
+    Index _ _ _       -> err
+    _                 -> mapMAE (return . doEx mp) ae
  where err = doerr ae
-       doE = return . doEx mp
 
 doerr :: Out a => a -> t
 doerr e = error$ "InlineCheap: the following should be desugared before this pass is called:\n   "++ show (doc e)
