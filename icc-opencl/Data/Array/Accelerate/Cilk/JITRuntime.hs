@@ -42,6 +42,7 @@ import           System.Posix.DynamicLinker (withDL, RTLDFlags(..), dlsym)
 import Data.Array.Accelerate.BackendKit.Phase3.KernFreeVars      (kernFreeVars)
 import Data.Array.Accelerate.BackendKit.Phase3.ToGPUIR           (convertToGPUIR)
 import Data.Array.Accelerate.BackendKit.Phase3.DesugarGenerate   (desugarGenerate)
+import Data.Array.Accelerate.BackendKit.Phase3.FuseGenReduce     (fuseGenReduce)
 import Data.Array.Accelerate.BackendKit.CompilerUtils            (runPass)
 import qualified Data.Array.Accelerate.BackendKit.IRs.CLike     as C
 import qualified Data.Array.Accelerate.BackendKit.IRs.GPUIR     as G
@@ -57,6 +58,7 @@ phase3_ltd :: C.LLProg () -> G.GPUProg (FreeVars)
 phase3_ltd prog = 
   runPass    "desugarGenerate"   desugarGenerate   $     -- (size,freevars)
 --  runPass    "desugarFoldScan"   desugarFoldScan   $   -- (size,freevars)
+  runPass    "fuseGenReduce"     fuseGenReduce     $     -- (freevars)  
   runPass    "convertToGPUIR"    convertToGPUIR    $     -- (size,freevars)
   runPass    "kernFreeVars"      kernFreeVars      $     -- (freevars)
   prog

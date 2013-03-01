@@ -25,7 +25,7 @@ fuseGenReduce prog@GPUProg{progBinds, uniqueCounter, sizeEnv} =
   }
   where
     (binds,inlined) = doBinds potentialInlines progBinds
-    isInlined GPUProgBind{outarrs} = and [ S.member v inlined | (v,_,_) <- outarrs]
+    isInlined GPUProgBind{outarrs,op=GenManifest{}} = and [ S.member v inlined | (v,_,_) <- outarrs]
     isInlined                    _ = False
 
     potentialInlines =
@@ -60,8 +60,7 @@ doBinds inlines binds = loop [] [] binds
   where
     loop bacc vacc [] = (reverse bacc, S.fromList vacc)
     loop bacc vacc (pb@GPUProgBind { op } : rest) = do  
-      let err = error "FINISHME"
-          skip  = loop (pb:bacc) vacc rest
+      let skip  = loop (pb:bacc) vacc rest
       case op of
          Use  _        -> skip         
          -- TODO: We have the option here to turn array level conditionals into
@@ -69,70 +68,21 @@ doBinds inlines binds = loop [] [] binds
          Cond _ _ _    -> skip
          ScalarCode _  -> skip
          GenManifest _ -> skip
-         GenReduce {generator,reducer} ->
+         GenReduce {generator} ->
            let Manifest vrs = generator
                bods = map (`M.lookup` inlines) vrs in
            -- The separate components of the input *should* all come from the same
            -- place, but we make sure here:
-            if all isJust bods
-            then let pb' = pb{op= op{reducer= doInline (S.toList$ S.fromList$ catMaybes bods) reducer }}
-                 in  loop (pb':bacc) (vrs++vacc) rest
-            else skip
-
+           case S.toList$ S.fromList$ catMaybes bods of
+             [GPUProgBind { outarrs, op=GenManifest theGEN } ] -> 
+                if all isJust bods
+                -- This part is easy, we just plug it in:
+                then let pb' = pb{op= op{ generator= NonManifest theGEN}} in
+                     maybtrace ("!! VICTORY - fusing GenManifest into Reduce: "++show outarrs)$  
+                     loop (pb':bacc) (vrs++vacc) rest
+                else skip
+               
+             ls -> error$"FuseGenReduce.hs: cannot presently handle inlining more than one GenManifest into GenReduce: "++show ls
+               
          NewArray _    -> error$"FuseGenReduce.hs: not expecting NewArray yet: "++show op
          Kernel {}     -> error$"FuseGenReduce.hs: not expecting Kernel yet: "++show op
-         
--- doInline :: M.Map S.Var (Generator (Fun ScalarBlock)) -> Fun ScalarBlock -> Fun ScalarBlock
-doInline :: Show a => [GPUProgBind a] -> Fun ScalarBlock -> Fun ScalarBlock
-doInline [GPUProgBind { outarrs, op=GenManifest (Gen _ genfun) } ]
-         (Lam vs (ScalarBlock locals res stmts)) =
-  maybtrace ("!! VICTORY - fusing GenManifest into Reduce: "++show outarrs)$  
-  Lam vs $ ScalarBlock locals res (map doStmt stmts)
- where
-  -- Doing fusion at this late point is quite painful.  By now the individual
-  -- references into the output of the Generate have become scattered.  This is ugly,
-  -- but we have to reverse some of the work the compiler has done.  Here we gather
-  -- back together those references, and compare their indices.
-  doStmt st =
-    error "finishme"
-
-doInline ls _ = error$"FuseGenReduce.hs: cannot presently handle inlining more than one GenManifest into GenReduce: "++show ls
-
--- data Stmt =   
---     SCond Exp [Stmt] [Stmt]
---   | SSet    Var Exp             -- v = exp
---   | SArrSet Var Exp Exp         -- arr[exp] = exp
---   | SFor { forvar :: Var,
---            forinit :: Exp,
---            fortest :: Exp,
---            forincr :: Exp,
---            forbody :: [Stmt]
---            }                    -- for (init,test,incr) { body }
---   | SNoOp                       -- no operation
---   | SSynchronizeThreads
-
---     -- Comments to be emitted to generated code:
---   | SComment String
---  deriving (Read,Show,Eq,Ord,Generic)
-
--- data MemLocation = Default | Global | Local | Private | Constant 
---  deriving (Read,Show,Eq,Ord,Generic)
-
--- data Exp = 
---     EConst SA.Const           
---   | EVr Var
---   | EGetLocalID  Int            -- The Int specifies dimension: 0,1,2
---   | EGetGlobalID Int 
---   | EPrimApp Type SA.Prim [Exp]
---   | ECond Exp Exp Exp        
---   | EIndexScalar Var Exp        -- Reads a tuple from an array, and does index-from-right into that tuple.
---   | EUnInitArray Type Int       -- This is ONLY here as a special OpenCL convention.  "Local" memory
---                                 -- arrays are passed into the kernel as NULL ptrs WITH sizes (here in #elements).
-
--- data GPUProgBind d = GPUProgBind {
---       evtid   :: EvtId,                    -- ^ EventID for this operator's execution.      
---       evtdeps :: [EvtId],                  -- ^ Dependencies for this operator.      
---       outarrs :: [(Var,MemLocation,Type)], -- ^ Outputs of this operator.
---       decor   :: d,                        -- ^ Parameterizable decoration
---       op      :: TopLvlForm                -- ^ The operator itself.
---     }
