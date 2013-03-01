@@ -135,14 +135,20 @@ instance EmitBackend CEmitter where
               P.sequence [ set (varSyn v) tmp | (v,_,vty) <- vs | tmp <- tmps ]
               E.forStridedRange (round, 1, round+"inStride") $ \ ix -> do
 
+                let foldit inputs k =
+                      P.sequence$ [ varinit (emitType e wty) (varSyn wvr) (k inV)
+                                  | inV <- inputs
+                                  | (wvr, _, wty) <- ws ]
                 case generator of
-                  Manifest inVs -> 
-                   P.sequence$ [ varinit (emitType e wty) (varSyn wvr) (arrsub (varSyn inV) ix)
-                               | inV <- inVs
-                               | (wvr, _, wty) <- ws ]
-
-                  NonManifest (Gen _ (Lam vs bod)) -> do
-                    error "Gosh... lots to do here"
+                  Manifest inVs -> foldit inVs (\ v -> arrsub (varSyn v) ix)
+                  NonManifest (Gen _ (Lam args bod)) -> do
+                    comm "(1) create input: we run the generator to produce one or more inputs"
+                    -- TODO: Assign formals to ix
+                    let [(vr,_,ty)] = args -- ONE argument, OneDimensionalize
+                    E.varinit (emitType e ty) (varSyn vr) ix
+                    tmps <- emitBlock e bod
+                    comm$"(2) do the reduction with the resulting values ("++show tmps++")"
+                    foldit tmps varSyn
                     
                 ----------------------- 
                 tmps <- emitBlock e bod -- Here's the body, already wired to use vs/ws
