@@ -109,19 +109,20 @@ instance EmitBackend CEmitter where
         -- ONLY work for Fold for now:
         Fold initSB@(ScalarBlock _ initVs _) = variant
         Lam formals bod = reducer
-        Manifest inVs = generator
 
         vs = take (length initVs) formals
         ws = drop (length initVs) formals
         initargs = map (\(vr,_,ty) -> (emitType e ty, show vr)) vs
         outargs  = [ (emitType e outTy, show outV)      | (outV,_,outTy) <- outarrs ]
-        inargs   = [ (emitType e (env # inV), show inV) | inV <- inVs ]
+        inargs   = case generator of
+                    Manifest inVs -> [ (emitType e (env # inV), show inV) | inV <- inVs ]
+                    NonManifest _ -> []
         freeargs = map (\fv -> (emitType e (env # fv), show fv))
                        arrayOpFVs
         int_t = emitType e TInt
 
     CE.assert (length initVs == length ws) $ return()
-    CE.assert (length outarrs == length inVs) $ return()    
+--    CE.assert (length outarrs == length inVs) $ return()    
     
     _ <- rawFunDef "void" (builderName evtid) ((int_t, "inSize") : (int_t, "inStride") : 
                                                outargs ++ inargs ++ initargs ++ freeargs) $         
@@ -132,16 +133,23 @@ instance EmitBackend CEmitter where
             E.forStridedRange (0, "inStride", "inSize") $ \ round -> do
               E.comm$"Fresh round, restore the state of the accumulator to the initial/identity:"
               P.sequence [ set (varSyn v) tmp | (v,_,vty) <- vs | tmp <- tmps ]
-              E.forStridedRange (round, 1, round+"inStride") $ \ ix -> do  
-                P.sequence$ [ varinit (emitType e wty) (varSyn wvr) (arrsub (varSyn inV) ix)
-                            | inV <- inVs
-                            | (wvr, _, wty) <- ws ]
+              E.forStridedRange (round, 1, round+"inStride") $ \ ix -> do
+
+                case generator of
+                  Manifest inVs -> 
+                   P.sequence$ [ varinit (emitType e wty) (varSyn wvr) (arrsub (varSyn inV) ix)
+                               | inV <- inVs
+                               | (wvr, _, wty) <- ws ]
+
+                  NonManifest (Gen _ (Lam vs bod)) -> do
+                    error "Gosh... lots to do here"
+                    
                 ----------------------- 
                 tmps <- emitBlock e bod -- Here's the body, already wired to use vs/ws
                 -----------------------
-                when dbg $ 
-                  eprintf " ** Folding in position %d, offset %d (it was %f) intermediate result %f\n"
-                          [ix, round, (arrsub (varSyn (head inVs)) ix), varSyn$ head tmps]
+                -- when dbg $ 
+                --   eprintf " ** Folding in position %d, offset %d (it was %f) intermediate result %f\n"
+                --           [ix, round, (arrsub (varSyn (head inVs)) ix), varSyn$ head tmps]
                 forM_ (fragileZip tmps vs) $ \ (tmp,(v,_,_)) ->
                    set (varSyn v) (varSyn tmp)
                 return ()
@@ -321,15 +329,22 @@ execBind e GPUProg{sizeEnv} (_ind, GPUProgBind {evtid, outarrs, op, decor=(FreeV
     GenReduce {reducer,generator,variant,stride} -> do 
       let (Lam [(v,_,ty1),(w,_,ty2)] bod) = reducer
           Fold initSB = variant
-          Manifest inVs = generator
       
       initVs <- emitBlock e initSB
       
       let freevars = arrayOpFVs 
           initargs = map varSyn initVs
-          outVs   = [ outV | (outV,_,_) <- outarrs ]          
+          outVs   = [ outV | (outV,_,_) <- outarrs ]
+          
           insize :: Syntax -- All inputs are the SAME SIZE:
-          insize  = trivToSyntax$ P.snd$ sizeEnv # head inVs
+          insize  = case generator of
+                      Manifest inVs -> trivToSyntax$ P.snd$ sizeEnv # head inVs
+                      NonManifest (Gen tr _) -> trivToSyntax tr
+          -- If we are running the Generate ourselves, then we don't have any extra
+          -- arguments to pass for the inputs:
+          inVs = case generator of
+                   Manifest vs   -> vs
+                   NonManifest _ -> []
           step = case stride of
                    StrideConst s -> emitE e s
                    StrideAll     -> insize
@@ -339,7 +354,7 @@ execBind e GPUProg{sizeEnv} (_ind, GPUProgBind {evtid, outarrs, op, decor=(FreeV
           --   (2)  Step: how many elements are in each individual reduction.
           --        Size/Step should be equal to the output array(s) size
           --   (3*) Pointers to all output arrays.
-          --   (4*) Pointers to all input arrays.
+          --   (4*) Pointers to any/all input arrays.
           --   (5*) All components of the initial reduction value
           --   (6*) All free variables in the array kernel (arrayOpFVs)
           allargs = insize : step : map varSyn outVs ++ map varSyn inVs ++ initargs ++ map varSyn freevars

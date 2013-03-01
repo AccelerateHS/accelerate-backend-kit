@@ -29,8 +29,12 @@ fuseGenReduce prog@GPUProg{progBinds, uniqueCounter, sizeEnv} =
     isInlined                    _ = False
 
     potentialInlines =
+      M.filter isGenManifest $ 
       M.mapWithKey (\ vr _ -> fromJust (G.lookupProgBind vr progBinds))
       potentialInlineVrs
+
+    isGenManifest (GPUProgBind{op=GenManifest{}}) = True
+    isGenManifest _ = False
 
     -- Here we determine which GenManifest ops are single-use (this is a degenerate
     -- form of TrackUses):
@@ -74,14 +78,17 @@ doBinds inlines binds = loop [] [] binds
            -- The separate components of the input *should* all come from the same
            -- place, but we make sure here:
            case S.toList$ S.fromList$ catMaybes bods of
-             [GPUProgBind { outarrs, op=GenManifest theGEN } ] -> 
-                if all isJust bods
-                -- This part is easy, we just plug it in:
-                then let pb' = pb{op= op{ generator= NonManifest theGEN}} in
-                     maybtrace ("!! VICTORY - fusing GenManifest into Reduce: "++show outarrs)$  
-                     loop (pb':bacc) (vrs++vacc) rest
-                else skip
-               
+             [] -> skip
+             [one] ->
+                case one of
+                  GPUProgBind { outarrs, op=GenManifest theGEN } -> 
+                    let -- This part is easy, we just plug it in:
+                        pb' = pb{op= op{ generator= NonManifest theGEN}} in
+                    if all isJust bods
+                    then maybtrace ("!! VICTORY - fusing GenManifest into Reduce: "++show outarrs)$  
+                         loop (pb':bacc) (vrs++vacc) rest
+                    else skip
+                  _ -> error$"FuseGenReduce.hs: unexpected op upstream from GenReduce: "++show one
              ls -> error$"FuseGenReduce.hs: cannot presently handle inlining more than one GenManifest into GenReduce: "++show ls
                
          NewArray _    -> error$"FuseGenReduce.hs: not expecting NewArray yet: "++show op

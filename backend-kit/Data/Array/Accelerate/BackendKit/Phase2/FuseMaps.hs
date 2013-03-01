@@ -160,4 +160,3 @@ doBinds newBinds newBindsM (thisOne@(ProgBind vrOut ty decor (Right ae)) : rest)
               rest
 --    addNGo newbind = newbind : doBinds (M.insert vrOut newbind newBindsM) rest
 
-
