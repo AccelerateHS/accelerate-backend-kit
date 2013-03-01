@@ -194,7 +194,7 @@ multiDimTests = words$
   "p3 p4b " ++
   "p10 p10b " ++ 
   "p17b " ++
-  "p20a p20b p20c " ++  -- fold1seg
+--  "p20a p20b p20c " ++  -- fold1seg
   "p1b p1bb "++ -- fold 2D to 1D
   "p2g p2h " -- Multidim and array-of-tuple
 

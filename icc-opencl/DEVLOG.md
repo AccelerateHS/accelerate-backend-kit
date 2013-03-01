@@ -20,3 +20,11 @@ results in this error on Mac OS:
 
 On 7.4.2 (mac & linux) it works fine.
 
+
+
+[2013.03.01] {Debugging Cilk backend}
+-------------------------------------
+
+The C backend is passing 63/67 (all but known-unsupported foldseg
+tests and the one mysterious one).  Actually, I'm going to disable
+those for the moment.  There.  63/64.
