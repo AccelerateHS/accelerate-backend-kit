@@ -63,7 +63,12 @@ phase3_ltd prog =
   runPass    "kernFreeVars"      kernFreeVars      $     -- (freevars)
   prog
 
-cOptLvl = if dbg then " -g -O0 " else " -w -O3 "
+cOptLvl = if dbg then " -O0 " else " -O3 "
+
+--  "-march=pentium-m -msse3 -O{0|1|2|3|s} -pipe".
+-- | For ICC we actually strip out the vanilla opt level and use other flags:
+stripOptFlag :: String -> String
+stripOptFlag = unwords . filter (not . (`elem` ["-O0","-O1","-O2","-O3"])) . words
 
 --------------------------------------------------------------------------------
 
@@ -92,18 +97,21 @@ rawRunIO pm name prog = do
   writeFile  (thisprog++".c") emitted
   dbgPrint$ "[JIT] Invoking C compiler on: "++ thisprog++".c"
 
+  -- TODO, obey the $CC environment variable:
+  let tryICC onfail = do
+        whichICC <- readProcess "which" ["icc"] []
+        case whichICC of
+          ""  -> onfail
+          _   -> do dbgPrint $"[JIT] Using ICC at: "++ (head (lines whichICC))
+                    return$ "icc -fast "++ stripOptFlag cOptLvl
   cc <- case pm of
-         Sequential -> return "gcc"
-         CilkParallel -> do
-           whichICC <- readProcess "which" ["icc"] []
-           case whichICC of
-             ""  -> error "ICC not found!"
-             _   -> dbgPrint $"[JIT] Using ICC at: "++ (head (lines whichICC))
-           return "icc"
+         Sequential   -> tryICC (return$ "gcc "++cOptLvl)
+         CilkParallel -> tryICC (error "ICC not found!")
 
-  let suppress = if dbg then "" else " -w " -- No warnings leaking through to the user.
-      ccCmd = cc++suppress++cOptLvl++" -shared -fPIC -std=c99 "++thisprog++".c -o "++thisprog++".so"
+  let suppress = if dbg then " -g " else " -w " -- No warnings leaking through to the user.
+      ccCmd = cc++suppress++" -shared -fPIC -std=c99 "++thisprog++".c -o "++thisprog++".so"
   dbgPrint$ "[JIT]   Compiling with: "++ ccCmd
+  putStrLn$ "[JIT]   Compiling with: "++ ccCmd -- TEMPORARY
   cd <- system$ ccCmd
   case cd of
     ExitSuccess -> return ()

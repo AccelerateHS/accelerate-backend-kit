@@ -57,13 +57,12 @@ countMap ls = M.fromListWith (+) (map (,1) ls)
 
 -- Takes a list of possible-inlines, returns new bindings, plus a list of those
 -- actually-inlined.
-doBinds :: (Show a, Ord a) =>
-           M.Map S.Var (GPUProgBind a) ->
-           [GPUProgBind a] -> ([GPUProgBind a], S.Set S.Var)
+doBinds :: M.Map S.Var (GPUProgBind FreeVars) ->
+           [GPUProgBind FreeVars] -> ([GPUProgBind FreeVars], S.Set S.Var)
 doBinds inlines binds = loop [] [] binds 
   where
     loop bacc vacc [] = (reverse bacc, S.fromList vacc)
-    loop bacc vacc (pb@GPUProgBind { op } : rest) = do  
+    loop bacc vacc (pb@GPUProgBind { op, decor=FreeVars fvs } : rest) = do  
       let skip  = loop (pb:bacc) vacc rest
       case op of
          Use  _        -> skip         
@@ -81,9 +80,12 @@ doBinds inlines binds = loop [] [] binds
              [] -> skip
              [one] ->
                 case one of
-                  GPUProgBind { outarrs, op=GenManifest theGEN } -> 
+                  GPUProgBind { outarrs, op=GenManifest theGEN, decor=FreeVars fvs2 } ->                    
                     let -- This part is easy, we just plug it in:
-                        pb' = pb{op= op{ generator= NonManifest theGEN}} in
+                        pb' = pb{ op= op{ generator= NonManifest theGEN},
+                                  -- Sticky issue, do free vars include the generator AND the reducer?
+                                  -- ANSWER: For now, *YES*.    
+                                  decor= FreeVars (fvs++fvs2) } in
                     if all isJust bods
                     then maybtrace ("!! VICTORY - fusing GenManifest into Reduce: "++show outarrs)$  
                          loop (pb':bacc) (vrs++vacc) rest

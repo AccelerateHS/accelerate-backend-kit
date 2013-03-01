@@ -88,6 +88,7 @@ instance EmitBackend CEmitter where
     include "stdio.h"
     include "stdint.h"
     include "stdbool.h"
+    -- include "math.h"    
     case e of
       CEmitter Sequential   _ -> return ()
       CEmitter CilkParallel _ -> do include "cilk/cilk.h"

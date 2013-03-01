@@ -86,7 +86,9 @@ emitPrimApp outTy prim args =
               Acosh -> unary "acosh"
               Atanh -> unary "atanh"
               ExpFloating -> binop ""
-              Sqrt  -> unary "sqrt"
+              Sqrt  -> case outTy of
+                         TFloat  -> unary "sqrtf"
+                         TDouble -> unary "sqrt"
               Log   -> binop "log" -- natural log
               FDiv    -> binop "/"
               FPow    -> binfun "expt"
