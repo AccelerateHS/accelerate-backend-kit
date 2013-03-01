@@ -7,6 +7,7 @@ import           Data.Array.Accelerate.BackendKit.IRs.GPUIR     as G
 -- import           Data.Array.Accelerate.BackendKit.Utils.Helpers (genUnique, genUniqueWith, GensymM, strideName)
 import           Data.Array.Accelerate.BackendKit.IRs.Metadata
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
+import Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace)
 -- import           Control.Applicative   ((<$>))
 -- import           Control.Monad.State.Strict (runState)
 import qualified Data.Map                        as M
@@ -28,9 +29,7 @@ fuseGenReduce prog@GPUProg{progBinds, uniqueCounter, sizeEnv} =
     isInlined                    _ = False
 
     potentialInlines =
-      M.mapWithKey (\ vr _ -> 
-                     case G.lookupProgBind vr progBinds of
-                       Just (GPUProgBind{op=GenManifest gen}) -> gen)
+      M.mapWithKey (\ vr _ -> fromJust (G.lookupProgBind vr progBinds))
       potentialInlineVrs
 
     -- Here we determine which GenManifest ops are single-use (this is a degenerate
@@ -54,7 +53,8 @@ countMap ls = M.fromListWith (+) (map (,1) ls)
 
 -- Takes a list of possible-inlines, returns new bindings, plus a list of those
 -- actually-inlined.
-doBinds :: M.Map S.Var (Generator (Fun ScalarBlock)) ->
+doBinds :: (Show a, Ord a) =>
+           M.Map S.Var (GPUProgBind a) ->
            [GPUProgBind a] -> ([GPUProgBind a], S.Set S.Var)
 doBinds inlines binds = loop [] [] binds 
   where
@@ -75,20 +75,28 @@ doBinds inlines binds = loop [] [] binds
            -- The separate components of the input *should* all come from the same
            -- place, but we make sure here:
             if all isJust bods
-            then let pb' = pb{op= op{reducer= doInline (M.fromList$ zip vrs $ catMaybes bods) reducer }}
-                 in loop (pb':bacc) (vrs++vacc) rest
+            then let pb' = pb{op= op{reducer= doInline (S.toList$ S.fromList$ catMaybes bods) reducer }}
+                 in  loop (pb':bacc) (vrs++vacc) rest
             else skip
 
          NewArray _    -> error$"FuseGenReduce.hs: not expecting NewArray yet: "++show op
          Kernel {}     -> error$"FuseGenReduce.hs: not expecting Kernel yet: "++show op
          
-doInline :: M.Map S.Var (Generator (Fun ScalarBlock)) -> Fun ScalarBlock -> Fun ScalarBlock
-doInline mp (Lam vs (ScalarBlock locals res stmts)) =
+-- doInline :: M.Map S.Var (Generator (Fun ScalarBlock)) -> Fun ScalarBlock -> Fun ScalarBlock
+doInline :: Show a => [GPUProgBind a] -> Fun ScalarBlock -> Fun ScalarBlock
+doInline [GPUProgBind { outarrs, op=GenManifest (Gen _ genfun) } ]
+         (Lam vs (ScalarBlock locals res stmts)) =
+  maybtrace ("!! VICTORY - fusing GenManifest into Reduce: "++show outarrs)$  
   Lam vs $ ScalarBlock locals res (map doStmt stmts)
  where
-   
+  -- Doing fusion at this late point is quite painful.  By now the individual
+  -- references into the output of the Generate have become scattered.  This is ugly,
+  -- but we have to reverse some of the work the compiler has done.  Here we gather
+  -- back together those references, and compare their indices.
   doStmt st =
     error "finishme"
+
+doInline ls _ = error$"FuseGenReduce.hs: cannot presently handle inlining more than one GenManifest into GenReduce: "++show ls
 
 -- data Stmt =   
 --     SCond Exp [Stmt] [Stmt]
