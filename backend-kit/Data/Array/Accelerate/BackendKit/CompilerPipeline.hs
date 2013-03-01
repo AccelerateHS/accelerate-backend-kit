@@ -69,7 +69,8 @@ import Data.Array.Accelerate.BackendKit.Phase3.DesugarGenerate   (desugarGenerat
 -- Exposed entrypoints for this module:
 --------------------------------------------------------------------------------
 
--- | The final step: Lower to a GPU-targetting language.
+-- | Phase3: The final step: Lower to a GPU-targetting language.  Perform
+-- optimizations that have been waiting on the alternate representation.
 phase3 :: C.LLProg () -> G.GPUProg (FreeVars)
 phase3 prog =
   runPass    "desugarGenerate"   desugarGenerate   $     -- (freevars)
@@ -79,11 +80,11 @@ phase3 prog =
   runPass    "kernFreeVars"      kernFreeVars      $     -- (freevars)
   prog
   
--- | The bulk of the compilation process -- eliminate unnecessary
+-- | Phase2: The bulk of the compilation process -- eliminate unnecessary
 -- forms and lower the language.
 phase2 :: S.Prog () -> C.LLProg ()
 phase2 prog =
-  runPass    "convertToCLike"    convertToCLike    $     -- ()
+  runPass    "convertToCLike"    convertToCLike    $     -- ()  
   -- todo: Verify final CLike here
   runPass    "unzipArrays"       unzipArrays       $     -- (opinputs,(subbinds,(foldstride,size)))
   runPass    "unzipETups"        unzipETups        $     -- (subbinds,(foldstride,size))
@@ -96,12 +97,9 @@ phase2A :: S.Prog () -> S.Prog (Maybe (Stride S.Exp),ArraySizeEstimate)
 phase2A prog =
   runPass    "typecheck2"        typecheckPass     $       
   runPass    "oneDimensionalize" oneDimensionalize $     -- (foldstride,size)
-  -- todo: explicitFoldStride  
   runOptPass "deadCode"          deadCode (fmap fst) $   -- (size)
   runPass    "trackUses"         trackUses         $     -- (size,uses)
-   -- NOTE INLINE CHEAP IS NOT OPTIONAL PRESENTLY! (needed for copy-prop)
---   runOptPass "inlineCheap"       inlineCheap (fmap fst) $ -- (size)
-  runPass    "inlineCheap"       inlineCheap       $      -- (size)
+  runOptPass "inlineCheap"       inlineCheap (fmap fst) $ -- (size)
   runPass    "estimateCost"      estimateCost      $      -- (size,cost)
   runPass    "desugtoGenerate"   desugToGenerate   $      -- (size)
   runPass    "desugToBackperm"   desugToBackperm   $      -- (size,uses)
@@ -112,9 +110,9 @@ phase2A prog =
   runPass    "desugarUnit"       desugarUnit       $      -- ()
   prog
 
--- | Convert the sophisticate Accelerate-internal AST representation
---   into something very simple for external consumption.  Note: this
---   involves applying a number of lowering compiler passes.
+-- | Phase1: Convert the sophisticate Accelerate-internal AST representation into
+-- something very simple for external consumption.  Note: this involves applying a
+-- number of lowering compiler passes.
 phase1 :: (Sug.Arrays a) => AST.Acc a -> S.Prog ()
 phase1 prog =
   runPass "typecheck1"           typecheckPass     $       
@@ -123,10 +121,9 @@ phase1 prog =
   runPass "liftComplexRands"     liftComplexRands  $  
   runPass "staticTuples"         staticTuples      $
   runPass "initialConversion"    accToAccClone     $
---  runPass "preConversion"        id                $
   prog
 
--- | This simply calls the Accelerate front-end with the default settings for a
+-- | This simply calls the Accelerate *front-end* with the default settings for a
 -- backend-kit compiler.
 phase0 :: Sug.Arrays a => Smt.Acc a -> AST.Acc a
 phase0 = convertAcc

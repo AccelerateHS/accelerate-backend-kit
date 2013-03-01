@@ -57,8 +57,12 @@ These should go into github issues
  * Need to track the FULL SHAPE of any progResults for reconstructing
    the final thing.  (Fix OneDimensionalize & downstream)
 
-
-
- * INLINECHEAP NEEDS TO FRESHEN NAMES!
+ * FuseGenReduce: inline Cond's as well.
  
+ * InlineCheap should inline Use dereferences.
  
+FINISHED 
+---------------------------------------
+
+ x INLINECHEAP NEEDS TO FRESHEN NAMES!
+

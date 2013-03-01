@@ -13,7 +13,7 @@ import Data.Array.Accelerate.BackendKit.Utils.Helpers (defaultDupThreshold,Gensy
 import Data.Array.Accelerate.BackendKit.IRs.Metadata  (ArraySizeEstimate(..))
 import Data.Array.Accelerate.BackendKit.Phase2.EstimateCost (Cost(Cost))
 
--- | This pass serves two purposes inlines `Generate` into their consumers, if the
+-- | This pass inlines `Generate` into their consumers, if the
 -- computation in their bodies are deemed cheap.
 inlineCheap :: Prog (ArraySizeEstimate,Cost) -> Prog ArraySizeEstimate
 inlineCheap prog@Prog{progBinds, progResults, uniqueCounter } =
@@ -66,7 +66,6 @@ doEx mp ex =
     EIndexScalar avr ex -> do
       let pb  = mp ! avr
       ex' <- doE ex 
-      -- This will also do copyProp, btw:
       if getCost pb <= defaultDupThreshold then do
          mb <- inline pb ex'
          case mb of
@@ -95,6 +94,9 @@ doEx mp ex =
    -- Inline ONLY low-cost generates and variable refs:
    inline (ProgBind _ _ _ (Right (Generate ex (Lam1 (v,ty) bod)))) indE = 
       Just . ELet (v,ty,indE) <$> doE bod
+
+-- TODO: inline references to USE'd arrays, if the index is avialable.
+
    inline (ProgBind _ _ _ (Right (Vr vrUp))) indE = return (Just$ EIndexScalar vrUp indE)
    inline _ _ = return Nothing
    
