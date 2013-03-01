@@ -118,7 +118,7 @@ doE env ex =
     ETupProject ix len (EIndexScalar avr ind) ->
       if len /= 1 then error$"UnzipArrays.hs: ETupProject with len/=1: "++show ex
       else
-        trace ("Projecing out of "++show (env # avr)++" for avr "++show avr++" want index "++show ix)$
+--        trace ("Projecting out of "++show (env # avr)++" for avr "++show avr++" want index "++show ix)$
         EIndexScalar (reverse (env # avr) !! ix) (doE env ind)
     EIndexScalar avr e  -> EIndexScalar avr (doE env e)
     ETupProject ix l e  -> ETupProject ix l (doE env e) 

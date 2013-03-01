@@ -844,13 +844,13 @@ unpackArray arrrepr = (ty, S.AccArray shp payloads,
 -- | Almost an inverse of `unpackArray` -- repack the simplified data
 --   representation with the type information necessary to form a proper
 --   Accelerate array.
-packArray :: forall sh e . (Sug.Elt e, Sug.Shape sh) => S.AccArray -> Sug.Array sh e
+packArray :: forall sh elt . (Sug.Elt elt, Sug.Shape sh) => S.AccArray -> Sug.Array sh elt
 packArray orig@(S.AccArray dims origPayloads) =
-  -- TEMP: FIXME:  [2012.11.21]  Temporarily allowing mismathched dimensions as long as the # elemens is right:
+  -- TEMP: FIXME:  [2012.11.21]  Temporarily allowing mismathched dimensions as long as the # elements is right:
 --  if length dims == length dims' then -- Is the expected rank correct?
 --  if product dims == product dims'
   if (length dims == length dims') || (length dims' <= 1) -- Allowing mismatch for 0/1 dim.
-  then Sug.Array shpVal (packit (typeOnlyErr "packArray1"::Sug.Array sh e) (reverse origPayloads))
+  then Sug.Array shpVal (packit (typeOnlyErr "packArray1"::Sug.Array sh elt) (reverse origPayloads))
   else error$"SimpleConverter.packArray: array does not have the expected shape: "++show dims++" expected "++show dims'
  where
 
@@ -858,14 +858,15 @@ packArray orig@(S.AccArray dims origPayloads) =
   shpVal :: Sug.EltRepr sh = Sug.fromElt (Sug.listToShape (if dims' == [] then [] else dims) :: sh)
   dims' :: [Int] = Sug.shapeToList (Sug.ignore::sh)
 
-  packit :: forall sh e . (Sug.Shape sh, Sug.Elt e) => Sug.Array sh e -> [S.ArrayPayload] -> (ArrayData (Sug.EltRepr e))
+  packit :: forall sh elt . (Sug.Shape sh, Sug.Elt elt) => Sug.Array sh elt -> [S.ArrayPayload] -> (ArrayData (Sug.EltRepr elt))
   packit _ pays = fst $ loop eTy pays
-     where eTy = Sug.eltType (typeOnlyErr"packArray2"::e) 
+     where eTy = Sug.eltType (typeOnlyErr"packArray2"::elt) 
 
   -- This consumes from a list of payloads and returns what is left in addition to the return value.
-  loop :: forall e . TupleType e -> [S.ArrayPayload] -> (ArrayData e, [S.ArrayPayload])
+  loop :: forall elt . TupleType elt -> [S.ArrayPayload] -> (ArrayData elt, [S.ArrayPayload])
   loop tupTy payloads =
---   trace ("packArray: LOOPING "++show (length payloads)++" payload(s), tupty: "++show tupTy ++"\n   "++show payloads) $
+   -- maybtrace ("packArray: LOOPING "++show (length payloads)++" payload(s), tupty: "++
+   --           show tupTy ++"\n   "++show (payloads)) $
    let err2 :: forall a . String -> a
        err2 msg = error$"packArray: given a AccArray of the wrong type, expected "++msg
                   ++" received "++ show(length payloads) ++ " payloads: "++paystr
@@ -961,11 +962,23 @@ repackAcc dummy simpls =
            let (res2,rst)  = cvt r2 simpls 
                (res1,rst') = cvt r1 rst
            in ((res1,res2), rst')
-       Sug.ArraysRarray | (_ :: Sug.ArraysR (Sug.Array sh e)) <- arrR ->
+       Sug.ArraysRarray | (_ :: Sug.ArraysR (Sug.Array sh elt)) <- arrR ->
          case simpls of 
-           hd:tl -> ((packArray hd) :: (Sug.Array sh e), tl)
+           ls -> 
+               -- Once we have peeled off "one" array, we still need to unzip the tupled elements.
+               let elTy   = Sug.eltType (undefined::elt) 
+                   elWid  = eltWidth elTy 
+                   zipped = SA.concatAccArrays$ take elWid ls
+               in ((packArray zipped) :: (Sug.Array sh elt), 
+                   drop elWid ls)
            oth  -> error$"repackAcc2: ran out of input arrays.\n"
 
+   -- How many scalar components are there in an element type?
+   eltWidth :: forall a . TupleType a -> Int
+   eltWidth UnitTuple = 0
+   eltWidth (PairTuple a b) = eltWidth a + eltWidth b
+   eltWidth (SingleTuple _) = 1
+  
 instance Show (Sug.ArraysR a') where
   show arrR = "ArraysR "++loop arrR
    where 

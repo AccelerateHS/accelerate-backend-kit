@@ -41,7 +41,7 @@ Library
                      test-framework, process, unix, 
                      mtl, pretty, prettyclass, GenericPretty,
                      accelerate, accelerate-backend-kit,
-                     bytestring, ghc-prim
+                     bytestring, ghc-prim, time
 
   if flag(opencl) {
     Exposed-modules:   Data.Array.Accelerate.OpenCL                     
@@ -61,7 +61,7 @@ Test-Suite test-accelerate-cpu
                  , split >= 0.2
                  , mtl, pretty, prettyclass, GenericPretty
                  , accelerate-backend-kit, accelerate >= 0.13 
-                 , bytestring, ghc-prim
+                 , bytestring, ghc-prim, time
     if flag(opencl)
       CPP-options:  -DENABLE_OPENCL
       build-depends: OpenCL

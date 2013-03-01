@@ -138,9 +138,10 @@ instance EmitBackend CEmitter where
                             | (wvr, _, wty) <- ws ]
                 ----------------------- 
                 tmps <- emitBlock e bod -- Here's the body, already wired to use vs/ws
-                -----------------------                 
-                eprintf " ** Folding in position %d, offset %d (it was %f) intermediate result %f\n"
-                        [ix, round, (arrsub (varSyn (head inVs)) ix), varSyn$ head tmps]
+                -----------------------
+                when dbg $ 
+                  eprintf " ** Folding in position %d, offset %d (it was %f) intermediate result %f\n"
+                          [ix, round, (arrsub (varSyn (head inVs)) ix), varSyn$ head tmps]
                 forM_ (fragileZip tmps vs) $ \ (tmp,(v,_,_)) ->
                    set (varSyn v) (varSyn tmp)
                 return ()
@@ -218,8 +219,9 @@ mainBody isCMain e prog@GPUProg{progBinds, progResults, sizeEnv} = do
 
            if isCMain then do 
               comm "This code prints the final result(s):"
-              forM_ allResults $ \ result -> 
+              forM_ allResults $ \ result -> do 
                 printArray e prog result (lkup result progBinds)
+                emitStmt$ function "printf" [stringconst "\n"]
             else do 
               comm "We write the final output to the results record:"
               forM_ allResults $ \ rname -> do 

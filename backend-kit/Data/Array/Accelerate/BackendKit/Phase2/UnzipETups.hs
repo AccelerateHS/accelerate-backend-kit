@@ -73,8 +73,7 @@ unzipETups :: Prog           (Maybe(Stride Exp),ArraySizeEstimate) ->
 unzipETups prog@Prog{progBinds, uniqueCounter, typeEnv} =
     prog'
  where
-  prog' = trace ("Got typenv "++show typeEnv)$
-          prog{ progBinds= map addSubBinds binds, 
+  prog' = prog{ progBinds= map addSubBinds binds, 
                 uniqueCounter= newCounter2,
                 -- After this pass we keep type entries for BOTH tupled and detupled versions:
                 typeEnv = M.union typeEnv $

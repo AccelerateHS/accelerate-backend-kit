@@ -5,10 +5,6 @@
 
 -- | A JIT to compile and run programs via Cilk.  This constitutes a full Accelerate
 -- backend.
---
---  TODO: this needs to be fixed to use dlopen for Use to work.  (Reading the results
---  back is currently done by printing them as text -- a hack.)
-
 module Data.Array.Accelerate.Cilk.JITRuntime (run, rawRunIO) where 
 
 import           Data.Array.Accelerate (Acc)
@@ -22,6 +18,7 @@ import           Data.Array.Accelerate.Shared.EmitC (emitC, ParMode(..), getUseB
 import           Data.Array.Accelerate.BackendKit.SimpleArray (payloadsFromList, payloadFromPtr)
 import           Data.Array.Accelerate.Shared.EmitHelpers ((#))
 
+import           Data.Time.Clock  (getCurrentTime,diffUTCTime)
 import qualified Data.Map         as M
 import           Data.Char        (isAlphaNum)
 import           Control.Monad    (when, forM_, forM)
@@ -186,7 +183,7 @@ dbgPrint str = if not dbg then return () else do
 -- | Follow the protocol for creating an argument record (of arrays), running the
 -- program, and retrieving the results (see `emitMain`s docs).
 loadAndRunSharedObj :: G.GPUProg a -> FilePath -> IO [S.AccArray]
-loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv } soName =
+loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv, G.progType } soName =
   let useBinds   = getUseBinds prog 
       allResults = standardResultOrder progResults in
   withDL soName [RTLD_LOCAL,RTLD_LAZY] $ \ dl ->  do
@@ -214,9 +211,13 @@ loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv } soName =
           dbgPrint$"[JIT] successfully loaded Use arg "++show ix++", type "++show ty          
           return ()
 
-    
+    ----------RUN IT------------
+    t1 <- getCurrentTime
     (mkMainProg main) argsRec resultsRec
-    
+    t2 <- getCurrentTime    
+    ----------------------------
+
+    putStrLn$"SELFTIMED: "++show (diffUTCTime t2 t1)
     dbgPrint$"[JIT] Finished executing dynamically loaded Acc computation!"
     
     arrs <- forM allResults $ \ rname -> do
@@ -233,7 +234,10 @@ loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv } soName =
     dbgPrint$"[JIT] Destroying results record: "++show resultsRec
     (mkDestroyRecord drr) resultsRec
     let table = M.fromList $ zip allResults arrs
-    return$ map (table #) progResults
+        results = map (table #) progResults
+
+    dbgPrint$"[JIT] FULL RESULTS read back to Haskell (type "++show progType++"):\n  "++show results
+    return results
 
 
 -- | Shared for CreateArgRecord and CreateResultRecord

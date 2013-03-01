@@ -30,13 +30,14 @@ module Data.Array.Accelerate.BackendKit.SimpleArray
      payloadLength, 
      mapPayload, indexPayload,
      
-     applyToPayload, applyToPayload2, applyToPayload3,     
+     applyToPayload, applyToPayload2, applyToPayload3,
+     concatAccArrays
    )
    
 where 
   
 
-import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
+import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace)
 
 import           Control.Applicative ((<$>))
@@ -489,3 +490,18 @@ indexArray (AccArray dims payloads) ind =
 tuple :: [Const] -> Const
 tuple [x] = x
 tuple ls  = Tup ls
+
+-- | Take a list of arrays of equal shape and concat them into a single AccArray.  
+concatAccArrays :: [S.AccArray] -> S.AccArray
+concatAccArrays [] = error "zipAccArrays: Cannot zip an empty list of AccArrays (don't know dimension)"
+concatAccArrays origls = 
+  if not (allSame lens)
+  then error$"zipAccArrays: mismatch in lengths: "++show lens
+  else if not (allSame dims)
+       then error$"zipAccArrays: mismatch in dims: "++show dims
+       else S.AccArray (head dims) payls
+ where 
+  lens = L.map payloadLength payls
+  payls = concat paylss
+  (dims,paylss) = unzip [ (dim,payls) | S.AccArray dim payls <- origls ] 
+  allSame (hd:tl) = all (==hd) tl
