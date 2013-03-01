@@ -61,7 +61,7 @@ phase3_ltd prog =
   runPass    "kernFreeVars"      kernFreeVars      $     -- (freevars)
   prog
 
-cOptLvl = " -O3 "
+cOptLvl = if dbg then " -g -O0 " else " -w -O3 "
 
 --------------------------------------------------------------------------------
 

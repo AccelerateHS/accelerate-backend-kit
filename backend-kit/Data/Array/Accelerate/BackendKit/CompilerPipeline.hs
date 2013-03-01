@@ -60,7 +60,7 @@ import Data.Array.Accelerate.BackendKit.Phase2.ToCLike           (convertToCLike
 ----------------------------------------
 import Data.Array.Accelerate.BackendKit.Phase3.KernFreeVars      (kernFreeVars)
 import Data.Array.Accelerate.BackendKit.Phase3.ToGPUIR           (convertToGPUIR)
--- import Data.Array.Accelerate.BackendKit.Phase3.FuseGenReduce     (fuseGenReduce)
+import Data.Array.Accelerate.BackendKit.Phase3.FuseGenReduce     (fuseGenReduce)
 import Data.Array.Accelerate.BackendKit.Phase3.DesugarFoldScan   (desugarFoldScan)
 import Data.Array.Accelerate.BackendKit.Phase3.DesugarGenerate   (desugarGenerate)
 
@@ -74,7 +74,7 @@ phase3 :: C.LLProg () -> G.GPUProg (FreeVars)
 phase3 prog =
   runPass    "desugarGenerate"   desugarGenerate   $     -- (freevars)
   runPass    "desugarFoldScan"   desugarFoldScan   $     -- (freevars)
---  runOptPass "fuseGenReduce"     fuseGenReduce     $     -- (freevars)  
+  runOptPass "fuseGenReduce"     fuseGenReduce  id $     -- (freevars)  
   runPass    "convertToGPUIR"    convertToGPUIR    $     -- (freevars)
   runPass    "kernFreeVars"      kernFreeVars      $     -- (freevars)
   prog
