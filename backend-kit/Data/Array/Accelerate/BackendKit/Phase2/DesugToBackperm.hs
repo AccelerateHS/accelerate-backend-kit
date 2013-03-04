@@ -9,6 +9,7 @@ import Data.Array.Accelerate.BackendKit.CompilerUtils (shapeName)
 import Debug.Trace
 import Data.List as L
 
+-- | This pass eliminates Replicate and Index(Slice) array operators.
 desugToBackperm :: Prog (ArraySizeEstimate,Uses) -> Prog (ArraySizeEstimate,Uses)
 desugToBackperm prog@Prog{progBinds} =
   prog{ progBinds= zipWith (doBind prog) [1000..] progBinds }
