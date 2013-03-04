@@ -99,11 +99,11 @@ rawRunIO pm name prog = do
 
   -- TODO, obey the $CC environment variable:
   let tryICC onfail = do
-        whichICC <- readProcess "which" ["icc"] []
-        case whichICC of
-          ""  -> onfail
-          _   -> do dbgPrint $"[JIT] Using ICC at: "++ (head (lines whichICC))
-                    return$ "icc -fast "++ stripOptFlag cOptLvl
+        code <- system "which -s icc" 
+        case code of
+          ExitFailure _  -> onfail
+          ExitSuccess    -> do dbgPrint $"[JIT] Found ICC. Using it."
+                               return$ "icc -fast "++ stripOptFlag cOptLvl
   cc <- case pm of
          Sequential   -> tryICC (return$ "gcc "++cOptLvl)
          CilkParallel -> tryICC (error "ICC not found!")
