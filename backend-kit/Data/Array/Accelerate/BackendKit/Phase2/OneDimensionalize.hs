@@ -167,19 +167,11 @@ doBind env pb@(ProgBind vo aty sz (Right ae)) =
       tmp    <- lift$ genUniqueWith "flatidx"
       newidx <- unFlatIDX pb (EVr tmp)
 
-      -- This is a bit circuitious, but it lets us avoid spurious ELets:
-      (indV',binder) <- lift$ maybeLet newidx indTy
-      bod' <- doExp (M.insert indV indTy env) bod
-      return$ Generate eShp'' $
-               Lam1 (tmp,TInt)
-                 (binder (substExp indV (EVr indV') bod'))
-
---      maybeLetM indTy newidx $ \ indV' -> do undefined
-        -- -- bod is already written to expect indV, fix it:
-        -- let bod2 = substExp indV (EVr indV') bod
-        -- bod3 <- doExp (M.insert indV indTy env) bod2
-        -- return$ Generate eShp'' $ Lam1 (tmp,TInt) bod3
-                   
+      Generate eShp'' . Lam1 (tmp,TInt) <$> do 
+        maybeLetM indTy newidx $ \ indV' -> do 
+          -- bod is already written to expect indV, fix it:
+          let bod2 = substExp indV (EVr indV') bod
+          doExp (M.insert indV indTy env) bod2                   
 
     -- BOILERPLATE:
     ------------------------------------------------------------
@@ -314,10 +306,11 @@ maybeLetM ty  ex dobod =
             return (ELet (tmp,ty,ex) bod)
 
 
-maybeLet :: Exp -> Type -> GensymM (Var, Exp -> Exp)
-maybeLet ex ty =
-  case ex of
-    EVr v -> return (v, id)
-    _ -> do tmp <- genUnique
-            return (tmp, \bod -> ELet (tmp,ty,ex) bod)
+-- This version avoids the issue of picking a monad, but is ugly to use:
+-- maybeLet :: Exp -> Type -> GensymM (Var, Exp -> Exp)
+-- maybeLet ex ty =
+--   case ex of
+--     EVr v -> return (v, id)
+--     _ -> do tmp <- genUnique
+--             return (tmp, \bod -> ELet (tmp,ty,ex) bod)
 
