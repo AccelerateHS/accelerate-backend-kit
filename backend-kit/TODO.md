@@ -20,7 +20,6 @@ These should go into github issues
  * The interpreters are in disarray.  It would be nice to have a fully
    functional interpreter for all three major IRs.
 
- * Improve OneDimensionalize to use maybeLet everywhere.
  * UnzipETups: really needs to use maybeLet
 
  * (BUG) p20* was exposing a bug where a singleton ETuple would appear
@@ -34,4 +33,3 @@ These should go into github issues
  
  * InlineCheap should inline Use dereferences.
  
-

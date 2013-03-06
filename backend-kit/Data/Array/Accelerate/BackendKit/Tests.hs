@@ -744,7 +744,8 @@ p15 = A.filter (\_ -> constant True) (generate (constant$ Z :. 10) (\_ -> 40))
 
 p16a :: Acc (Vector Int)
 p16a = map (*2) $ 
-       map (+1) p1aa
+       map (+1) $
+       generate (constant (Z :. (10::Int))) unindex1
 
 -- This one triggers identical Zipwith branches turning it into a Map.
 p16b :: Acc (Vector Int)

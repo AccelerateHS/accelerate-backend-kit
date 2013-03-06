@@ -28,3 +28,37 @@ On 7.4.2 (mac & linux) it works fine.
 The C backend is passing 63/67 (all but known-unsupported foldseg
 tests and the one mysterious one).  Actually, I'm going to disable
 those for the moment.  There.  63/64.
+
+
+[2013.03.06] {More Debugging Cilk backend}
+------------------------------------------
+
+I'm seeing nondeterministic segfaults.  Sometimes the Cilk backend
+passes all but 9/64 tests, other times it segfaults in the middle.
+I just watched it segfault on p16a, and p10e.
+
+But then if I do "rep 100" on p10e (or p16a), it completes with no
+problem.  It seems like the issue relates not to running one
+individual tests, but with running a whole series of tests from one
+executable.  
+
+Maybe it's leaking something with respect to the dynamically loaded
+libraries?  I'm not seeing how, because it uses withDL.  Further, the
+sequential C backend runs just as many tests and it never segfaults.
+
+Presently, in addition to the mystery failure on p12, these tests are
+failing due to vectorization problems:
+
+ * p2bb, p2b, p2cc, p2ce, p2g, p2h, p2i, p2d (8 tests)
+ 
+Starting with p2b:
+  This test is nothing but one replicate on a generate.
+  
+Ok, the basic problem is int64s (unsupported data type).  It seems
+like ICC cannot fail gracefully in this case.  In this case would be
+perfectly happy if I could have a __declspec(vector) fail to vectorize
+but still compile.
+
+
+
+ 
