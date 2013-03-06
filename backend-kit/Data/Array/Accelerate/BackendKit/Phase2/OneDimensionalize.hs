@@ -263,14 +263,14 @@ makeFlatIDX pb@(ProgBind _ aty _ _) idxE = polynom
 unFlatIDX :: ProgBind ArraySizeEstimate -> Exp -> MyM Exp
 unFlatIDX pb@(ProgBind _ aty _ _) flatidxE = do
     tmps <- lift$ sequence $ replicate (2*ndim) (genUniqueWith "idx1D")
-    let loop [] [] _ acc = ETuple$ map EVr acc
+    let loop [] [] _ acc = return (ETuple$ map EVr acc)
         loop (tmp1:tmp2:tmpsRst) (coef1:coefsRst) leftover acc =
           -- Inefficient: no combined quotient/remainder operation.
-          ELet (tmp1, TInt, quotI leftover coef1) $
-          ELet (tmp2, TInt, remI  leftover coef1) $
-           loop tmpsRst coefsRst (EVr tmp2) (tmp1:acc)
+          maybeLetM TInt (quotI leftover coef1) $ \ tmp1 -> 
+           maybeLetM TInt (remI  leftover coef1) $ \ tmp2 -> 
+            loop tmpsRst coefsRst (EVr tmp2) (tmp1:acc)
         loop _ _ _ _ = error "OneDimensionalize.hs: the impossible happened."
-    return$ loop tmps (reverse coefs) flatidxE []
+    loop tmps (reverse coefs) flatidxE []
   where    
     TArray ndim _ = aty
     coefs = getIdxCoefs pb    
@@ -297,11 +297,12 @@ doerr e = error$ "OneDimensionalize.hs: the following should be desugared before
 
 -- | Bind a let expression only if necessary.  Don't introduce
 -- variable-variable copies.
-maybeLetM :: Exp -> Type -> (Var -> GensymM Exp) -> GensymM Exp
-maybeLetM ex ty dobod =
+-- maybeLetM :: Exp -> Type -> (Var -> GensymM Exp) -> GensymM Exp
+maybeLetM :: Type -> Exp -> (Var -> MyM Exp) -> MyM Exp
+maybeLetM ty  ex dobod =
   case ex of
     EVr v -> dobod v
-    _ -> do tmp <- genUnique
+    _ -> do tmp <- lift $ genUnique
             bod <- dobod tmp
             return (ELet (tmp,ty,ex) bod)
 
