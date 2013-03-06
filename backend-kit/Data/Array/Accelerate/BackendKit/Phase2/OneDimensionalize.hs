@@ -166,12 +166,20 @@ doBind env pb@(ProgBind vo aty sz (Right ae)) =
                      KnownSize ls -> EConst$ I$ product ls
       tmp    <- lift$ genUniqueWith "flatidx"
       newidx <- unFlatIDX pb (EVr tmp)
+
       -- This is a bit circuitious, but it lets us avoid spurious ELets:
       (indV',binder) <- lift$ maybeLet newidx indTy
       bod' <- doExp (M.insert indV indTy env) bod
       return$ Generate eShp'' $
                Lam1 (tmp,TInt)
                  (binder (substExp indV (EVr indV') bod'))
+
+--      maybeLetM indTy newidx $ \ indV' -> do undefined
+        -- -- bod is already written to expect indV, fix it:
+        -- let bod2 = substExp indV (EVr indV') bod
+        -- bod3 <- doExp (M.insert indV indTy env) bod2
+        -- return$ Generate eShp'' $ Lam1 (tmp,TInt) bod3
+                   
 
     -- BOILERPLATE:
     ------------------------------------------------------------
@@ -229,9 +237,8 @@ doExp env ex =
       prog <- ask
       let (Just pb@(ProgBind _ (TArray n _) _ (Right _))) =
             lookupProgBind avr (progBinds prog)
-      return$
-        ELet (tmp, mkIndTy n, indE)
-         (EIndexScalar avr (makeFlatIDX pb (EVr tmp)))
+      maybeLetM (mkIndTy n) indE $ \ tmp -> 
+        return (EIndexScalar avr (makeFlatIDX pb (EVr tmp)))
     
     EShape _            -> doerr ex 
     EShapeSize _        -> doerr ex
