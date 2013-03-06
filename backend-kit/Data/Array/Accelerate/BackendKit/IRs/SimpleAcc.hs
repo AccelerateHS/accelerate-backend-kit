@@ -34,7 +34,7 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
      
      -- * Building and normalizing pieces of syntax
      normalizeEConst, mkTTuple, mkETuple,
-     freshenExpNames, GensymM, genUnique, genUniqueWith, 
+     freshenExpNames, substExp, GensymM, genUnique, genUniqueWith, 
      
      -- * Type recovery and type checking:
      constToType, recoverExpType, topLevelExpType,
@@ -891,6 +891,34 @@ freshenExpNames = lp M.empty
       ETuple els          -> ETuple       <$> mapM f els
       EPrimApp t p els    -> EPrimApp t p <$> mapM f els
       EIndex els          -> EIndex       <$> mapM f els
+
+
+
+-- | Substitute an expression for all occurrences of a variable in an open
+-- expression.
+substExp :: Var -> Exp -> Exp -> Exp
+substExp old new target = loop target
+ where
+   loop ex =
+    case ex of
+      ELet (v,ty,rhs) bod -> let rhs' = loop rhs in
+                             ELet (v,ty,rhs') $ 
+                               if v == old
+                               then bod
+                               else loop bod 
+      EVr vr              -> if vr == old
+                             then new
+                             else ex       
+      EShape _avr         -> ex
+      EConst _            -> ex
+      ECond e1 e2 e3      -> ECond (loop e1) (loop e2) (loop e3)
+      EIndexScalar avr e  -> EIndexScalar avr (loop e)
+      EShapeSize e        -> EShapeSize  (loop e)
+      ETupProject i l e   -> ETupProject i l (loop e)
+      ETuple els          -> ETuple       (map loop els)
+      EPrimApp t p els    -> EPrimApp t p (map loop els)
+      EIndex els          -> EIndex       (map loop els)
+
 
 -- Lifting these here from Helpers.hs to avoid import cycles:
 ------------------------------------------------------------

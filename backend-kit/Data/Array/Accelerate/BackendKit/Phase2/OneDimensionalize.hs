@@ -164,12 +164,14 @@ doBind env pb@(ProgBind vo aty sz (Right ae)) =
       let eShp'' = case sz of
                      UnknownSize  -> EVr$ sizeName vo
                      KnownSize ls -> EConst$ I$ product ls
-      bod'   <- doExp (M.insert indV indTy env) bod
       tmp    <- lift$ genUniqueWith "flatidx"
       newidx <- unFlatIDX pb (EVr tmp)
+      -- This is a bit circuitious, but it lets us avoid spurious ELets:
+      (indV',binder) <- lift$ maybeLet newidx indTy
+      bod' <- doExp (M.insert indV indTy env) bod
       return$ Generate eShp'' $
-               Lam1 (tmp,TInt) $
-                ELet (indV, indTy, newidx) bod'
+               Lam1 (tmp,TInt)
+                 (binder (substExp indV (EVr indV') bod'))
 
     -- BOILERPLATE:
     ------------------------------------------------------------
@@ -291,3 +293,23 @@ doerr e = error$ "OneDimensionalize.hs: the following should be desugared before
 
        
 ----------------------------------------------------------------------------------------------------
+
+
+-- | Bind a let expression only if necessary.  Don't introduce
+-- variable-variable copies.
+maybeLetM :: Exp -> Type -> (Var -> GensymM Exp) -> GensymM Exp
+maybeLetM ex ty dobod =
+  case ex of
+    EVr v -> dobod v
+    _ -> do tmp <- genUnique
+            bod <- dobod tmp
+            return (ELet (tmp,ty,ex) bod)
+
+
+maybeLet :: Exp -> Type -> GensymM (Var, Exp -> Exp)
+maybeLet ex ty =
+  case ex of
+    EVr v -> return (v, id)
+    _ -> do tmp <- genUnique
+            return (tmp, \bod -> ELet (tmp,ty,ex) bod)
+
