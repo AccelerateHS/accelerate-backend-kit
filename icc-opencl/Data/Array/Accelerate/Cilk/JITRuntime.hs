@@ -103,7 +103,7 @@ rawRunIO pm name prog = do
         case code of
           ExitFailure _  -> onfail
           ExitSuccess    -> do dbgPrint $"[JIT] Found ICC. Using it."
-                               return$ "icc -fast "++ stripOptFlag cOptLvl
+                               return$ "icc -fast -vec-report2 "++ stripOptFlag cOptLvl
   cc <- case pm of
          Sequential   -> tryICC (return$ "gcc "++cOptLvl)
          CilkParallel -> tryICC (error "ICC not found!")
