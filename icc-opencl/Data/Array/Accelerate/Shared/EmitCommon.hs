@@ -251,17 +251,16 @@ emitConst e cnst =
     CS _ ->i;  CI _ ->i;  CL _ ->l;  CLL _ ->ll; 
     CUS _ ->u;  CUI _ ->u;  CUL _ ->ul;  CULL _ ->ull;
     CC _ -> i; CSC _ -> i; CUC _ -> u; -- C char types count as ints.
-    F  _ -> strToSyn$ flt++"f"
-    CF _ -> strToSyn$ flt++"f"    
-    D  _ -> strToSyn$ flt
-    CD _ -> strToSyn$ flt
+    F  f -> strToSyn$ show f++"f"
+    CF f -> strToSyn$ show f++"f"    
+    D  f -> strToSyn$ show f
+    CD f -> strToSyn$ show f
     C chr   -> strToSyn$ show chr
     B True  -> strToSyn$ "1"
     B False -> strToSyn$ "0"
     Tup []  -> strToSyn$ "0" -- Unit type. 
     Tup _  -> error$"emitConst: no support for tuple constants presently: "++show cnst
  where
-   flt   = show ((fromRational$ constToRational cnst)::Double)
    iS    = show (constToInteger cnst)
    i     = strToSyn  iS
    l     = strToSyn$ iS ++ "l"
