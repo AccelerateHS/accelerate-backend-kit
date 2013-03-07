@@ -229,8 +229,8 @@ emitE e = loop M.empty
       -- We could make this smarter about C literal syntax:
       EConst c              -> castit e (constToType c) (emitConst e c)
       ECond e1 e2 e3        -> loop mp e1 ? loop mp e2 .: loop mp e3
-      EPrimApp ty p es      -> castit e ty $
-                               emitPrimApp ty p (L.map (loop mp) es)
+      EPrimApp ty p es      -> -- castit e ty $
+                               emitPrimApp e ty p (L.map (loop mp) es)
       EIndexScalar vr ex    -> varSyn vr ! loop mp ex
 
       EGetLocalID  i -> function "get_local_id"  [fromIntegral i]
@@ -279,8 +279,8 @@ emitConst e cnst =
 
 -- | Emit a PrimApp provided that the operands have already been convinced to `Syntax`.
 --   It returns EasyEmit `Syntax` representing a C expression.
-emitPrimApp :: Type -> Prim -> [Syntax] -> Syntax
-emitPrimApp outTy prim args =
+emitPrimApp :: EmitBackend e => e -> Type -> Prim -> [Syntax] -> Syntax
+emitPrimApp e outTy prim args =
   case prim of
     NP np -> case np of
               Add -> binop "+"
@@ -330,9 +330,8 @@ emitPrimApp outTy prim args =
               Round   -> unary "round"
               Floor   -> unary "floor"
               Ceiling -> unary "ceil"
-              -- The C CAST that should be wrapped around the esult of
-              -- emitPrimApp should effectively truncate:
-              Truncate -> arg -- castit e ty arg
+              -- The C CAST effectively truncate:
+              Truncate -> castit e outTy arg
     SP p -> case p of
               Lt   -> binop "<"
               Gt   -> binop ">"
@@ -354,7 +353,7 @@ emitPrimApp outTy prim args =
               Or   -> binop "||"
               Not  -> unary "!" 
     OP p -> case p of
-              FromIntegral -> arg -- Again, depend on the cast.
+              FromIntegral -> castit e outTy arg -- Again, depend on the cast.
               BoolToInt    -> arg
               Ord          -> arg
               S.Chr        -> arg
@@ -436,6 +435,6 @@ fst3 :: (t, t1, t2) -> t
 fst3 (v,_,_) = v
 
 
-test0 = emitPrimApp TInt (NP Sig) [constant "x"]
-test1 = emitPrimApp TInt (IP Quot) [constant "x", constant "y"]
+-- test0 = emitPrimApp undefined TInt (NP Sig) [constant "x"]
+-- test1 = emitPrimApp undefined TInt (IP Quot) [constant "x", constant "y"]
 
