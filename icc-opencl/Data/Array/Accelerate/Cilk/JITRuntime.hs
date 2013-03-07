@@ -103,7 +103,8 @@ rawRunIO pm name prog = do
         case code of
           ExitFailure _  -> onfail
           ExitSuccess    -> do dbgPrint $"[JIT] Found ICC. Using it."
-                               return$ "icc -fast -vec-report2 "++ stripOptFlag cOptLvl
+                               return$ "icc -fast -ww13397 -vec-report2 "++ stripOptFlag cOptLvl
+-- UPDATE: -ww13397 to downgrade to warning, and -wd13397 to disable entirely.  NICE!
   cc <- case pm of
          Sequential   -> tryICC (return$ "gcc "++cOptLvl)
          CilkParallel -> tryICC (error "ICC not found!")
