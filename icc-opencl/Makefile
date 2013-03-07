@@ -21,3 +21,4 @@ test-opencl:
 	EMITC=0 ONEDIMTESTS=0 MULTIDIMTESTS=1 ./Test.exe 
 	EMITC=0 ONEDIMTESTS=0 USETESTS=1 ./Test.exe 
 
+# icc -vec-report2 -std=c99 debug.c

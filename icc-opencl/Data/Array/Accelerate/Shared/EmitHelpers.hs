@@ -178,7 +178,7 @@ emitCType ty = toSyntax$ text$
     TChar       -> "char"
     TBool       -> "bool"
     TTuple [] -> "void"
-    TTuple _  -> error "emitType: cannot handle tuples presently"
+    TTuple _  -> error "emitCType: cannot handle tuples presently"
 
 -- | Convert a type to the equivalent OpenCL type.  Note that unlike
 -- plain C, OpenCL provides specific guarantees as to the size of

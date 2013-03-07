@@ -225,9 +225,9 @@ emitE e = loop M.empty
     case exr of    
       EVr  v                -> M.findWithDefault (varSyn v) v mp
       -- We could make this smarter about C literal syntax:
-      EConst c              -> castit (constToType c) (emitConst c)
+      EConst c              -> castit e (constToType c) (emitConst e c)
       ECond e1 e2 e3        -> loop mp e1 ? loop mp e2 .: loop mp e3
-      EPrimApp ty p es      -> castit ty
+      EPrimApp ty p es      -> castit e ty
                                (emitPrimApp ty p (L.map (loop mp) es))
       EIndexScalar vr ex    -> varSyn vr ! loop mp ex
 
@@ -237,23 +237,44 @@ emitE e = loop M.empty
 --      EUnInitArray _ _ -> error$"EmitCommon.hs/emitE: EUnInitArray should only be called as a kernel argument."
       EUnInitArray _ _ -> "ERROR_DONT_USE_EUnInitArray_HERE"
 
-   -- | Add a cast around an expression.
-   castit :: Type -> Syntax -> Syntax
-   castit ty exp = (E.parens (emitType e ty)) +++ E.parens exp
+-- | Add a cast around an expression.
+castit :: EmitBackend e => e -> Type -> Syntax -> Syntax
+castit e ty exp = (E.parens (emitType e ty)) +++ E.parens exp
 
-
-emitConst :: Const -> Syntax
-emitConst cnst = strToSyn$ 
+-- | The new contract [2013.03.07] is that primitive applications depend on their
+-- inputs being uniquely typed (and the outputs are not cast).
+emitConst :: EmitBackend e => e -> Const -> Syntax
+emitConst e cnst = 
   case cnst of
-    c | isIntConst c   -> show (constToInteger c)
-    c | isFloatConst c -> show ((fromRational$ constToRational c)::Double)
-    C chr   -> show chr
-    B True  -> "1"
-    B False -> "0"
-    Tup []  -> "0" -- Unit type. 
+    I _ ->cast;    I8 _ ->cast;    I16 _  ->cast;  I32 _  ->i;  I64 _ ->castl;
+    W _ ->castu;    W8 _ ->castu;    W16 _  ->castu;  W32 _  ->castu;  W64 _ ->castul;
+    CS _ ->i;  CI _ ->i;  CL _ ->l;  CLL _ ->ll; 
+    CUS _ ->u;  CUI _ ->u;  CUL _ ->ul;  CULL _ ->ull;
+    CC _ -> i; CSC _ -> i; CUC _ -> u; -- C char types count as ints.
+    F  _ -> strToSyn$ flt++"f"
+    CF _ -> strToSyn$ flt++"f"    
+    D  _ -> strToSyn$ flt
+    CD _ -> strToSyn$ flt
+    C chr   -> strToSyn$ show chr
+    B True  -> strToSyn$ "1"
+    B False -> strToSyn$ "0"
+    Tup []  -> strToSyn$ "0" -- Unit type. 
     Tup _  -> error$"emitConst: no support for tuple constants presently: "++show cnst
-    _ -> error "internal error: this can never happen"
+ where
+   flt   = show ((fromRational$ constToRational cnst)::Double)
+   iS    = show (constToInteger cnst)
+   i     = strToSyn  iS
+   l     = strToSyn$ iS ++ "l"
+   ll    = strToSyn$ iS ++ "ll"
+   u     = strToSyn$ iS ++ "u"
+   ul    = strToSyn$ iS ++ "ul"
+   ull   = strToSyn$ iS ++ "ull"   
+   cast   = castit e (constToType cnst) i
+   castl  = castit e (constToType cnst) l
+   castu  = castit e (constToType cnst) u
+   castul = castit e (constToType cnst) ul
 
+          
 
 --------------------------------------------------------------------------------  
 -- Helpers and Junk

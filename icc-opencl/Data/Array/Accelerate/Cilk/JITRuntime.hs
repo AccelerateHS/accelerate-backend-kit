@@ -58,7 +58,7 @@ phase3_ltd :: C.LLProg () -> G.GPUProg (FreeVars)
 phase3_ltd prog = 
   runPass    "desugarGenerate"   desugarGenerate   $     -- (size,freevars)
 --  runPass    "desugarFoldScan"   desugarFoldScan   $   -- (size,freevars)
-   runPass    "fuseGenReduce"     fuseGenReduce     $     -- (freevars)  
+--   runPass    "fuseGenReduce"     fuseGenReduce     $     -- (freevars)  
   runPass    "convertToGPUIR"    convertToGPUIR    $     -- (size,freevars)
   runPass    "kernFreeVars"      kernFreeVars      $     -- (freevars)
   prog
