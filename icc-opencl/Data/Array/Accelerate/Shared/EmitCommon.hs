@@ -280,7 +280,7 @@ emitConst e cnst =
 -- | Emit a PrimApp provided that the operands have already been convinced to `Syntax`.
 --   It returns EasyEmit `Syntax` representing a C expression.
 emitPrimApp :: EmitBackend e => e -> Type -> Prim -> [Syntax] -> Syntax
-emitPrimApp e outTy prim args =
+emitPrimApp e outTy prim args = E.parens$ 
   case prim of
     NP np -> case np of
               Add -> binop "+"
