@@ -18,7 +18,7 @@ module Data.Array.Accelerate.Shared.EmitCommon
 
          -- * Other bits and pieces
          emitE, emitS, emitBlock, emitConst, emitPrimApp, 
-         printfFlag, printf, eprintf,
+         printfFlag, printf, eprintf, castit, 
          varSyn, strToSyn, lkup
        ) where
 
