@@ -17,23 +17,25 @@ module Data.Array.Accelerate.Shared.EmitCommon
          emitGeneric,
 
          -- * Other bits and pieces
-         emitE, emitS, emitBlock, emitConst,
+         emitE, emitS, emitBlock, emitConst, emitPrimApp, 
          printfFlag, printf, eprintf,
          varSyn, strToSyn, lkup
        ) where
 
-import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
-           ( Type(..), Const(..), Var, var,
-             constToType, constToInteger, constToRational,
-             isFloatConst, isIntConst)
+import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
+       ( Type(..), Const(..), Var, var, Prim(..),
+         NumPrim(..), IntPrim(..), FloatPrim(..), ScalarPrim(..), BoolPrim(..), OtherPrim(..), 
+         constToType, constToInteger, constToRational,
+         isFloatConst, isIntConst) 
 
+-- import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import           Data.Array.Accelerate.BackendKit.IRs.Metadata  (FreeVars(..))
 import           Data.Array.Accelerate.Shared.EasyEmit hiding (var)
 import qualified Data.Array.Accelerate.Shared.EasyEmit as E
-import           Data.Array.Accelerate.Shared.EmitHelpers (emitPrimApp, builderName)
+import           Data.Array.Accelerate.Shared.EmitHelpers (builderName)
 
 import           Data.Array.Accelerate.BackendKit.IRs.GPUIR      as G
-import           Text.PrettyPrint.HughesPJ      (text)
+import           Text.PrettyPrint.HughesPJ      (text, comma)
 import           Data.List                      as L
 import           Data.Maybe                     (fromJust)
 import qualified Data.Map                       as M
@@ -227,8 +229,8 @@ emitE e = loop M.empty
       -- We could make this smarter about C literal syntax:
       EConst c              -> castit e (constToType c) (emitConst e c)
       ECond e1 e2 e3        -> loop mp e1 ? loop mp e2 .: loop mp e3
-      EPrimApp ty p es      -> castit e ty
-                               (emitPrimApp ty p (L.map (loop mp) es))
+      EPrimApp ty p es      -> castit e ty $
+                               emitPrimApp ty p (L.map (loop mp) es)
       EIndexScalar vr ex    -> varSyn vr ! loop mp ex
 
       EGetLocalID  i -> function "get_local_id"  [fromIntegral i]
@@ -273,7 +275,103 @@ emitConst e cnst =
    castu  = castit e (constToType cnst) u
    castul = castit e (constToType cnst) ul
 
-          
+
+
+-- | Emit a PrimApp provided that the operands have already been convinced to `Syntax`.
+--   It returns EasyEmit `Syntax` representing a C expression.
+emitPrimApp :: Type -> Prim -> [Syntax] -> Syntax
+emitPrimApp outTy prim args =
+  case prim of
+    NP np -> case np of
+              Add -> binop "+"
+              Sub -> binop "-"
+              Mul -> binop "*"
+              Neg -> unary "-"
+              Abs -> unary "abs"
+              -- Warning, potential for code duplication here.  Should ensure that args are trivial:
+              Sig ->  arg E.&& (arg E.> 0) E.&& (- (arg E.< 0))
+    IP ip -> case ip of
+              -- This uses the stdlib.h div function, not available in OpenCL:
+              -- Quot -> (binfun "div") `dot` (constant "quot")
+              -- Rem  -> (binfun "div") `dot` (constant "rem")
+              Quot -> binop "/"
+              Rem  -> binop "%"
+              -- These two need to round towards negative infinity:
+              IDiv -> error "integer division truncated towards negative infinity... not implemented yet!"
+              Mod  -> error "integer modulus truncated towards negative infinity... not implemented yet!"
+              BAnd -> binop "&"
+              BOr  -> binop "|"
+              BXor -> binop "^"
+              BNot -> unary  "~"
+              BShiftL -> binop "<<"
+              BShiftR -> binop ">>"
+              BRotateL -> (left E.<< right) .| (left E.>> ((sizeof right) * 8 - 1))
+              BRotateR -> (left E.>> right) .| (left E.<< ((sizeof right) * 8 - 1))
+    FP p -> case p of
+              Recip -> E.parens (1 / arg) 
+              Sin  -> unary "sin"
+              Cos  -> unary "cos"
+              Tan  -> unary "tan"
+              Asin -> unary "asin"
+              Acos -> unary "acos"
+              Atan -> unary "atan"
+              Asinh -> unary "asinh"
+              Acosh -> unary "acosh"
+              Atanh -> unary "atanh"
+              ExpFloating -> binop ""
+              Sqrt  -> case outTy of
+                         TFloat  -> unary "sqrtf"
+                         TDouble -> unary "sqrt"
+              Log   -> binop "log" -- natural log
+              FDiv    -> binop "/"
+              FPow    -> binfun "expt"
+              LogBase -> binop "log"
+              Atan2   -> unary "atan2"
+              Round   -> unary "round"
+              Floor   -> unary "floor"
+              Ceiling -> unary "ceil"
+              -- The C CAST that should be wrapped around the esult of
+              -- emitPrimApp should effectively truncate:
+              Truncate -> arg -- castit e ty arg
+    SP p -> case p of
+              Lt   -> binop "<"
+              Gt   -> binop ">"
+              LtEq -> binop "<="
+              GtEq -> binop ">="
+              Eq   -> binop "=="
+              NEq  -> binop "!="
+              Max  -> binfun "max" -- These are not basic standard C
+              Min  -> binfun "min" -- they need to be provided.
+              -- TODO: Case on Type:
+              -- Max  -> case outTy of
+              --           TFloat  -> binfun "fmaxf"
+              --           TDouble -> binfun "fmax"
+              -- Min  -> case outTy of
+              --           TFloat  -> binfun "fminf"
+              --           TDouble -> binfun "fmin"
+    BP p -> case p of
+              And  -> binop "&&"
+              Or   -> binop "||"
+              Not  -> unary "!" 
+    OP p -> case p of
+              FromIntegral -> arg -- Again, depend on the cast.
+              BoolToInt    -> arg
+              Ord          -> arg
+              S.Chr        -> arg
+  where
+   t = text
+   [left,right] = args
+   [arg]        = args -- laziness in action
+
+   argD   = fromSyntax arg
+   leftD  = fromSyntax left
+   rightD = fromSyntax right
+   
+   -- No parens for a binop, that is handled by the caller of `emitPrimApp`:
+   binop op  = left +++ toSyntax (text (" "++op++" ")) +++ right
+   binfun op = toSyntax (text op <> PP.parens (leftD <> comma <> rightD))
+   unary  op = toSyntax$ text op <> PP.parens argD
+
 
 --------------------------------------------------------------------------------  
 -- Helpers and Junk
@@ -336,3 +434,8 @@ strToSyn = toSyntax . text
 
 fst3 :: (t, t1, t2) -> t
 fst3 (v,_,_) = v
+
+
+test0 = emitPrimApp TInt (NP Sig) [constant "x"]
+test1 = emitPrimApp TInt (IP Quot) [constant "x", constant "y"]
+
