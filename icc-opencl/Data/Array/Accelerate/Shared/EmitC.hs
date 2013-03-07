@@ -127,117 +127,53 @@ instance EmitBackend CEmitter where
     CE.assert (length initVs == length ws) $ return()
 --    CE.assert (length outarrs == length inVs) $ return()    
 
-    case typ of
-      -----CILK REDUCERS VERSION---------------------------------------------------------------------------------            
-      CilkParallel -> do
-        E.comm$"First, we need separate reducer definitions for each piece of reduction state: "
-        E.comm$"Node that the reduction code itself is DUPLICATED between here and the builder below."
-        reduceFns <- P.sequence $
-                     [ rawFunDef "void" ("T_reduce_"++builder++"_"++show ix)
-                                        [(void_ptr,"r"),(void_ptr,"left"),(void_ptr,"right")] $ 
-                        do v <- varinit (emitType e vty) (varSyn vVr) (castit e vty "left")
-                           w <- varinit (emitType e wty) (varSyn wVr) (castit e wty "right")
-                           -- TODO: We need to factor out JUST our reducer... ick:
-                           ----------------------- 
-                           tmps <- emitBlock e bod -- Here's the body, already wired to use vs/ws
-                           -----------------------
-                           return ()
-                     | (vVr,_,vty) <- vs
-                     | (wVr, _, wty) <- ws
-                     | ix <- [1..]]
+    rawFunDef "void" builder ((int_t, "inSize") : (int_t, "inStride") : 
+                                          outargs ++ inargs ++ initargs ++ freeargs) $ 
+         do E.comm$"Fold loop, reduction variable(s): "++show vs
+            E.comm$"First, some temporaries to back up the inital state"
+            E.comm$" (we're going to stomp on the reduction vars / formal params):"
+            tmps <- P.sequence [ E.tmpvarinit (emitType e vty) (varSyn v) | (v,_,vty) <- vs ]
+            let body round = do 
+                 E.comm$"Fresh round, new accumulator with the identity:"
+                 E.comm$"We shadow the formal params as a hack:"
+                 P.sequence [ varinit (emitType e vty) (varSyn v) tmp | (v,_,vty) <- vs | tmp <- tmps ]
+                 E.forStridedRange (round, 1, round+"inStride") $ \ ix -> do
 
--- void T_identity(void* r, void* view) {
---    *((int*)view) = 0;
--- }
--- void T_destroy(void* r, void* view) {}
+                   let foldit inputs k =
+                         P.sequence$ [ varinit (emitType e wty) (varSyn wvr) (k inV)
+                                     | inV <- inputs
+                                     | (wvr, _, wty) <- ws ]
+                   case generator of
+                     Manifest inVs -> foldit inVs (\ v -> arrsub (varSyn v) ix)
+                     NonManifest (Gen _ (Lam args bod)) -> do
+                       comm "(1) create input: we run the generator to produce one or more inputs"
+                       -- TODO: Assign formals to ix
+                       let [(vr,_,ty)] = args -- ONE argument, OneDimensionalize
+                       E.varinit (emitType e ty) (varSyn vr) ix
+                       tmps <- emitBlock e bod
+                       comm$"(2) do the reduction with the resulting values ("++show tmps++")"
+                       foldit tmps varSyn
+
+                   ----------------------- 
+                   tmps <- emitBlock e bod -- Here's the body, already wired to use vs/ws
+                   -----------------------
+                   -- when dbg $ 
+                   --   eprintf " ** Folding in position %d, offset %d (it was %f) intermediate result %f\n"
+                   --           [ix, round, (arrsub (varSyn (head inVs)) ix), varSyn$ head tmps]
+                   forM_ (fragileZip tmps vs) $ \ (tmp,(v,_,_)) ->
+                      set (varSyn v) (varSyn tmp)
+                   return ()
+                 comm "Write the single reduction result to each output array:"
+                 P.sequence $ [ arrset (varSyn outV) (round / "inStride") (varSyn v)
+                              | (outV,_,_) <- outarrs
+                              | (v,_,_)    <- vs ]
+                 return () -- End outer loop
+            case typ of
+              Sequential   -> E.forStridedRange     (0, "inStride", "inSize") body
+              CilkParallel -> E.cilkForStridedRange (0, "inStride", "inSize") body
 
 
-        E.comm$"Then we drive the reduction with parallel loops:"
-        rawFunDef "void" builder ((int_t, "inSize") : (int_t, "inStride") : 
-                                  outargs ++ inargs ++ initargs ++ freeargs) $
-          do E.comm$"Fold loop, reduction variable(s): "++show vs
-             E.comm$"First, some temporaries to back up the inital state"
-             E.comm$" (we're going to stomp on the reduction vars / formal params):"
-             tmps <- P.sequence [ E.tmpvarinit (emitType e vty) (varSyn v) | (v,_,vty) <- vs ] 
-             E.forStridedRange (0, "inStride", "inSize") $ \ round -> do
-               E.comm$"Fresh round, restore the state of the accumulator to the initial/identity:"
-               P.sequence [ set (varSyn v) tmp | (v,_,vty) <- vs | tmp <- tmps ]
-               E.forStridedRange (round, 1, round+"inStride") $ \ ix -> do
-
-                 let foldit inputs k =
-                       P.sequence$ [ varinit (emitType e wty) (varSyn wvr) (k inV)
-                                   | inV <- inputs
-                                   | (wvr, _, wty) <- ws ]
-                 case generator of
-                   Manifest inVs -> foldit inVs (\ v -> arrsub (varSyn v) ix)
-                   NonManifest (Gen _ (Lam args bod)) -> do
-                     comm "(1) create input: we run the generator to produce one or more inputs"
-                     -- TODO: Assign formals to ix
-                     let [(vr,_,ty)] = args -- ONE argument, OneDimensionalize
-                     E.varinit (emitType e ty) (varSyn vr) ix
-                     tmps <- emitBlock e bod
-                     comm$"(2) do the reduction with the resulting values ("++show tmps++")"
-                     foldit tmps varSyn
-
-                 ----------------------- 
-                 tmps <- emitBlock e bod -- Here's the body, already wired to use vs/ws
-                 -----------------------
-                 -- when dbg $ 
-                 --   eprintf " ** Folding in position %d, offset %d (it was %f) intermediate result %f\n"
-                 --           [ix, round, (arrsub (varSyn (head inVs)) ix), varSyn$ head tmps]
-                 forM_ (fragileZip tmps vs) $ \ (tmp,(v,_,_)) ->
-                    set (varSyn v) (varSyn tmp)
-                 return ()
-               comm "Write the single reduction result to each output array:"
-               P.sequence $ [ arrset (varSyn outV) (round / "inStride") (varSyn v)
-                            | (outV,_,_) <- outarrs
-                            | (v,_,_)    <- vs ]
-               return () -- End outer loop
-             return () -- End rawFunDef
-      -----SEQUENTIAL VERSION------------------------------------------------------------------------------------
-      Sequential ->
-          rawFunDef "void" builder ((int_t, "inSize") : (int_t, "inStride") : 
-                                                outargs ++ inargs ++ initargs ++ freeargs) $ 
-               do E.comm$"Fold loop, reduction variable(s): "++show vs
-                  E.comm$"First, some temporaries to back up the inital state"
-                  E.comm$" (we're going to stomp on the reduction vars / formal params):"
-                  tmps <- P.sequence [ E.tmpvarinit (emitType e vty) (varSyn v) | (v,_,vty) <- vs ] 
-                  E.forStridedRange (0, "inStride", "inSize") $ \ round -> do
-                    E.comm$"Fresh round, restore the state of the accumulator to the initial/identity:"
-                    P.sequence [ set (varSyn v) tmp | (v,_,vty) <- vs | tmp <- tmps ]
-                    E.forStridedRange (round, 1, round+"inStride") $ \ ix -> do
-
-                      let foldit inputs k =
-                            P.sequence$ [ varinit (emitType e wty) (varSyn wvr) (k inV)
-                                        | inV <- inputs
-                                        | (wvr, _, wty) <- ws ]
-                      case generator of
-                        Manifest inVs -> foldit inVs (\ v -> arrsub (varSyn v) ix)
-                        NonManifest (Gen _ (Lam args bod)) -> do
-                          comm "(1) create input: we run the generator to produce one or more inputs"
-                          -- TODO: Assign formals to ix
-                          let [(vr,_,ty)] = args -- ONE argument, OneDimensionalize
-                          E.varinit (emitType e ty) (varSyn vr) ix
-                          tmps <- emitBlock e bod
-                          comm$"(2) do the reduction with the resulting values ("++show tmps++")"
-                          foldit tmps varSyn
-
-                      ----------------------- 
-                      tmps <- emitBlock e bod -- Here's the body, already wired to use vs/ws
-                      -----------------------
-                      -- when dbg $ 
-                      --   eprintf " ** Folding in position %d, offset %d (it was %f) intermediate result %f\n"
-                      --           [ix, round, (arrsub (varSyn (head inVs)) ix), varSyn$ head tmps]
-                      forM_ (fragileZip tmps vs) $ \ (tmp,(v,_,_)) ->
-                         set (varSyn v) (varSyn tmp)
-                      return ()
-                    comm "Write the single reduction result to each output array:"
-                    P.sequence $ [ arrset (varSyn outV) (round / "inStride") (varSyn v)
-                                 | (outV,_,_) <- outarrs
-                                 | (v,_,_)    <- vs ]
-                    return () -- End outer loop
-                  return () -- End rawFunDef
-        -----END SEQUENTIAL FOLD---------------------------------------------------------------------------------                        
+            return () -- End rawFunDef
     return () -- End emitFoldDef
 
 
