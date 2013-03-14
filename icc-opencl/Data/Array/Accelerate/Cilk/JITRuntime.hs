@@ -27,6 +27,7 @@ import           System.Process   (readProcess, system)
 import           System.Exit      (ExitCode(..))
 import           System.Directory (removeFile, doesFileExist)
 import           System.IO        (stdout, hFlush)
+import           System.Environment (getEnvironment)
 
 import           GHC.Prim           (byteArrayContents#)
 import           GHC.Ptr            (Ptr(Ptr), castPtr)
@@ -98,16 +99,24 @@ rawRunIO pm name prog = do
   dbgPrint$ "[JIT] Invoking C compiler on: "++ thisprog++".c"
 
   -- TODO, obey the $CC environment variable:
-  let tryICC onfail = do
-        code <- system "which -s icc" 
-        case code of
-          ExitFailure _  -> onfail
-          ExitSuccess    -> do dbgPrint $"[JIT] Found ICC. Using it."
-                               return$ "icc -fast -ww13397 -vec-report2 "++ stripOptFlag cOptLvl
--- UPDATE: -ww13397 to downgrade to warning, and -wd13397 to disable entirely.  NICE!
+  let pickCC onfail = do
+        -- UPDATE: -ww13397 to downgrade to warning, and -wd13397 to disable entirely.  NICE!        
+        let icc_args = " -fast -ww13397 -vec-report2 "++ stripOptFlag cOptLvl
+        env <- getEnvironment
+        case lookup "CC" env of
+          Just cc -> do dbgPrint $"[JIT] using CC environment variable = "++show cc
+                        if cc == "icc" || cc == "icpc"
+                        then return$ cc ++ icc_args   
+                        else return$ cc ++" "++ cOptLvl
+          Nothing -> do 
+            code <- system "which -s icc" 
+            case code of
+              ExitFailure _  -> onfail
+              ExitSuccess    -> do dbgPrint $"[JIT] Found ICC. Using it."
+                                   return$ "icc" ++ icc_args
   cc <- case pm of
-         Sequential   -> tryICC (return$ "gcc "++cOptLvl)
-         CilkParallel -> tryICC (error "ICC not found!")
+         Sequential   -> pickCC (return$ "gcc "++cOptLvl)
+         CilkParallel -> pickCC (error "ICC not found!  Need it for Cilk backend.")
 
   let suppress = if dbg then " -g " else " -w " -- No warnings leaking through to the user.
       ccCmd = cc++suppress++" -shared -fPIC -std=c99 "++thisprog++".c -o "++thisprog++".so"
