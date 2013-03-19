@@ -44,7 +44,7 @@ import           Data.Array.Accelerate.AST         as AST
 import           Data.Array.Accelerate.Tuple
 import qualified Data.Array.Accelerate.Smart       as Sug
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
-import qualified Data.Array.Accelerate.Trafo.Sharing as Cvt
+-- import qualified Data.Array.Accelerate.Trafo.Sharing as Cvt
 import qualified Data.Array.Accelerate.BackendKit.SimpleArray as SA
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import           Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace)

@@ -23,7 +23,8 @@ import           Debug.Trace (trace)
 import qualified Data.Array.Accelerate.AST         as AST
 import qualified Data.Array.Accelerate.Smart       as Smt
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
-import           Data.Array.Accelerate.Trafo.Sharing (convertAcc)
+--import           Data.Array.Accelerate.Trafo.Sharing (convertAcc)
+import           Data.Array.Accelerate.Trafo (convertAccWith, Phase(..))
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import qualified Data.Array.Accelerate.BackendKit.IRs.CLike     as C
 import qualified Data.Array.Accelerate.BackendKit.IRs.GPUIR     as G
@@ -126,11 +127,14 @@ phase1 prog =
 -- | This simply calls the Accelerate *front-end* with the default settings for a
 -- backend-kit compiler.
 phase0 :: Sug.Arrays a => Smt.Acc a -> AST.Acc a
-phase0 = convertAcc
-          True -- recover sharing of array computations ?
-          True -- recover sharing of scalar expressions ?
-          True -- always float array computations out of expressions?
-
+phase0 = convertAccWith$
+  Phase
+     { recoverAccSharing      = True
+     , recoverExpSharing      = True
+     , floatOutAccFromExp     = True
+     , enableAccFusion        = True
+     , convertOffsetOfSegment = False
+     }
   
 typecheckPass :: S.Prog a -> S.Prog a
 typecheckPass prog =
