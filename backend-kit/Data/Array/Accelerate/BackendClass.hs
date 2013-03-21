@@ -64,11 +64,11 @@ class Backend b where
   -- be invoked repeatedly on the device side without any additional work on the
   -- host.
   --
-  compileFun :: (Arrays x, Arrays y)
-             => b
-             -> FilePath
-             -> AST.Afun (x -> y)
-             -> IO (Blob b (x -> y))
+  compileFun1 :: (Arrays x, Arrays y)
+              => b
+              -> FilePath
+              -> AST.Afun (x -> y)
+              -> IO (Blob b (x -> y))
 
   -- | Run an already-optimized Accelerate program (`AST.Acc`) and leave the
   -- results on the accelerator device.
@@ -86,14 +86,14 @@ class Backend b where
          -> Maybe (Blob b a)
          -> IO (Remote b a)
 
-  -- | Set up a function on the GPU which may be run multiple times.
+  -- | Execute a function of one argument and leave the results on the device.
   --
-  runFun :: (Arrays x, Arrays y)
-         => b
-         -> AST.Afun (x -> y)
-         -> Maybe (Blob b (x -> y))
-         -> Remote b x
-         -> IO (Remote b y)
+  runRawFun1 :: (Arrays x, Arrays y)
+             => b
+             -> AST.Afun (x -> y)
+             -> Maybe (Blob b (x -> y))
+             -> Remote b x
+             -> IO (Remote b y)
 
   -------------------------- Copying and Waiting  -------------------------------
 
@@ -103,7 +103,7 @@ class Backend b where
   --
   -- TODO: Consider adding a separate malloc and overwriting copy.
   --
-  copyToHost :: Arrays a => b -> Remote b a -> IO a
+  copyToHost :: Arrays a => Remote b a -> IO a
 
   -- | If the device uses a separate memory space, allocate memory in the remote
   -- space and transfer the contents of the array to it.
@@ -112,11 +112,11 @@ class Backend b where
 
   -- | Wait until the result is computed, but do not copy it back.
   --
-  waitRemote :: b -> Remote b a -> IO ()
+  waitRemote :: Remote b a -> IO ()
 
-  -- | Use already-Remote b memory in an Accelerate computation.
+  -- | Prepare a remote array for use in this backend
   --
-  useRemote :: Arrays a => b -> Remote b a -> IO (Acc a)
+  useRemote :: Arrays a => b -> Remote b a -> IO (Remote b a)
 
   -------------------------- Configuration Flags --------------------------------
 
@@ -135,7 +135,7 @@ class Backend b where
   forceToDisk :: Blob b r -> IO (Blob b r)
 
 
-
+{--
 -- | A bag of bits that can be serialised to disk
 --
 data BinaryBlob
@@ -159,6 +159,7 @@ flushToDisk blob@(OnDisk _)     = return blob
 flushToDisk (InMemory path gen) = do
   B.writeFile path =<< gen
   return $ OnDisk path
+--}
 
 ----------------------------------------------------------------------------------------------------
 
