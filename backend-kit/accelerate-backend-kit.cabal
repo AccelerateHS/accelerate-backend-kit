@@ -62,11 +62,13 @@ Library
                      Data.Array.Accelerate.BackendKit.Phase3.DesugarFoldScan
                      Data.Array.Accelerate.BackendKit.Phase3.ToGPUIR
 
-                     Data.Array.Accelerate.BackendClass                     
+                     Data.Array.Accelerate.BackendClass
+
+                     -- Temporarily exposed:
+                     Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone                     
   
   -- Modules not exported by this package:
   Other-modules:       
-                     Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone
                      Data.Array.Accelerate.BackendKit.Utils.Helpers
 
   Build-depends:

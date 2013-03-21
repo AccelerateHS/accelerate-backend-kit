@@ -4,7 +4,7 @@
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 -- | In the process of Accelerate AST simplification, we don't go
--- straight from Data.Array.Accelerate.AST to the final SimpleAcc AST.
+-- straight from Data.Array.Accelerate.AST to the SimpleAcc AST.
 -- Rather, there are intermediate steps.  This module contains
 -- intermediate representation(s) used by other passes in the compiler 
 -- but NOT exported for external consumption.
