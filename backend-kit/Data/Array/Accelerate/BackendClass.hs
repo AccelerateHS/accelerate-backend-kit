@@ -110,13 +110,18 @@ class Backend b where
   --
   copyToDevice :: Arrays a => b -> a -> IO (Remote b a)
 
+  -- | Copy a remote array to a backend instance of the same type. Depending on
+  -- the backend this might not involve any actual copying (shared memory
+  -- multicore) or not involve the host CPU (DMA between CUDA devices).
+  --
+  copyToPeer :: Arrays a
+             => b                       -- ^ destination context
+             -> Remote b a              -- ^ the source array data to copy
+             -> IO (Remote b a)
+
   -- | Wait until the result is computed, but do not copy it back.
   --
   waitRemote :: Remote b a -> IO ()
-
-  -- | Prepare a remote array for use in this backend
-  --
-  useRemote :: Arrays a => b -> Remote b a -> IO (Remote b a)
 
   -------------------------- Configuration Flags --------------------------------
 
