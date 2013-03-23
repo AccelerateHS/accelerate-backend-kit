@@ -123,6 +123,10 @@ class Backend b where
   --
   waitRemote :: Remote b a -> IO ()
 
+  -- | Inject a remote array into an AST node
+  --
+  useRemote :: Arrays a => Remote b a -> IO (AST.Acc a)
+
   -------------------------- Configuration Flags --------------------------------
 
   -- | Are `copyToDevice` calls complexity O(N) or O(1)?  For example, this
