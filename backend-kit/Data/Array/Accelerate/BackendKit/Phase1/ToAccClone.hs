@@ -83,7 +83,9 @@ runEnvM m = evalState m (SimpleEnv [] [], 0)
 --   Returns the name of the fresh variable as well as the result:
 withExtendedScalarEnv :: String -> EnvM b -> EnvM (S.Var, b)
 withExtendedScalarEnv basename branch = do 
-  (orig@(SimpleEnv env aenv),cnt) <- get 
+  (orig@(SimpleEnv env aenv),cnt) <- get
+
+  -- FIXME: use the genUnique library routine:
   let newsym = S.var $ basename ++ show cnt
   put (SimpleEnv (newsym:env) aenv, cnt+1) 
   b <- branch

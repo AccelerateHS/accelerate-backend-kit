@@ -67,6 +67,7 @@ liftComplexRands orig_aex =
    tmpVar2 = 
      do (cnt,ls) <- get 
         put (cnt+1, ls)
+        -- FIXME: use the genUnique library routine:
         return$ S.var $ "tmp_"++show cnt
    
    -- | Discharge the new bindings introduced by forming a Let.  This

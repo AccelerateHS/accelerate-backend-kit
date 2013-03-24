@@ -117,11 +117,11 @@ phase2A prog =
 phase1 :: (Sug.Arrays a) => AST.Acc a -> S.Prog ()
 phase1 prog =
   runPass "typecheck1"           typecheckPass     $       
-  runPass "removeArrayTuple"     removeArrayTuple  $ -- convert to S.Prog
+  runPass "removeArrayTuple"     removeArrayTuple  $ -- convert to S.Prog -- does gensym! FIXME
   runPass "gatherLets"           gatherLets        $  
-  runPass "liftComplexRands"     liftComplexRands  $  
+  runPass "liftComplexRands"     liftComplexRands  $ -- does gensym! FIXME
   runPass "staticTuples"         staticTuples      $
-  runPass "initialConversion"    accToAccClone     $
+  runPass "initialConversion"    accToAccClone     $ -- does gensym! FIXME
   prog
 
 -- | This simply calls the Accelerate *front-end* with the default settings for a

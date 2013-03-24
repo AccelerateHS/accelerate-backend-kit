@@ -77,6 +77,10 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
                                progResults = (L.map unVar $ flattenTT newbod),
                                progType    = (getAnnot bod),
                                typeEnv     = M.fromList$ L.map (\(S.ProgBind v t _ _) -> (v,t)) finalbinds,
+                               -- FIXME: variables have ALREADY been generated before
+                               -- this point.  So we either need to push the tracking
+                               -- of this EARLIER, *or* we need to count all the
+                               -- variables in the program and set this number above them:
                                uniqueCounter = 0 }
  
    -- Called on already processed expressions:
@@ -138,6 +142,7 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
      let acc'  = thisbnd ++ rhsScalars ++ acc
      doBinds acc' macc' remaining
 
+   -- FIXME: use the genUnique library routine:
    freshNames vr len = L.map (S.var . ((show vr ++"_")++) . show) [1..len]
 
    -- Types are stored in natural Accelerate textual order:
