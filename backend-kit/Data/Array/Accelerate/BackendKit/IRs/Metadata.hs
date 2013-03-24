@@ -21,7 +21,7 @@ import Text.PrettyPrint.GenericPretty (Out, Generic)
 
 -- | This datatype records what we know statically about array sizes.
 data ArraySizeEstimate =
-    KnownSize [Int]
+    KnownSize [Int] -- INNERmost dim at the head of the list.
   | UnknownSize
 --   | SmallerThan Var -- We'll add this later
 --   | SameAs      Var -- We'll add this later

@@ -21,12 +21,11 @@ import           Data.Array.Accelerate.BackendClass
 
 --------------------------------------------------------------------------------
 
-
 -- Standard boilerplate for lifting a `Backend` instance into a regular `run` function.
-run :: Sug.Arrays a => Acc a -> a
+run :: forall a . (Sug.Arrays a) => Acc a -> a
 run acc = unsafePerformIO $ do
-           rem <- runRaw CBackend (phase0 acc) Nothing
-           copyToHost CBackend rem
+           remt <- (runRaw CBackend (phase0 acc) Nothing)
+           copyToHost CBackend remt
           
 ----------------------------------------------------------------------------------------------------
 -- The main purpose of this file is to define a new Backend type
@@ -43,33 +42,36 @@ mkCBackend = return CBackend
 -- defaultCConfig = ...
 
 
--- | Create a new C backend based on the configuration information.
-
--- | C data is not really very "remote", it just lives on the C heap.
--- newtype CRemote a = ForeignPtr a 
-
 -- FIXME: This should really be left in the ForeignPtr state and should only come
 -- back to Haskell when the copyToHost is performed...
 newtype CRemote a = CRemote [SA.AccArray]
 
+-- Nothing here at the moment, needs to cache the file:
+data CBlob a = CBlob 
+
+-- | Create a new C backend based on the configuration information.
+
+-- | C data is not really very "remote", it just lives on the C heap.
+-- newtype CRemote a = ForeignPtr a 
 instance Backend CBackend where
   type Remote CBackend a = CRemote a
+  type Blob CBackend a = CBlob a 
 
   compile _ path acc = error "CBackend: separate compile stage not implemented."
 --    return (InMemory path (return$ B.empty))
 
-  compileFun = error "CBackend: compileFun not implemented yet."
+--  compileFun = error "CBackend: compileFun not implemented yet."
 
   runRaw _ acc _blob =
     do arrs <- J.rawRunIO Sequential "" (phase1 acc)
        return$ CRemote arrs
 
-  runFun = error "CBackend: runFun not implemented yet."
+--  runFun = error "CBackend: runFun not implemented yet."
 
   copyToHost = hostCopy
 
   -- No waiting to be done!
-  wait _ _rem = return ()
+  waitRemote _rem = return ()
   
   copyToDevice _ a = error "CBackend: copyToDevice can't work until the Accelerate AST is overhauled."
     
@@ -79,7 +81,7 @@ instance Backend CBackend where
   compilesToDisk _ = True
 
 -- For now copying just means repacking
-hostCopy :: forall a . Sug.Arrays a => CBackend -> CRemote a -> IO a
+hostCopy :: (Sug.Arrays a) => CBackend -> CRemote a -> IO a
 hostCopy _ (CRemote arrays) =
   return$
     repackAcc (undefined :: Acc a) arrays

@@ -28,6 +28,7 @@ import           System.Environment (getEnvironment)
 -- Compiler Conventions and global constants:
 ----------------------------------------------------------------------------------------------------
 
+-- TODO: Move this to Helpers.hs
 
 -- | Given the name of an array variable, what is the name of the variable which will
 -- contain its shape.  This variable will refer to a tuple for rank>1 arrays.

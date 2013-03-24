@@ -215,6 +215,7 @@ testPartialCompiler oracle eval tests = P.map mk (P.zip [0..] tests)
 ----------------------------------------------------------------------------------------------------
 
 p0 :: Acc (Array DIM2 Int64)
+-- The innermost (fastest changing) dimension is size 5:
 p0 = use $ fromList (Z :. (2::Int) :. (5::Int)) [1..10::Int64]
 t0 = convertToSimpleProg p0
 r0 = I.run p0

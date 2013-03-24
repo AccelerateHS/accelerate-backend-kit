@@ -103,7 +103,7 @@ class Backend b where
   --
   -- TODO: Consider adding a separate malloc and overwriting copy.
   --
-  copyToHost :: Arrays a => Remote b a -> IO a
+  copyToHost :: Arrays a => b -> Remote b a -> IO a
 
   -- | If the device uses a separate memory space, allocate memory in the remote
   -- space and transfer the contents of the array to it.
@@ -125,7 +125,7 @@ class Backend b where
 
   -- | Inject a remote array into an AST node
   --
-  useRemote :: Arrays a => Remote b a -> IO (AST.Acc a)
+  useRemote :: Arrays a => b -> Remote b a -> IO (AST.Acc a)
 
   -------------------------- Configuration Flags --------------------------------
 

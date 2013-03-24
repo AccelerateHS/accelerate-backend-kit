@@ -9,7 +9,7 @@
 
 module Data.Array.Accelerate.BackendKit.Utils.Helpers
        (          
-         -- * Helpers that capture certain conventions that the compiler follows:
+         -- * Helpers that capture certain conventions that the compiler follows *internally*
          strideName, mkIndTy, isTupleTy, mkIndExp,
          S.GensymM, S.genUnique, S.genUniqueWith,
          

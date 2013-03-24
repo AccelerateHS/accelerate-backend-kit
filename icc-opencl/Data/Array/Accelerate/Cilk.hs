@@ -16,6 +16,12 @@ import qualified Data.Array.Accelerate.BackendKit.SimpleArray     as SA
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1, phase2, repackAcc)
 import           Data.Array.Accelerate.BackendClass 
 
+-- run = undefined
+-- mkCilkBackend = undefined
+-- data CilkBackend = CilkBackend
+--   deriving (Show)
+
+
 --------------------------------------------------------------------------------
 
 
@@ -55,18 +61,18 @@ instance Backend CilkBackend where
   compile _ path acc = error "CilkBackend: separate compile stage not implemented."
 --    return (InMemory path (return$ B.empty))
 
-  compileFun = error "CilkBackend: compileFun not implemented yet."
+--  compileFun = error "CilkBackend: compileFun not implemented yet."
 
   runRaw _ acc _blob =
     do arrs <- J.rawRunIO CilkParallel "" (phase1 acc)
        return$ CilkRemote arrs
 
-  runFun = error "CilkBackend: runFun not implemented yet."
+--  runFun = error "CilkBackend: runFun not implemented yet."
 
   copyToHost = hostCopy
 
   -- No waiting to be done!
-  wait _ _rem = return ()
+  waitRemote _rem = return ()
   
   copyToDevice _ a = error "CilkBackend: copyToDevice can't work until the Accelerate AST is overhauled."
     
@@ -80,4 +86,3 @@ hostCopy :: forall a . Sug.Arrays a => CilkBackend -> CilkRemote a -> IO a
 hostCopy _ (CilkRemote arrays) =
   return$
     repackAcc (undefined :: Acc a) arrays
-
