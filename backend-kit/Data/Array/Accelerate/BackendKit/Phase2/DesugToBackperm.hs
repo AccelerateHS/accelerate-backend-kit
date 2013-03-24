@@ -4,7 +4,7 @@ module Data.Array.Accelerate.BackendKit.Phase2.DesugToBackperm (desugToBackperm)
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
 import Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace)
 import Data.Array.Accelerate.BackendKit.IRs.Metadata  (Uses(Uses), ArraySizeEstimate(..))
-import Data.Array.Accelerate.BackendKit.Utils.Helpers (mkIndTy)
+import Data.Array.Accelerate.BackendKit.Utils.Helpers (mkIndTy,mkIndExp)
 import Data.Array.Accelerate.BackendKit.CompilerUtils (shapeName)
 import Debug.Trace
 import Data.List as L
@@ -28,7 +28,7 @@ doBind prog num (ProgBind avr outty (outsz,d) (Right ae)) =
       -- compute the (dynamic) sizes of Replicate and Index's outputs.
       -- We reuse that rather than redoing it here:
       szE = case outsz of 
-                  KnownSize ls -> mkETuple$ map (EConst . I) ls
+                  KnownSize ls -> mkIndExp ls
                   UnknownSize  -> EVr$ shapeName avr -- This will already have been created by ExplicitShapes
 #else 
       szE = ....

@@ -66,10 +66,10 @@ Library
 
                      -- Temporarily exposed:
                      Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone                     
+                     Data.Array.Accelerate.BackendKit.Utils.Helpers
   
   -- Modules not exported by this package:
   Other-modules:       
-                     Data.Array.Accelerate.BackendKit.Utils.Helpers
 
   Build-depends:
                         array           >= 0.3 && < 0.5,

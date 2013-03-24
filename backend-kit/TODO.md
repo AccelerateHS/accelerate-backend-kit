@@ -33,3 +33,6 @@ These should go into github issues
  
  * InlineCheap should inline Use dereferences.
  
+ * Perhaps factor TArray into its own type.  It really shouldn't be
+   mixed up with the scalar types, this just encourages incomplete
+   pattern matches.

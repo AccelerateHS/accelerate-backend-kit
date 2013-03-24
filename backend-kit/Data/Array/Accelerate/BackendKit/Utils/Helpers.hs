@@ -10,7 +10,7 @@
 module Data.Array.Accelerate.BackendKit.Utils.Helpers
        (          
          -- * Helpers that capture certain conventions that the compiler follows:
-         strideName, mkIndTy, isTupleTy,
+         strideName, mkIndTy, isTupleTy, mkIndExp,
          S.GensymM, S.genUnique, S.genUniqueWith,
          
          -- * Other AST Helpers
@@ -52,10 +52,14 @@ import Prelude as P
 strideName :: Var -> Var
 strideName avr = S.var (P.show avr P.++ "_foldstride")
 
-
 -- | Types for N-dimensional indices are just tuples of ints.
 mkIndTy ::Int -> Type
 mkIndTy n = mkTTuple (P.take n (P.repeat TInt))
+
+-- | Take a list of Ints, as found in the `KnownSize` constructor, and make a tuple
+-- expression that represents the index.
+mkIndExp :: [Int] -> Exp
+mkIndExp = mkETuple . map (EConst . I) 
 
 -- | Is the type a tuple type, including unit?
 isTupleTy :: Type -> P.Bool

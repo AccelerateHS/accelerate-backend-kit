@@ -14,7 +14,7 @@ import           Data.List as L
 import qualified Data.Map as M
 
 import Data.Array.Accelerate.BackendKit.IRs.Metadata (ArraySizeEstimate(..))
-import Data.Array.Accelerate.BackendKit.Utils.Helpers (mkIndTy, mkPrj, mulI, genUnique, GensymM, (#))
+import Data.Array.Accelerate.BackendKit.Utils.Helpers (mkIndTy, mkPrj, mulI, genUnique, GensymM, (#), mkIndExp)
 import Data.Array.Accelerate.BackendKit.CompilerUtils (shapeName, maybtrace)
 import Text.PrettyPrint.GenericPretty (Out(doc))
 
@@ -278,5 +278,5 @@ mkSizeE :: Prog ArraySizeEstimate -> Var -> Exp
 mkSizeE prog avr = 
   let (Just(ProgBind _ _ dec _)) = lookupProgBind avr (progBinds prog) in
   case dec of
-    KnownSize ls -> mkETuple$ L.map (EConst . I) ls
+    KnownSize ls -> mkIndExp ls
     UnknownSize  -> EVr (shapeName avr)
