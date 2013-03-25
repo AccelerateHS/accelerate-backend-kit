@@ -28,6 +28,10 @@ type MyM a = ReaderT (Prog ArraySizeEstimate) GensymM a
 --   statically-unknown shape, a top-level binding "A_shape" will be
 --   introduced which carries a tuple describing the shape of A.
 --   Thus `(EShape A)` becomes simply `A_shape`.
+--
+--   GRAMMAR CHANGE: AST forms parameterized by a shape expression
+--   (Generate,BackPermute,Replicate) have only a variable reference in that context
+--   after this pass.
 explicitShapes :: Prog ArraySizeEstimate -> Prog ArraySizeEstimate
 explicitShapes prog@Prog{progBinds, uniqueCounter } =
   prog { progBinds    = binds, 

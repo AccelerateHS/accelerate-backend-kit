@@ -63,7 +63,7 @@ instance Backend CBackend where
 --  compileFun = error "CBackend: compileFun not implemented yet."
 
   runRaw _ acc _blob =
-    do arrs <- J.rawRunIO Sequential "" (phase1 acc)
+    do arrs <- J.rawRunIO Sequential "" (phase2$ phase1 acc)
        return$ CRemote arrs
 
 --  runFun = error "CBackend: runFun not implemented yet."

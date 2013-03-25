@@ -17,7 +17,7 @@ module Data.Array.Accelerate.BackendKit.Utils.Helpers
          mkPrj, mapMAE, mapMAEWithEnv, mapMAEWithGEnv,
 
          -- * Helpers for constructing bits of AST syntax while incorporating small optimizations.
-         addI, mulI, quotI, remI, maybeLet, maybeLetAllowETups, 
+         addI, subI, mulI, ltI, quotI, remI, maybeLet, maybeLetAllowETups, 
          -- TODO [2013.02.10] Move these ^^ to CompilerUtils.hs
          
          -- * Miscellaneous
@@ -122,7 +122,17 @@ addI :: Exp -> Exp -> Exp
 addI (EConst (I 0)) n = n
 addI n (EConst (I 0)) = n
 addI (EConst (I n)) (EConst (I m)) = EConst$ I$ n + m
-addI n m              = EPrimApp TInt (NP Add) [n,m]
+addI n m                           = EPrimApp TInt (NP Add) [n,m]
+
+subI :: Exp -> Exp -> Exp
+--subI (EConst (I 0)) n = n
+subI n (EConst (I 0)) = n
+subI (EConst (I n)) (EConst (I m)) = EConst$ I$ n - m
+subI n m                           = EPrimApp TInt (NP Sub) [n,m]
+
+ltI :: Exp -> Exp -> Exp
+ltI (EConst (I n)) (EConst (I m)) = EConst$ B$ n < m
+ltI n m                           = EPrimApp TBool (SP Lt) [n,m]
 
 mulI :: Exp -> Exp -> Exp
 mulI (EConst (I 0)) _ = EConst (I 0)

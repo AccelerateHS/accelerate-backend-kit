@@ -64,7 +64,7 @@ instance Backend CilkBackend where
 --  compileFun = error "CilkBackend: compileFun not implemented yet."
 
   runRaw _ acc _blob =
-    do arrs <- J.rawRunIO CilkParallel "" (phase1 acc)
+    do arrs <- J.rawRunIO CilkParallel "" (phase2$ phase1 acc)
        return$ CilkRemote arrs
 
 --  runFun = error "CilkBackend: runFun not implemented yet."

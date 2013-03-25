@@ -36,3 +36,8 @@ These should go into github issues
  * Perhaps factor TArray into its own type.  It really shouldn't be
    mixed up with the scalar types, this just encourages incomplete
    pattern matches.
+   
+ * Why don't we use Word instead of Int by default for all shape
+   related stuff?
+   
+   

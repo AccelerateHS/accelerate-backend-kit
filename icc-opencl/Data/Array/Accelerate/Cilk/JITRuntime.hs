@@ -84,13 +84,14 @@ run pm acc =
    -- TODO we need a way to reimpose multidimensionality here for this
    -- full "run" interface to work properly.  The LLIR should probably
    -- track the final shape.
-   simple = phase1 (phase0 acc)
+   simple = phase2 $ phase1 $ phase0 acc
    arrays = unsafePerformIO $
             rawRunIO pm "" simple
 
-rawRunIO :: ParMode -> String -> S.Prog () -> IO [S.AccArray]
+-- Takes a program for which "phase2" has already been run.
+rawRunIO :: ParMode -> String -> C.LLProg () -> IO [S.AccArray]
 rawRunIO pm name prog = do
-  let prog2    = phase3_ltd $ phase2 prog
+  let prog2    = phase3_ltd prog -- $ phase2 prog
       emitted  = emitC pm prog2
       thisprog = ".plainC_"++ stripFileName name
   b     <- doesFileExist (thisprog++".c")
