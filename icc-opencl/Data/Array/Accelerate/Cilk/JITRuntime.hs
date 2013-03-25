@@ -206,7 +206,8 @@ dbgPrint str = if not dbg then return () else do
 loadAndRunSharedObj :: G.GPUProg a -> FilePath -> IO [S.AccArray]
 loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv, G.progType } soName =
   let useBinds   = getUseBinds prog 
-      allResults = standardResultOrder (map fst progResults) in
+      allResults = standardResultOrder progResults
+  in
   withDL soName [RTLD_LOCAL,RTLD_LAZY] $ \ dl ->  do
     car  <- dlsym dl "CreateArgRecord"
     dar  <- dlsym dl "DestroyArgRecord"
@@ -241,7 +242,7 @@ loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv, G.progType } soNam
     putStrLn$"SELFTIMED: "++show (diffUTCTime t2 t1)
     dbgPrint$"[JIT] Finished executing dynamically loaded Acc computation!"
     
-    arrs <- forM allResults $ \ rname -> do
+    arrs <- forM allResults $ \ (rname,snames) -> do
       oneFetch <- dlsym dl ("GetResult_"++show rname)
       oneSize  <- dlsym dl ("GetResultSize_"++show rname)
       ptr  <- mkGetResult oneFetch resultsRec
@@ -254,11 +255,15 @@ loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv, G.progType } soNam
     (mkDestroyRecord dar) argsRec
     dbgPrint$"[JIT] Destroying results record: "++show resultsRec
     (mkDestroyRecord drr) resultsRec
-    let table = M.fromList $ zip allResults arrs
+    let table = M.fromList $ zip (map fst allResults) arrs
         results = map (table #) (map fst progResults)
+        results2 = zipWith reimposeSize results (map snd progResults)
+        reimposeSize arr shp =
+          maybtrace ("REIMPOSING SIZE "++show(arr,shp)) $
+          arr
 
-    dbgPrint$"[JIT] FULL RESULTS read back to Haskell (type "++show progType++"):\n  "++show results
-    return results
+    dbgPrint$"[JIT] FULL RESULTS read back to Haskell (type "++show progType++"):\n  "++show results2
+    return results2
 
 
 -- | Shared for CreateArgRecord and CreateResultRecord

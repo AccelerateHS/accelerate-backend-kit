@@ -31,7 +31,7 @@ import Data.Array.Accelerate.Shared.EmitHelpers (builderName, emitCType, fragile
 import Data.Array.Accelerate.Shared.EmitCommon
 import Data.Array.Accelerate.BackendKit.IRs.Metadata  (FreeVars(..))
 import Data.Array.Accelerate.BackendKit.IRs.GPUIR as G
-import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Type(..), Const(..), Var, AccArray(arrDim), TrivialExp(..))
+import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Type(..), Const(..), AVar, Var, AccArray(arrDim), TrivialExp(..))
 import Data.Array.Accelerate.BackendKit.CompilerUtils (dbg)
 --------------------------------------------------------------------------------
 
@@ -77,7 +77,7 @@ getUseBinds GPUProg{progBinds} = concatMap fn progBinds
 -- | `progResults` is not a set, the same variable may be returned at different
 -- locations in the output "tuple".  This makes it into a set and returns it in a
 -- canonical order.
-standardResultOrder :: [Var] -> [Var]
+standardResultOrder :: [(AVar,[Var])] -> [(AVar,[Var])]
 standardResultOrder vrs = S.toList $ S.fromList vrs
 
 
@@ -180,7 +180,7 @@ instance EmitBackend CEmitter where
   emitMain e prog@GPUProg{progBinds, progResults, sizeEnv} = do
 
     let useBinds   = getUseBinds prog
-        allResults = standardResultOrder (map P.fst progResults)
+        allResults = map P.fst$ standardResultOrder progResults
         allUses    = S.fromList $ map (\(a,b,c) -> a) useBinds
     ----------------------------------------
     ------    Argument Initialization  -----
@@ -234,7 +234,7 @@ instance EmitBackend CEmitter where
 mainBody :: P.Bool -> CEmitter -> GPUProg FreeVars -> EasyEmit ()
 mainBody isCMain e prog@GPUProg{progBinds, progResults, sizeEnv} = do 
     let useBinds   = getUseBinds prog
-        allResults = standardResultOrder (map P.fst progResults)
+        allResults = map P.fst$ standardResultOrder (progResults)
         allUses    = S.fromList $ map (\(a,b,c) -> a) useBinds
         body       = do            
            comm "First we EXECUTE the program by executing each array op in order:"
@@ -284,7 +284,7 @@ execBind :: (EmitBackend e) => e
              -> (Int, GPUProgBind (FreeVars))
              -> EasyEmit ()
 execBind e _prog (_ind, GPUProgBind {outarrs=resultBinds, op=(ScalarCode blk)}) = do
-   -- Declare and then populate then populate the scalar bindings:
+   -- Declare and then populate the scalar bindings:
    forM_ resultBinds $ \ (vr,_,ty) ->
      var (emitType e ty) (varSyn vr)
    E.block $ do 
