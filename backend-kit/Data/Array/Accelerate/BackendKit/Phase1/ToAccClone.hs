@@ -369,11 +369,18 @@ convertExp e =
                              T.EIndex (_:tl) -> T.EIndex tl
                              T.EIndex []     -> error "IndexTail of empty index."
                              _               -> T.EIndexTailDynamic eix'
-    IndexAny       -> error "convertToSimpleProg: not expecting to observe IndexAny value."
+    IndexAny       -> error "ToAccClone.hs: not expecting to observe IndexAny value."
       -- return T.EIndexAny
 
-    -- TODO: IndexSlice, IndexFull, ToIndex, FromIndex, LinearIndex, Intersect
-    -- TODO: Iterate
+    -- New, unhandled cases:
+    IndexSlice {} -> error "ToAccClone.hs: TODO: handle IndexSlice"
+    IndexFull {} -> error "ToAccClone.hs: TODO: handle IndexFull"
+    ToIndex {} -> error "ToAccClone.hs: TODO: handle ToIndex"
+    FromIndex {} -> error "ToAccClone.hs: TODO: handle FromIndex"
+    LinearIndex {} -> error "ToAccClone.hs: TODO: handle LinearIndex"
+    Intersect {} -> error "ToAccClone.hs: TODO: handle Intersect"
+    Iterate {}  -> error "ToAccClone.hs: TODO: handle Iterate"
+    ForeignExp {}  -> error "ToAccClone.hs: TODO: handle ForeignExp"
 
     Cond c t ex -> T.ECond <$> convertExp c 
                            <*> convertExp t

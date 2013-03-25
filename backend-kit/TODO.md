@@ -40,4 +40,5 @@ These should go into github issues
  * Why don't we use Word instead of Int by default for all shape
    related stuff?
    
-   
+ * Fix sizeAnalysis to work for the replicates in Nbody.  Is it not
+   seeing through "EShape"?  

@@ -1,10 +1,5 @@
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
 
--- | PHASE1 :  Accelerate -> SimpleAcc
---
--- This module provides a function to convert from Accelerate's
--- internal representation to the `SimpleAcc` external representation.
--- This representation retains nearly the full set of Accelerate
--- language constructs.  Desugaring is postponed to phase 2.
 module Data.Array.Accelerate.BackendKit.CompilerPipeline
        (
          -- * Major compiler phases:
@@ -122,6 +117,7 @@ phase1 prog =
   runPass "liftComplexRands"     liftComplexRands  $ -- does gensym! FIXME
   runPass "staticTuples"         staticTuples      $
   runPass "initialConversion"    accToAccClone     $ -- does gensym! FIXME
+  runPass "beforeConversion"     id                $ 
   prog
 
 -- | This simply calls the Accelerate *front-end* with the default settings for a
@@ -132,7 +128,8 @@ phase0 = convertAccWith$
      { recoverAccSharing      = True
      , recoverExpSharing      = True
      , floatOutAccFromExp     = True
-     , enableAccFusion        = True
+     -- Disable trafo for now, rely on our own backend-kit optimizations:
+     , enableAccFusion        = False
      , convertOffsetOfSegment = False
      }
   
@@ -143,5 +140,6 @@ typecheckPass prog =
     Just s -> error$"Typecheck pass failed: "++s
 
 -- instance Show a => Out (Sug.Acc a) where
---   doc       = text . show
---   docPrec _ = text . show
+instance Out (AST.Acc a) where    
+  doc       = text . show
+  docPrec _ = text . show
