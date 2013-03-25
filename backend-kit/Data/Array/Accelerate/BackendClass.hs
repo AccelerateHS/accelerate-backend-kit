@@ -10,7 +10,8 @@ module Data.Array.Accelerate.BackendClass (
 
 -- friends
 import           Data.Array.Accelerate
-import qualified Data.Array.Accelerate.AST              as AST
+import qualified Data.Array.Accelerate.AST                      as AST
+import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as SACC
 
 -- standard libraries
 import           Data.ByteString.Lazy                   as B
@@ -54,21 +55,19 @@ class Backend b where
   -- blob that can be executed.  Takes a /suggested/ FilePath for where to put
   -- the blob IF it must be written to disk.
   --
-  compile :: Arrays a
-          => b
-          -> FilePath
-          -> AST.Acc a
-          -> IO (Blob b a)
+  simpleCompile :: b
+                -> FilePath
+                -> SACC.Prog ()
+                -> IO (SimpleBlob b)
 
   -- | Similar to `compile` but for functions Once compiled, the functions can
   -- be invoked repeatedly on the device side without any additional work on the
   -- host.
   --
-  compileFun1 :: (Arrays x, Arrays y)
-              => b
-              -> FilePath
-              -> AST.Afun (x -> y)
-              -> IO (Blob b (x -> y))
+  simpleCompileFun1 :: b
+                    -> FilePath
+                    -> SACC.Afun (x -> y)
+                    -> IO (Blob b (x -> y))
 
   -- | Run an already-optimized Accelerate program (`AST.Acc`) and leave the
   -- results on the accelerator device.
@@ -80,9 +79,8 @@ class Backend b where
   -- Optionally, a previously compiled blob may be provided, which /may/ be able
   -- to avoid compilation, but this is backend-dependent.
   --
-  runRaw :: (Arrays a)
-         => b
-         -> AST.Acc a
+  simpleRunRaw :: b
+               -> AST.Acc a
          -> Maybe (Blob b a)
          -> IO (Remote b a)
 
@@ -142,6 +140,113 @@ class Backend b where
   -- | Convenience function. If a blob is loitering in memory, force it to disk
   --
   forceToDisk :: Blob b r -> IO (Blob b r)
+
+class SimpleBackend b where
+
+  -- | The type of a remote handle on device memory. This is class-associated
+  -- because different backends may represent device pointers differently.
+  --
+  type SimpleRemote b
+
+  -- | A `Blob` as a thing which /may/ help speed up or skip future
+  -- computations. For example, this may represent:
+  --
+  --   - compiled object code for an expression
+  --
+  --   - an optimised and/or annotated AST containing backend-specific execution
+  --     parameters
+  --
+  type SimpleBlob b
+
+  -------------------------- Compiling and Running -------------------------------
+
+  -- | Compile an already converted/optimized Accelerate program into a binary
+  -- blob that can be executed.  Takes a /suggested/ FilePath for where to put
+  -- the blob IF it must be written to disk.
+  --
+  simpleCompile :: b
+                -> FilePath
+                -> SACC.Prog ()
+                -> IO (SimpleBlob b)
+
+  -- | Similar to `compile` but for functions Once compiled, the functions can
+  -- be invoked repeatedly on the device side without any additional work on the
+  -- host.
+  --
+  simpleCompileFun1 :: b
+                    -> FilePath
+                    -> SACC.Fun1 (SACC.Prog ())
+                    -> IO (SimpleBlob b)
+
+  -- | Run an already-optimized Accelerate program (`AST.Acc`) and leave the
+  -- results on the accelerator device.
+  --
+  -- The result of `runRaw` is both asynchronous uses the constructor `Remote`
+  -- to signal that the result is still located on the device rather than the
+  -- host.
+  --
+  -- Optionally, a previously compiled blob may be provided, which /may/ be able
+  -- to avoid compilation, but this is backend-dependent.
+  --
+  simpleRunRaw :: b
+               -> SACC.Prog ()
+               -> Maybe (SimpleBlob b)
+               -> IO (SimpleRemote b)
+
+  -- | Execute a function of one argument and leave the results on the device.
+  --
+  simpleRunRawFun1 :: b
+                   -> SACC.Fun1 (SACC.Prog ())
+                   -> Maybe (SimpleBlob b)
+                   -> SimpleRemote b
+                   -> IO (SimpleRemote b)
+
+  -------------------------- Copying and Waiting  -------------------------------
+
+  -- | Take a copy action immediately if the data is available.  This implies
+  -- `wait`; if the data is not available `copyToHost` blocks until it becomes
+  -- ready and is copied.
+  --
+  -- TODO: Consider adding a separate malloc and overwriting copy.
+  --
+  simpleCopyToHost :: b -> SimpleRemote b -> IO (SACC.AccArray)
+
+  -- | If the device uses a separate memory space, allocate memory in the remote
+  -- space and transfer the contents of the array to it.
+  --
+  simpleCopyToDevice :: b -> SACC.AccArray -> IO (SimpleRemote b)
+
+  -- | Copy a remote array to a backend instance of the same type. Depending on
+  -- the backend this might not involve any actual copying (shared memory
+  -- multicore) or not involve the host CPU (DMA between CUDA devices).
+  --
+  simpleCopyToPeer :: b                       -- ^ destination context
+                   -> SimpleRemote b          -- ^ the source array data to copy
+                   -> IO (Remote b)
+
+  -- | Wait until the result is computed, but do not copy it back.
+  --
+  simpleWaitRemote :: SimpleRemote b -> IO ()
+
+  -- | Inject a remote array into an AST node
+  --
+  simpleUseRemote :: b -> SimpleRemote b -> IO (SACC.ProgBind ())
+
+  -------------------------- Configuration Flags --------------------------------
+
+  -- | Are `copyToDevice` calls complexity O(N) or O(1)?  For example, this
+  -- might return True for a discrete GPU and false for an on-chip GPU or CPU
+  -- backend.
+  --
+  simpleSeparateMemorySpace :: b -> Bool
+
+  -- | When asked to produced Blobs, will this backend always go to disk?
+  --
+  simpleCompilesToDisk :: b -> Bool
+
+  -- | Convenience function. If a blob is loitering in memory, force it to disk
+  --
+  simpleForceToDisk :: SimpleBlob b -> IO (SimpleBlob b)
 
 
 {--
