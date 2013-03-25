@@ -63,7 +63,7 @@ main = do
   putStrLn "[main] First checking that all requested tests can be found within 'allProgs'..."
   supportedTestNames <- chooseTests
   let manualExamples = [example] -- Here we manually put in additional programs to test.
-  let supportedTests = L.filter isCompatible $
+  let supportedTests = 
         manualExamples ++
         L.map (\ t -> case M.lookup t allProgsMap of 
                         Nothing -> error$"Test not found: "++ show t
@@ -71,14 +71,6 @@ main = do
                         -- makes it possible to use the -t pattern matching for all tests.
                         Just (TestEntry nm prg ans orig) -> (TestEntry (nameHack nm) prg ans orig))
               supportedTestNames
-
-      -- Temporarily skipping some backends for some tests:
-      isCompatible (TestEntry name _ _ _)
-        | backend == "OpenCL" = True
-        | otherwise = if L.elem name useTests
-                      then trace ("  (Note: Skipping C backend because "++show name++" is a useTest)")
-                                 False
-                      else True
         
   -- Force any error messages in spite of lazy data structure:
   if supportedTests == [] then error$ "supportedTestNames should not be null" else return ()
