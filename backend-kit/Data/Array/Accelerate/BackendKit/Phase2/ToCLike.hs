@@ -52,11 +52,12 @@ type FullMeta = (OpInputs,(SubBinds,(Maybe (Stride Exp), ArraySizeEstimate)))
 --   IR, and it does the final conversion.
 convertToCLike :: Prog FullMeta -> LL.LLProg ()
 convertToCLike Prog{progBinds,progResults,progType,uniqueCounter,typeEnv} =
+  let WithShapes pR = progResults in 
   LL.LLProg
   {
     LL.progBinds    = map (fmap (const ())) binds, 
 --    LL.progResults  = map (copyProp finalEnv) progResults,
-    LL.progResults  = progResults,
+    LL.progResults  = L.map fst pR,
     LL.progType     = progType,
     LL.uniqueCounter= newCounter,
     LL.sizeEnv      = sizeEnv

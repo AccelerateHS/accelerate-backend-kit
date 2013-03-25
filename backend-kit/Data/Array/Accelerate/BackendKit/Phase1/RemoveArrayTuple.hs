@@ -74,7 +74,7 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
                  unVar x = error$ "removeArrayTuple: expecting the final result expressions "++
                                   "to be varrefs at this point, instead received: "++show x
              return $ S.Prog { progBinds   = finalbinds,
-                               progResults = (L.map unVar $ flattenTT newbod),
+                               progResults = WithoutShapes (L.map unVar $ flattenTT newbod),
                                progType    = (getAnnot bod),
                                typeEnv     = M.fromList$ L.map (\(S.ProgBind v t _ _) -> (v,t)) finalbinds,
                                -- FIXME: variables have ALREADY been generated before

@@ -17,8 +17,10 @@ import Data.Array.Accelerate.BackendKit.Phase2.EstimateCost (Cost(Cost))
 -- computation in their bodies are deemed cheap.
 inlineCheap :: Prog (ArraySizeEstimate,Cost) -> Prog ArraySizeEstimate
 inlineCheap prog@Prog{progBinds, progResults, uniqueCounter } =
+  let WithShapes pR = progResults
+      (pRN,pRS) = unzip pR in 
   prog{ progBinds  = newbinds, 
-        progResults= map (copyProp env) progResults,
+        progResults= WithShapes $ zip (map (copyProp env) pRN) pRS,
         uniqueCounter= newCount }
  where
   env = M.fromList$ map (\ pb@(ProgBind v _ _ _) -> (v,pb)) progBinds  

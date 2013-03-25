@@ -40,7 +40,7 @@ explicitShapes :: Prog ArraySizeEstimate -> Prog ArraySizeEstimate
 explicitShapes prog@Prog{progBinds, uniqueCounter, progResults } =
   prog { progBinds    = binds, 
          uniqueCounter= newCount,
-         progResults  = concatMap (\v -> [shapeName v,v]) progResults,
+         progResults  = WithShapes$ map (\v -> (v,shapeName v)) (resultNames progResults),
          -- Rebuild this cache due to new bindings:
          typeEnv      = M.fromList$ map (\(ProgBind v t _ _) -> (v,t)) binds
        }
@@ -62,7 +62,7 @@ doBinds (ProgBind vo voty sz (Right ae) : rest) = do
        KnownSize ls -> do
          ae' <- doAE ae
          let szEx = mkIndExp ls
-             shapeBnd = if vo `elem` progResults then
+             shapeBnd = if vo `elem` resultNames progResults then
                           [ProgBind (shapeName vo) (mkIndTy vo_ndims) UnknownSize (Left szEx) ]
                         else []
          return (ProgBind vo voty sz (Right ae') : shapeBnd ++ rest')

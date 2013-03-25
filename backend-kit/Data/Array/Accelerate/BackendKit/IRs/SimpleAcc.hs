@@ -12,12 +12,12 @@
 module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
    ( 
      -- * The types making up Accelerate ASTs:
-     Prog(..), ProgBind(..),
+     Prog(..), ProgBind(..), ProgResults(..),
      AExp(..), -- AFun(..), 
      Exp(..), TrivialExp(..), Fun1(Lam1), Fun2(..),
      Type(..), Const(..),
      Prim(..), NumPrim(..), IntPrim(..), FloatPrim(..), ScalarPrim(..), BoolPrim(..), OtherPrim(..),
-     Boundary(..), Var,
+     Boundary(..), Var, AVar,
           
      -- * Runtime Array data representation.
      AccArray(..), ArrayPayload(..), 
@@ -30,7 +30,7 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
      isIntType, isFloatType, isNumType, 
      isIntConst, isFloatConst, isNumConst, hasArrayType, flattenTy, flattenArrTy, countTyScalars,
 
-     var, progToEnv, lookupProgBind, expFreeVars,
+     var, progToEnv, lookupProgBind, expFreeVars, resultNames,
      
      -- * Building and normalizing pieces of syntax
      normalizeEConst, mkTTuple, mkETuple,
@@ -110,6 +110,9 @@ instance NFData Var where
   
 var :: String -> Var
 
+-- | Array level variables.  Perhaps newtype this in the future.
+type AVar = Var
+
 --------------------------------------------------------------------------------
 -- Complete Accelerate Programs
 --------------------------------------------------------------------------------
@@ -132,7 +135,7 @@ var :: String -> Var
 --   indeterminite type (hence the type parameter).
 data Prog decor = Prog { 
   progBinds   :: [ProgBind decor],
-  progResults :: [Var],
+  progResults :: ProgResults,
   progType    :: Type,  -- Final, pre-flattened type, can be an array-tuple.
   uniqueCounter :: Int,  -- Counter for unique variable suffix generation
 
@@ -141,6 +144,14 @@ data Prog decor = Prog {
   -- caching it here avoids rebuilding the `Map` many times.
   typeEnv :: M.Map Var Type
 } deriving (Read,Show,Eq,Generic, Ord)
+
+data ProgResults = WithoutShapes [AVar]
+                 | WithShapes [(AVar,Var)]
+  deriving (Read,Show,Eq,Generic, Ord)
+
+resultNames :: ProgResults -> [AVar]
+resultNames (WithoutShapes ls) = ls
+resultNames (WithShapes ls) = L.map fst ls  
 
 -- | A top-level binding.  Binds a unique variable name to either an
 --   array or scalar expression.
@@ -780,7 +791,7 @@ typecheckProg prog@Prog{progBinds, progResults, progType } =
     mismatchErr "Result type" resTys expectedTys
     else Nothing -- FINISHME
   where
-    resTys      = map envlkp progResults
+    resTys      = map envlkp (resultNames progResults)
     envlkp vr   = case M.lookup vr env of
                     Nothing -> error$"SimpleAcc.hs/typeCheckProg: no binding for progResult: "++show vr
                     Just x  -> x 
@@ -941,6 +952,7 @@ genUniqueWith prefix =
 instance Out Type
 instance Out a => Out (Prog a)
 instance Out a => Out (ProgBind a)
+instance Out ProgResults
 -- instance Out Fun1
 -- instance Out Fun2
 instance Out (Fun1 Exp)
@@ -1031,6 +1043,9 @@ instance NFData Exp where
 instance NFData AExp where
   rnf ae = error "FINISH ME"
 
+instance NFData ProgResults where
+  rnf (WithShapes ls)    = rnf ls
+  rnf (WithoutShapes ls) = rnf ls
 
 ----------------------------------------------------------------------------------------------------
 

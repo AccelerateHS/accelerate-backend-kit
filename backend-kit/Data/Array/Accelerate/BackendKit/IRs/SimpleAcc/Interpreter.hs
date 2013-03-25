@@ -82,7 +82,7 @@ evalSimpleAcc (S.Prog {progBinds, progResults}) =
 --    concatArrays $ 
     maybtrace ("[dbg] evalSimpleAcc, initial env "++ show (L.map (\(ProgBind v _ _ _)->v) progBinds)
            ++"  yielded environment: "++show (M.keys finalenv)) $
-    L.map (unArrVal . (envLookup finalenv)) progResults
+    L.map (unArrVal . (envLookup finalenv)) (resultNames progResults)
   where 
    finalenv = loop M.empty progBinds
    -- A binding simply extends an environment of values. 

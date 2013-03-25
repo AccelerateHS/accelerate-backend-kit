@@ -25,7 +25,7 @@ trackUses prog@Prog{progBinds, progResults} =
   initUses  = if conservativeMode
               then M.fromList $ L.map (\ (ProgBind vr _ _ _) -> (vr,Uses 0 0)) progBinds
               else M.empty
-  withFinal = L.foldl (flip addArrRef) initUses progResults
+  withFinal = L.foldl (flip addArrRef) initUses (T.resultNames progResults)
   allUses   = L.foldl gatherUses withFinal progBinds
 
 -- | Helper function to fold over binds and collect uses.
