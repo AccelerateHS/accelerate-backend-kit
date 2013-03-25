@@ -180,7 +180,7 @@ instance EmitBackend CEmitter where
   emitMain e prog@GPUProg{progBinds, progResults, sizeEnv} = do
 
     let useBinds   = getUseBinds prog
-        allResults = map P.fst$ standardResultOrder progResults
+        allResults = standardResultOrder progResults
         allUses    = S.fromList $ map (\(a,b,c) -> a) useBinds
     ----------------------------------------
     ------    Argument Initialization  -----
@@ -202,27 +202,31 @@ instance EmitBackend CEmitter where
     --------    Results Retrieval   --------
     cppStruct "ResultRecord" "" $ do
       comm "These are all the progResults arrays output from the Acc computation: "
-      forM_ allResults $ \ name -> do
+      forM_ allResults $ \ (name,snames) -> do
         let elt = P.fst$ sizeEnv # name 
         E.var (emitType e (TArray 1 elt)) (varSyn name)
         E.var "int" (strToSyn (show name ++ "_size"))
+        mapM_ (E.var "int" . varSyn) snames
         return ()
     rawFunDef "struct ResultRecord*" "CreateResultRecord" [] $ do
       return_ "malloc(sizeof(struct ResultRecord))"
     funDef "void" "DestroyResultRecord" ["struct ResultRecord*"] $ \arg -> do
       comm "In the CURRENT protocol, we free all results SIMULTANEOUSLY, here:"
-      forM_ allResults $ \ name -> do
+      forM_ allResults $ \ (name,_) -> do
         let elt = P.fst$ sizeEnv # name 
         if S.member name allUses
         then comm$"NOT freeing "++show name++" because it came in from Haskell."
         else freeCStorage elt (arg `arrow` varSyn name)
       E.emitStmt$ function "free" [arg]
-    forM_ allResults $ \ name -> do 
+    forM_ allResults $ \ (name,snames) -> do 
       let elt = P.fst $ sizeEnv#name
       funDef (emitType e (TArray 1 elt)) ("GetResult_" ++ show name) ["struct ResultRecord*"] $ \ results -> do
         return_ (results `arrow` (varSyn name))
       funDef "int" ("GetResultSize_" ++ show name) ["struct ResultRecord*"] $ \ results -> do
         return_ (results `arrow` (varSyn name +++ "_size"))
+      forM_ snames $ \ sname -> 
+        funDef "int" ("GetResult_" ++ show sname) ["struct ResultRecord*"] $ \ results -> do
+          return_ (results `arrow` (varSyn sname))
         
     ----------------------------------------
     mainBody P.False e prog 
@@ -234,7 +238,8 @@ instance EmitBackend CEmitter where
 mainBody :: P.Bool -> CEmitter -> GPUProg FreeVars -> EasyEmit ()
 mainBody isCMain e prog@GPUProg{progBinds, progResults, sizeEnv} = do 
     let useBinds   = getUseBinds prog
-        allResults = map P.fst$ standardResultOrder (progResults)
+        allResults = standardResultOrder (progResults)
+        allArrays  = map P.fst allResults
         allUses    = S.fromList $ map (\(a,b,c) -> a) useBinds
         body       = do            
            comm "First we EXECUTE the program by executing each array op in order:"
@@ -242,22 +247,25 @@ mainBody isCMain e prog@GPUProg{progBinds, progResults, sizeEnv} = do
 
            if isCMain then do 
               comm "This code prints the final result(s):"
-              forM_ allResults $ \ result -> do 
+              forM_ allArrays $ \ (result) -> do 
                 printArray e prog result (lkup result progBinds)
                 emitStmt$ function "printf" [stringconst "\n"]
             else do 
               comm "We write the final output to the results record:"
-              forM_ allResults $ \ rname -> do 
+              forM_ allResults $ \ (rname,snames) -> do 
                 E.set (strToSyn globalResults `arrow` varSyn rname) (varSyn rname)
                 E.set (strToSyn globalResults `arrow` (varSyn rname+++"_size")) $
                   case sizeEnv # rname of 
                     (_, TrivVarref vr) -> (varSyn vr)
                     (_, TrivConst  n)  -> fromIntegral n
-
+                forM_ (zip snames [0..]) $ \ (sname,ix) ->
+                  let name = (varSyn sname) in 
+                  E.set (strToSyn globalResults `arrow` name) name
+    
            comm "Finally, we free all arrays that are NOT either input or outputs:"
            forM_ progBinds $ \ GPUProgBind { outarrs } -> do
              forM_ outarrs  $ \ (vr,_,ty) ->
-               if S.member vr allUses P.|| elem vr allResults
+               if S.member vr allUses P.|| elem vr allArrays
                then return ()
                else freeCStorage ty (varSyn vr)
     _ <- if isCMain
