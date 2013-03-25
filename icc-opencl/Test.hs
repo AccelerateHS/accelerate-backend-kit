@@ -19,7 +19,8 @@ import           Data.Array.Accelerate.BackendKit.Tests (allProgsMap,p1aa,testCo
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1, phase2, repackAcc)
 -- import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase1)
 import           Data.Map           as M
-import           Data.List          as L 
+import           Data.List          as L
+import           Data.Char          (toLower)
 import           Test.Framework     (defaultMain, buildTest, testGroup, Test)
 import           Test.Framework.Providers.HUnit (hUnitTestToTests)
 import           Test.HUnit         ((~?))
@@ -48,8 +49,8 @@ main = do
   
   useCBackend <- getEnv "EMITC"
   let backend = case useCBackend of 
-                  Just "cilk"         -> "Cilk"
-                  Just x | notFalse x -> "C"
+                  Just cilk | L.map toLower cilk == "cilk" -> "Cilk"
+                  Just x | trueishStr x -> "C"
 #ifdef ENABLE_OPENCL
                   Nothing             -> "OpenCL"
                   _                   -> "OpenCL"
@@ -117,17 +118,16 @@ main = do
                        hUnitTestToTests (iotest ~? "non-empty result string")
                   )
         [1..] supportedTests
-        
   repack <- getEnv "REPACK"
   case repack of
-    Just x | x /= "" && x /= "0" -> defaultMain testsRepack
-    _                            -> defaultMain testsPlain
-
+    Just x | not (trueishStr x) -> defaultMain testsPlain 
+    _                           -> defaultMain testsRepack -- DEFAULT:
 
 -- | Is an environment variable encoding something representing true.
-notFalse ""  = False
-notFalse "0" = False
-notFalse _   = True
+trueishStr ""  = False
+trueishStr "0" = False
+trueishStr str | L.map toLower str == "false" = False
+trueishStr _   = True
 
 nameHack :: String -> String
 nameHack = (++":")
@@ -140,15 +140,15 @@ chooseTests :: IO [String]
 chooseTests = do
   env <- getEnvironment
   let tests1 = case L.lookup "ONEDIMTESTS" env of
-                 Nothing             -> oneDimOrLessTests -- Default ON
-                 Just x | notFalse x -> oneDimOrLessTests
+                 Nothing               -> oneDimOrLessTests -- Default ON
+                 Just x | trueishStr x -> oneDimOrLessTests
                  _                   -> []
   let tests2 = case L.lookup "USETESTS" env of
-                 Just x | notFalse x -> useTests
-                 _                   -> []
+                 Just x | trueishStr x -> useTests
+                 _                     -> []
   let tests3 = case L.lookup "MULTIDIMTESTS" env of
-                 Just x | notFalse x -> multiDimTests
-                 _                   -> []
+                 Just x | trueishStr x -> multiDimTests
+                 _                     -> []
   case L.lookup "ALLTESTS" env of
     Just _  -> return$ oneDimOrLessTests ++ useTests ++ multiDimTests ++ highDimTests    
     Nothing -> return$ tests1 ++ tests2 ++ tests3
