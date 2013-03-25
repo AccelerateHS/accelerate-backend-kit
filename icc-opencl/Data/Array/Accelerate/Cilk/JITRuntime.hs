@@ -249,21 +249,20 @@ loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv, G.progType } soNam
       size <- mkGetResultSize oneSize resultsRec
       dbgPrint$"[JIT] Fetched result ptr: "++show rname++" = "++show ptr++" and size "++show size
       payl <- payloadFromPtr (fst$ sizeEnv # rname) size (castPtr ptr)
-      return (S.AccArray [size] [payl])
 
+      shape <- forM snames $ \ sname -> do
+          oneShape  <- dlsym dl ("GetResult_"++show sname)
+          mkGetResultSize oneShape resultsRec
+      return (S.AccArray shape [payl])
+      
     dbgPrint$"[JIT] Destroying args record: "++show argsRec
     (mkDestroyRecord dar) argsRec
     dbgPrint$"[JIT] Destroying results record: "++show resultsRec
     (mkDestroyRecord drr) resultsRec
     let table = M.fromList $ zip (map fst allResults) arrs
         results = map (table #) (map fst progResults)
-        results2 = zipWith reimposeSize results (map snd progResults)
-        reimposeSize arr shp =
-          maybtrace ("REIMPOSING SIZE "++show(arr,shp)) $
-          arr
-
-    dbgPrint$"[JIT] FULL RESULTS read back to Haskell (type "++show progType++"):\n  "++show results2
-    return results2
+    dbgPrint$"[JIT] FULL RESULTS read back to Haskell (type "++show progType++"):\n  "++show results
+    return results
 
 
 -- | Shared for CreateArgRecord and CreateResultRecord
