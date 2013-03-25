@@ -32,12 +32,17 @@ type MyM a = ReaderT (Prog ArraySizeEstimate) GensymM a
 --   GRAMMAR CHANGE: AST forms parameterized by a shape expression
 --   (Generate,BackPermute,Replicate) have only a variable reference in that context
 --   after this pass.
+--
+--   NEW CONVENTION: This pass replaces the [arrV,arrV...] list of progResults with
+--   an alternating [expV,arrV,expV,arrV...] list containing the results AND their
+--   corresponding shapes.
 explicitShapes :: Prog ArraySizeEstimate -> Prog ArraySizeEstimate
-explicitShapes prog@Prog{progBinds, uniqueCounter } =
+explicitShapes prog@Prog{progBinds, uniqueCounter, progResults } =
   prog { progBinds    = binds, 
          uniqueCounter= newCount,
+         progResults  = concatMap (\v -> [shapeName v,v]) progResults,
          -- Rebuild this cache due to new bindings:
-         typeEnv      = M.fromList$ map (\(ProgBind v t _ _) -> (v,t)) binds 
+         typeEnv      = M.fromList$ map (\(ProgBind v t _ _) -> (v,t)) binds
        }
   where
     (binds,newCount) =
