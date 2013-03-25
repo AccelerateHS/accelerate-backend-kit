@@ -15,7 +15,7 @@ module Main where
 
 import qualified Data.Array.Accelerate             as A
 import qualified Data.Array.Accelerate.Interpreter as I
-import           Data.Array.Accelerate.BackendKit.Tests (allProgsMap,p1aa,testCompiler,TestEntry(..),AccProg(AccProg),makeTestEntry)
+import           Data.Array.Accelerate.BackendKit.Tests (allProgs, allProgsMap,p1aa,testCompiler,TestEntry(..),AccProg(AccProg),makeTestEntry)
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1, phase2, repackAcc)
 -- import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase1)
 import           Data.Map           as M
@@ -62,14 +62,14 @@ main = do
   ----------------------------------------  
   putStrLn "[main] First checking that all requested tests can be found within 'allProgs'..."
   supportedTestNames <- chooseTests
-  let manualExamples = [example] -- Here we manually put in additional programs to test.
+  let manualExamples = [example] -- Demonstration: we manually put in additional programs to test.
   let supportedTests = 
         manualExamples ++
         L.map (\ t -> case M.lookup t allProgsMap of 
                         Nothing -> error$"Test not found: "++ show t
                         -- HACK: appending ":" as an end-marker to all test names.  This 
                         -- makes it possible to use the -t pattern matching for all tests.
-                        Just (TestEntry nm prg ans orig) -> (TestEntry (nameHack nm) prg ans orig))
+                        Just te -> nameHackTE te)
               supportedTestNames
         
   -- Force any error messages in spite of lazy data structure:
@@ -124,6 +124,9 @@ trueishStr _   = True
 nameHack :: String -> String
 nameHack = (++":")
 
+nameHackTE :: TestEntry -> TestEntry
+nameHackTE (TestEntry nm prg ans orig) = (TestEntry (nameHack nm) prg ans orig)
+
 unNameHack :: String -> String
 unNameHack = init 
 
@@ -141,9 +144,11 @@ chooseTests = do
   let tests3 = case L.lookup "MULTIDIMTESTS" env of
                  Just x | trueishStr x -> multiDimTests
                  _                     -> []
-  case L.lookup "ALLTESTS" env of
-    Just _  -> return$ oneDimOrLessTests ++ useTests ++ multiDimTests ++ highDimTests    
-    Nothing -> return$ tests1 ++ tests2 ++ tests3
+  case L.lookup "UNREGISTERED" env of -- New backdoor option to run *absolutely* everything...
+   Just x | trueishStr x -> return$ L.map name allProgs
+   _ -> case L.lookup "ALLTESTS" env of
+         Just x | trueishStr x -> return$ oneDimOrLessTests ++ useTests ++ multiDimTests ++ highDimTests
+         _                     -> return$ tests1 ++ tests2 ++ tests3
 
 
 example :: TestEntry
