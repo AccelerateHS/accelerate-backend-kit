@@ -21,9 +21,8 @@ import Data.Array.Accelerate.BackendKit.CompilerUtils (sizeName)
 import Data.Array.Accelerate.BackendKit.Phase2.NormalizeExps (wrapLets)
 import Data.Array.Accelerate.BackendKit.IRs.Metadata (ArraySizeEstimate(..), SubBinds(..), Stride(..))
 import Data.Array.Accelerate.BackendKit.Utils.Helpers
-       (GensymM, genUnique, genUniqueWith, mkPrj, mapMAEWithGEnv, isTupleTy, fragileZip, fragileZip3, (#))
-
-import Debug.Trace (trace)
+       (GensymM, genUnique, genUniqueWith, mkPrj, mapMAEWithGEnv, isTupleTy, fragileZip, fragileZip3, (#),
+        isTrivialE)
 ----------------------------------------------------------------------------------------------------
 
 -- | Map the original possibly-tuple-valued variable names to the
@@ -240,9 +239,9 @@ doE env ex =
 
     EIndexScalar avr indE
       -- Maintain invariant that this function return a list of the correct length.
-      | isTrivial indE -> do let (TArray _ elt,_) = env # avr
-                                 width = length$ flattenOnlyScalar elt
-                             return [ ETupProject ix 1 (EIndexScalar avr indE) | ix <- reverse [0..width-1] ]
+      | isTrivialE indE -> do let (TArray _ elt,_) = env # avr
+                                  width = length$ flattenOnlyScalar elt
+                              return [ ETupProject ix 1 (EIndexScalar avr indE) | ix <- reverse [0..width-1] ]
       | otherwise -> error$ "UnzipETups.hs: Incoming grammar invariants not satisfied, EIndexScalar should have trivial index: "++show indE
 
     -- Because of the normalization phase, we know this conditional
@@ -299,7 +298,3 @@ unsing ls  = error$"UnzipETups.hs: expected singleton list, got: "++show ls
 sing :: a -> [a]
 sing x = [x]
 
-isTrivial :: Exp -> Bool
-isTrivial (EVr _)    = True
-isTrivial (EConst _) = True
-isTrivial _          = False

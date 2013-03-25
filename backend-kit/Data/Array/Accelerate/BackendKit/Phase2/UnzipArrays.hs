@@ -5,11 +5,11 @@ module Data.Array.Accelerate.BackendKit.Phase2.UnzipArrays (unzipArrays) where
 import Control.Monad.State.Strict
 import Control.Applicative ((<$>),(<*>), pure)
 import qualified Data.Map              as M
-import Debug.Trace
 
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
-import Data.Array.Accelerate.BackendKit.Utils.Helpers ((#))
+import Data.Array.Accelerate.BackendKit.Utils.Helpers ((#),isTrivialE)
 import Data.Array.Accelerate.BackendKit.IRs.Metadata (SubBinds(..), OpInputs(..))
+import Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace)
 --------------------------------------------------------------------------------
 
 
@@ -40,13 +40,11 @@ unzipArrays prog@Prog{progBinds,progResults = WithShapesUnzipped pR } =
          -- Note: typeEnv already has the unzipped types.              
        }
   where
---    env = progToEnvWithDec progBinds -- inefficient    
---    fn (_,(SubBinds vrs _,_)) = vrs
     env = M.fromList$
           map (\(ProgBind v _ (SubBinds vrs _,_) _) -> (v,vrs)) progBinds
 
-    
-
+-- | For this pass every top level binding is tracked in the environment which is
+-- passed throuh the helper functions.
 type Env = M.Map Var [Var]
 
 doBinds :: Env -> [ProgBind (SubBinds,a)] -> [ProgBind (OpInputs,(SubBinds,a))]
@@ -77,7 +75,7 @@ doBinds env (ProgBind vo ty dec@(SubBinds {subnames},_) op : rest) =
         Right ae -> let (ls,ae') = doAE env ae in
                     (OpInputs ls,Right ae')
 
--- Returns (unzipped) operator INPUTS
+-- | Returns (unzipped) operator INPUTS.
 doAE :: Env -> AExp -> ([[Var]], AExp)
 doAE env ae =
   case ae of
@@ -120,9 +118,15 @@ doE env ex =
     ETupProject ix len (EIndexScalar avr ind) ->
       if len /= 1 then error$"UnzipArrays.hs: ETupProject with len/=1: "++show ex
       else
---        trace ("Projecting out of "++show (env # avr)++" for avr "++show avr++" want index "++show ix)$
+        maybtrace ("Projecting out of "++show (env # avr)++" for avr "++show avr++" want index "++show ix)$
         EIndexScalar (reverse (env # avr) !! ix) (doE env ind)
-    EIndexScalar avr e  -> EIndexScalar avr (doE env e)
+    EIndexScalar avr e
+      | isTrivialE e ->
+        -- We may be forced to create an ETuple here, but it must be in tail position.
+        -- TODO: AUDIT THIS FURTHER!
+        -- TODO: thread gensym through so we can do MaybeLet here.
+        mkETuple [ EIndexScalar avr' (doE env e) | avr' <- env#avr ]
+      | otherwise -> error "UnzipArrays.hs: needed refactor here... push through GensymM..."
     ETupProject ix l e  -> ETupProject ix l (doE env e) 
     EShape _            -> err ex
     EShapeSize _        -> err ex
@@ -131,8 +135,7 @@ doE env ex =
     EVr _               -> ex
     ECond e1 e2 e3      -> ECond (doE env e1) (doE env e2) (doE env e3)
     ELet (v,t,rhs) bod  -> ELet (v,t,doE env rhs) (doE env bod)
-
-    ETuple els          -> ETuple (map (doE env) els)
+    ETuple els          -> ETuple       (map (doE env) els)
     EPrimApp p t els    -> EPrimApp p t (map (doE env) els)
 
 err :: Show a => a -> b

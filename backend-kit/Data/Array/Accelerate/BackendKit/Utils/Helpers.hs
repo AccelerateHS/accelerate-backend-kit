@@ -17,7 +17,8 @@ module Data.Array.Accelerate.BackendKit.Utils.Helpers
          mkPrj, mapMAE, mapMAEWithEnv, mapMAEWithGEnv,
 
          -- * Helpers for constructing bits of AST syntax while incorporating small optimizations.
-         addI, subI, mulI, ltI, quotI, remI, maybeLet, maybeLetAllowETups, 
+         addI, subI, mulI, ltI, quotI, remI,
+         maybeLet, maybeLetAllowETups, isTrivialE,
          -- TODO [2013.02.10] Move these ^^ to CompilerUtils.hs
          
          -- * Miscellaneous
@@ -97,11 +98,6 @@ costConst _ = 1
 defaultDupThreshold :: Int
 defaultDupThreshold = 5
 
-
--- | Irrespective of the exact cost, certain expressions are
---   considered trivial (and always duplicatable).
--- isTrivialE 
-
 ----------------------------------------------------------------------------------------------------
 -- Other Helpers
 ----------------------------------------------------------------------------------------------------
@@ -170,6 +166,19 @@ maybeLetAllowETups ex ty dobod =
     ETuple v -> return (dobod ex)
     _ -> do tmp <- genUnique
             return (ELet (tmp,ty,ex) (dobod (EVr tmp)))
+
+-- TODO: If you don't strictly need a variable, then you can avoid introducing more
+-- temporaries:            
+-- maybeLetE :: Exp -> Type -> (Exp -> Exp) -> GensymM Exp
+
+-- | Irrespective of the exact cost, certain expressions are
+--   considered trivial (and always duplicatable).
+isTrivialE :: Exp -> Bool
+isTrivialE (EVr _)    = True
+isTrivialE (EConst _) = True
+-- Consider adding a tuple-projection of a variable here as well...
+isTrivialE _          = False
+
 
 
 --------------------------------------------------------------------------------

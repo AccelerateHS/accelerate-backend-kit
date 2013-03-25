@@ -9,7 +9,7 @@
 
 module Data.Array.Accelerate.BackendKit.Phase3.ToGPUIR (convertToGPUIR) where
 
-import           Data.Array.Accelerate.BackendKit.Utils.Helpers (genUnique, genUniqueWith, GensymM, strideName)
+import           Data.Array.Accelerate.BackendKit.Utils.Helpers (genUnique, genUniqueWith, GensymM, strideName,(#))
 import           Data.Array.Accelerate.BackendKit.IRs.Metadata
 import           Data.Array.Accelerate.BackendKit.IRs.CLike     as LL
 import qualified Data.Array.Accelerate.BackendKit.IRs.GPUIR     as G
@@ -19,7 +19,7 @@ import           Control.Monad.State.Strict (runState)
 import qualified Data.Map                        as M
 import qualified Data.Set                        as S
 import           Text.PrettyPrint.GenericPretty (Out(doc))
-
+-- import Debug.Trace (trace)
 ----------------------------------------------------------------------------------------------------
 
 
@@ -55,6 +55,12 @@ doBinds sizeEnv evEnv (LLProgBind vartys (FreeVars fvs) toplvl : rest) = do
   newevt <- genEvt
   let rebind deps = G.GPUProgBind newevt deps (map liftBind vartys) (FreeVars fvs)
       evEnv' = foldl (\mp (v,_) -> M.insert v newevt mp) evEnv vartys
+      -- Convert variable references to event ids:
+      evs = map (\v -> case M.lookup v evEnv' of
+                         Just x -> x
+                         Nothing -> error$"ToGPUIR.hs: no event ID in map for: "
+                                    ++show v++" map size "++show(M.size evEnv'))
+--  trace ("TOGPUIR - extending evt env "++show vartys++" map size "++show(M.size evEnv')) $ return () 
   rst <- doBinds sizeEnv evEnv' rest
 
   let -- shared code for cases below:
@@ -128,8 +134,6 @@ doBinds sizeEnv evEnv (LLProgBind vartys (FreeVars fvs) toplvl : rest) = do
               [x] -> x 
               oth -> error$"ConvertGPUIR.hs: expected one output from op:\n  "++show toplvl
 
-   -- Convert variable references to event ids:
-   evs = map (evEnv M.!)
    genEvt = genUniqueWith "evt"
 
    doMGen mgen = case mgen of
