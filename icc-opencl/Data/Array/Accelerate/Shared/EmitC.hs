@@ -181,6 +181,7 @@ instance EmitBackend CEmitter where
 
     let useBinds   = getUseBinds prog
         allResults = standardResultOrder progResults
+        shapeSet   = S.toList $ S.fromList$ concatMap P.snd allResults
         allUses    = S.fromList $ map (\(a,b,c) -> a) useBinds
     ----------------------------------------
     ------    Argument Initialization  -----
@@ -202,12 +203,14 @@ instance EmitBackend CEmitter where
     --------    Results Retrieval   --------
     cppStruct "ResultRecord" "" $ do
       comm "These are all the progResults arrays output from the Acc computation: "
-      forM_ allResults $ \ (name,snames) -> do
+      forM_ allResults $ \ (name,_) -> do
         let elt = P.fst$ sizeEnv # name 
         E.var (emitType e (TArray 1 elt)) (varSyn name)
         E.var "int" (strToSyn (show name ++ "_size"))
-        mapM_ (E.var "int" . varSyn) snames
         return ()
+      comm "These provide (original) shape information for all progResults:"
+      mapM_ (E.var "int" . varSyn) shapeSet
+        
     rawFunDef "struct ResultRecord*" "CreateResultRecord" [] $ do
       return_ "malloc(sizeof(struct ResultRecord))"
     funDef "void" "DestroyResultRecord" ["struct ResultRecord*"] $ \arg -> do
@@ -218,13 +221,14 @@ instance EmitBackend CEmitter where
         then comm$"NOT freeing "++show name++" because it came in from Haskell."
         else freeCStorage elt (arg `arrow` varSyn name)
       E.emitStmt$ function "free" [arg]
-    forM_ allResults $ \ (name,snames) -> do 
+    forM_ allResults $ \ (name,_) -> do 
       let elt = P.fst $ sizeEnv#name
       funDef (emitType e (TArray 1 elt)) ("GetResult_" ++ show name) ["struct ResultRecord*"] $ \ results -> do
         return_ (results `arrow` (varSyn name))
       funDef "int" ("GetResultSize_" ++ show name) ["struct ResultRecord*"] $ \ results -> do
         return_ (results `arrow` (varSyn name +++ "_size"))
-      forM_ snames $ \ sname -> 
+    comm "Here we provide getters for the (scalar) shape results of the program:"
+    forM_ shapeSet $ \ sname -> 
         funDef "int" ("GetResult_" ++ show sname) ["struct ResultRecord*"] $ \ results -> do
           return_ (results `arrow` (varSyn sname))
         
