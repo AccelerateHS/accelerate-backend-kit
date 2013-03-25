@@ -32,10 +32,11 @@ import Data.Array.Accelerate.BackendKit.IRs.Metadata (SubBinds(..), OpInputs(..)
 --
 -- This pass eliminates ETupProject's around EIndexScalar's.
 unzipArrays :: S.Prog (SubBinds,a) -> S.Prog (OpInputs,(SubBinds,a))
-unzipArrays prog@Prog{progBinds,progResults = WithShapes pR } =
+unzipArrays prog@Prog{progBinds,progResults = WithShapesUnzipped pR } =
   prog { progBinds   = doBinds M.empty progBinds,
          -- All parts of an unzipped array have the same shape:         
-         progResults = WithShapes$ concatMap (\ (v,s) -> map (,s) (env # v)) pR
+         progResults = WithShapesUnzipped$
+                       concatMap (\ (v,s) -> map (,s) (env # v)) pR
          -- Note: typeEnv already has the unzipped types.              
        }
   where

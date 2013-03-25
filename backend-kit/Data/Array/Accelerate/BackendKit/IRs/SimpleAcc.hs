@@ -146,12 +146,14 @@ data Prog decor = Prog {
 } deriving (Read,Show,Eq,Generic, Ord)
 
 data ProgResults = WithoutShapes [AVar]
-                 | WithShapes [(AVar,Var)]
+                 | WithShapes [(AVar,Var)] -- Later in the compiler.
+                 | WithShapesUnzipped [(AVar,[Var])] -- Even later, unzipETups
   deriving (Read,Show,Eq,Generic, Ord)
 
 resultNames :: ProgResults -> [AVar]
-resultNames (WithoutShapes ls) = ls
-resultNames (WithShapes ls) = L.map fst ls  
+resultNames (WithoutShapes ls)      = ls
+resultNames (WithShapes ls)         = L.map fst ls  
+resultNames (WithShapesUnzipped ls) = L.map fst ls  
 
 -- | A top-level binding.  Binds a unique variable name to either an
 --   array or scalar expression.
@@ -1046,6 +1048,7 @@ instance NFData AExp where
 instance NFData ProgResults where
   rnf (WithShapes ls)    = rnf ls
   rnf (WithoutShapes ls) = rnf ls
+  rnf (WithShapesUnzipped ls) = rnf ls  
 
 ----------------------------------------------------------------------------------------------------
 

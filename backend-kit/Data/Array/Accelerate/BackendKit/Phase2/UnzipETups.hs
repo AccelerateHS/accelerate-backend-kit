@@ -70,11 +70,12 @@ type Env = M.Map Var (Type,Maybe [Var])
 --  the normal ProgBind names to ensure that future passes use the SubBinds.
 unzipETups :: Prog           (Maybe(Stride Exp),ArraySizeEstimate) ->
               Prog (SubBinds,(Maybe(Stride Exp),ArraySizeEstimate))
-unzipETups prog@Prog{progBinds, uniqueCounter, typeEnv} =
+unzipETups prog@Prog{progBinds, uniqueCounter, typeEnv, progResults=WithShapes pR} =
     prog'
  where
   prog' = prog{ progBinds= map addSubBinds binds, 
                 uniqueCounter= newCounter2,
+                progResults= WithShapesUnzipped $ map (\ (av,v) -> (av,lkup v)) pR,
                 -- After this pass we keep type entries for BOTH tupled and detupled versions:
                 typeEnv = M.union typeEnv $
                           M.fromList$

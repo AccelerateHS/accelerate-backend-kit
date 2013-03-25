@@ -30,7 +30,7 @@ module Data.Array.Accelerate.BackendKit.IRs.CLike
        where
 
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as SA
-import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Var,Type,Prim,AccArray,TrivialExp)
+import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (AVar,Var,Type,Prim,AccArray,TrivialExp)
 import           Data.Array.Accelerate.BackendKit.IRs.Metadata (Stride(..))
 import           Data.Array.Accelerate.BackendKit.Utils.Helpers (GensymM, genUnique)
 
@@ -47,7 +47,8 @@ import           Data.List as L
 -- | The Low-Level (C-like) AST.
 data LLProg decor = LLProg { 
   progBinds   :: [LLProgBind decor],
-  progResults :: [Var],
+  -- Due to tuple unzipping, the shape will now be a list of shape components:
+  progResults :: [(AVar,[Var])],
   uniqueCounter :: Int,
   progType    :: Type, -- Final, pre-flattened type, can be an array-tuple.
 
