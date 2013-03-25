@@ -206,7 +206,7 @@ dbgPrint str = if not dbg then return () else do
 loadAndRunSharedObj :: G.GPUProg a -> FilePath -> IO [S.AccArray]
 loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv, G.progType } soName =
   let useBinds   = getUseBinds prog 
-      allResults = standardResultOrder progResults in
+      allResults = standardResultOrder (map fst progResults) in
   withDL soName [RTLD_LOCAL,RTLD_LAZY] $ \ dl ->  do
     car  <- dlsym dl "CreateArgRecord"
     dar  <- dlsym dl "DestroyArgRecord"
@@ -255,7 +255,7 @@ loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv, G.progType } soNam
     dbgPrint$"[JIT] Destroying results record: "++show resultsRec
     (mkDestroyRecord drr) resultsRec
     let table = M.fromList $ zip allResults arrs
-        results = map (table #) progResults
+        results = map (table #) (map fst progResults)
 
     dbgPrint$"[JIT] FULL RESULTS read back to Haskell (type "++show progType++"):\n  "++show results
     return results

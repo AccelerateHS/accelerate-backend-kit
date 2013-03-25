@@ -31,7 +31,7 @@ convertToGPUIR LLProg{progBinds,progResults,progType,uniqueCounter,sizeEnv} =
   G.GPUProg
   {
     G.progBinds      = binds, 
-    G.progResults    = map fst progResults,
+    G.progResults    = progResults,
     G.progType       = progType,
     G.uniqueCounter  = newCounter,
     G.lastwriteTable = concatMap fn binds,

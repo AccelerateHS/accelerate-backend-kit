@@ -32,7 +32,7 @@ import           Data.Array.Accelerate.BackendKit.IRs.CLike (Direction(..), Redu
                                                              MGenerator(..), Generator(..))
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as SA
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
-                   (Var,Type,AccArray, Prim(..), Const(..), Type(..), TrivialExp)
+                   (AVar,Var,Type,AccArray, Prim(..), Const(..), Type(..), TrivialExp)
 
 
 ----------------------------------------------------------------------------------------------------
@@ -42,7 +42,7 @@ import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
 -- | The lowest-level AST containing a very different ProgBind type.
 data GPUProg decor = GPUProg { 
   progBinds     :: [GPUProgBind decor],
-  progResults   :: [Var],
+  progResults   :: [(AVar,[Var])],
   uniqueCounter :: Int,
   progType      :: Type, -- ^ Final, pre-flattened type, can be an array-tuple.
   
