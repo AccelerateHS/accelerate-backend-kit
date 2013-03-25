@@ -345,7 +345,7 @@ convertExp e =
                       ty = getExpType e
                       len = tupleNumLeaves ty
                   in 
-                   maybtrace ("TUPLE NUM LEAVES: "++show ty++" "++show len) $
+--                   maybtrace ("TUPLE NUM LEAVES: "++show ty++" "++show len) $
                    T.ETupProject n len <$> convertExp ex
 
     -- This would seem to force indices to be LISTS at runtime??
@@ -858,6 +858,7 @@ packArray orig@(S.AccArray dims origPayloads) =
   -- TEMP: FIXME:  [2012.11.21]  Temporarily allowing mismathched dimensions as long as the # elements is right:
 --  if length dims == length dims' then -- Is the expected rank correct?
 --  if product dims == product dims'
+  maybtrace ("[packArray]: BKit dims "++show dims++" Acc dims' "++show dims') $
   if (length dims == length dims') || (length dims' <= 1) -- Allowing mismatch for 0/1 dim.
   then Sug.Array shpVal (packit (typeOnlyErr "packArray1"::Sug.Array sh elt) (reverse origPayloads))
   else error$"SimpleConverter.packArray: array does not have the expected shape: "++show dims++" expected "++show dims'
@@ -947,8 +948,8 @@ packArray orig@(S.AccArray dims origPayloads) =
 --   of an Acc computation, i.e. a real Accelerate array.
 repackAcc :: forall a . Sug.Arrays a => Sug.Acc a -> [S.AccArray] -> a
 repackAcc dummy simpls = 
-      -- trace ("repackAcc2: ... "++show rep++", given "++show (length simpls)++" arrs:\n"
-      --         ++ unlines(L.map (("   "++) . show) simpls)) $ 
+      maybtrace (" [repackAcc] ... "++show rep++", given "++show (length simpls)++" arrs:\n"
+              ++ unlines(L.map (("   "++) . show) simpls)) $ 
       Sug.toArr converted
   where
    converted :: Sug.ArrRepr a = fst$ cvt rep (reverse simpls)

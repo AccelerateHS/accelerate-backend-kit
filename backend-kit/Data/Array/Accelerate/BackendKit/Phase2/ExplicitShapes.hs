@@ -43,9 +43,6 @@ explicitShapes prog@Prog{progBinds, uniqueCounter } =
     (binds,newCount) =
       runState (runReaderT (doBinds progBinds) prog) uniqueCounter
 
-mkPrj2 :: Int -> Int -> Int -> Exp -> Exp
-mkPrj2 a b c d = error$ "mkPrj2: "++show(a,b,c,d)
-
 doBinds :: [ProgBind ArraySizeEstimate] -> MyM [ProgBind ArraySizeEstimate]
 doBinds [] = return []
 doBinds (ProgBind vo t sz (Left ex) : rest) =
@@ -53,19 +50,24 @@ doBinds (ProgBind vo t sz (Left ex) : rest) =
      rest' <- doBinds rest
      return (ProgBind vo t sz (Left ex') : rest')
 
-doBinds (ProgBind vo t sz@(KnownSize _) (Right ae) : rest) =
-  do ae'   <- doAE ae
+doBinds (ProgBind vo voty sz (Right ae) : rest) = do
      rest' <- doBinds rest
-     return (ProgBind vo t sz (Right ae') : rest')
-
-doBinds (ProgBind vo voty (UnknownSize) (Right ae) : rest) = do
-     (newBinds, szEx, ae') <- handleUnknownSize
-     rest' <- doBinds rest
-     return$ newBinds ++
-             -- Here we inject the new shape binding:      
-             ProgBind (shapeName vo) (mkIndTy vo_ndims) UnknownSize (Left szEx) : 
-             ProgBind vo voty UnknownSize (Right ae') :
-             rest'      
+     Prog{progResults} <- ask     
+     case sz of
+       KnownSize ls -> do
+         ae' <- doAE ae
+         let szEx = mkIndExp ls
+             shapeBnd = if vo `elem` progResults then
+                          [ProgBind (shapeName vo) (mkIndTy vo_ndims) UnknownSize (Left szEx) ]
+                        else []
+         return (ProgBind vo voty sz (Right ae') : shapeBnd ++ rest')
+       UnknownSize -> do 
+         (newBinds, szEx, ae') <- handleUnknownSize
+         return$ newBinds ++
+                 -- Here we inject the new shape binding:      
+                 ProgBind (shapeName vo) (mkIndTy vo_ndims) UnknownSize (Left szEx) : 
+                 ProgBind vo voty sz (Right ae') :
+                 rest'      
   where
     TArray vo_ndims _ = voty
 
@@ -121,7 +123,7 @@ doBinds (ProgBind vo voty (UnknownSize) (Right ae) : rest) = do
                                                 return ([], ex', Generate (EVr$shapeName vo) (Lam1 arg bod'))
         Backpermute ex (Lam1 arg bod) vr  -> do bod' <- doE bod
                                                 ex'  <- doE ex                                                
-                                                return ([], ex', Backpermute (EVr$shapeName vo) (Lam1 arg bod) vr)
+                                                return ([], ex', Backpermute (EVr$shapeName vo) (Lam1 arg bod') vr)
 
         Map      (Lam1 arg bod) vr        -> do bod' <- doE bod
                                                 return ([], getSizeE vr,           Map     (Lam1 arg bod') vr)
@@ -158,11 +160,10 @@ doBinds (ProgBind vo voty (UnknownSize) (Right ae) : rest) = do
                                                                 (Lam1 a3    bod2') w)
         Replicate template ex upV ->
           do gensym   <- lift genUnique
-             prog <- ask
-             let exTy = topLevelExpType prog ex
+             prg <- ask
+             let exTy = topLevelExpType prg ex
                  -- How many entries to be expect to be in 'ex' given the weird encoding:
                  numWithoutTrailing = length template - length (takeWhile (==All) (reverse template))
-                 numFixed = length$ filter (==Fixed) template
                  TArray upDims _ = typeEnv # upV
                  ls = [ case pr of 
                           -- The 'ex' expression will retain slots for the Alls that are ():
@@ -200,7 +201,6 @@ doBinds (ProgBind vo voty (UnknownSize) (Right ae) : rest) = do
         Unit _ -> error$"ExplicitShapes: it should not be possible to find a Unit with Unknown size: "++ show vo
         
     
-
 doE :: Exp -> MyM Exp
 doE ex = do
   prog <- ask
@@ -209,16 +209,16 @@ doE ex = do
     EShape avr  -> return$ mkSizeE prog avr
 
     -- EShapeSize (EShape vr) -> -- We can optimize this in the future if we like.
-    EShapeSize ex ->
-         case topLevelExpType prog ex of
-           TInt      -> doE ex
+    EShapeSize ex1 ->
+         case topLevelExpType prog ex1 of
+           TInt      -> doE ex1
            TTuple [] -> return$ EConst (I 0)
            TTuple ls -> do tmp <- lift genUnique
-                           ex' <- doE ex
+                           ex2 <- doE ex1
                            let ndims = length ls
-                           maybtrace (" TEMPMSG ESHAPESIZE of "++ show ex ++" - we think it has ndims = "++show ndims) $ return() 
+                           maybtrace (" TEMPMSG ESHAPESIZE of "++ show ex1 ++" - we think it has ndims = "++show ndims) $ return() 
                            return$ 
-                             ELet (tmp, TTuple ls, ex') $
+                             ELet (tmp, TTuple ls, ex2) $
                               foldl (\ acc i -> mulI acc (mkPrj i 1 ndims (EVr tmp)))
                                     (EConst (I 1))
                                     (reverse [0..ndims - 1])
@@ -242,7 +242,7 @@ doAE :: AExp -> MyM AExp
 doAE ae =
   case ae of
     -- Reshape is likewise eliminated here:
-    Reshape shE v                     -> return (Vr v)
+    Reshape _shE v                    -> return (Vr v)
     
     -- EVERYTHING BELOW IS BOILERPLATE:
     ------------------------------------------------------------
@@ -284,3 +284,6 @@ mkSizeE prog avr =
   case dec of
     KnownSize ls -> mkIndExp ls
     UnknownSize  -> EVr (shapeName avr)
+
+mkPrj2 :: Int -> Int -> Int -> Exp -> Exp
+mkPrj2 a b c d = error$ "mkPrj2: "++show(a,b,c,d)

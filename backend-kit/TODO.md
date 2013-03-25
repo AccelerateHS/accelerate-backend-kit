@@ -42,3 +42,6 @@ These should go into github issues
    
  * Fix sizeAnalysis to work for the replicates in Nbody.  Is it not
    seeing through "EShape"?  
+
+ * Compile EIndexScalar of known index into Use by just doing the
+   dereference...

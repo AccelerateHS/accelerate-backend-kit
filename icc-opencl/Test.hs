@@ -16,6 +16,7 @@ module Main where
 import qualified Data.Array.Accelerate             as A
 import qualified Data.Array.Accelerate.Interpreter as I
 import           Data.Array.Accelerate.BackendKit.Tests (allProgsMap,p1aa,testCompiler,TestEntry(..),AccProg(AccProg),makeTestEntry)
+import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1, phase2, repackAcc)
 -- import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase1)
 import           Data.Map           as M
 import           Data.List          as L 
@@ -95,8 +96,8 @@ main = do
                              -- threadDelay 1000000
                              return x
 #endif
-                           "Cilk" -> Cilk.rawRunIO CilkParallel name test
-                           "C"    -> Cilk.rawRunIO Sequential   name test
+                           "Cilk" -> Cilk.rawRunIO CilkParallel name (phase2 test)
+                           "C"    -> Cilk.rawRunIO Sequential   name (phase2 test)
                        )
              supportedTests
   let testsRepack = 
