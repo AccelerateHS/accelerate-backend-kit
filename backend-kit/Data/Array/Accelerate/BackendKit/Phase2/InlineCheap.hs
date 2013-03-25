@@ -9,7 +9,7 @@ import Data.Map as M hiding (map)
 import Control.Applicative ((<$>),(<*>))
 import Control.Monad.State.Strict (runState)
 
-import Data.Array.Accelerate.BackendKit.Utils.Helpers (defaultDupThreshold,GensymM,mapMAE)
+import Data.Array.Accelerate.BackendKit.Utils.Helpers (defaultDupThreshold,GensymM,mapMAE, (#))
 import Data.Array.Accelerate.BackendKit.IRs.Metadata  (ArraySizeEstimate(..))
 import Data.Array.Accelerate.BackendKit.Phase2.EstimateCost (Cost(Cost))
 
@@ -31,18 +31,18 @@ inlineCheap prog@Prog{progBinds, progResults, uniqueCounter } =
 
 -- Do copy propagation for any array-level references:
 -- copyProp :: Int -> Int -> Int
-copyProp :: Map Var (ProgBind (a,Cost)) -> Var -> Var
-copyProp env vr = case env M.! vr of 
+copyProp :: Show a => Map Var (ProgBind (a,Cost)) -> Var -> Var
+copyProp env vr = case env # vr of 
                     ProgBind _ _ _ (Right (Vr upV)) -> copyProp env upV
                     _ -> vr
 
 
-doBind :: Map Var (ProgBind (a,Cost)) -> ProgBind (a,Cost) -> GensymM (ProgBind a)
+doBind :: Show a => Map Var (ProgBind (a,Cost)) -> ProgBind (a,Cost) -> GensymM (ProgBind a)
 doBind mp (ProgBind v t (a,_) (Left ex))  = ProgBind v t a . Left  <$> doEx mp ex
 doBind mp (ProgBind v t (a,_) (Right ae)) = ProgBind v t a . Right <$> doAE mp ae
 
 -- Update a usemap with new usages found in an AExp.
-doAE :: Map Var (ProgBind (a,Cost)) -> AExp -> GensymM AExp
+doAE :: Show a => Map Var (ProgBind (a,Cost)) -> AExp -> GensymM AExp
 doAE mp ae = 
   case ae of
     Map _ _           -> err
@@ -59,14 +59,14 @@ doerr :: Out a => a -> t
 doerr e = error$ "InlineCheap: the following should be desugared before this pass is called:\n   "++ show (doc e)
     
 
-doEx :: Map Var (ProgBind (a,Cost)) -> Exp -> GensymM Exp
+doEx :: Show a => Map Var (ProgBind (a,Cost)) -> Exp -> GensymM Exp
 doEx mp ex = 
   case ex of
     -- Where we reference other arrays is where inlining may occur:
     ---------------------------------------------------------------
 
     EIndexScalar avr ex -> do
-      let pb  = mp ! avr
+      let pb  = mp # avr
       ex' <- doE ex 
       if getCost pb <= defaultDupThreshold then do
          mb <- inline pb ex'

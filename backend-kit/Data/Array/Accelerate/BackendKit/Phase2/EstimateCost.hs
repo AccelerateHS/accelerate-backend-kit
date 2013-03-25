@@ -11,7 +11,7 @@ import Data.Array.Accelerate.BackendKit.IRs.Metadata (Uses(..), ArraySizeEstimat
 import Text.PrettyPrint.GenericPretty (Out, Generic)
 
 data Cost = Cost Int
-  deriving Generic
+  deriving (Generic, Show)
 instance Out Cost
 
 estimateCost :: Prog (ArraySizeEstimate) -> Prog (ArraySizeEstimate,Cost)
