@@ -4,8 +4,18 @@
 {-# LANGUAGE TypeFamilies, CPP #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
--- | The entrypoint to an Accelerate backend based on generating sequential C code.
-module Data.Array.Accelerate.C (run, CBackend, mkCBackend) where
+#ifndef MODNAME
+#define MODNAME Data.Array.Accelerate.C
+#endif
+#ifndef BKEND
+#define BKEND CBackend
+#endif
+#ifndef PARMODE
+#define PARMODE Sequential
+#endif
+
+-- | An entrypoint to an Accelerate backend based on generating C code.
+module MODNAME (run, BKEND, mkCBackend) where
 
 import qualified Data.ByteString.Lazy as B
 import           System.IO.Unsafe (unsafePerformIO)
@@ -28,14 +38,14 @@ import           Data.Array.Accelerate.BackendKit.CompilerPipeline
 -- Standard boilerplate for lifting a `Backend` instance into a regular `run` function.
 run :: forall a . (Sug.Arrays a) => Acc a -> a
 run acc = unsafePerformIO $ do
-           remt <- (runRaw CBackend (phase0 acc) Nothing)
-           copyToHost CBackend remt
+           remt <- (runRaw BKEND (phase0 acc) Nothing)
+           copyToHost BKEND remt
 #else 
 -- Alternatively we can lift up from the `SimpleBackend` interface:
 run :: forall a . (Sug.Arrays a) => Acc a -> a
 run acc = unsafePerformIO $ do
-           remts <- (simpleRunRaw CBackend (phase1$ phase0 acc) Nothing)
-           arrs  <- mapM (simpleCopyToHost CBackend) remts
+           remts <- (simpleRunRaw BKEND (phase1$ phase0 acc) Nothing)
+           arrs  <- mapM (simpleCopyToHost BKEND) remts
            return (repackAcc (undefined :: Acc a) arrs)
 #endif
 
@@ -44,12 +54,12 @@ run acc = unsafePerformIO $ do
 -- The main purpose of this file is to define a new Backend type
 
 -- | This is an abstract type representing the internal state of the backend.
-data CBackend = CBackend
+data BKEND = BKEND
   deriving (Show)
 
 -- Nothing to do here but there could be initialization work in the future.
-mkCBackend :: IO CBackend
-mkCBackend = return CBackend
+mkCBackend :: IO BKEND
+mkCBackend = return BKEND
 -- Likewise there could be configuration parameters:
 -- data CConfig = CConfig {}
 -- defaultCConfig = ...
@@ -66,17 +76,17 @@ data CBlob a = CBlob
 
 -- | C data is not really very "remote", it just lives on the C heap.
 -- newtype CRemote a = ForeignPtr a 
-instance Backend CBackend where
-  type Remote CBackend a = CRemote a
-  type Blob CBackend a = CBlob a 
+instance Backend BKEND where
+  type Remote BKEND a = CRemote a
+  type Blob BKEND a = CBlob a 
 
-  compile _ path acc = error "CBackend: separate compile stage not implemented."
+  compile _ path acc = error "C/Cilk backend: separate compile stage not implemented."
 --    return (InMemory path (return$ B.empty))
 
-  compileFun1 = error "CBackend: compileFun not implemented yet."
+  compileFun1 = error "C/Cilk backend: compileFun not implemented yet."
 
   runRaw _ acc _blob =
-    do arrs <- J.rawRunIO Sequential "" (phase2$ phase1 acc)
+    do arrs <- J.rawRunIO PARMODE "" (phase2$ phase1 acc)
        return$ CRemote arrs
 
 --  runFun = error "CBackend: runFun not implemented yet."
@@ -93,40 +103,40 @@ instance Backend CBackend where
 --  compilesToDisk _ = True
 
 -- For now copying just means repacking
-hostCopy :: (Sug.Arrays a) => CBackend -> CRemote a -> IO a
+hostCopy :: (Sug.Arrays a) => BKEND -> CRemote a -> IO a
 hostCopy _ (CRemote arrays) =
   return$
     repackAcc (undefined :: Acc a) arrays
 
 
-deviceCopy :: forall a . (Sug.Arrays a) => a -> IO (Remote CBackend a)
+deviceCopy :: forall a . (Sug.Arrays a) => a -> IO (Remote BKEND a)
 deviceCopy acc = do
   let repr :: Sug.ArrRepr a
       repr = Sug.fromArr acc
   -- FIXME: Seems like unpackArray can't really handle an array of tuples.
   let (_,arr,_::Phantom a) = unpackArray repr
-      res :: Remote CBackend a
+      res :: Remote BKEND a
       res = CRemote [arr]
   return res
 
-useRem :: forall a . (Sug.Arrays a) => Remote CBackend a -> IO (AST.Acc a)
+useRem :: forall a . (Sug.Arrays a) => Remote BKEND a -> IO (AST.Acc a)
 useRem rem@(CRemote arrays) =
 --  return (AST.Use$ repackAcc (undefined :: Acc a) arrays)
-  error "useRemote unfinished for CBackend instance"
+  error "useRemote unfinished for C/Cilk backend instance"
 
 
 --------------------------------------------------------------------------------
 
 -- | An instance for the less-typed AST backend interface.
-instance SimpleBackend CBackend where
-  type SimpleRemote CBackend = CRemote SA.AccArray
-  type SimpleBlob CBackend = CBlob ()
+instance SimpleBackend BKEND where
+  type SimpleRemote BKEND = CRemote SA.AccArray
+  type SimpleBlob BKEND = CBlob ()
   
   -- simpleCompile
   -- simpleCompileFun1
 
   simpleRunRaw _ prog _blob =
-    do arrs <- J.rawRunIO Sequential "" (phase2 prog)
+    do arrs <- J.rawRunIO PARMODE "" (phase2 prog)
        return$ [ CRemote [arr] | arr <- arrs ]
 
   -- simpleRunRawFun1
