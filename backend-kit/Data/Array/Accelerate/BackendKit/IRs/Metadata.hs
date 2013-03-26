@@ -96,3 +96,4 @@ stampMetadata mp deflt prog@Prog{progBinds} =
                  Just x  -> x
                  Nothing -> deflt
       in ProgBind v t (d,dec) r
+         

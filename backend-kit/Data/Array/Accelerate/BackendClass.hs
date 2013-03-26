@@ -4,7 +4,10 @@
 
 module Data.Array.Accelerate.BackendClass (
 
-  Backend(..), PortableBackend(..), CLibraryBackend(..)
+  Backend(..), SimpleBackend(..)
+
+  -- Not ready for primetime yet:
+  -- PortableBackend(..), CLibraryBackend(..)
 
 ) where
 
@@ -144,11 +147,15 @@ class Backend b where
   --
   forceToDisk :: Blob b r -> IO (Blob b r)
 
+
+
 class SimpleBackend b where
 
   -- | The type of a remote handle on device memory. This is class-associated
   -- because different backends may represent device pointers differently.
-  --
+  -- 
+  -- For `SimpleBackend`, SimpleRemote represents ONE logical array.  It cannot
+  -- represent a tuple of arrays (of tuples).
   type SimpleRemote b
 
   -- | A `Blob` as a thing which /may/ help speed up or skip future
@@ -194,15 +201,16 @@ class SimpleBackend b where
   simpleRunRaw :: b
                -> SACC.Prog ()
                -> Maybe (SimpleBlob b)
-               -> IO (SimpleRemote b)
+               -> IO [SimpleRemote b]
 
-  -- | Execute a function of one argument and leave the results on the device.
-  --
-  simpleRunRawFun1 :: b
-                   -> SACC.Fun1 (SACC.Prog ())
+  -- | Execute a function that expects N arrays, repeatedly.  Each time the compiled
+  --   function is called, it takes inputs that are already on the device, and
+  --   returns leaves the results on the device as well.
+  simpleRunRawFun1 :: b -> Int 
+                   -> ([SACC.AVar] -> SACC.Prog ())
                    -> Maybe (SimpleBlob b)
-                   -> SimpleRemote b
-                   -> IO (SimpleRemote b)
+                   -> [SimpleRemote b]
+                   -> IO [SimpleRemote b]
 
   -------------------------- Copying and Waiting  -------------------------------
 
@@ -212,7 +220,7 @@ class SimpleBackend b where
   --
   -- TODO: Consider adding a separate malloc and overwriting copy.
   --
-  simpleCopyToHost :: b -> SimpleRemote b -> IO (SACC.AccArray)
+  simpleCopyToHost :: b -> SimpleRemote b -> IO SACC.AccArray
 
   -- | If the device uses a separate memory space, allocate memory in the remote
   -- space and transfer the contents of the array to it.
@@ -231,9 +239,10 @@ class SimpleBackend b where
   --
   simpleWaitRemote :: SimpleRemote b -> IO ()
 
-  -- | Inject a remote array into an AST node
+  -- | Inject a remote array into an AST node so that it can be used in a larger
+  -- program.
   --
-  simpleUseRemote :: b -> SimpleRemote b -> IO (SACC.ProgBind ())
+  simpleUseRemote :: b -> SimpleRemote b -> IO SACC.AExp
 
   -------------------------- Configuration Flags --------------------------------
 
@@ -279,6 +288,9 @@ flushToDisk (InMemory path gen) = do
 --}
 
 ----------------------------------------------------------------------------------------------------
+
+-- Brainstorming other interfaces:
+
 
 -- | A portable backend is one that can compile programs to portable binaries,
 -- which can be loaded and run without reference to the original `Acc` code.

@@ -60,7 +60,7 @@ instance Backend CBackend where
   compile _ path acc = error "CBackend: separate compile stage not implemented."
 --    return (InMemory path (return$ B.empty))
 
---  compileFun = error "CBackend: compileFun not implemented yet."
+  compileFun1 = error "CBackend: compileFun not implemented yet."
 
   runRaw _ acc _blob =
     do arrs <- J.rawRunIO Sequential "" (phase2$ phase1 acc)
@@ -85,3 +85,22 @@ hostCopy :: (Sug.Arrays a) => CBackend -> CRemote a -> IO a
 hostCopy _ (CRemote arrays) =
   return$
     repackAcc (undefined :: Acc a) arrays
+
+
+-- | An instance for the less-typed AST backend interface.
+instance SimpleBackend CBackend where
+  type SimpleRemote CBackend = CRemote SA.AccArray
+  type SimpleBlob CBackend = CBlob ()
+  
+  -- simpleCompile
+  -- simpleCompileFun1
+
+  simpleRunRaw _ prog _blob =
+    do arrs <- J.rawRunIO Sequential "" (phase2 prog)
+       return$ [ CRemote [arr] | arr <- arrs ]
+
+  -- simpleRunRawFun1
+
+  -- These do EFFECTIVELY NOTHING for now:
+  simpleCopyToHost _b (CRemote [rem]) = return rem
+  simpleCopyToDevice _b arr = return (CRemote [arr])
