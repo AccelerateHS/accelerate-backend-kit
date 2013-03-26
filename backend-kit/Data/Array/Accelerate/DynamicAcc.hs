@@ -18,7 +18,7 @@ module Data.Array.Accelerate.DynamicAcc
          --   programs.
          convertExp, convertClosedExp,
 
-         t0, t1  -- TEMP
+         t0, t1, t2  -- TEMP
        )
        where
 
@@ -88,8 +88,6 @@ data EltTuple a where
 data SealedEltTuple where
   SealedEltTuple :: EltTuple a -> SealedEltTuple
 
-data SealedFun -- ??
-
 -- | This is a bottle in which to store a type that satisfyies the Array class.
 data SealedArrayType where
   -- Do we care about the ArrayElt class here?
@@ -101,6 +99,11 @@ data ArrTuple a where
   SingleTupleA :: Arrays a             => T.ScalarType a           -> ArrTuple a
   PairTupleA   :: (Arrays a, Arrays b) => ArrTuple a -> ArrTuple b -> ArrTuple (a, b)
 
+-- TODO: CAN WE PHASE OUT SealedArrayType in favor of SealedArrTuple?
+data SealedArrTuple where
+  SealedArrTuple :: ArrTuple a -> SealedArrTuple
+
+-- | Accelerate shape types, sealed up.
 data SealedShapeType where
   -- Do we care about the ArrayElt class here?
   SealedShapeType :: Shape sh => Phantom sh -> SealedShapeType
@@ -127,14 +130,21 @@ shapeTypeD n =
     SealedShapeType (Phantom x :: Phantom sh) ->
       SealedShapeType (Phantom (x :. (unused::Int)))
 
+-- | Convert the runtime, monomorphic type representation into a sealed container
+-- with the true Haskell type inside.
 scalarTypeD :: Type -> SealedEltTuple
 scalarTypeD ty =
   case ty of
---    TArray ndim elt -> arrayTypeD
     TInt    -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Int)
-    
+    TInt8   -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Int8)
+    TInt16  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Int16)
+    TInt32  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Int32)
+    TInt64  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Int64)
+
     TWord   -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word)
     TArray {} -> error$"scalarTypeD: expected scalar type, got "++show ty
+
+data SealedFun -- ??
 
 --------------------------------------------------------------------------------
 -- AST Construction
@@ -146,12 +156,14 @@ unitD elt exp =
   case elt of
     SealedEltTuple (t :: EltTuple et) ->
       case t of
-        UnitTuple -> toDyn$ unit$ constant ()
+        UnitTuple -> sealAcc$ unit$ constant ()
         SingleTuple (_ :: T.ScalarType s) ->
           sealAcc$ unit (downcastE exp :: Exp s)
         PairTuple (_ :: EltTuple l) (_ :: EltTuple r) ->
           sealAcc$ unit (downcastE exp :: Exp (l,r))
 
+-- | Dynamically-typed variant of `Data.Array.Accelerate.use`.  However, this version
+-- is less powerful, it only takes a single, logical array, not a tuple of arrays.
 useD :: S.AccArray -> SealedAcc
 useD arr =
   case sty of
@@ -182,6 +194,8 @@ constantD c =
     W32 i -> sealExp$ A.constant i
     W64 i -> sealExp$ A.constant i
 
+    B   b -> sealExp$ A.constant b
+--    _ -> error$"constantD: finishme: "++show c
 
 --------------------------------------------------------------------------------
 -- TODO: These conversion functions could move to their own module:
@@ -192,11 +206,33 @@ constantD c =
 --   Requires a type environment for the (open) `SimpleAcc` expression.
 convertExp :: M.Map Var Type -> S.Exp -> SealedExp
 convertExp env ex =
+  let cE = convertExp env in 
   case ex of
     S.EConst c -> constantD c
     -- This is tricky, because it needs to become a deBruin index ultimately...
     -- Or we need to stay at the level of HOAS...
 --     S.EVr v    -> env#v
+    S.ECond e1 e2 e3 ->
+      let d1 = cE e1
+          d2 = cE e2
+          d3 = cE e3
+          ty = S.recoverExpType env e2
+      in case scalarTypeD ty of
+          SealedEltTuple (t :: EltTuple elt) ->
+           -- #define a macro for this?
+           case t of
+             UnitTuple ->
+               sealExp(((downcastE d1::Exp Bool) A.?
+                        (downcastE d2::Exp elt,
+                         downcastE d3::Exp elt))::Exp elt)
+             SingleTuple _ ->
+               sealExp(((downcastE d1::Exp Bool) A.?
+                        (downcastE d2::Exp elt,
+                         downcastE d3::Exp elt))::Exp elt)
+             PairTuple _ _ ->
+               sealExp(((downcastE d1::Exp Bool) A.?
+                        (downcastE d2::Exp elt,
+                         downcastE d3::Exp elt))::Exp elt)
 
 -- | Convert a closed `SimpleAcc` expression (no free vars) into a fully-typed (but
 -- sealed) Accelerate one.
@@ -255,8 +291,13 @@ t0 = convertClosedAExp $
 t0b :: Acc (Array DIM2 (Int))
 t0b = downcastA t0
 
+t1 = -- convertClosedExp
+     convertExp M.empty
+     (S.ECond (S.EConst (B True)) (S.EConst (I 33)) (S.EConst (I 34)))
+t1b :: Exp Int
+t1b = downcastE t1
 
-t1 = simpleProg
+t2 = simpleProg
  where
    TestEntry {simpleProg} = allProgsMap # "p1a"
      
