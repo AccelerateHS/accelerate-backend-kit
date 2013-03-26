@@ -1,4 +1,5 @@
 {-# LANGUAGE RankNTypes, ScopedTypeVariables, GADTs #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 -- | A library for the runtime construction of fully typed Accelerate programs.
 
@@ -15,7 +16,9 @@ module Data.Array.Accelerate.DynamicAcc
 
          -- * Functions to convert `SimpleAcc` programs into fully-typed Accelerate
          --   programs.
-         convertExp, convertClosedExp
+         convertExp, convertClosedExp,
+
+         t0, t1  -- TEMP
        )
        where
 
@@ -23,10 +26,12 @@ import           Data.Array.Accelerate as A
 import qualified Data.Array.Accelerate.Type as T
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
-                 (Type(..), Const(..), Var)
-
+                 (Type(..), Const(..), Var, Prog(..))
+import           Data.Array.Accelerate.BackendKit.Tests (allProgsMap, p1a, TestEntry(..))
+import           Data.Array.Accelerate.BackendKit.SimpleArray (payloadsFromList1)
 -- import Data.Array.Accelerate.Interpreter as I
--- import qualified Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone as C
+-- import           Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone (repackAcc)
+import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc)
 -- import qualified Data.Array.Accelerate.Array.Sugar as Sug
 -- import qualified Data.Array.Accelerate.Array.Data  as Dat
 
@@ -41,8 +46,11 @@ import Prelude as P
 -- import Control.Monad (when)
 
 --------------------------------------------------------------------------------
+-- AST Representations
+--------------------------------------------------------------------------------
 
--- TODO: make these pairs that keep around some printed rep for debugging purposes:
+-- TODO: make these pairs that keep around some printed rep for debugging purposes in
+-- the case of a downcast error.
 type SealedExp = Dynamic
 type SealedAcc = Dynamic
 
@@ -66,6 +74,10 @@ downcastA d = case fromDynamic d of
                   error$"Attempt to unpack SealedAcc with type "++show d
                      ++ ", expected type "++ show (toDyn (unused::a))
 
+--------------------------------------------------------------------------------
+-- Type representations
+--------------------------------------------------------------------------------                
+
 -- | We enhance "Data.Array.Accelerate.Type.TupleType" with Elt constraints.
 data EltTuple a where
   UnitTuple   ::                                               EltTuple ()
@@ -83,43 +95,18 @@ data SealedArrayType where
   -- Do we care about the ArrayElt class here?
   SealedArrayType :: Arrays a => Phantom a -> SealedArrayType
 
+-- | Tuples of arrays rather than scalar `Elt`s.
+data ArrTuple a where
+  UnitTupleA   ::                                                     ArrTuple ()
+  SingleTupleA :: Arrays a             => T.ScalarType a           -> ArrTuple a
+  PairTupleA   :: (Arrays a, Arrays b) => ArrTuple a -> ArrTuple b -> ArrTuple (a, b)
+
 data SealedShapeType where
   -- Do we care about the ArrayElt class here?
   SealedShapeType :: Shape sh => Phantom sh -> SealedShapeType
 
 -- | Just a simple signal that the value is not used, only the type.
-data Phantom a = Phantom a
-
---------------------------------------------------------------------------------
-
--- | Dynamically typed variant of `Data.Array.Accelerate.unit`.
-unitD :: SealedEltTuple -> SealedExp -> SealedAcc
-unitD elt exp =
-  case elt of
-    SealedEltTuple (t :: EltTuple et) ->
-      case t of
-        UnitTuple -> toDyn$ unit$ constant ()
-        SingleTuple (st :: T.ScalarType s) ->
-          toDyn$ unit (downcastE exp :: Exp s)
-        PairTuple (_ :: EltTuple l) (_ :: EltTuple r) ->
-          toDyn$ unit (downcastE exp :: Exp (l,r))
-
-useD :: S.AccArray -> SealedAcc
-useD = undefined
-  -- We have that repackAcc function for this perhaps... IF we know what type we want
-  -- to go to.  But at this point we don't really.       
-       
-
--- TODO: How to handle functions?
-mapD :: SealedFun -> SealedAcc -> SealedAcc 
-mapD = undefined
-
--- | Convert a `SimpleAcc` constant into a fully-typed (but sealed) Accelerate one.
-constantD :: Const -> SealedExp
-constantD c =
-  case c of
-    I  i -> sealExp$ A.constant i
-    I8 i -> sealExp$ A.constant i
+data Phantom a = Phantom a deriving Show
 
 -- | Dependent types!  Dynamically construct a type in a bottle.  It can be opened up
 -- and used as a goal type when repacking array data or returning an Acc computation.
@@ -130,19 +117,75 @@ arrayTypeD (TArray ndim elty) =
      case elty of
        TInt   -> SealedArrayType (Phantom(unused:: Array sh Int))
        TFloat -> SealedArrayType (Phantom(unused:: Array sh Float))
+arrayTypeD oth = error$"arrayTypeD: expected array type, got "++show oth
 
--- | Construct a Haskell type from an Int!
+-- | Construct a Haskell type from an Int!  Why not?
 shapeTypeD :: Int -> SealedShapeType
 shapeTypeD 0 = SealedShapeType (Phantom Z)
 shapeTypeD n =
   case shapeTypeD (n-1) of
-    SealedShapeType (x :: Phantom sh) ->
-      undefined
-      -- SealedShapeType (Phantom (x :. ()))
+    SealedShapeType (Phantom x :: Phantom sh) ->
+      SealedShapeType (Phantom (x :. (unused::Int)))
+
+scalarTypeD :: Type -> SealedEltTuple
+scalarTypeD ty =
+  case ty of
+--    TArray ndim elt -> arrayTypeD
+    TInt    -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Int)
+    
+    TWord   -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word)
+    TArray {} -> error$"scalarTypeD: expected scalar type, got "++show ty
+
+--------------------------------------------------------------------------------
+-- AST Construction
+--------------------------------------------------------------------------------
+
+-- | Dynamically typed variant of `Data.Array.Accelerate.unit`.
+unitD :: SealedEltTuple -> SealedExp -> SealedAcc
+unitD elt exp =
+  case elt of
+    SealedEltTuple (t :: EltTuple et) ->
+      case t of
+        UnitTuple -> toDyn$ unit$ constant ()
+        SingleTuple (_ :: T.ScalarType s) ->
+          sealAcc$ unit (downcastE exp :: Exp s)
+        PairTuple (_ :: EltTuple l) (_ :: EltTuple r) ->
+          sealAcc$ unit (downcastE exp :: Exp (l,r))
+
+useD :: S.AccArray -> SealedAcc
+useD arr =
+  case sty of
+    SealedArrayType (Phantom (_ :: aT)) ->
+      sealAcc$ A.use$
+      repackAcc (unused::Acc aT) [arr]
+ where
+   dty = S.accArrayToType arr
+   sty = arrayTypeD dty
+
+
+-- TODO: How to handle functions?
+mapD :: SealedFun -> SealedAcc -> SealedAcc 
+mapD = error "mapD"
+
+-- | Convert a `SimpleAcc` constant into a fully-typed (but sealed) Accelerate one.
+constantD :: Const -> SealedExp
+constantD c =
+  case c of
+    I   i -> sealExp$ A.constant i
+    I8  i -> sealExp$ A.constant i
+    I16 i -> sealExp$ A.constant i    
+    I32 i -> sealExp$ A.constant i
+    I64 i -> sealExp$ A.constant i
+    W   i -> sealExp$ A.constant i
+    W8  i -> sealExp$ A.constant i
+    W16 i -> sealExp$ A.constant i    
+    W32 i -> sealExp$ A.constant i
+    W64 i -> sealExp$ A.constant i
 
 
 --------------------------------------------------------------------------------
 -- TODO: These conversion functions could move to their own module:
+--------------------------------------------------------------------------------
 
 -- convertExp :: S.Exp -> (forall a . Elt a => Exp a)
 -- | Convert an entire `SimpleAcc` expression into a fully-typed (but sealed) Accelerate one.
@@ -162,9 +205,38 @@ convertClosedExp ex =
   case ex of
     S.EVr v -> error$"convertClosedExp: free variable found: "++show v
 
+convertProg :: S.Prog a -> SealedAcc
+convertProg S.Prog{progBinds,progResults} =
+  error "convertProg"
+
+convertClosedAExp :: S.AExp -> SealedAcc
+convertClosedAExp ae =
+  case ae of
+    S.Use arr -> useD arr
+
+--------------------------------------------------------------------------------
+-- Instances
+--------------------------------------------------------------------------------    
+
+instance Show (EltTuple a) where
+  show UnitTuple = "()"
+  show (SingleTuple st) = show st
+  show (PairTuple a b)  = "("++show a++","++show b++")"
+
+instance Show SealedEltTuple where
+  show (SealedEltTuple x) = "Sealed:"++show x
+
+instance Show SealedShapeType where
+  show (SealedShapeType (Phantom (_ :: sh))) =
+    "Sealed:"++show (toDyn (unused::sh))
+    
+instance Show SealedArrayType where
+  show (SealedArrayType (Phantom (_ :: sh))) =
+    "Sealed:"++show (toDyn (unused::sh))
 
 --------------------------------------------------------------------------------
 -- Misc
+--------------------------------------------------------------------------------  
 
 unused :: a
 unused = error "This dummy value should not be used"
@@ -175,3 +247,16 @@ unused = error "This dummy value should not be used"
 mp # k = case M.lookup k mp of
           Nothing -> error$"Map.lookup: key "++show k++" is not in map:\n  "++show mp
           Just x  -> x
+
+-- Small tests:
+t0 :: SealedAcc
+t0 = convertClosedAExp $
+     S.Use (S.AccArray [5,2] (payloadsFromList1$ P.map I [1..10]))
+t0b :: Acc (Array DIM2 (Int))
+t0b = downcastA t0
+
+
+t1 = simpleProg
+ where
+   TestEntry {simpleProg} = allProgsMap # "p1a"
+     

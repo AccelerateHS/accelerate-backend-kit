@@ -38,7 +38,8 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
      
      -- * Type recovery and type checking:
      constToType, recoverExpType, topLevelExpType,
-     typeByteSize, typecheckProg, 
+     typeByteSize, typecheckProg,
+     accArrayToType, payloadToType
     )
  where
 
@@ -471,7 +472,31 @@ data ArrayPayload =
 -- It is subject to change in the future depending on what internal
 -- representation the Accelerate front-end uses.
 type RawData e = UArray Int e
-   
+
+-- This will only report a FLAT tuple structure.  It does not keep additional type
+-- information.
+accArrayToType :: AccArray -> Type
+accArrayToType (AccArray ls payls) =
+  TArray (length ls) (mkTTuple (L.map payloadToType payls))
+
+payloadToType :: ArrayPayload -> Type
+payloadToType p =  
+  case p of 
+    ArrayPayloadInt    arr -> TInt
+    ArrayPayloadInt8   arr -> TInt8
+    ArrayPayloadInt16  arr -> TInt16
+    ArrayPayloadInt32  arr -> TInt32
+    ArrayPayloadInt64  arr -> TInt64
+    ArrayPayloadWord   arr -> TWord
+    ArrayPayloadWord8  arr -> TWord8
+    ArrayPayloadWord16 arr -> TWord16
+    ArrayPayloadWord32 arr -> TWord32
+    ArrayPayloadWord64 arr -> TWord64
+    ArrayPayloadFloat  arr -> TFloat
+    ArrayPayloadDouble arr -> TDouble
+    ArrayPayloadChar   arr -> TChar
+    ArrayPayloadBool   arr -> TBool
+
 -------------------------------------------------------------------------------
 -- Shape representation:
 --------------------------------------------------------------------------------

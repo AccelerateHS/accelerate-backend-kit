@@ -62,7 +62,9 @@ Library
                      Data.Array.Accelerate.BackendKit.Phase3.DesugarFoldScan
                      Data.Array.Accelerate.BackendKit.Phase3.ToGPUIR
 
+                     -- These will move to another package:
                      Data.Array.Accelerate.BackendClass
+                     Data.Array.Accelerate.DynamicAcc                 
 
                      -- Temporarily exposed:
                      Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone
