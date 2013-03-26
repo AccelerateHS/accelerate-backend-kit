@@ -1,7 +1,7 @@
 
 -- DUPLICATED CODE (from Cilk.hs) -- TODO: GENERATE AUTOMATICALLY.
 
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeFamilies, CPP #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | The entrypoint to an Accelerate backend based on generating sequential C code.
@@ -21,12 +21,23 @@ import           Data.Array.Accelerate.BackendClass
 
 --------------------------------------------------------------------------------
 
+#if 0 
 -- Standard boilerplate for lifting a `Backend` instance into a regular `run` function.
 run :: forall a . (Sug.Arrays a) => Acc a -> a
 run acc = unsafePerformIO $ do
            remt <- (runRaw CBackend (phase0 acc) Nothing)
            copyToHost CBackend remt
-          
+#else 
+-- Alternatively we can lift up from the `SimpleBackend` interface:
+run :: forall a . (Sug.Arrays a) => Acc a -> a
+run acc = unsafePerformIO $ do
+           remts <- (simpleRunRaw CBackend (phase1$ phase0 acc) Nothing)
+           arrs  <- mapM (simpleCopyToHost CBackend) remts
+           return (repackAcc (undefined :: Acc a) arrs)
+#endif
+
+
+
 ----------------------------------------------------------------------------------------------------
 -- The main purpose of this file is to define a new Backend type
 
