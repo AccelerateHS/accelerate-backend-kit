@@ -141,11 +141,11 @@ class Backend b where
 
   -- | When asked to produced Blobs, will this backend always go to disk?
   --
-  compilesToDisk :: b -> Bool
+--  compilesToDisk :: b -> Bool
 
   -- | Convenience function. If a blob is loitering in memory, force it to disk
   --
-  forceToDisk :: Blob b r -> IO (Blob b r)
+--  forceToDisk :: Blob b r -> IO (Blob b r)
 
 
 
@@ -254,11 +254,11 @@ class SimpleBackend b where
 
   -- | When asked to produced Blobs, will this backend always go to disk?
   --
-  simpleCompilesToDisk :: b -> Bool
+--  simpleCompilesToDisk :: b -> Bool
 
   -- | Convenience function. If a blob is loitering in memory, force it to disk
   --
-  simpleForceToDisk :: SimpleBlob b -> IO (SimpleBlob b)
+--  simpleForceToDisk :: SimpleBlob b -> IO (SimpleBlob b)
 
 
 {--

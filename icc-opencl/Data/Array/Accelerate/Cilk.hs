@@ -79,7 +79,7 @@ instance Backend CilkBackend where
   useRemote = error "CilkBackend: useRemote can't work until the Accelerate AST is overhauled."
   
   separateMemorySpace _ = False
-  compilesToDisk _ = True
+--  compilesToDisk _ = True
 
 -- For now copying just means repacking
 hostCopy :: forall a . Sug.Arrays a => CilkBackend -> CilkRemote a -> IO a

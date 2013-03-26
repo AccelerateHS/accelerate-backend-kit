@@ -11,13 +11,16 @@ import qualified Data.ByteString.Lazy as B
 import           System.IO.Unsafe (unsafePerformIO)
 
 import           Data.Array.Accelerate (Acc)
+import qualified Data.Array.Accelerate.AST as AST
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import qualified Data.Array.Accelerate.Cilk.JITRuntime as J
 import           Data.Array.Accelerate.Shared.EmitC (ParMode(..))
 
+import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc   as S
 import qualified Data.Array.Accelerate.BackendKit.SimpleArray     as SA
-import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1, phase2, repackAcc)
-import           Data.Array.Accelerate.BackendClass 
+import           Data.Array.Accelerate.BackendClass
+import           Data.Array.Accelerate.BackendKit.CompilerPipeline
+                  (phase0, phase1, phase2, repackAcc, unpackArray, Phantom(..))
 
 --------------------------------------------------------------------------------
 
@@ -35,7 +38,6 @@ run acc = unsafePerformIO $ do
            arrs  <- mapM (simpleCopyToHost CBackend) remts
            return (repackAcc (undefined :: Acc a) arrs)
 #endif
-
 
 
 ----------------------------------------------------------------------------------------------------
@@ -80,16 +82,15 @@ instance Backend CBackend where
 --  runFun = error "CBackend: runFun not implemented yet."
 
   copyToHost = hostCopy
+  copyToDevice _b accA = deviceCopy accA
+  copyToPeer _ x = return x
 
   -- No waiting to be done!
   waitRemote _rem = return ()
-  
-  copyToDevice _ a = error "CBackend: copyToDevice can't work until the Accelerate AST is overhauled."
-    
-  useRemote = error "CBackend: useRemote can't work until the Accelerate AST is overhauled."
+  useRemote _ rem = useRem rem
   
   separateMemorySpace _ = False
-  compilesToDisk _ = True
+--  compilesToDisk _ = True
 
 -- For now copying just means repacking
 hostCopy :: (Sug.Arrays a) => CBackend -> CRemote a -> IO a
@@ -97,6 +98,24 @@ hostCopy _ (CRemote arrays) =
   return$
     repackAcc (undefined :: Acc a) arrays
 
+
+deviceCopy :: forall a . (Sug.Arrays a) => a -> IO (Remote CBackend a)
+deviceCopy acc = do
+  let repr :: Sug.ArrRepr a
+      repr = Sug.fromArr acc
+  -- FIXME: Seems like unpackArray can't really handle an array of tuples.
+  let (_,arr,_::Phantom a) = unpackArray repr
+      res :: Remote CBackend a
+      res = CRemote [arr]
+  return res
+
+useRem :: forall a . (Sug.Arrays a) => Remote CBackend a -> IO (AST.Acc a)
+useRem rem@(CRemote arrays) =
+--  return (AST.Use$ repackAcc (undefined :: Acc a) arrays)
+  error "useRemote unfinished for CBackend instance"
+
+
+--------------------------------------------------------------------------------
 
 -- | An instance for the less-typed AST backend interface.
 instance SimpleBackend CBackend where
@@ -113,5 +132,11 @@ instance SimpleBackend CBackend where
   -- simpleRunRawFun1
 
   -- These do EFFECTIVELY NOTHING for now:
-  simpleCopyToHost _b (CRemote [rem]) = return rem
+  simpleCopyToHost _b (CRemote [arr]) = return arr
   simpleCopyToDevice _b arr = return (CRemote [arr])
+  simpleCopyToPeer _ x = return x
+
+  simpleUseRemote _ (CRemote [arr]) = return (S.Use arr)
+  simpleWaitRemote _ = return () -- already copied!
+  simpleSeparateMemorySpace _ = False
+
