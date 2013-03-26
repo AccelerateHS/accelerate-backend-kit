@@ -55,19 +55,21 @@ class Backend b where
   -- blob that can be executed.  Takes a /suggested/ FilePath for where to put
   -- the blob IF it must be written to disk.
   --
-  simpleCompile :: b
-                -> FilePath
-                -> SACC.Prog ()
-                -> IO (SimpleBlob b)
+  compile :: Arrays a
+          => b
+          -> FilePath
+          -> AST.Acc a
+          -> IO (Blob b a)
 
   -- | Similar to `compile` but for functions Once compiled, the functions can
   -- be invoked repeatedly on the device side without any additional work on the
   -- host.
   --
-  simpleCompileFun1 :: b
-                    -> FilePath
-                    -> SACC.Afun (x -> y)
-                    -> IO (Blob b (x -> y))
+  compileFun1 :: (Arrays x, Arrays y)
+              => b
+              -> FilePath
+              -> AST.Afun (x -> y)
+              -> IO (Blob b (x -> y))
 
   -- | Run an already-optimized Accelerate program (`AST.Acc`) and leave the
   -- results on the accelerator device.
@@ -79,8 +81,9 @@ class Backend b where
   -- Optionally, a previously compiled blob may be provided, which /may/ be able
   -- to avoid compilation, but this is backend-dependent.
   --
-  simpleRunRaw :: b
-               -> AST.Acc a
+  runRaw :: (Arrays a)
+         => b
+         -> AST.Acc a
          -> Maybe (Blob b a)
          -> IO (Remote b a)
 
@@ -222,7 +225,7 @@ class SimpleBackend b where
   --
   simpleCopyToPeer :: b                       -- ^ destination context
                    -> SimpleRemote b          -- ^ the source array data to copy
-                   -> IO (Remote b)
+                   -> IO (SimpleRemote b)
 
   -- | Wait until the result is computed, but do not copy it back.
   --
