@@ -8,12 +8,17 @@ module Data.Array.Accelerate.BackendKit.IRs.Metadata
        (
          -- * Metadata types used to annotate ASTs during compilation.
          ArraySizeEstimate(..), Uses(..), FreeVars(..),
-         Stride(..), SubBinds(..), OpInputs(..)
+         Stride(..), SubBinds(..), OpInputs(..),
+
+         -- * Convenience function for saving metadata and restoring it later.
+         liftMetadata, stampMetadata
          )
        where
 
-import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Var, TrivialExp)
+import Data.Map as M
+import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S 
 import Text.PrettyPrint.GenericPretty (Out, Generic)
+import Prelude as P
 
 ----------------------------------------------------------------------------------------------------
 -- Metadata types:
@@ -73,3 +78,21 @@ data OpInputs = OpInputs [[Var]]
   deriving (Read, Show, Eq, Generic)
 instance Out OpInputs
 
+
+----------------------------------------
+
+-- | Extract metadata from a program.
+liftMetadata :: S.Prog a -> M.Map Var a
+liftMetadata Prog{progBinds} =
+  M.fromList$ P.map (\(ProgBind v _ dec _) -> (v,dec)) progBinds  
+
+-- | Attach metadata to a program, filling in the default value for any new bindings.
+stampMetadata :: M.Map Var a -> a -> S.Prog b -> S.Prog (b,a)
+stampMetadata mp deflt prog@Prog{progBinds} =
+  prog { progBinds= P.map fn progBinds }
+  where
+    fn (ProgBind v t d r) =
+      let dec = case M.lookup v mp of
+                 Just x  -> x
+                 Nothing -> deflt
+      in ProgBind v t (d,dec) r
