@@ -46,7 +46,7 @@ import Data.Map as M
 import Prelude as P
 import Data.Maybe (fromMaybe, fromJust)
 -- import Data.Word
--- import Debug.Trace
+import Debug.Trace (trace)
 -- import Control.Exception (bracket)
 -- import Control.Monad (when)
 
@@ -255,6 +255,7 @@ convertExp ::
               EnvPack -> SealedLayout -> S.Exp -> SealedOpenExp
 convertExp ep@(EnvPack envE envA mp)
            slayout@(SealedLayout (lyt :: Layout env env')) ex =
+  trace("Converting exp "++show ex++" with layout "++show lyt++" and dyn env "++show (envE,envA))$
   let cE = convertExp ep slayout in 
   case ex of
     S.EConst c -> constantD c
@@ -299,6 +300,7 @@ convertExp ep@(EnvPack envE envA mp)
           ep'  = extendE vr ty ep
           slayout' = incSealedLayoutElt (scalarTypeD ty) slayout
       in
+       trace ("Incremented "++show slayout++" to "++show slayout')
        convertExp ep' slayout' bod
 
     S.ECond e1 e2 e3 ->
@@ -414,7 +416,11 @@ incSealedLayoutElt (SealedEltTuple (elt :: EltTuple a))
  = SealedLayout x
   where
     x :: Layout (env, EltTuple a) env'
-    x = incLayout lyt
+    x = incLayout lyt 
+
+    -- y :: Layout (env,EltTuple a) (env',EltTuple a) 
+    -- y = x `PushLayout` ZeroIdx
+
 
 emptySealedLayout :: SealedLayout 
 emptySealedLayout = SealedLayout (EmptyLayout :: Layout () ())
@@ -433,18 +439,23 @@ data Layout env env' where
 -- | Project the nth index out of an environment layout.
 -- The first argument provides context information for error messages in the case of failure.
 prjIdx :: forall t env env'. Typeable t => String -> Int -> Layout env env' -> Idx env t
-prjIdx ctxt 0 (PushLayout _ (ix :: Idx env0 t0))
-  = flip fromMaybe (gcast ix)
-  $ possiblyNestedErr ctxt $
-      "Couldn't match expected type `" ++ show (typeOf (unused::t)) ++
-      "' with actual type `" ++ show (typeOf (unused::t0)) ++ "'" ++
-      "\n  Type mismatch"
-prjIdx ctxt n (PushLayout l _)  = prjIdx ctxt (n - 1) l
-prjIdx ctxt _ EmptyLayout       = possiblyNestedErr ctxt "Environment doesn't contain index"
+prjIdx ctxt orign origl = loop ctxt orign origl
+ where
+  loop :: forall t env env'. Typeable t => String -> Int -> Layout env env' -> Idx env t   
+  loop ctxt 0 (PushLayout _ (ix :: Idx env0 t0))
+    = flip fromMaybe (gcast ix)
+    $ possiblyNestedErr ctxt $
+        "Couldn't match expected type `" ++ show (typeOf (unused::t)) ++
+        "' with actual type `" ++ show (typeOf (unused::t0)) ++ "'" ++
+        "\n  Type mismatch"
+  loop ctxt n (PushLayout l _)  = loop ctxt (n - 1) l
+  loop ctxt n EmptyLayout       = possiblyNestedErr ctxt ("Index too large for environment (by "
+                                                          ++show (n+1)++", orig idx "++show orign++"):\n  "
+                                                          ++ show origl)
 
 possiblyNestedErr :: String -> String -> a
 possiblyNestedErr ctxt failreason
-  = error $ "Fatal error in Sharing.prjIdx:"
+  = error $ "Fatal error in prjIdx:"
       ++ "\n  " ++ failreason ++ " at " ++ ctxt
       ++ "\n  Possible reason: nested data parallelism — array computation that depends on a"
       ++ "\n    scalar variable of type 'Exp a'"
@@ -537,8 +548,8 @@ t2 = convertExp emptyEnvPack emptySealedLayout
 t2a :: Exp Int
 t2a = downcastE t2
 
-t2b :: OpenExp ((),(EltTuple Int)) () Int
-t2b = downcastE t2
+t2b :: NAST.OpenExp ((),(EltTuple Int)) () Int
+t2b = downcastOE t2
 
 t4 = simpleProg
  where
