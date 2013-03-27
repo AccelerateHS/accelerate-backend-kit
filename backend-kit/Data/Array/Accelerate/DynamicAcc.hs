@@ -54,9 +54,16 @@ import Data.Maybe (fromMaybe, fromJust)
 --------------------------------------------------------------------------------
 
 -- TODO: make these pairs that keep around some printed rep for debugging purposes in
--- the case of a downcast error.
+-- the case of a downcast error.  Also make them newtypes!
 type SealedExp = Dynamic
 type SealedAcc = Dynamic
+type SealedOpenExp = Dynamic
+
+-- Cheat sheet:
+-- type OpenExp = PreOpenExp OpenAcc
+-- type PreExp acc = PreOpenExp acc ()
+-- type Exp = OpenExp ()
+
 
 sealExp :: Typeable a => Exp a -> SealedExp
 sealExp = toDyn
@@ -64,43 +71,10 @@ sealExp = toDyn
 sealAcc :: Typeable a => Acc a -> SealedAcc
 sealAcc = toDyn
 
-data SealedOpenExp where
-  SealedOpenExp :: Typeable results => NAST.OpenExp env aenv results -> SealedOpenExp
--- PreOpenExp acc env aenv results                         
-
-data SealedExp2 where
-  SealedExp2 :: Typeable a => Exp a -> SealedExp2
-
--- sealExp2 :: Exp a -> SealedOpenExp
-
--- downcastOE :: forall env2 aenv2 results2 . (Typeable (NAST.OpenExp env2 aenv2 results2)) =>
---               SealedOpenExp -> NAST.OpenExp env2 aenv2 results2
--- downcastOE (SealedOpenExp (oe :: NAST.OpenExp env1 aenv1 results1)) =
---   case gcast oe of
---     Just x -> x
---     Nothing -> 
---       error$"Attempt to unpack SealedOpenExp with type "
---          ++show (toDyn (unused::NAST.OpenExp env1 aenv1 results1))
---          ++ ", expected type "
---          ++ show (toDyn (unused::NAST.OpenExp env2 aenv2 results2))
-
-
--- Lots of trouble here:
-{-
--- downcastOE :: forall env2 aenv2 results2 . (Typeable (NAST.OpenExp env2 aenv2 results2)) =>
---               SealedOpenExp -> NAST.OpenExp env2 aenv2 results2
-downcastOE :: forall t1 env aenv results .
-              (Typeable t1, t1 ~ NAST.OpenExp env aenv results, Typeable results) =>
-              SealedOpenExp -> t1
-downcastOE soe =
-  case soe of
-    (SealedOpenExp (oe)) ->
-      fromJust (gcast oe :: Maybe (NAST.OpenExp env aenv results))        
---  case gcast oe of
---    _ -> undefined
---     Just (x::t1) -> (undefined::t1)
-  --   Nothing -> 
--}
+-- sealOpenExp :: Typeable a => NAST.OpenExp env aenv results -> SealedOpenExp
+-- sealOpenExp :: (Typeable t1, t1 ~ NAST.OpenExp env aenv results, Typeable results) => t1 -> SealedOpenExp
+sealOpenExp :: (Typeable t1, t1 ~ NAST.OpenExp env aenv results) => t1 -> SealedOpenExp
+sealOpenExp = toDyn
 
 -- Dynamic seems to succeed here whereas my "Sealed" approach + gcast did not:
 downcastOE :: forall t1 env aenv results .
@@ -112,15 +86,6 @@ downcastOE dyn =
     Nothing ->
       error$"Attempt to unpack SealedExp with type "++show dyn
       ++ ", expected type "++ show (toDyn (unused::t1))
-
-{-
--- This works, however:
-downcastE2 :: forall a . Typeable a => SealedExp2 -> Exp a
-downcastE2 (SealedExp2 d) =
-    case gcast d of
-      Just e -> e
-      Nothing -> error "Attempt to unpack SealedExp2 with wrong type"
--}
 
 downcastE :: forall a . Typeable a => SealedExp -> Exp a
 downcastE d = case fromDynamic d of
@@ -139,7 +104,9 @@ downcastA d = case fromDynamic d of
 -- | Typed de-bruijn indices carry a full type-level environment and a cursor into
 -- it.  This just seals such an index up as a monomorphic type.
 data SealedIdx where
-  SealedIdx :: Idx env t -> SealedIdx
+  SealedIdx :: (Typeable t) => Idx env t -> SealedIdx
+  -- Typeable env
+  --  Elt t => 
 
 --------------------------------------------------------------------------------
 -- Type representations
@@ -153,7 +120,9 @@ data EltTuple a where
 
 -- | This GADT allows monomorphic value to carry a type inside.
 data SealedEltTuple where
-  SealedEltTuple :: EltTuple a -> SealedEltTuple
+  SealedEltTuple :: (Typeable a) => EltTuple a -> SealedEltTuple
+
+-- instance Typeable a => Typeable (EltTuple a) where
 
 -- | This is a bottle in which to store a type that satisfyies the Array class.
 data SealedArrayType where
@@ -286,7 +255,8 @@ extendE vr ty (EnvPack eS eA mp) = EnvPack ((vr,ty):eS) eA (M.insert vr ty mp)
 --   Requires a type environments for the (open) `SimpleAcc` expression:    
 --   one for free expression variables, one for free array variables.
 --     
-convertExp :: EnvPack -> SealedLayout -> S.Exp -> SealedExp
+convertExp :: forall t2 .
+              EnvPack -> SealedLayout -> S.Exp -> SealedOpenExp
 convertExp ep@(EnvPack envE envA mp)
            slayout@(SealedLayout (lyt :: Layout env env')) ex =
   let cE = convertExp ep slayout in 
@@ -299,11 +269,11 @@ convertExp ep@(EnvPack envE envA mp)
       case scalarTypeD ety of 
         selt@(SealedEltTuple (t :: EltTuple elt)) ->
            case t of
-             UnitTuple ->
+             SingleTuple (_ :: T.ScalarType sT) ->
                case prjEltTuple selt ind slayout of
-                 SealedIdx (idx) ->
-                   undefined
---                   sealExp (NAST.Var idx :: Exp t)
+                 SealedIdx (idx :: Idx env2 res) ->
+                   error$"Got to type " ++show(toDyn (unused::res))
+                   -- sealOpenExp (NAST.Var idx)
                
              -- What are we going to do here?  We've got the index.
 
@@ -318,7 +288,12 @@ convertExp ep@(EnvPack envE envA mp)
   --               => Idx env t
   --               -> PreOpenExp acc env aenv t
 
-    S.ELet (vr,ty,rhs) bod -> undefined
+    S.ELet (vr,ty,rhs) bod ->
+      let rhs' = cE rhs
+          ep'  = extendE vr ty ep
+          slayout' = incSealedLayoutElt (scalarTypeD ty) slayout
+      in
+       convertExp ep' slayout' bod
 
     S.ECond e1 e2 e3 ->
       let d1 = cE e1
@@ -394,7 +369,8 @@ convertClosedAExp ae =
 
 
 data SealedLayout where
-  SealedLayout :: Layout env env' -> SealedLayout
+  SealedLayout :: -- (Typeable env, Typeable env') =>
+                  Layout env env' -> SealedLayout
 
 -- | Project an element from a sealed layout.
 prjSealed :: forall t . Typeable t => String -> Int -> SealedLayout -> (Phantom t, SealedIdx)
@@ -405,7 +381,7 @@ prjSealed str ix (SealedLayout (lyt :: Layout env env')) =
    x = prjIdx str ix lyt
 
 -- | Project an index to something of scalar-tuple type.
-prjEltTuple :: SealedEltTuple -> Int-> SealedLayout -> SealedIdx
+prjEltTuple :: SealedEltTuple -> Int -> SealedLayout -> SealedIdx
 prjEltTuple (SealedEltTuple elt) ix slay =
   case elt of
     UnitTuple ->
@@ -415,8 +391,12 @@ prjEltTuple (SealedEltTuple elt) ix slay =
     PairTuple (_ :: EltTuple l) (_ :: EltTuple r) ->
       let (_::Phantom (l,r),x) = prjSealed "" ix slay in x
 
-incSealedLayoutElt :: SealedEltTuple -> SealedLayout -> SealedLayout
-incSealedLayoutElt (SealedEltTuple elt) (SealedLayout (lyt :: Layout env env')) =
+incSealedLayoutElt :: -- forall elT a . (elT ~ EltTuple a) =>
+                      forall eT . 
+                      SealedEltTuple -> SealedLayout -> SealedLayout
+incSealedLayoutElt (SealedEltTuple (elt )) -- :: elT
+                   (SealedLayout (lyt :: Layout env env'))
+ = --   | (elt2) <- (elt :: forall eT . (eT ~ EltTuple a) => eT) =
    SealedLayout$ x
   where
     x :: Layout (env, elt) env'
@@ -442,8 +422,8 @@ prjIdx :: forall t env env'. Typeable t => String -> Int -> Layout env env' -> I
 prjIdx ctxt 0 (PushLayout _ (ix :: Idx env0 t0))
   = flip fromMaybe (gcast ix)
   $ possiblyNestedErr ctxt $
-      "Couldn't match expected type `" ++ show (typeOf (undefined::t)) ++
-      "' with actual type `" ++ show (typeOf (undefined::t0)) ++ "'" ++
+      "Couldn't match expected type `" ++ show (typeOf (unused::t)) ++
+      "' with actual type `" ++ show (typeOf (unused::t0)) ++ "'" ++
       "\n  Type mismatch"
 prjIdx ctxt n (PushLayout l _)  = prjIdx ctxt (n - 1) l
 prjIdx ctxt _ EmptyLayout       = possiblyNestedErr ctxt "Environment doesn't contain index"
@@ -517,4 +497,4 @@ t2b = downcastE t2
 t4 = simpleProg
  where
    TestEntry {simpleProg} = allProgsMap # "p1a"
-     
+
