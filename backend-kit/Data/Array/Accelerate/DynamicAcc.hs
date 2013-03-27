@@ -87,14 +87,14 @@ downcastE d = case fromDynamic d of
                 Just e -> e
                 Nothing ->
                   error$"Attempt to unpack SealedExp with type "++show d
-                     ++ ", expected type "++ show (toDyn (unused::a))
+                     ++ ", expected type Exp "++ show (toDyn (unused::a))
 
 downcastA :: forall a . Typeable a => SealedAcc -> Acc a
 downcastA d = case fromDynamic d of
                 Just e -> e
                 Nothing ->
                   error$"Attempt to unpack SealedAcc with type "++show d
-                     ++ ", expected type "++ show (toDyn (unused::a))
+                     ++ ", expected type Acc "++ show (toDyn (unused::a))
 
 -- | Typed de-bruijn indices carry a full type-level environment and a cursor into
 -- it.  This just seals such an index up as a monomorphic type.
@@ -413,13 +413,12 @@ incSealedLayoutElt :: -- forall elT a . (elT ~ EltTuple a) =>
                       SealedEltTuple -> SealedLayout -> SealedLayout
 incSealedLayoutElt (SealedEltTuple (elt :: EltTuple a))
                    (SealedLayout (lyt :: Layout env env'))
- = SealedLayout x
+ = SealedLayout y
   where
     x :: Layout (env, EltTuple a) env'
     x = incLayout lyt 
-
-    -- y :: Layout (env,EltTuple a) (env',EltTuple a) 
-    -- y = x `PushLayout` ZeroIdx
+    y :: Layout (env, EltTuple a) (env',EltTuple a)
+    y = x `PushLayout` ZeroIdx
 
 
 emptySealedLayout :: SealedLayout 
