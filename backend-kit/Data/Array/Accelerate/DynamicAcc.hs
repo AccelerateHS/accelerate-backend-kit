@@ -106,15 +106,10 @@ downcastA d = case fromDynamic d of
 -- | Typed de-bruijn indices carry a full type-level environment and a cursor into
 -- it.  This just seals such an index up as a monomorphic type.
 data SealedIdx where
-  SealedIdx :: (Typeable t) => Idx env t -> SealedIdx
+  SealedIdx :: (Typeable t, Typeable env) =>
+               Idx env t -> SealedIdx
   -- Typeable env
   --  Elt t => 
-
-instance Show SealedIdx where
-  show (SealedIdx idx) = show idx
-
-instance Show (Idx env t) where
-  show idx = "idx:"++show (NAST.idxToInt idx)
 
 --------------------------------------------------------------------------------
 -- Type representations
@@ -132,6 +127,7 @@ data SealedEltTuple where
                     EltTuple a -> SealedEltTuple
 
 -- instance Typeable a => Typeable (EltTuple a) where
+instance Typeable (EltTuple a) where  
 
 -- | This is a bottle in which to store a type that satisfyies the Array class.
 data SealedArrayType where
@@ -388,7 +384,7 @@ convertClosedAExp ae =
 
 
 data SealedLayout where
-  SealedLayout :: -- (Typeable env, Typeable env') =>
+  SealedLayout :: (Typeable env, Typeable env') =>
                   Layout env env' -> SealedLayout
 
 instance Show SealedLayout where
@@ -420,18 +416,19 @@ prjEltTuple (SealedEltTuple elt) ix slay =
       let (_::Phantom (l,r),x) = prjSealed "" ix slay in x
 
 incSealedLayoutElt :: -- forall elT a . (elT ~ EltTuple a) =>
-                      forall eT . 
+                      -- forall eltt . -- (Typeable eltt) =>
                       SealedEltTuple -> SealedLayout -> SealedLayout
-incSealedLayoutElt (SealedEltTuple (elt )) -- :: elT
+incSealedLayoutElt (SealedEltTuple (elt :: EltTuple a))
                    (SealedLayout (lyt :: Layout env env'))
  = --   | (elt2) <- (elt :: forall eT . (eT ~ EltTuple a) => eT) =
-   SealedLayout$ x
+   -- Need to prove (Typeable elt) where elt ~ EltTuple a :
+   SealedLayout x
   where
-    x :: Layout (env, elt) env'
+    x :: Layout (env, EltTuple a) env'
     x = incLayout lyt
 
 emptySealedLayout :: SealedLayout 
-emptySealedLayout = SealedLayout EmptyLayout
+emptySealedLayout = SealedLayout (EmptyLayout :: Layout () ())
 
 -- Layouts (from Sharing.hs)
 -- -------------------------
@@ -488,6 +485,12 @@ instance Show SealedShapeType where
 instance Show SealedArrayType where
   show (SealedArrayType (Phantom (_ :: sh))) =
     "Sealed:"++show (toDyn (unused::sh))
+
+instance Show SealedIdx where
+  show (SealedIdx idx) = show idx
+
+instance Show (Idx env t) where
+  show idx = "idx:"++show (NAST.idxToInt idx)
 
 --------------------------------------------------------------------------------
 -- Misc
