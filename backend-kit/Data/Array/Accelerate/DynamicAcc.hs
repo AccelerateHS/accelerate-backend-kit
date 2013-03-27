@@ -1,6 +1,7 @@
 {-# LANGUAGE RankNTypes, ScopedTypeVariables, GADTs #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE FlexibleContexts, FlexibleInstances #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 
 -- | A library for the runtime construction of fully typed Accelerate programs.
 
@@ -59,11 +60,6 @@ type SealedExp = Dynamic
 type SealedAcc = Dynamic
 type SealedOpenExp = Dynamic
 
--- Cheat sheet:
--- type OpenExp = PreOpenExp OpenAcc
--- type PreExp acc = PreOpenExp acc ()
--- type Exp = OpenExp ()
-
 sealExp :: Typeable a => Exp a -> SealedExp
 sealExp = toDyn
 
@@ -74,9 +70,6 @@ sealAcc = toDyn
 -- sealOpenExp :: (Typeable t1, t1 ~ NAST.OpenExp env aenv results, Typeable results) => t1 -> SealedOpenExp
 sealOpenExp :: (Typeable t1, t1 ~ NAST.OpenExp env aenv results) => t1 -> SealedOpenExp
 sealOpenExp x = toDyn x 
-
-instance Typeable3 (NAST.PreOpenExp NAST.OpenAcc) where
-  typeOf3 = error "FINISHME - typeof3"
   
 -- Dynamic seems to succeed here whereas my "Sealed" approach + gcast did not:
 downcastOE :: forall t1 env aenv results .
@@ -120,14 +113,12 @@ data EltTuple a where
   UnitTuple   ::                                               EltTuple ()
   SingleTuple :: Elt a          => T.ScalarType a           -> EltTuple a
   PairTuple   :: (Elt a, Elt b) => EltTuple a -> EltTuple b -> EltTuple (a, b)
+ deriving Typeable
 
 -- | This GADT allows monomorphic value to carry a type inside.
 data SealedEltTuple where
-  SealedEltTuple :: -- (Typeable a) =>
+  SealedEltTuple :: (Typeable a) =>
                     EltTuple a -> SealedEltTuple
-
--- instance Typeable a => Typeable (EltTuple a) where
-instance Typeable (EltTuple a) where  
 
 -- | This is a bottle in which to store a type that satisfyies the Array class.
 data SealedArrayType where
@@ -420,9 +411,7 @@ incSealedLayoutElt :: -- forall elT a . (elT ~ EltTuple a) =>
                       SealedEltTuple -> SealedLayout -> SealedLayout
 incSealedLayoutElt (SealedEltTuple (elt :: EltTuple a))
                    (SealedLayout (lyt :: Layout env env'))
- = --   | (elt2) <- (elt :: forall eT . (eT ~ EltTuple a) => eT) =
-   -- Need to prove (Typeable elt) where elt ~ EltTuple a :
-   SealedLayout x
+ = SealedLayout x
   where
     x :: Layout (env, EltTuple a) env'
     x = incLayout lyt
@@ -492,6 +481,29 @@ instance Show SealedIdx where
 instance Show (Idx env t) where
   show idx = "idx:"++show (NAST.idxToInt idx)
 
+
+-- Cheat sheet:
+-- type OpenExp = PreOpenExp OpenAcc
+-- type PreExp acc = PreOpenExp acc ()
+-- type Exp = OpenExp ()
+-- data PreOpenExp (acc :: * -> * -> *) env aenv t where
+
+{-# NOINLINE openExpTyCon #-}
+openExpTyCon :: TyCon
+openExpTyCon = mkTyCon3 "accelerate-backend-kit" "Data.Array.Accelerate.DynamicAcc.OpenExp" "OpenExp"
+
+-- instance Typeable3 (NAST.PreOpenExp NAST.OpenAcc) where
+instance Typeable3 (NAST.OpenExp) where
+  typeOf3 (_ :: NAST.OpenExp env aenv results) =
+    mkTyConApp openExpTyCon []
+       -- [typeOf (unused::env),
+       --  typeOf (unused::aenv),
+       --  typeOf (unused::results)]
+
+-- instance Typeable a => Typeable (EltTuple a) where
+-- instance Typeable (EltTuple a) where  
+
+  
 --------------------------------------------------------------------------------
 -- Misc
 --------------------------------------------------------------------------------  
@@ -522,7 +534,10 @@ t1b = downcastE t1
 t2 = convertExp emptyEnvPack emptySealedLayout
      (S.ELet (v, TInt, (S.EConst (I 33))) (S.EVr v))
  where v = S.var "v" 
-t2b :: Exp Int
+t2a :: Exp Int
+t2a = downcastE t2
+
+t2b :: OpenExp ((),(EltTuple Int)) () Int
 t2b = downcastE t2
 
 t4 = simpleProg
