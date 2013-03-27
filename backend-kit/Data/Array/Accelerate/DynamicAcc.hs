@@ -1,5 +1,6 @@
 {-# LANGUAGE RankNTypes, ScopedTypeVariables, GADTs #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 -- | A library for the runtime construction of fully typed Accelerate programs.
 
@@ -42,7 +43,7 @@ import Data.Typeable (gcast)
 import Data.Dynamic
 import Data.Map as M
 import Prelude as P
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, fromJust)
 -- import Data.Word
 -- import Debug.Trace
 -- import Control.Exception (bracket)
@@ -62,6 +63,64 @@ sealExp = toDyn
 
 sealAcc :: Typeable a => Acc a -> SealedAcc
 sealAcc = toDyn
+
+data SealedOpenExp where
+  SealedOpenExp :: Typeable results => NAST.OpenExp env aenv results -> SealedOpenExp
+-- PreOpenExp acc env aenv results                         
+
+data SealedExp2 where
+  SealedExp2 :: Typeable a => Exp a -> SealedExp2
+
+-- sealExp2 :: Exp a -> SealedOpenExp
+
+-- downcastOE :: forall env2 aenv2 results2 . (Typeable (NAST.OpenExp env2 aenv2 results2)) =>
+--               SealedOpenExp -> NAST.OpenExp env2 aenv2 results2
+-- downcastOE (SealedOpenExp (oe :: NAST.OpenExp env1 aenv1 results1)) =
+--   case gcast oe of
+--     Just x -> x
+--     Nothing -> 
+--       error$"Attempt to unpack SealedOpenExp with type "
+--          ++show (toDyn (unused::NAST.OpenExp env1 aenv1 results1))
+--          ++ ", expected type "
+--          ++ show (toDyn (unused::NAST.OpenExp env2 aenv2 results2))
+
+
+-- Lots of trouble here:
+{-
+-- downcastOE :: forall env2 aenv2 results2 . (Typeable (NAST.OpenExp env2 aenv2 results2)) =>
+--               SealedOpenExp -> NAST.OpenExp env2 aenv2 results2
+downcastOE :: forall t1 env aenv results .
+              (Typeable t1, t1 ~ NAST.OpenExp env aenv results, Typeable results) =>
+              SealedOpenExp -> t1
+downcastOE soe =
+  case soe of
+    (SealedOpenExp (oe)) ->
+      fromJust (gcast oe :: Maybe (NAST.OpenExp env aenv results))        
+--  case gcast oe of
+--    _ -> undefined
+--     Just (x::t1) -> (undefined::t1)
+  --   Nothing -> 
+-}
+
+-- Dynamic seems to succeed here whereas my "Sealed" approach + gcast did not:
+downcastOE :: forall t1 env aenv results .
+              (Typeable t1, t1 ~ NAST.OpenExp env aenv results, Typeable results) =>
+              Dynamic -> t1
+downcastOE dyn =
+  case fromDynamic dyn of
+    Just (oe :: t1) -> oe
+    Nothing ->
+      error$"Attempt to unpack SealedExp with type "++show dyn
+      ++ ", expected type "++ show (toDyn (unused::t1))
+
+{-
+-- This works, however:
+downcastE2 :: forall a . Typeable a => SealedExp2 -> Exp a
+downcastE2 (SealedExp2 d) =
+    case gcast d of
+      Just e -> e
+      Nothing -> error "Attempt to unpack SealedExp2 with wrong type"
+-}
 
 downcastE :: forall a . Typeable a => SealedExp -> Exp a
 downcastE d = case fromDynamic d of
