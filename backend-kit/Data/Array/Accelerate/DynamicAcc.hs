@@ -415,9 +415,9 @@ incSealedLayoutElt (SealedEltTuple (elt :: EltTuple a))
                    (SealedLayout (lyt :: Layout env env'))
  = SealedLayout y
   where
-    x :: Layout (env, EltTuple a) env'
+    x :: Layout (env, a) env'
     x = incLayout lyt 
-    y :: Layout (env, EltTuple a) (env',EltTuple a)
+    y :: Layout (env, a) (env',a)
     y = x `PushLayout` ZeroIdx
 
 
@@ -547,7 +547,8 @@ t2 = convertExp emptyEnvPack emptySealedLayout
 t2a :: Exp Int
 t2a = downcastE t2
 
-t2b :: NAST.OpenExp ((),(EltTuple Int)) () Int
+-- t2b :: NAST.OpenExp ((),(EltTuple Int)) () Int
+t2b :: NAST.OpenExp ((),Int) () Int
 t2b = downcastOE t2
 
 t4 = simpleProg
