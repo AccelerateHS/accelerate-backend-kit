@@ -38,7 +38,7 @@ import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc)
 import qualified Data.Array.Accelerate.AST                  as NAST
 import           Data.Array.Accelerate.AST                  ( Idx(..) )
 
-import Data.Typeable
+import Data.Typeable (gcast)
 import Data.Dynamic
 import Data.Map as M
 import Prelude as P
@@ -324,10 +324,31 @@ convertClosedAExp ae =
 data SealedLayout where
   SealedLayout :: Layout env env' -> SealedLayout
 
-prjSealed :: String -> Int -> SealedLayout -> SealedIdx
+-- | Project an element from a sealed layout.
+prjSealed :: forall t . Typeable t => String -> Int -> SealedLayout -> (Phantom t, SealedIdx)
 prjSealed str ix (SealedLayout (lyt :: Layout env env')) =
---   prjIdx
-  undefined
+  (Phantom unused, SealedIdx x)
+ where
+   x :: Idx env t
+   x = prjIdx str ix lyt
+
+-- | Project an index to something of scalar-tuple type.
+prjEltTuple :: SealedEltTuple -> Int-> SealedLayout -> SealedIdx
+prjEltTuple (SealedEltTuple elt) ix slay =
+  case elt of
+    UnitTuple ->
+      let (_::Phantom (),x) = prjSealed "" ix slay in x
+    SingleTuple (_ :: T.ScalarType s) ->
+      let (_::Phantom s,x) = prjSealed "" ix slay in x
+    PairTuple (_ :: EltTuple l) (_ :: EltTuple r) ->
+      let (_::Phantom (l,r),x) = prjSealed "" ix slay in x
+
+incSealedLayoutElt :: SealedEltTuple -> SealedLayout -> SealedLayout
+incSealedLayoutElt (SealedEltTuple elt) (SealedLayout (lyt :: Layout env env')) =
+   SealedLayout$ x
+  where
+    x :: Layout (env, elt) env'
+    x = incLayout lyt
 
 emptySealedLayout :: SealedLayout 
 emptySealedLayout = SealedLayout EmptyLayout
