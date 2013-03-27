@@ -26,7 +26,7 @@ import           Data.Array.Accelerate as A
 import qualified Data.Array.Accelerate.Type as T
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
-                 (Type(..), Const(..), Var, Prog(..))
+                 (Type(..), Const(..), AVar, Var, Prog(..))
 import           Data.Array.Accelerate.BackendKit.Tests (allProgsMap, p1a, TestEntry(..))
 import           Data.Array.Accelerate.BackendKit.SimpleArray (payloadsFromList1)
 -- import Data.Array.Accelerate.Interpreter as I
@@ -35,11 +35,14 @@ import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc)
 -- import qualified Data.Array.Accelerate.Array.Sugar as Sug
 -- import qualified Data.Array.Accelerate.Array.Data  as Dat
 
+import qualified Data.Array.Accelerate.AST                  as NAST
+import           Data.Array.Accelerate.AST                  ( Idx(..) )
+
 import Data.Typeable
 import Data.Dynamic
 import Data.Map as M
 import Prelude as P
--- import Data.Maybe
+import Data.Maybe (fromMaybe)
 -- import Data.Word
 -- import Debug.Trace
 -- import Control.Exception (bracket)
@@ -73,6 +76,11 @@ downcastA d = case fromDynamic d of
                 Nothing ->
                   error$"Attempt to unpack SealedAcc with type "++show d
                      ++ ", expected type "++ show (toDyn (unused::a))
+
+-- | Typed de-bruijn indices carry a full type-level environment and a cursor into
+-- it.  This just seals such an index up as a monomorphic type.
+data SealedIdx where
+  SealedIdx :: Idx env t -> SealedIdx
 
 --------------------------------------------------------------------------------
 -- Type representations
@@ -201,27 +209,56 @@ constantD c =
 -- TODO: These conversion functions could move to their own module:
 --------------------------------------------------------------------------------
 
+-- | Track the scalar, array environment, and combined, fast-access environment.
+data EnvPack = EnvPack [(Var,Type)] [(AVar,Type)] (M.Map Var Type) 
+
+emptyEnvPack :: EnvPack 
+emptyEnvPack = EnvPack [] [] M.empty 
+
+-- | New array binding
+extendA :: AVar -> Type -> EnvPack -> EnvPack 
+extendA avr ty (EnvPack eS eA mp) = EnvPack eS ((avr,ty):eA) (M.insert avr ty mp)
+
+extendE :: Var -> Type -> EnvPack -> EnvPack 
+extendE vr ty (EnvPack eS eA mp) = EnvPack ((vr,ty):eS) eA (M.insert vr ty mp)
+
 -- convertExp :: S.Exp -> (forall a . Elt a => Exp a)
 -- | Convert an entire `SimpleAcc` expression into a fully-typed (but sealed) Accelerate one.
---   Requires a type environment for the (open) `SimpleAcc` expression.
-convertExp :: M.Map Var Type -> S.Exp -> SealedExp
-convertExp env ex =
-  let cE = convertExp env in 
+--   Requires a type environments for the (open) `SimpleAcc` expression:    
+--   one for free expression variables, one for free array variables.
+--     
+convertExp :: EnvPack -> SealedLayout -> S.Exp -> SealedExp
+convertExp ep@(EnvPack envE envA mp) slayout ex =
+  let cE = convertExp ep slayout in 
   case ex of
     S.EConst c -> constantD c
     -- This is tricky, because it needs to become a deBruin index ultimately...
     -- Or we need to stay at the level of HOAS...
---     S.EVr v    -> env#v
+    S.EVr vr -> -- Scalar (not array) variable.
+      let (ind,ety) = lookupInd vr envE in
+      case scalarTypeD ety of 
+        SealedEltTuple (t :: EltTuple elt) ->
+           case t of
+             UnitTuple -> undefined
+             -- What are we going to do here?  We've got the index.
+
+  -- -- Variable index, ranging only over tuples or scalars
+  -- Var           :: Elt t
+  --               => Idx env t
+  --               -> PreOpenExp acc env aenv t
+
+    S.ELet (vr,ty,rhs) bod -> undefined
+
     S.ECond e1 e2 e3 ->
       let d1 = cE e1
           d2 = cE e2
           d3 = cE e3
-          ty = S.recoverExpType env e2
+          ty = S.recoverExpType mp e2
       in case scalarTypeD ty of
           SealedEltTuple (t :: EltTuple elt) ->
            -- #define a macro for this?
            case t of
-             UnitTuple ->
+             UnitTuple -> 
                sealExp(((downcastE d1::Exp Bool) A.?
                         (downcastE d2::Exp elt,
                          downcastE d3::Exp elt))::Exp elt)
@@ -233,6 +270,13 @@ convertExp env ex =
                sealExp(((downcastE d1::Exp Bool) A.?
                         (downcastE d2::Exp elt,
                          downcastE d3::Exp elt))::Exp elt)
+  where
+    lookupInd v [] = error$"convertExp: unbound variable: "++show v
+    lookupInd v ((v2,x):tl)
+      | v == v2   = (0,x)
+      | otherwise = let (i,y) = lookupInd v tl
+                    in (i+1,y)
+
 
 -- | Convert a closed `SimpleAcc` expression (no free vars) into a fully-typed (but
 -- sealed) Accelerate one.
@@ -249,6 +293,80 @@ convertClosedAExp :: S.AExp -> SealedAcc
 convertClosedAExp ae =
   case ae of
     S.Use arr -> useD arr
+
+
+-- -- | Scopes are conversions from an environment to a super-environment of that environment.
+-- type Scope scopeEnv globalEnv = forall el.(NAST.Idx scopeEnv el -> NAST.Idx globalEnv el)
+
+-- -- | This scope converts from the empty environment to itself. Note that there
+-- -- are by definition no indices into this environment, but the identity function typechecks.
+-- identityScope :: Scope env env
+-- identityScope = id
+
+-- -- | Pushing onto a scope means that an index of zero into the newly extended
+-- -- subscope will result in an index of zero into the extended superscope, since they
+-- -- now both have the same type at the top. A successor index has its sub-index scoped and
+-- -- then successor applied, preserving the original scoping beneath the new top
+-- -- of the environments
+-- pushScope :: Scope scopeEnv globalEnv -> Scope (scopeEnv, t) (globalEnv, t)
+-- pushScope scope idx = case idx of
+--   ZeroIdx -> ZeroIdx
+--   SuccIdx idx -> SuccIdx (scope idx)
+
+-- -- | Popping from a scope removes the top type from the sub-environment,
+-- -- but preserves the super-environment. This is accomplished by applying
+-- -- the original scope to the successor of the incoming index, which turns
+-- -- an index into the original scope into an index into the popped scope.
+-- popScope :: Scope (scopeEnv, t) globalEnv -> Scope scopeEnv globalEnv
+-- popScope scope idx = scope (SuccIdx idx)
+
+
+data SealedLayout where
+  SealedLayout :: Layout env env' -> SealedLayout
+
+prjSealed :: String -> Int -> SealedLayout -> SealedIdx
+prjSealed str ix (SealedLayout (lyt :: Layout env env')) =
+--   prjIdx
+  undefined
+
+emptySealedLayout :: SealedLayout 
+emptySealedLayout = SealedLayout EmptyLayout
+
+-- Layouts (from Sharing.hs)
+-- -------------------------
+
+-- | A layout of an environment has an entry for each entry of the environment.
+-- Each entry in the layout holds the de Bruijn index that refers to the
+-- corresponding entry in the environment.
+data Layout env env' where
+  EmptyLayout :: Layout env ()
+  PushLayout  :: Typeable t
+              => Layout env env' -> Idx env t -> Layout env (env', t)
+
+-- | Project the nth index out of an environment layout.
+-- The first argument provides context information for error messages in the case of failure.
+prjIdx :: forall t env env'. Typeable t => String -> Int -> Layout env env' -> Idx env t
+prjIdx ctxt 0 (PushLayout _ (ix :: Idx env0 t0))
+  = flip fromMaybe (gcast ix)
+  $ possiblyNestedErr ctxt $
+      "Couldn't match expected type `" ++ show (typeOf (undefined::t)) ++
+      "' with actual type `" ++ show (typeOf (undefined::t0)) ++ "'" ++
+      "\n  Type mismatch"
+prjIdx ctxt n (PushLayout l _)  = prjIdx ctxt (n - 1) l
+prjIdx ctxt _ EmptyLayout       = possiblyNestedErr ctxt "Environment doesn't contain index"
+
+possiblyNestedErr :: String -> String -> a
+possiblyNestedErr ctxt failreason
+  = error $ "Fatal error in Sharing.prjIdx:"
+      ++ "\n  " ++ failreason ++ " at " ++ ctxt
+      ++ "\n  Possible reason: nested data parallelism — array computation that depends on a"
+      ++ "\n    scalar variable of type 'Exp a'"
+
+-- | Add an entry to a layout, incrementing all indices
+incLayout :: Layout env env' -> Layout (env, t) env'
+incLayout EmptyLayout         = EmptyLayout
+incLayout (PushLayout lyt ix) = PushLayout (incLayout lyt) (SuccIdx ix)
+
 
 --------------------------------------------------------------------------------
 -- Instances
@@ -292,12 +410,18 @@ t0b :: Acc (Array DIM2 (Int))
 t0b = downcastA t0
 
 t1 = -- convertClosedExp
-     convertExp M.empty
+     convertExp emptyEnvPack emptySealedLayout
      (S.ECond (S.EConst (B True)) (S.EConst (I 33)) (S.EConst (I 34)))
 t1b :: Exp Int
 t1b = downcastE t1
 
-t2 = simpleProg
+t2 = convertExp emptyEnvPack emptySealedLayout
+     (S.ELet (v, TInt, (S.EConst (I 33))) (S.EVr v))
+ where v = S.var "v" 
+t2b :: Exp Int
+t2b = downcastE t2
+
+t4 = simpleProg
  where
    TestEntry {simpleProg} = allProgsMap # "p1a"
      
