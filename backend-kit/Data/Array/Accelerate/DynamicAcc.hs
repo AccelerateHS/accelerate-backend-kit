@@ -228,7 +228,8 @@ extendE vr ty (EnvPack eS eA mp) = EnvPack ((vr,ty):eS) eA (M.insert vr ty mp)
 --   one for free expression variables, one for free array variables.
 --     
 convertExp :: EnvPack -> SealedLayout -> S.Exp -> SealedExp
-convertExp ep@(EnvPack envE envA mp) slayout ex =
+convertExp ep@(EnvPack envE envA mp)
+           slayout@(SealedLayout (lyt :: Layout env env')) ex =
   let cE = convertExp ep slayout in 
   case ex of
     S.EConst c -> constantD c
@@ -237,10 +238,21 @@ convertExp ep@(EnvPack envE envA mp) slayout ex =
     S.EVr vr -> -- Scalar (not array) variable.
       let (ind,ety) = lookupInd vr envE in
       case scalarTypeD ety of 
-        SealedEltTuple (t :: EltTuple elt) ->
+        selt@(SealedEltTuple (t :: EltTuple elt)) ->
            case t of
-             UnitTuple -> undefined
+             UnitTuple ->
+               case prjEltTuple selt ind slayout of
+                 SealedIdx (idx) ->
+                   undefined
+--                   sealExp (NAST.Var idx :: Exp t)
+               
              -- What are we going to do here?  We've got the index.
+
+  -- Var           :: Elt t
+  --               => Idx env t
+  --               -> PreOpenExp acc env aenv t
+
+-- prjEltTuple :: SealedEltTuple -> Int-> SealedLayout -> SealedIdx
 
   -- -- Variable index, ranging only over tuples or scalars
   -- Var           :: Elt t
@@ -271,6 +283,7 @@ convertExp ep@(EnvPack envE envA mp) slayout ex =
                         (downcastE d2::Exp elt,
                          downcastE d3::Exp elt))::Exp elt)
   where
+    lookupInd :: Var -> [(Var,Type)] -> (Int,Type)
     lookupInd v [] = error$"convertExp: unbound variable: "++show v
     lookupInd v ((v2,x):tl)
       | v == v2   = (0,x)
