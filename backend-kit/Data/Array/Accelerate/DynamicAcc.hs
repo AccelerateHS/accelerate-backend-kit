@@ -1,6 +1,6 @@
 {-# LANGUAGE RankNTypes, ScopedTypeVariables, GADTs #-}
 {-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts, FlexibleInstances #-}
 
 -- | A library for the runtime construction of fully typed Accelerate programs.
 
@@ -64,7 +64,6 @@ type SealedOpenExp = Dynamic
 -- type PreExp acc = PreOpenExp acc ()
 -- type Exp = OpenExp ()
 
-
 sealExp :: Typeable a => Exp a -> SealedExp
 sealExp = toDyn
 
@@ -74,8 +73,11 @@ sealAcc = toDyn
 -- sealOpenExp :: Typeable a => NAST.OpenExp env aenv results -> SealedOpenExp
 -- sealOpenExp :: (Typeable t1, t1 ~ NAST.OpenExp env aenv results, Typeable results) => t1 -> SealedOpenExp
 sealOpenExp :: (Typeable t1, t1 ~ NAST.OpenExp env aenv results) => t1 -> SealedOpenExp
-sealOpenExp = toDyn
+sealOpenExp x = toDyn x 
 
+instance Typeable3 (NAST.PreOpenExp NAST.OpenAcc) where
+  typeOf3 = error "FINISHME - typeof3"
+  
 -- Dynamic seems to succeed here whereas my "Sealed" approach + gcast did not:
 downcastOE :: forall t1 env aenv results .
               (Typeable t1, t1 ~ NAST.OpenExp env aenv results, Typeable results) =>
@@ -108,6 +110,12 @@ data SealedIdx where
   -- Typeable env
   --  Elt t => 
 
+instance Show SealedIdx where
+  show (SealedIdx idx) = show idx
+
+instance Show (Idx env t) where
+  show idx = "idx:"++show (NAST.idxToInt idx)
+
 --------------------------------------------------------------------------------
 -- Type representations
 --------------------------------------------------------------------------------                
@@ -120,7 +128,8 @@ data EltTuple a where
 
 -- | This GADT allows monomorphic value to carry a type inside.
 data SealedEltTuple where
-  SealedEltTuple :: (Typeable a) => EltTuple a -> SealedEltTuple
+  SealedEltTuple :: -- (Typeable a) =>
+                    EltTuple a -> SealedEltTuple
 
 -- instance Typeable a => Typeable (EltTuple a) where
 
@@ -255,7 +264,7 @@ extendE vr ty (EnvPack eS eA mp) = EnvPack ((vr,ty):eS) eA (M.insert vr ty mp)
 --   Requires a type environments for the (open) `SimpleAcc` expression:    
 --   one for free expression variables, one for free array variables.
 --     
-convertExp :: forall t2 .
+convertExp :: 
               EnvPack -> SealedLayout -> S.Exp -> SealedOpenExp
 convertExp ep@(EnvPack envE envA mp)
            slayout@(SealedLayout (lyt :: Layout env env')) ex =
@@ -270,10 +279,20 @@ convertExp ep@(EnvPack envE envA mp)
         selt@(SealedEltTuple (t :: EltTuple elt)) ->
            case t of
              SingleTuple (_ :: T.ScalarType sT) ->
-               case prjEltTuple selt ind slayout of
+               -- We know (Elt sT)...
+               case prjEltTuple selt ind slayout of                 
                  SealedIdx (idx :: Idx env2 res) ->
-                   error$"Got to type " ++show(toDyn (unused::res))
-                   -- sealOpenExp (NAST.Var idx)
+                   -- Need to unify res and sT... might fail.
+                   case gcast idx of
+                     Just (idx' :: Idx env2 sT) -> 
+                       let oe :: NAST.OpenExp env2 () elt
+                           oe = NAST.Var idx' in
+                       -- Need: Typeable3 (NAST.PreOpenExp NAST.OpenAcc)
+                       -- Need: Typeable env1
+                       sealOpenExp oe
+                       -- (error$"Got to type " ++show(toDyn (unused::res))++" env "++show slayout)
+
+--          Tag i -> AST.Var (prjIdx ("de Bruijn conversion tag " ++ show i) i lyt)                   
                
              -- What are we going to do here?  We've got the index.
 
@@ -371,6 +390,15 @@ convertClosedAExp ae =
 data SealedLayout where
   SealedLayout :: -- (Typeable env, Typeable env') =>
                   Layout env env' -> SealedLayout
+
+instance Show SealedLayout where
+  show (SealedLayout (lyt :: Layout env env')) = show lyt
+
+instance Show (Layout env env') where
+  show lyt = 
+    case lyt of
+      EmptyLayout -> "()"
+      PushLayout lay2 idx -> "("++show lay2++", "++show idx++")"
 
 -- | Project an element from a sealed layout.
 prjSealed :: forall t . Typeable t => String -> Int -> SealedLayout -> (Phantom t, SealedIdx)
