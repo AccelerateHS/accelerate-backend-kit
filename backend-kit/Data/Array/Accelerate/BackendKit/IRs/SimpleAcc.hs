@@ -30,7 +30,7 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
      isIntType, isFloatType, isNumType, 
      isIntConst, isFloatConst, isNumConst, hasArrayType, flattenTy, flattenArrTy, countTyScalars,
 
-     var, progToEnv, lookupProgBind, expFreeVars, resultNames,
+     var, progToEnv, lookupProgBind, expFreeVars, resultNames, resultShapeNames,
      
      -- * Building and normalizing pieces of syntax
      normalizeEConst, mkTTuple, mkETuple,
@@ -39,7 +39,7 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
      -- * Type recovery and type checking:
      constToType, recoverExpType, topLevelExpType,
      typeByteSize, 
-     accArrayToType, payloadToType
+     accArrayToType, payloadToType, verifyAccArray
     )
  where
 
@@ -55,6 +55,7 @@ import qualified Data.Map          as M
 import qualified Data.Set          as S
 import qualified Data.List         as L
 import           Data.Word
+import           Data.Maybe   (catMaybes)
 import           Foreign.C.Types 
 import           Text.PrettyPrint.HughesPJ (text)
 import           System.IO.Unsafe  (unsafePerformIO)
@@ -151,10 +152,18 @@ data ProgResults = WithoutShapes [AVar]
                  | WithShapesUnzipped [(AVar,[Var])] -- Even later, unzipETups
   deriving (Read,Show,Eq,Generic, Ord)
 
+-- | Report the names of the final result bindings from a program.  (Irrespective of
+-- what other decorating information is attached.)
 resultNames :: ProgResults -> [AVar]
 resultNames (WithoutShapes ls)      = ls
 resultNames (WithShapes ls)         = L.map fst ls  
 resultNames (WithShapesUnzipped ls) = L.map fst ls  
+
+-- | Returns a list with all shape names (may contain duplicates).
+resultShapeNames :: ProgResults -> [Var]
+resultShapeNames (WithoutShapes ls)      = []
+resultShapeNames (WithShapes ls)         = L.map snd ls  
+resultShapeNames (WithShapesUnzipped ls) = concatMap snd ls  
 
 -- | A top-level binding.  Binds a unique variable name to either an
 --   array or scalar expression.
@@ -478,6 +487,35 @@ type RawData e = UArray Int e
 accArrayToType :: AccArray -> Type
 accArrayToType (AccArray ls payls) =
   TArray (length ls) (mkTTuple (L.map payloadToType payls))
+
+
+-- | Returns an error message if anything is wrong.  In particular, the number and
+--   type of payloads should match the declared type.  Note that an AccArray
+--   represents a single logical array with one shape (though it can be an array of
+--   tuples).
+verifyAccArray :: Type -> AccArray -> Maybe ErrorMsg
+verifyAccArray ty (AccArray shp cols) =  
+  if length expectedCols /= length cols
+  then Just$"Bad AccArray.  Unexpected number of payloads ("++
+        show(length cols)++") for type "++show ty
+  else re$ unlines $ catMaybes $
+       zipWith (assertTyEq "Payload type")
+       expectedCols (map payloadToType cols)
+ where
+   expectedCols = flattenArrTy ty
+   re ""  = Nothing
+   re str = Just str   
+   mismatchErr msg got expected = msg++" does not match expected. "++
+                                  "\nGot:      "++show got ++
+                                  "\nExpected: "++show expected
+   assertTyEq msg got expected =
+     if got == expected
+     then Nothing
+     else Just(mismatchErr msg got expected)
+
+
+
+type ErrorMsg = String
 
 payloadToType :: ArrayPayload -> Type
 payloadToType p =  
@@ -829,9 +867,8 @@ flattenArrTy :: Type -> [Type]
 flattenArrTy (TArray d elt) = map (TArray d) (flattenTy elt)
 flattenArrTy ty = error$"flattenArrTy should only take an array type: "++show ty
 
-
--- | Count the number of values when the type is flattened.  Equilavent to `length
--- (flattenTy ty)`.
+-- | Count the number of values when the type is flattened.  This counts through BOTH
+-- arrays and tuples, so a tuple-of-arrays-of-tuples will be handled.
 countTyScalars :: Type -> Int
 countTyScalars (TArray _ elt) = countTyScalars elt
 countTyScalars (TTuple ls) = sum$ map countTyScalars ls
