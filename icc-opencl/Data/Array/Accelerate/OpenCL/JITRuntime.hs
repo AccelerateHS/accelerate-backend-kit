@@ -43,7 +43,7 @@ import qualified Data.Array.Accelerate             as A
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 
 import           Data.Array.Accelerate.BackendKit.IRs.Metadata     (ArraySizeEstimate(..), FreeVars(..))
-import           Data.Array.Accelerate.BackendKit.Utils.Helpers    (dbg,maybtrace)
+import           Data.Array.Accelerate.BackendKit.Utils.Helpers    (dbg,maybtrace,shapeName)
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1, phase2, phase3, repackAcc)
 import           Data.Array.Accelerate.BackendKit.SimpleArray      (payloadToPtr)
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter (Value(..))
@@ -53,7 +53,6 @@ import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
 
 import qualified Data.Array.Accelerate.BackendKit.IRs.CLike as LL
 import           Data.Array.Accelerate.BackendKit.IRs.GPUIR as G
-import           Data.Array.Accelerate.BackendKit.CompilerUtils (shapeName)
 import           Data.Array.Accelerate.Shared.EmitHelpers       (builderName, fragileZip)
 import           Data.Array.Accelerate.BackendKit.IRs.GPUIR.Interpreter (evalScalarBlock, evalExp)
 
@@ -95,7 +94,7 @@ rawRunIO name prog = do
       (ptrs,bufMap) <- setupAndRunProg name prog'
       let res = [ let BufEntry{fullshape,arraytype} = bufMap !@ vr in
                   recoverArrays fullshape arraytype ptr
-                | vr  <- G.progResults prog'
+                | (vr,_) <- G.progResults prog'
                 | ptr <- ptrs ]
       dbgPrint$ "[JIT] Recovered result arrays: "++ show (doc res)
       return res
@@ -276,7 +275,7 @@ runDAG (context, q, clprog) (G.GPUProg{progBinds, progResults, lastwriteTable}) 
          -> M.Map EvtId CLEvent
          -> [G.GPUProgBind (FreeVars)] 
          -> IO ([Ptr ()], M.Map Var BufEntry)
-   doPBs _ bufMap evMap [] = do ptrs <- waitArraysGetPtrs bufMap evMap progResults
+   doPBs _ bufMap evMap [] = do ptrs <- waitArraysGetPtrs bufMap evMap (map fst progResults)
                                 return (ptrs, bufMap)
 
    -- doPBs valEnv evMap (LLProgBind resultBinds _ (ScalarCode bk) : rest) = do
@@ -526,7 +525,7 @@ fromPtr elms ptr = unsafePerformIO $ sa >>= unsafeFreeze
 -- Misc Helpers:
 
 dbgPrint :: String -> IO ()
-dbgPrint str = if not dbg then return () else do
+dbgPrint str = if dbg<=1 then return () else do
     putStrLn str
     hFlush stdout
 
