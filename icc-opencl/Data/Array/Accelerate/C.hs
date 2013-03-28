@@ -96,7 +96,7 @@ instance Backend BKEND where
   copyToPeer _ x = return x
 
   -- No waiting to be done!
-  waitRemote _rem = return ()
+  waitRemote _ _ = return ()
   useRemote _ rem = useRem rem
   
   separateMemorySpace _ = False
@@ -147,6 +147,6 @@ instance SimpleBackend BKEND where
   simpleCopyToPeer _ x = return x
 
   simpleUseRemote _ (CRemote [arr]) = return (S.Use arr)
-  simpleWaitRemote _ = return () -- already copied!
+  simpleWaitRemote _ _ = return () -- already copied!
   simpleSeparateMemorySpace _ = False
 

@@ -110,7 +110,7 @@ rawRunIO pm name prog = do
                         then return$ cc ++ icc_args   
                         else return$ cc ++" "++ cOptLvl
           Nothing -> do 
-            code <- system "which -s icc" 
+            code <- system "which icc" 
             case code of
               ExitFailure _  -> onfail
               ExitSuccess    -> do dbgPrint $"[JIT] Found ICC. Using it."
@@ -122,7 +122,6 @@ rawRunIO pm name prog = do
   let suppress = if dbg then " -g " else " -w " -- No warnings leaking through to the user.
       ccCmd = cc++suppress++" -shared -fPIC -std=c99 "++thisprog++".c -o "++thisprog++".so"
   dbgPrint$ "[JIT]   Compiling with: "++ ccCmd
-  putStrLn$ "[JIT]   Compiling with: "++ ccCmd -- TEMPORARY
   cd <- system$ ccCmd
   case cd of
     ExitSuccess -> return ()
@@ -239,7 +238,7 @@ loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv, G.progType } soNam
     t2 <- getCurrentTime    
     ----------------------------
 
-    putStrLn$"SELFTIMED: "++show (diffUTCTime t2 t1)
+    dbgPrint$"SELFTIMED: "++show (diffUTCTime t2 t1)
     dbgPrint$"[JIT] Finished executing dynamically loaded Acc computation!"
     
     arrs <- forM allResults $ \ (rname,snames) -> do

@@ -125,7 +125,7 @@ class Backend b where
 
   -- | Wait until the result is computed, but do not copy it back.
   --
-  waitRemote :: Remote b a -> IO ()
+  waitRemote :: b -> Remote b a -> IO ()
 
   -- | Inject a remote array into an AST node
   --
@@ -237,7 +237,7 @@ class SimpleBackend b where
 
   -- | Wait until the result is computed, but do not copy it back.
   --
-  simpleWaitRemote :: SimpleRemote b -> IO ()
+  simpleWaitRemote :: b -> SimpleRemote b -> IO ()
 
   -- | Inject a remote array into an AST node so that it can be used in a larger
   -- program.
