@@ -80,24 +80,39 @@ doBinds env (ProgBind vo ty dec@(SubBinds {subnames},_) op : rest) = do
 
 -- | Returns (unzipped) operator INPUTS.
 doAE :: Env -> AExp -> GensymM ([[Var]], AExp)
-doAE env ae = return$
+doAE env ae = 
   case ae of
-    Use _               -> ([],ae)
-    Cond a b c          -> ([sp b,sp c], Cond (exp a) nukedVar nukedVar)
-    Generate e lam1     -> ([], Generate (exp e) (doLam1 lam1))
-    Fold lam2 e v       -> ([sp v],Fold  (doLam2 lam2) (exp e) nukedVar)
-    Fold1    lam2 v     -> ([sp v],Fold1 (doLam2 lam2)         nukedVar)
-    FoldSeg  lam2 e v w -> ([sp v,sp w],FoldSeg  (doLam2 lam2) (exp e) nukedVar nukedVar)
-    Fold1Seg lam2 v w   -> ([sp v,sp w],Fold1Seg (doLam2 lam2)         nukedVar nukedVar)
-    Scanl    lam2 e v   -> ([sp v],Scanl  (doLam2 lam2) (exp e) nukedVar)
-    Scanl'   lam2 e v   -> ([sp v],Scanl' (doLam2 lam2) (exp e) nukedVar)
-    Scanl1   lam2   v   -> ([sp v],Scanl1 (doLam2 lam2)         nukedVar)
-    Scanr    lam2 e v   -> ([sp v],Scanr  (doLam2 lam2) (exp e) nukedVar)
-    Scanr'   lam2 e v   -> ([sp v],Scanr' (doLam2 lam2) (exp e) nukedVar)
-    Scanr1   lam2   v   -> ([sp v],Scanr1 (doLam2 lam2)         nukedVar)
-    Stencil  lam1 b v   -> ([sp v],Stencil (doLam1 lam1) b nukedVar)
-    Stencil2 l2 b v c w -> ([sp v,sp w],Stencil2 (doLam2 l2) b nukedVar c nukedVar)
-    Permute l2 v l1 w   -> ([sp v,sp w],Permute (doLam2 l2) nukedVar (doLam1 l1) nukedVar)
+    Use _               -> return ([],ae)
+    Cond a b c          -> return ([sp b,sp c], Cond (exp a) nukedVar nukedVar)
+    Generate e lam1     -> do l1 <- doLam1 lam1
+                              return ([], Generate (exp e) l1)
+    Fold lam2 e v       -> do l2 <- doLam2 lam2
+                              return ([sp v],Fold l2 (exp e) nukedVar)
+    Fold1    lam2 v     -> do l2 <- doLam2 lam2
+                              return ([sp v],Fold1 l2 nukedVar)
+    FoldSeg  lam2 e v w -> do l2 <- doLam2 lam2
+                              return ([sp v,sp w],FoldSeg l2 (exp e) nukedVar nukedVar)
+    Fold1Seg lam2 v w   -> do l2 <- doLam2 lam2
+                              return ([sp v,sp w],Fold1Seg l2        nukedVar nukedVar)
+    Scanl    lam2 e v   -> do l2 <- doLam2 lam2
+                              return ([sp v],Scanl  l2 (exp e) nukedVar)
+    Scanl'   lam2 e v   -> do l2 <- doLam2 lam2
+                              return ([sp v],Scanl' l2 (exp e) nukedVar)
+    Scanl1   lam2   v   -> do l2 <- doLam2 lam2
+                              return ([sp v],Scanl1 l2         nukedVar)
+    Scanr    lam2 e v   -> do l2 <- doLam2 lam2
+                              return ([sp v],Scanr  l2 (exp e) nukedVar)
+    Scanr'   lam2 e v   -> do l2 <- doLam2 lam2
+                              return ([sp v],Scanr' l2 (exp e) nukedVar)
+    Scanr1   lam2   v   -> do l2 <- doLam2 lam2
+                              return ([sp v],Scanr1 l2         nukedVar)
+    Stencil  lam1 b v   -> do l1 <- doLam1 lam1
+                              return ([sp v],Stencil l1 b nukedVar)
+    Stencil2 l2 b v c w -> do l2 <- (doLam2 l2)
+                              return ([sp v,sp w],Stencil2 l2 b nukedVar c nukedVar)
+    Permute l2 v l1 w   -> do l2 <- (doLam2 l2)
+                              l1 <- (doLam1 l1)
+                              return ([sp v,sp w],Permute l2 nukedVar l1 nukedVar)
     Unit {}             -> err ae
     Map  {}             -> err ae
     ZipWith {}          -> err ae
@@ -112,8 +127,8 @@ doAE env ae = return$
             Just x  -> x
    exp = doE env
    -- We're NOT detupling scalar vars at this point, so we don't bother extending the env:
-   doLam1 (Lam1 (v,ty) bod) = Lam1 (v,ty) (doE env bod)
-   doLam2 (Lam2 b1 b2 bod)  = Lam2 b1 b2 (doE env bod)
+   doLam1 (Lam1 (v,ty) bod) = return$ Lam1 (v,ty) (doE env bod)
+   doLam2 (Lam2 b1 b2 bod)  = return$ Lam2 b1 b2 (doE env bod)
 
 doE :: M.Map Var [Var] -> Exp -> Exp
 doE env ex =
