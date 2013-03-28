@@ -30,7 +30,7 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
      isIntType, isFloatType, isNumType, 
      isIntConst, isFloatConst, isNumConst, hasArrayType, flattenTy, flattenArrTy, countTyScalars,
 
-     var, progToEnv, lookupProgBind, expFreeVars, expSize,
+     var, progToEnv, lookupProgBind, expFreeVars, expASTSize, aexpASTSize, progASTSize, 
      resultNames, resultShapeNames,
      
      -- * Building and normalizing pieces of syntax
@@ -921,9 +921,9 @@ freshenExpNames = lp M.empty
 
 
 -- | How many nodes are contained in an Exp?
-expSize :: Exp -> Int
-expSize ex =
-   let f = expSize in
+expASTSize :: Exp -> Int
+expASTSize ex =
+   let f = expASTSize in
    case ex of
     EShape avr          -> 1
     EConst _            -> 1 -- Could measure const size.
@@ -937,41 +937,46 @@ expSize ex =
     EPrimApp _ _ els    -> 1 + sum (map f els)
     EIndex els          -> 1 + sum (map f els)
 
-{-
-aexpSize :: AExp -> Int
-aexpSize ae =
-  let f = expSize      
-      fn1 (Lam1 (_,t)   e)     = f e + typeSize t
-      fn2 (Lam2 (_,t) (_,u) e) = f e + typeSize t + typeSize u
+aexpASTSize :: AExp -> Int
+aexpASTSize ae =
+  let g = expASTSize
+      fn1 (Lam1 (_,t)   e)     = g e + typeSize t
+      fn2 (Lam2 (_,t) (_,u) e) = g e + typeSize t + typeSize u
       typeSize _ = 0 -- TODO: probably should count types.
   in
   case ae of
     Vr v             -> 1 
-    Unit e           -> 1 + f e
-    Cond e  _ _      -> 1 + f e 
+    Unit e           -> 1 + g e
+    Cond e  _ _      -> 1 + g e 
     Use     _        -> 1 -- Could add in array size here, but that should probably be reported separately.
-    Generate  e f1   -> 1 + f e + fn1 f1         -- Generate an array by applying a function to every index in shape
-    Replicate _ e _  -> 1 + f e 
-    Index    _ _ e   -> 1 + f e 
-    Map      f1 _    -> 1 + fn1 f1
-    ZipWith  f2 _ _  -> 1 + fn2 f1
--}
-  -- | Fold     (Fun2 Exp) Exp Var     
-  -- | Fold1    (Fun2 Exp)     Var     
-  -- | FoldSeg  (Fun2 Exp) Exp Var Var 
-  -- | Fold1Seg (Fun2 Exp)     Var Var 
-  -- | Scanl    (Fun2 Exp) Exp Var     
-  -- | Scanl'   (Fun2 Exp) Exp Var     
-  -- | Scanl1   (Fun2 Exp)     Var     
-  -- | Scanr    (Fun2 Exp) Exp Var     
-  -- | Scanr'   (Fun2 Exp) Exp Var     
-  -- | Scanr1   (Fun2 Exp)     Var     
-  -- | Permute  (Fun2 Exp) Var (Fun1 Exp) Var 
-  -- | Backpermute Exp (Fun1 Exp) Var   
-  -- | Reshape     Exp      Var         
-  -- | Stencil  (Fun1 Exp) Boundary Var
-  -- | Stencil2 (Fun2 Exp) Boundary Var Boundary Var 
+    Generate  e f1   -> 1 + g e + fn1 f1         -- Generate an array by applying a function to every index in shape
+    Replicate _ e _  -> 1 + g e 
+    Index    _ _ e   -> 1 + g e 
+    Map      f _     -> 1 + fn1 f
+    ZipWith  f _ _   -> 1 + fn2 f
+    Fold     f e _   -> 1 + fn2 f
+    Fold1    f     _ -> 1 + fn2 f
+    FoldSeg  f e _ _    -> 1 + fn2 f + g e
+    Fold1Seg f     _ _  -> 1 + fn2 f 
+    Scanl    f e _      -> 1 + fn2 f + g e
+    Scanl'   f e _      -> 1 + fn2 f + g e
+    Scanl1   f     _    -> 1 + fn2 f 
+    Scanr    f e _      -> 1 + fn2 f + g e
+    Scanr'   f e _      -> 1 + fn2 f + g e
+    Scanr1   f     _    -> 1 + fn2 f 
+    Permute  f _ f1 _   -> 1 + fn2 f + fn1 f1
+    Backpermute e f1 _  -> 1 + fn1 f1 + g e
+    Reshape     e    _  -> 1 + g e 
+    Stencil  f1 _ _     -> 1 + fn1 f1
+    Stencil2 f2 _ _ _ _ -> 1 + fn2 f2
 
+-- | How big is the AST of a program.
+progASTSize :: Prog a -> Int
+progASTSize Prog{progBinds, progResults} =
+    sum $ map pb progBinds
+  where
+    pb (ProgBind _ _ty _ (Right ae)) = aexpASTSize ae
+    pb (ProgBind _ _ty _ (Left  ex)) = expASTSize  ex
 
 -- | Substitute an expression for all occurrences of a variable in an open
 -- expression.

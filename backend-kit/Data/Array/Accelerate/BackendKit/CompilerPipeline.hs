@@ -140,7 +140,10 @@ phase0 = convertAccWith$
 -- Type Checking
 --------------------------------------------------------------------------------
 
+typecheckND :: S.Prog a -> S.Prog a
 typecheckND = typecheckPass True
+
+typecheck1D :: S.Prog a -> S.Prog a
 typecheck1D = typecheckPass False
 
 typecheckPass :: Bool -> S.Prog a -> S.Prog a
@@ -187,9 +190,10 @@ runSAPass1D msg pass input =
   runPass msg pass input
 
 
+optionalTC :: (S.Prog a -> S.Prog a) -> S.Prog a -> S.Prog a
 optionalTC tc prog =
   if dbg>0
-  then trace " [dbg] engaging optional typecheck pass, AST size "$
+  then trace (" [dbg] engaging optional typecheck pass, AST size "++show(S.progASTSize prog))$
        tc prog
   else prog
 
