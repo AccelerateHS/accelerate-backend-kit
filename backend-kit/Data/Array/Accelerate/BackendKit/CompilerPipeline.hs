@@ -7,7 +7,7 @@ module Data.Array.Accelerate.BackendKit.CompilerPipeline
          -- * Reexport from ToAccClone:
          unpackArray, packArray, repackAcc, Phantom,
          -- * Internal bits, exported for now:
-         phase2A         
+         phase2A, typecheck1D, typecheckND
        )
        where
 
