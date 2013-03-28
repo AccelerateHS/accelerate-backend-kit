@@ -39,7 +39,7 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
      -- * Type recovery and type checking:
      constToType, recoverExpType, topLevelExpType,
      typeByteSize, 
-     accArrayToType, payloadToType, verifyAccArray
+     accArrayToType, payloadToType
     )
  where
 
@@ -55,7 +55,6 @@ import qualified Data.Map          as M
 import qualified Data.Set          as S
 import qualified Data.List         as L
 import           Data.Word
-import           Data.Maybe   (catMaybes)
 import           Foreign.C.Types 
 import           Text.PrettyPrint.HughesPJ (text)
 import           System.IO.Unsafe  (unsafePerformIO)
@@ -487,35 +486,6 @@ type RawData e = UArray Int e
 accArrayToType :: AccArray -> Type
 accArrayToType (AccArray ls payls) =
   TArray (length ls) (mkTTuple (L.map payloadToType payls))
-
-
--- | Returns an error message if anything is wrong.  In particular, the number and
---   type of payloads should match the declared type.  Note that an AccArray
---   represents a single logical array with one shape (though it can be an array of
---   tuples).
-verifyAccArray :: Type -> AccArray -> Maybe ErrorMsg
-verifyAccArray ty (AccArray shp cols) =  
-  if length expectedCols /= length cols
-  then Just$"Bad AccArray.  Unexpected number of payloads ("++
-        show(length cols)++") for type "++show ty
-  else re$ unlines $ catMaybes $
-       zipWith (assertTyEq "Payload type")
-       expectedCols (map payloadToType cols)
- where
-   expectedCols = flattenArrTy ty
-   re ""  = Nothing
-   re str = Just str   
-   mismatchErr msg got expected = msg++" does not match expected. "++
-                                  "\nGot:      "++show got ++
-                                  "\nExpected: "++show expected
-   assertTyEq msg got expected =
-     if got == expected
-     then Nothing
-     else Just(mismatchErr msg got expected)
-
-
-
-type ErrorMsg = String
 
 payloadToType :: ArrayPayload -> Type
 payloadToType p =  

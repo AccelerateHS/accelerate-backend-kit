@@ -12,7 +12,8 @@ module Data.Array.Accelerate.BackendKit.Phase1.VerifySimpleAcc
        where
 
 import Data.Map as M
-import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S 
+import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
+import Data.Array.Accelerate.BackendKit.SimpleArray (verifyAccArray)
 import Prelude as P hiding (or) 
 --------------------------------------------------------------------------------
 

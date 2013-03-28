@@ -15,7 +15,10 @@ module Data.Array.Accelerate.BackendKit.SimpleArray
           
      -- * Runtime Array data representation.
      AccArray(..), ArrayPayload(..),  -- Reexported from SimpleAST
-          
+
+     -- * Data invariant validation
+     verifyAccArray,
+     
      -- * Functions for operating on `AccArray`s
      mapArray,
      splitComponent, numComponents,
@@ -45,6 +48,7 @@ import           Debug.Trace
 import           Data.Int
 import           Data.Word
 import           Data.List          as L
+import           Data.Maybe   (catMaybes)
 import           Data.Array.Unboxed as U
 import qualified Data.Array.Unsafe as Un
 import qualified Data.Array.MArray as MA
@@ -505,3 +509,42 @@ concatAccArrays origls =
   payls = concat paylss
   (dims,paylss) = unzip [ (dim,payls) | S.AccArray dim payls <- origls ] 
   allSame (hd:tl) = all (==hd) tl
+
+
+-- | Returns an error message if anything is wrong.  In particular, the number and
+--   type of payloads should match the declared type.  Note that an AccArray
+--   represents a single logical array with one shape (though it can be an array of
+--   tuples).
+verifyAccArray :: Type -> AccArray -> Maybe ErrorMsg
+verifyAccArray ty (AccArray shp cols) =
+  case ty of
+    TArray d elt ->
+      let expectedCols = flattenTy elt in      
+      re$ unlines $ catMaybes $      
+      ((if d /= length shp
+        then Just$"AccArray shape "++show shp++" doesn't match dimension in type: "++show d
+        else Nothing) :
+       (if length expectedCols /= length cols
+       then Just$"Bad AccArray.  Unexpected number of payloads ("++
+            show(length cols)++") for type "++show ty
+       else Nothing) :
+       (zipWith (assertEq "Payload type")
+                (map payloadToType cols) expectedCols) ++
+       (zipWith (assertEq "Payload length")
+                (map payloadLength cols) (repeat expectedSize)))
+    oth -> Just$ "AccArray had non-array type: "++show oth
+ where
+   expectedSize = product shp
+   re ""  = Nothing
+   re str = Just str   
+   mismatchErr msg got expected = msg++" does not match expected. "++
+                                  "\nGot:      "++show got ++
+                                  "\nExpected: "++show expected
+   assertEq msg got expected =
+     if got == expected
+     then Nothing
+     else Just(mismatchErr msg got expected)
+
+
+
+type ErrorMsg = String
