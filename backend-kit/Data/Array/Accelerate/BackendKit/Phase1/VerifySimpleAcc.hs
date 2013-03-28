@@ -75,14 +75,27 @@ doAE outTy env ae =
       let (it,ot,err) = typeFn1 "Map" fn in
       err `or`
       assertTyEq "Map result" ot elty `or`
-      (lkup vr $ \ argty ->
+      (lkup vr $ \ argty -> 
         case argty of
           TArray ndim' elty' ->
             assertTyEq "Map input" elty' it `or`
             assertTyEq "Map input dimension" ndim' ndim)
-    _  ->  Nothing
 
---     ZipWith fn2 v1 v2   -> addArrRef v1 $ addArrRef v2 $ doFn2 fn2 mp
+    ZipWith fn2 v1 v2   ->
+      let (it1,it2,ot,err) = typeFn2 "ZipWith" fn2 in
+      err `or`
+      assertTyEq "ZipWith result" ot elty `or`
+      (lkup v1 $ \ argty -> 
+        case argty of
+          TArray ndim' elty' ->
+            assertTyEq "ZipWith input" elty' it1 `or`
+            assertTyEq "ZipWith input dimension" ndim' ndim) `or`
+      (lkup v2 $ \ argty ->
+        case argty of
+          TArray ndim' elty' ->
+            assertTyEq "ZipWith input" elty' it2 `or`
+            assertTyEq "ZipWith input dimension" ndim' ndim)
+      
 --     Cond e1 v1 v2       -> addArrRef v1 $ addArrRef v2 $ doE e1 mp
 --     Generate e1 fn1     -> doE e1       $ doFn1 fn1 mp
 
@@ -107,7 +120,8 @@ doAE outTy env ae =
 --     Replicate _slt e1 vr -> addArrRef vr $ doE e1 mp
 --     Index _slt vr e1     -> addArrRef vr $ doE e1 mp
 --     Unit _ -> error "trackUses: Unit is not part of the grammar accepted by this pass"
-
+    _  ->  Nothing
+    
  where
    TArray ndim elty = outTy
    lkup v k =
@@ -124,6 +138,22 @@ doAE outTy env ae =
                 Nothing -> Nothing
      in (inTy, ty',
          err1 `or` doE env' exp)
+
+   -- TODO: factor these into one variant that takes a list of formals:
+   typeFn2 :: String -> Fun2 Exp -> (Type,Type,Type,Maybe ErrorMessage)
+   typeFn2 msg (Lam2 (vr1,inTy1) (vr2,inTy2) bod) =
+     let env' = M.insert vr1 inTy1 $
+                M.insert vr2 inTy2 env
+         ty'  = recoverExpType env' bod
+         err1 = case M.lookup vr1 env of
+                Just _  -> Just (msg++": Local formal param is not globally unique: "++show vr1) 
+                Nothing -> Nothing
+         err2 = case M.lookup vr2 env of
+                Just _  -> Just (msg++": Local formal param is not globally unique: "++show vr2) 
+                Nothing -> Nothing                
+     in (inTy1, inTy2, ty',
+         err1 `or` err2 `or` doE env' bod)
+
 -- doFn1  mp = doE exp mp 
 
 -- doFn2 :: Fun2 Exp -> UseMap -> UseMap
