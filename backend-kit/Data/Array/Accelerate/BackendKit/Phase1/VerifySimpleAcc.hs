@@ -67,7 +67,7 @@ assertTyEq msg got expected =
 doBinds :: VerifierConfig -> Env -> [ProgBind t] -> Maybe ErrorMessage
 doBinds _cfg _env [] = Nothing
 doBinds cfg env (ProgBind vo ty _ (Right ae) :rst) =
-  doAE ty env ae `or`
+  doAE cfg ty env ae `or`
   doBinds cfg env rst
 doBinds cfg env (ProgBind vo ty _ (Left ex) :rst) =
   assertTyEq ("Top-level scalar variable "++show vo)
@@ -78,8 +78,8 @@ doBinds cfg env (ProgBind vo ty _ (Left ex) :rst) =
 -- some direct representation of the type of each AExp op.
 -- data TmpType = Arrow TmpType TmpType | TVar Int | PlainType Type
 
-doAE :: Type -> Env -> AExp -> Maybe ErrorMessage
-doAE outTy env ae =
+doAE :: VerifierConfig -> Type -> Env -> AExp -> Maybe ErrorMessage
+doAE VerifierConfig{multiDim} outTy env ae =
   case ae of
     Use arr -> verifyAccArray outTy arr
     Vr v    -> lkup v $ \ty -> assertTyEq ("Varref "++show v) ty outTy
@@ -140,11 +140,8 @@ doAE outTy env ae =
        err `or`
        assertTyEq (variant++" arguments not the same type") it1 it2 `or`
        assertTyEq (variant++" output not expected type") it1 ot `or`
-       assertTyEq (variant++" output") (TArray ndim ot) outTy
--- TODO: Check the dimension differently based on multiDim config parameter:
-{-       
-       `or` arrVariable vr (TArray (ndim+1) it1) -- Knock off one dim.
--}      
+       assertTyEq (variant++" output") (TArray ndim ot) outTy `or`
+       arrVariable vr (TArray (if multiDim then ndim+1 else 1) it1)
       )
    TArray ndim elty = outTy
 
@@ -152,8 +149,8 @@ doAE outTy env ae =
      (lkup vr $ \ argty -> 
         case argty of
           TArray ndim' elty' ->
-            assertTyEq "Array variable element type" elty' expected_elt `or`
-            assertTyEq "Array variable dimension" ndim' expected_dim)
+            assertTyEq ("Array variable ("++show vr++") element type") elty' expected_elt `or`
+            assertTyEq ("Array variable ("++show vr++") dimension") ndim' expected_dim)
 
    expr msg ex expected =
      assertTyEq msg (recoverExpType env ex) expected

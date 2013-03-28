@@ -85,14 +85,14 @@ phase2 prog =
   -- todo: Verify final CLike here
   runPass    "unzipArrays"       unzipArrays       $     -- (opinputs,(subbinds,(foldstride,size)))
   runPass    "unzipETups"        unzipETups        $     -- (subbinds,(foldstride,size))
-                                 typecheckPass     $     
+                                 typecheck1D     $     
   runPass    "normalizeExps"     normalizeExps     $     -- (foldstride,size)
   phase2A    prog
 
 -- | Factor out this [internal] piece for use in some place(s).
 phase2A :: S.Prog () -> S.Prog (Maybe (Stride S.Exp),ArraySizeEstimate)
 phase2A prog =
-  runPass    "typecheck2"        typecheckPass     $       
+  runPass    "typecheck2"        typecheck1D     $       
   runPass    "oneDimensionalize" oneDimensionalize $     -- (foldstride,size)
   runOptPass "deadCode"          deadCode (fmap fst) $   -- (size)
   runPass    "trackUses"         trackUses         $     -- (size,uses)
@@ -112,7 +112,7 @@ phase2A prog =
 -- number of lowering compiler passes.
 phase1 :: (Sug.Arrays a) => AST.Acc a -> S.Prog ()
 phase1 prog =
-  runPass "typecheck1"           typecheckPass     $       
+  runPass "typecheck1"           typecheckND     $       
   runPass "removeArrayTuple"     removeArrayTuple  $ -- convert to S.Prog -- does gensym! FIXME
   runPass "gatherLets"           gatherLets        $  
   runPass "liftComplexRands"     liftComplexRands  $ -- does gensym! FIXME
@@ -133,12 +133,16 @@ phase0 = convertAccWith$
      , enableAccFusion        = False
      , convertOffsetOfSegment = False
      }
-  
-typecheckPass :: S.Prog a -> S.Prog a
-typecheckPass prog =
-  case verifySimpleAcc VerifierConfig{multiDim=True} prog of
+
+typecheckND = typecheckPass True
+typecheck1D = typecheckPass False
+
+typecheckPass :: Bool -> S.Prog a -> S.Prog a
+typecheckPass flg prog =
+  case verifySimpleAcc VerifierConfig{multiDim=flg} prog of
     Nothing -> prog
     Just s -> error$"Typecheck pass failed: "++s
+
 
 -- instance Show a => Out (Sug.Acc a) where
 instance Out (AST.Acc a) where    
