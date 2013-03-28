@@ -75,26 +75,14 @@ doAE outTy env ae =
       let (it,ot,err) = typeFn1 "Map" fn in
       err `or`
       assertTyEq "Map result" ot elty `or`
-      (lkup vr $ \ argty -> 
-        case argty of
-          TArray ndim' elty' ->
-            assertTyEq "Map input" elty' it `or`
-            assertTyEq "Map input dimension" ndim' ndim)
+      arrVariable vr (TArray ndim it)
 
     ZipWith fn2 v1 v2   ->
       let (it1,it2,ot,err) = typeFn2 "ZipWith" fn2 in
       err `or`
       assertTyEq "ZipWith result" ot elty `or`
-      (lkup v1 $ \ argty -> 
-        case argty of
-          TArray ndim' elty' ->
-            assertTyEq "ZipWith input" elty' it1 `or`
-            assertTyEq "ZipWith input dimension" ndim' ndim) `or`
-      (lkup v2 $ \ argty ->
-        case argty of
-          TArray ndim' elty' ->
-            assertTyEq "ZipWith input" elty' it2 `or`
-            assertTyEq "ZipWith input dimension" ndim' ndim)
+      arrVariable v1 (TArray ndim it1) `or`
+      arrVariable v2 (TArray ndim it2)
       
 --     Cond e1 v1 v2       -> addArrRef v1 $ addArrRef v2 $ doE e1 mp
 --     Generate e1 fn1     -> doE e1       $ doFn1 fn1 mp
@@ -124,6 +112,15 @@ doAE outTy env ae =
     
  where
    TArray ndim elty = outTy
+
+   arrVariable vr (TArray expected_dim expected_elt) =
+     (lkup vr $ \ argty -> 
+        case argty of
+          TArray ndim' elty' ->
+            assertTyEq "Array variable element type" elty' expected_elt `or`
+            assertTyEq "Array variable dimension" ndim' expected_dim)
+
+   
    lkup v k =
      case M.lookup v env of
        Just x  -> k x
