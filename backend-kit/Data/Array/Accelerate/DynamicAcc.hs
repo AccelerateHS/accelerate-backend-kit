@@ -257,6 +257,7 @@ type AENV0 = ()
 --     
 convertExp :: 
               EnvPack -> SealedLayout -> S.Exp -> SealedOpenExp
+-- TODO: Add a second SealedLayout for array bindings.
 convertExp ep@(EnvPack envE envA mp)
            slayout@(SealedLayout (lyt :: Layout env0 env0')) ex =
   trace("Converting exp "++show ex++" with layout "++show lyt++" and dyn env "++show (envE,envA))$
@@ -282,23 +283,8 @@ convertExp ep@(EnvPack envE envA mp)
                        -- Need: Typeable3 (NAST.PreOpenExp NAST.OpenAcc)
                        -- Need: Typeable env1
                        sealOpenExp oe
-                       -- (error$"Got to type " ++show(toDyn (unused::res))++" env "++show slayout)
-
---          Tag i -> AST.Var (prjIdx ("de Bruijn conversion tag " ++ show i) i lyt)                   
-               
-             -- What are we going to do here?  We've got the index.
-
-  -- Var           :: Elt t
-  --               => Idx env t
-  --               -> PreOpenExp acc env aenv t
-
--- prjEltTuple :: SealedEltTuple -> Int-> SealedLayout -> SealedIdx
-
-  -- -- Variable index, ranging only over tuples or scalars
-  -- Var           :: Elt t
-  --               => Idx env t
-  --               -> PreOpenExp acc env aenv t
-
+             -- TODO: other cases
+                     
     S.ELet (vr,ty,rhs) bod ->
       let rhs' = cE rhs
           ep'@(EnvPack _ _ m2) = extendE vr ty ep
@@ -312,17 +298,22 @@ convertExp ep@(EnvPack envE envA mp)
          (SealedLayout (lyt :: Layout env2 env2'),
           SealedEltTuple (trhs :: EltTuple rhs_elt),
           SealedEltTuple (tres :: EltTuple res_elt)) ->
-
+           -- Need to verify that env2 ~ (env0,rhs_elt)
+--            case (gcast lyt) :: Maybe (Layout (env0,rhs_elt) (env0',rhs_elt)) of
+--              Just (lyt') ->
+-- --             Just (lyt' :: Layout Int8 Int16) ->             
+--                error "FINISH"
+{-
            case (trhs,tres) of
              (SingleTuple _, SingleTuple _) -> 
                let bod'' = (downcastOE bod') :: NAST.OpenExp env2 AENV0 res_elt
-                   rhs'' = undefined :: NAST.OpenExp env0 AENV0 rhs_elt
+                   rhs'' = (downcastOE rhs') :: NAST.OpenExp env0 AENV0 rhs_elt
                    oe :: NAST.OpenExp env0 AENV0 res_elt
-                   oe = undefined -- NAST.Let rhs'' bod''
+                   oe = NAST.Let rhs'' bod''
                in
                trace ("Incremented "++show slayout++" to "++show slayout')
-        --       sealOpenExp oe
                sealOpenExp bod''
+-}
 
 --        AST.Let (cvt boundExp) (convertSharingExp config lyt' alyt (se:env) aenv bodyExp)          
 
