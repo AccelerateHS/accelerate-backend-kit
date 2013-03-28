@@ -28,7 +28,7 @@ import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import qualified Data.Array.Accelerate.BackendKit.IRs.CLike     as C
 import qualified Data.Array.Accelerate.BackendKit.IRs.GPUIR     as G
 import           Data.Array.Accelerate.BackendKit.IRs.Metadata   (Stride, ArraySizeEstimate, FreeVars)
-import           Data.Array.Accelerate.BackendKit.Utils.Helpers (maybtrace)
+import           Data.Array.Accelerate.BackendKit.Utils.Helpers (maybtrace, dbg)
 
 -- Phase 1 passes:
 ----------------------------------------
@@ -89,26 +89,24 @@ phase2 prog =
   -- todo: Verify final CLike here
   runPass    "unzipArrays"       unzipArrays       $     -- (opinputs,(subbinds,(foldstride,size)))
   runPass    "unzipETups"        unzipETups        $     -- (subbinds,(foldstride,size))
-                                 typecheck1D     $     
-  runPass    "normalizeExps"     normalizeExps     $     -- (foldstride,size)
+  runSAPass1D "normalizeExps"    normalizeExps     $     -- (foldstride,size)
   phase2A    prog
 
 -- | Factor out this [internal] piece for use in some place(s).
 phase2A :: S.Prog () -> S.Prog (Maybe (Stride S.Exp),ArraySizeEstimate)
 phase2A prog =
-  runPass    "typecheck2"        typecheck1D     $       
-  runPass    "oneDimensionalize" oneDimensionalize $     -- (foldstride,size)
-  runOptPass "deadCode"          deadCode (fmap fst) $   -- (size)
-  runPass    "trackUses"         trackUses         $     -- (size,uses)
-  runOptPass "inlineCheap"       inlineCheap (fmap fst) $ -- (size)
-  runPass    "estimateCost"      estimateCost      $      -- (size,cost)
-  runPass    "desugtoGenerate"   desugToGenerate   $      -- (size)
-  runPass    "desugToBackperm"   desugToBackperm   $      -- (size,uses)
-  runOptPass "fuseMaps"          fuseMaps  id      $      -- (size,uses)
-  runPass    "trackUses"         trackUses         $      -- (size,uses)
-  runPass    "explicitShapes"    explicitShapes    $      -- (size)
-  runPass    "sizeAnalysis"      sizeAnalysis      $      -- (size)
-  runPass    "desugarUnit"       desugarUnit       $      -- ()
+  runSAPass1D  "oneDimensionalize" oneDimensionalize   $  -- (foldstride,size)
+  runOptPassND "deadCode"          deadCode (fmap fst) $  -- (size)
+  runSAPassND  "trackUses"         trackUses           $  -- (size,uses)
+  runOptPassND "inlineCheap"     inlineCheap (fmap fst) $ -- (size)
+  runSAPassND  "estimateCost"    estimateCost      $      -- (size,cost)
+  runSAPassND  "desugtoGenerate" desugToGenerate   $      -- (size)
+  runSAPassND  "desugToBackperm" desugToBackperm   $      -- (size,uses)
+  runOptPassND  "fuseMaps"       fuseMaps  id      $      -- (size,uses)
+  runSAPassND   "trackUses"      trackUses         $      -- (size,uses)
+  runSAPassND "explicitShapes"   explicitShapes    $      -- (size)
+  runSAPassND "sizeAnalysis"     sizeAnalysis      $      -- (size)
+  runSAPassND "desugarUnit"      desugarUnit       $      -- ()
   prog
 
 -- | Phase1: Convert the sophisticate Accelerate-internal AST representation into
@@ -116,7 +114,7 @@ phase2A prog =
 -- number of lowering compiler passes.
 phase1 :: (Sug.Arrays a) => AST.Acc a -> S.Prog ()
 phase1 prog =
-  runPass "typecheck1"           typecheckND     $       
+  optionalTC                     typecheckND       $  -- Initial Typecheck
   runPass "removeArrayTuple"     removeArrayTuple  $ -- convert to S.Prog -- does gensym! FIXME
   runPass "gatherLets"           gatherLets        $  
   runPass "liftComplexRands"     liftComplexRands  $ -- does gensym! FIXME
@@ -162,22 +160,38 @@ runPass :: Out a => String -> (t -> a) -> t -> a
 runPass msg pass input =
   maybtrace ("\n" ++ msg ++ ", output was:\n"++
                        "================================================================================\n"
-                       ++ show (doc x)) 
+                       ++ show (doc x))
   x
  where x = pass input              
 
 -- An [optional] optimization pass:
 runOptPass :: Out a => String -> (t -> a) -> (t -> a) -> t -> a
-runOptPass str pass _otherwise = runPass str pass
+runOptPass str pass _otherwise =
+  runPass str pass
+
+-- An optional pass with typechecking
+runOptPassND :: Out a => String -> (S.Prog t -> S.Prog a) -> (S.Prog t -> S.Prog a) -> S.Prog t -> S.Prog a
+runOptPassND str pass _otherwise =
+  runSAPassND str pass
 
 -- | A specific variant for passes that produce N-dimensional `SimpleAcc` output.
-runSAPassND :: Out a => String -> (t -> a) -> t -> a
+runSAPassND :: Out a => String -> (S.Prog t -> S.Prog a) -> S.Prog t -> S.Prog a
 runSAPassND msg pass input =
-  runPass msg pass input     
+  optionalTC typecheckND $ 
+  runPass msg pass input
 
 -- | A specific variant for passes that produce 1-dimensional `SimpleAcc` output.
-runSAPass1D :: Out a => String -> (t -> a) -> t -> a
-runSAPass1D = runPass
+runSAPass1D :: Out a => String -> (S.Prog t -> S.Prog a) -> S.Prog t -> S.Prog a
+runSAPass1D msg pass input =
+  optionalTC typecheck1D $
+  runPass msg pass input
+
+
+optionalTC tc prog =
+  if dbg>0
+  then trace " [dbg] engaging optional typecheck pass, AST size "$
+       tc prog
+  else prog
 
 --------------------------------------------------------------------------------
 -- Misc:
