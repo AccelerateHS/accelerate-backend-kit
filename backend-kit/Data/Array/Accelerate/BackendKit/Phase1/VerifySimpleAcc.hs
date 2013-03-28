@@ -55,7 +55,6 @@ assertTyEq msg got expected =
   if got == expected
   then Nothing
   else Just$ mismatchErr msg got expected
-  
 
 doBinds :: Env -> [ProgBind t] -> Maybe ErrorMessage
 doBinds _env [] = Nothing
@@ -72,8 +71,17 @@ doAE outTy env ae =
   case ae of
     Use arr -> verifyAccArray outTy arr
     Vr v    -> lkup v $ \ty -> assertTyEq ("Varref "++show v) ty outTy
-    _ -> Nothing                       
---     Map fn vr           -> addArrRef vr $ doFn1 fn mp
+    Map fn vr               ->      
+      let (it,ot,err) = typeFn1 "Map" fn in
+      err `or`
+      assertTyEq "Map result" ot elty `or`
+      (lkup vr $ \ argty ->
+        case argty of
+          TArray ndim' elty' ->
+            assertTyEq "Map input" elty' it `or`
+            assertTyEq "Map input dimension" ndim' ndim)
+    _  ->  Nothing
+
 --     ZipWith fn2 v1 v2   -> addArrRef v1 $ addArrRef v2 $ doFn2 fn2 mp
 --     Cond e1 v1 v2       -> addArrRef v1 $ addArrRef v2 $ doE e1 mp
 --     Generate e1 fn1     -> doE e1       $ doFn1 fn1 mp
@@ -101,17 +109,30 @@ doAE outTy env ae =
 --     Unit _ -> error "trackUses: Unit is not part of the grammar accepted by this pass"
 
  where
+   TArray ndim elty = outTy
    lkup v k =
      case M.lookup v env of
        Just x  -> k x
        Nothing -> Just$ "Unbound variable: "++show v
       
--- doFn1 :: Fun1 Exp -> UseMap -> UseMap
--- doFn1 (Lam1 _ exp) mp = doE exp mp 
+   typeFn1 :: String -> Fun1 Exp -> (Type,Type,Maybe ErrorMessage)
+   typeFn1 msg (Lam1 (vr,inTy) exp) =
+     let env' = M.insert vr inTy env
+         ty'  = recoverExpType env' exp 
+         err1 = case M.lookup vr env of
+                Just _  -> Just (msg++": Local formal param is not globally unique: "++show vr) 
+                Nothing -> Nothing
+     in (inTy, ty',
+         err1 `or` doE env' exp)
+-- doFn1  mp = doE exp mp 
 
 -- doFn2 :: Fun2 Exp -> UseMap -> UseMap
 -- doFn2 (Lam2 _ _ exp) mp = doE exp mp 
 
+
+-- TODO -- need to replace "recoverExpType" with something that will NOT throw a
+-- Haskell error.
+doE _ _ = Nothing
 
 -------------------------------------------------------------------------------
 
