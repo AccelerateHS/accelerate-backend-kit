@@ -193,8 +193,9 @@ unD (D x) = x
 unC (C x) = x
 unB (B x) = x
 unTup (Tup ls) = ls
--- Length of a UArray:
-arrLen arr = let (st,en) = U.bounds arr in en - st      
+-- Length of a UArray, add one because bounds are INCLUSIVE
+arrLen :: (Num a1, Ix a1, IArray a e) => a a1 e -> a1
+arrLen arr = let (st,en) = U.bounds arr in en - st + 1
 
 
 -- | Apply an elementwise function to each Const inside an array.  The
@@ -528,10 +529,10 @@ verifyAccArray ty (AccArray shp cols) =
        then Just$"Bad AccArray.  Unexpected number of payloads ("++
             show(length cols)++") for type "++show ty
        else Nothing) :
-       (zipWith (assertEq "Payload type")
-                (map payloadToType cols) expectedCols) ++
-       (zipWith (assertEq "Payload length")
-                (map payloadLength cols) (repeat expectedSize)))
+       (tag$zipWith (assertEq "Payload type")
+                    (map payloadToType cols) expectedCols) ++
+       (tag$zipWith (assertEq "Payload length")
+                     (map payloadLength cols) (repeat expectedSize)))
     oth -> Just$ "AccArray had non-array type: "++show oth
  where
    expectedSize = product shp
@@ -544,7 +545,9 @@ verifyAccArray ty (AccArray shp cols) =
      if got == expected
      then Nothing
      else Just(mismatchErr msg got expected)
-
-
+   -- Enhance the message with more info:       
+   tag  = map (fmap 
+               (++"\nAccArray contents: "++
+                unlines (map ((take 70) . show) cols)))
 
 type ErrorMsg = String
