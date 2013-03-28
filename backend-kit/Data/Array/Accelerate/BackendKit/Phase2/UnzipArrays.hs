@@ -32,7 +32,7 @@ import Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace)
 --
 -- This pass eliminates ETupProject's around EIndexScalar's.
 unzipArrays :: S.Prog (SubBinds,a) -> S.Prog (OpInputs,(SubBinds,a))
-unzipArrays prog@Prog{progBinds,progResults = WithShapesUnzipped pR, uniqueCounter } =
+unzipArrays prog@Prog{progBinds,progResults = WithShapesUnzipped pR, uniqueCounter, typeEnv } =
   prog { progBinds   = binds',
          -- All parts of an unzipped array have the same shape:         
          progResults = WithShapesUnzipped$
@@ -41,22 +41,23 @@ unzipArrays prog@Prog{progBinds,progResults = WithShapesUnzipped pR, uniqueCount
          uniqueCounter = cntr'
        }
   where
-    (binds',cntr') = runState (doBinds M.empty progBinds) uniqueCounter
+    (binds',cntr') = runState (doBinds typeEnv M.empty progBinds) uniqueCounter
     env = M.fromList$
           map (\(ProgBind v _ (SubBinds vrs _,_) _) -> (v,vrs)) progBinds
 
 -- | For this pass every top level binding is tracked in the environment which is
 -- passed throuh the helper functions.
 type Env = M.Map Var [Var]
+type TEnv = M.Map Var Type
 
-doBinds :: Env -> [ProgBind (SubBinds,a)] -> GensymM [ProgBind (OpInputs,(SubBinds,a))]
-doBinds _ [] = return [] 
-doBinds env (ProgBind vo _ _ (Right (Vr v1)) : rest) =
+doBinds :: TEnv -> Env -> [ProgBind (SubBinds,a)] -> GensymM [ProgBind (OpInputs,(SubBinds,a))]
+doBinds _ _ [] = return [] 
+doBinds tenv env (ProgBind vo _ _ (Right (Vr v1)) : rest) =
   -- Copy propagataion:
-  doBinds (M.insert vo (env#v1) env) rest
+  doBinds tenv (M.insert vo (env#v1) env) rest
 
 -- Unzip Use to make things easier for future passes:
-doBinds env (ProgBind vo aty (SubBinds {subnames,arrsize},d2)
+doBinds tenv env (ProgBind vo aty (SubBinds {subnames,arrsize},d2)
              (Right (Use (AccArray {arrDim,arrPayloads}))) : rest) 
   | length subnames > 1 =
     ([ ProgBind subname arrty
@@ -66,21 +67,21 @@ doBinds env (ProgBind vo aty (SubBinds {subnames,arrsize},d2)
      | arrty   <- S.flattenArrTy aty
      | onepayl <- arrPayloads  
      ]++)
-    <$> doBinds (M.insert vo subnames env) rest
+    <$> doBinds tenv (M.insert vo subnames env) rest
 
-doBinds env (ProgBind vo ty dec@(SubBinds {subnames},_) op : rest) = do
+doBinds tenv env (ProgBind vo ty dec@(SubBinds {subnames},_) op : rest) = do
   (dec',op') <-
       case op of
         Left  ex -> do ex' <- doE env ex
                        return (OpInputs[], Left ex')
-        Right ae -> do (ls,ae') <- doAE env ae
+        Right ae -> do (ls,ae') <- doAE tenv env ae
                        return (OpInputs ls,Right ae')
   (ProgBind nukedVar ty (dec',dec) op' :)
-    <$> doBinds (M.insert vo subnames env) rest
+    <$> doBinds tenv (M.insert vo subnames env) rest
 
 -- | Returns (unzipped) operator INPUTS.
-doAE :: Env -> AExp -> GensymM ([[Var]], AExp)
-doAE env ae = 
+doAE :: TEnv -> Env -> AExp -> GensymM ([[Var]], AExp)
+doAE tenv env ae = 
   case ae of
     Use _               -> return ([],ae)
     Cond a b c          -> do a' <- (exp a)
