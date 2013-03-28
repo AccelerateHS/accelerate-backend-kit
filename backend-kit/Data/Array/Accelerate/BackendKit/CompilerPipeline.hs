@@ -9,10 +9,12 @@ module Data.Array.Accelerate.BackendKit.CompilerPipeline
          unpackArray, packArray, repackAcc, Phantom,
 
          -- * Compiler construction
-         runPass, runOptPass, runSAPass1D, runSAPassND,
+         runPass, 
+         runSAPass1D, runSAPassND, runSAPassNoD,
+         runOptPass, runOptPassNoD, runOptPassND,
          
          -- * Internal bits, exported for now:
-         phase2A, typecheck1D, typecheckND
+         phase2A, typecheckPass, optionalTC, DimCheckMode(..)
        )
        where
 
@@ -182,7 +184,6 @@ runOptPassND str pass _otherwise =
 runOptPassNoD :: Out a => String -> (S.Prog t -> S.Prog a) -> (S.Prog t -> S.Prog a) -> S.Prog t -> S.Prog a
 runOptPassNoD str pass _otherwise =
   runSAPassNoD str pass
-
 
 -- | A specific variant for passes that produce N-dimensional `SimpleAcc` output.
 runSAPassND :: Out a => String -> (S.Prog t -> S.Prog a) -> S.Prog t -> S.Prog a
