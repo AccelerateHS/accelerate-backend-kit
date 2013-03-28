@@ -303,17 +303,15 @@ convertExp ep@(EnvPack envE envA mp)
 --              Just (lyt') ->
 -- --             Just (lyt' :: Layout Int8 Int16) ->             
 --                error "FINISH"
-{-
            case (trhs,tres) of
              (SingleTuple _, SingleTuple _) -> 
                let bod'' = (downcastOE bod') :: NAST.OpenExp env2 AENV0 res_elt
                    rhs'' = (downcastOE rhs') :: NAST.OpenExp env0 AENV0 rhs_elt
-                   oe :: NAST.OpenExp env0 AENV0 res_elt
-                   oe = NAST.Let rhs'' bod''
+--                   oe :: NAST.OpenExp env0 AENV0 res_elt
+--                   oe = NAST.Let rhs'' bod''
                in
                trace ("Incremented "++show slayout++" to "++show slayout')
                sealOpenExp bod''
--}
 
 --        AST.Let (cvt boundExp) (convertSharingExp config lyt' alyt (se:env) aenv bodyExp)          
 

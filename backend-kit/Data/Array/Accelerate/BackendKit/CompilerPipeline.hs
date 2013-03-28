@@ -31,8 +31,9 @@ import           Data.Array.Accelerate.BackendKit.CompilerUtils  (runPass, runOp
 import Data.Array.Accelerate.BackendKit.Phase1.ToAccClone        (accToAccClone,unpackArray, packArray, repackAcc, Phantom)
 import Data.Array.Accelerate.BackendKit.Phase1.LiftLets          (gatherLets)
 import Data.Array.Accelerate.BackendKit.Phase1.LiftComplexRands  (liftComplexRands)
-import Data.Array.Accelerate.BackendKit.Phase1.RemoveArrayTuple  (removeArrayTuple)
 import Data.Array.Accelerate.BackendKit.Phase1.StaticTuples      (staticTuples)
+import Data.Array.Accelerate.BackendKit.Phase1.RemoveArrayTuple  (removeArrayTuple)
+import Data.Array.Accelerate.BackendKit.Phase1.VerifySimpleAcc   (verifySimpleAcc)
 
 -- Phase 2 passes:
 ----------------------------------------
@@ -135,7 +136,7 @@ phase0 = convertAccWith$
   
 typecheckPass :: S.Prog a -> S.Prog a
 typecheckPass prog =
-  case S.typecheckProg prog of
+  case verifySimpleAcc prog of
     Nothing -> prog
     Just s -> error$"Typecheck pass failed: "++s
 
