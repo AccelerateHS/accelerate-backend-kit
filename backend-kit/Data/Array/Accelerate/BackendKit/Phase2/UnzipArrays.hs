@@ -7,7 +7,7 @@ import Control.Applicative ((<$>),(<*>), pure)
 import qualified Data.Map              as M
 
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
-import Data.Array.Accelerate.BackendKit.Utils.Helpers ((#),isTrivialE)
+import Data.Array.Accelerate.BackendKit.Utils.Helpers ((#),isTrivialE, GensymM, maybeLetE)
 import Data.Array.Accelerate.BackendKit.IRs.Metadata (SubBinds(..), OpInputs(..))
 import Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace)
 --------------------------------------------------------------------------------
@@ -32,14 +32,16 @@ import Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace)
 --
 -- This pass eliminates ETupProject's around EIndexScalar's.
 unzipArrays :: S.Prog (SubBinds,a) -> S.Prog (OpInputs,(SubBinds,a))
-unzipArrays prog@Prog{progBinds,progResults = WithShapesUnzipped pR } =
-  prog { progBinds   = doBinds M.empty progBinds,
+unzipArrays prog@Prog{progBinds,progResults = WithShapesUnzipped pR, uniqueCounter } =
+  prog { progBinds   = binds',
          -- All parts of an unzipped array have the same shape:         
          progResults = WithShapesUnzipped$
-                       concatMap (\ (v,s) -> map (,s) (env # v)) pR
-         -- Note: typeEnv already has the unzipped types.              
+                       concatMap (\ (v,s) -> map (,s) (env # v)) pR,
+         -- Note: typeEnv already has the unzipped types.
+         uniqueCounter = cntr'
        }
   where
+    (binds',cntr') = runState (doBinds M.empty progBinds) uniqueCounter
     env = M.fromList$
           map (\(ProgBind v _ (SubBinds vrs _,_) _) -> (v,vrs)) progBinds
 
@@ -47,27 +49,28 @@ unzipArrays prog@Prog{progBinds,progResults = WithShapesUnzipped pR } =
 -- passed throuh the helper functions.
 type Env = M.Map Var [Var]
 
-doBinds :: Env -> [ProgBind (SubBinds,a)] -> [ProgBind (OpInputs,(SubBinds,a))]
-doBinds _ [] = [] 
+doBinds :: Env -> [ProgBind (SubBinds,a)] -> GensymM [ProgBind (OpInputs,(SubBinds,a))]
+doBinds _ [] = return [] 
 doBinds env (ProgBind vo _ _ (Right (Vr v1)) : rest) =
   -- Copy propagataion:
   doBinds (M.insert vo (env#v1) env) rest
 
 -- Unzip Use to make things easier for future passes:
-doBinds env (ProgBind vo aty (SubBinds {subnames,arrsize},d2) (Right (Use (AccArray {arrDim,arrPayloads}))) : rest) 
-  | length subnames > 1 = 
-    [ ProgBind subname arrty
-               (OpInputs [], (SubBinds {subnames=[subname], arrsize=arrsize},d2))
-               (Right (Use (AccArray { arrDim, arrPayloads = [onepayl] })))
-    | subname <- subnames
-    | arrty   <- S.flattenArrTy aty
-    | onepayl <- arrPayloads  
-    ]
-    ++ doBinds (M.insert vo subnames env) rest
+doBinds env (ProgBind vo aty (SubBinds {subnames,arrsize},d2)
+             (Right (Use (AccArray {arrDim,arrPayloads}))) : rest) 
+  | length subnames > 1 =
+    ([ ProgBind subname arrty
+                (OpInputs [], (SubBinds {subnames=[subname], arrsize=arrsize},d2))
+                (Right (Use (AccArray { arrDim, arrPayloads = [onepayl] })))
+     | subname <- subnames
+     | arrty   <- S.flattenArrTy aty
+     | onepayl <- arrPayloads  
+     ]++)
+    <$> doBinds (M.insert vo subnames env) rest
 
 doBinds env (ProgBind vo ty dec@(SubBinds {subnames},_) op : rest) =
-  ProgBind nukedVar ty (dec',dec) op' :
-  doBinds (M.insert vo subnames env) rest
+  (ProgBind nukedVar ty (dec',dec) op' :)
+  <$> doBinds (M.insert vo subnames env) rest
   where
     (dec',op') =
       case op of
@@ -126,7 +129,7 @@ doE env ex =
         -- TODO: AUDIT THIS FURTHER!
         -- TODO: thread gensym through so we can do MaybeLet here.
         mkETuple [ EIndexScalar avr' (doE env e) | avr' <- env#avr ]
-      | otherwise -> error "UnzipArrays.hs: needed refactor here... push through GensymM..."
+      | otherwise -> error$"UnzipArrays.hs: needed refactor here... push through GensymM, nontrivial Exp: "++show e
     ETupProject ix l e  -> ETupProject ix l (doE env e) 
     EShape _            -> err ex
     EShapeSize _        -> err ex

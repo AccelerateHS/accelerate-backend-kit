@@ -18,7 +18,7 @@ module Data.Array.Accelerate.BackendKit.Utils.Helpers
 
          -- * Helpers for constructing bits of AST syntax while incorporating small optimizations.
          addI, subI, mulI, ltI, quotI, remI,
-         maybeLet, maybeLetAllowETups, isTrivialE,
+         maybeLet, maybeLetE, maybeLetAllowETups, isTrivialE,
          -- TODO [2013.02.10] Move these ^^ to CompilerUtils.hs
          
          -- * Miscellaneous
@@ -162,14 +162,18 @@ maybeLet ex ty dobod =
 maybeLetAllowETups :: Exp -> Type -> (Exp -> Exp) -> GensymM Exp
 maybeLetAllowETups ex ty dobod =
   case ex of
-    EVr v    -> return (dobod ex)
-    ETuple v -> return (dobod ex)
-    _ -> do tmp <- genUnique
-            return (ELet (tmp,ty,ex) (dobod (EVr tmp)))
-
--- TODO: If you don't strictly need a variable, then you can avoid introducing more
--- temporaries:            
--- maybeLetE :: Exp -> Type -> (Exp -> Exp) -> GensymM Exp
+    ETuple v -> return (dobod ex)    
+    _ -> maybeLetE ex ty dobod
+    
+-- | If you don't strictly need a variable, then you can avoid introducing more
+-- temporaries:
+maybeLetE :: Exp -> Type -> (Exp -> Exp) -> GensymM Exp
+maybeLetE ex ty dobod =
+  if isTrivialE ex then
+    return (dobod ex)
+  else
+    do tmp <- genUnique
+       return (ELet (tmp,ty,ex) (dobod (EVr tmp)))
 
 -- | Irrespective of the exact cost, certain expressions are
 --   considered trivial (and always duplicatable).
