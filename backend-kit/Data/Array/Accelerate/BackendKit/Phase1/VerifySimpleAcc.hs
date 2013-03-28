@@ -7,7 +7,7 @@
 -- compiler, just the ones that always hold.
 module Data.Array.Accelerate.BackendKit.Phase1.VerifySimpleAcc
        (
-         verifySimpleAcc
+         verifySimpleAcc, VerifierConfig(..)
        )
        where
 
@@ -17,13 +17,21 @@ import Data.Array.Accelerate.BackendKit.SimpleArray (verifyAccArray)
 import Prelude as P hiding (or) 
 --------------------------------------------------------------------------------
 
+-- | It would be difficult to capture all the changing grammars/invarinats between
+-- passes, but we do parameterize this pass by some choices:
+data VerifierConfig =
+  VerifierConfig {
+    -- ^ If False, all Array dimensions should be 1 
+    multiDim :: Bool
+  }
+
 type Env = M.Map Var Type
 type ErrorMessage = String
 
 -- Attempt to typecheck a program, returning Nothing if it checks out,
 -- or an error message if there is a probem.
-verifySimpleAcc :: Prog a -> Maybe String
-verifySimpleAcc prog@Prog{progBinds, progResults, progType } =
+verifySimpleAcc :: VerifierConfig -> Prog a -> Maybe String
+verifySimpleAcc cfg prog@Prog{progBinds, progResults, progType } =
   -- The rule for progResults is that their types match a flattened version of the result type:
     (assertTyEq "Result type" resTys expectedTys) `or`
     (not (all hasArrayType resTys) ? 
@@ -31,7 +39,7 @@ verifySimpleAcc prog@Prog{progBinds, progResults, progType } =
        ++show(P.filter (not . hasArrayType) resTys))) `or`
     -- (verifyUnique "Result names" (resultNames progResults)) `or`
     -- (verifyUnique "Top level bindings" topBinds) `or`
-    (doBinds env progBinds)
+    (doBinds cfg env progBinds)
   where
     resTys      = P.map envlkp (resultNames progResults)
     envlkp vr   = case M.lookup vr env of
@@ -56,16 +64,20 @@ assertTyEq msg got expected =
   then Nothing
   else Just$ mismatchErr msg got expected
 
-doBinds :: Env -> [ProgBind t] -> Maybe ErrorMessage
-doBinds _env [] = Nothing
-doBinds env (ProgBind vo ty _ (Right ae) :rst) =
+doBinds :: VerifierConfig -> Env -> [ProgBind t] -> Maybe ErrorMessage
+doBinds _cfg _env [] = Nothing
+doBinds cfg env (ProgBind vo ty _ (Right ae) :rst) =
   doAE ty env ae `or`
-  doBinds env rst
-doBinds env (ProgBind vo ty _ (Left ex) :rst) =
+  doBinds cfg env rst
+doBinds cfg env (ProgBind vo ty _ (Left ex) :rst) =
   assertTyEq ("Top-level scalar variable "++show vo)
              (recoverExpType env ex) ty `or`
-  doBinds env rst
-  
+  doBinds cfg env rst
+
+-- TODO: Simplify handling of AExps by introducing an arrow type, and coming up with
+-- some direct representation of the type of each AExp op.
+-- data TmpType = Arrow TmpType TmpType | TVar Int | PlainType Type
+
 doAE :: Type -> Env -> AExp -> Maybe ErrorMessage
 doAE outTy env ae =
   case ae of
@@ -94,8 +106,12 @@ doAE outTy env ae =
       assertTyEq "Generate index exp" e1ty it  `or`
       assertTyEq "Generate output" (TArray ndim ot) outTy 
 
---     Fold fn e1 vr       -> addArrRef vr$ doE e1 $ doFn2 fn mp
---     Fold1  fn vr        -> addArrRef vr$          doFn2 fn mp
+    Fold fn e1 vr ->
+      let (elt,err) = foldHelper "Fold" fn vr in
+      err `or` expr  "Fold initializer" e1 elt
+    Fold1  fn vr ->
+      snd$ foldHelper "Fold1" fn vr
+      
 --     FoldSeg fn e1 v1 v2 -> addArrRef v1 $ addArrRef v2 $
 --                            doE e1       $ doFn2 fn mp 
 --     Fold1Seg  fn v1 v2  -> addArrRef v1 $ addArrRef v2 $ doFn2 fn mp
@@ -118,6 +134,18 @@ doAE outTy env ae =
     _  ->  Nothing
     
  where
+   foldHelper variant fn vr =    
+      let (it1,it2,ot,err) = typeFn2 variant fn in
+      (it1,
+       err `or`
+       assertTyEq (variant++" arguments not the same type") it1 it2 `or`
+       assertTyEq (variant++" output not expected type") it1 ot `or`
+       assertTyEq (variant++" output") (TArray ndim ot) outTy
+-- TODO: Check the dimension differently based on multiDim config parameter:
+{-       
+       `or` arrVariable vr (TArray (ndim+1) it1) -- Knock off one dim.
+-}      
+      )
    TArray ndim elty = outTy
 
    arrVariable vr (TArray expected_dim expected_elt) =

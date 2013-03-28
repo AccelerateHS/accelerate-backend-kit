@@ -131,9 +131,7 @@ getFoldStride env allbinds (ProgBind vo outTy osz eith) =
  innDim inArr =
    let Just (ProgBind _ _ inSz _) = lookupProgBind inArr allbinds in   
    case inSz of
-     KnownSize ls ->
-       trace ("KNOWN SIZE OF INBOUND TO FOLD: "++show (inArr,ls))$
-       EConst$ I$ head ls
+     KnownSize ls -> EConst$ I$ head ls
      UnknownSize ->
        let shp   = shapeName inArr in
        -- Take the "last" of a tuple:
