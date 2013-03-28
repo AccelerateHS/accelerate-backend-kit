@@ -144,10 +144,12 @@ chooseTests = do
   let tests3 = case L.lookup "MULTIDIMTESTS" env of
                  Just x | trueishStr x -> multiDimTests
                  _                     -> []
+  let allRegistered = oneDimOrLessTests ++ useTests ++ multiDimTests ++ highDimTests 
   case L.lookup "UNREGISTERED" env of -- New backdoor option to run *absolutely* everything...
-   Just x | trueishStr x -> return$ L.map name allProgs
+   Just x | trueishStr x ->
+     return$ L.map name allProgs L.\\ allRegistered
    _ -> case L.lookup "ALLTESTS" env of
-         Just x | trueishStr x -> return$ oneDimOrLessTests ++ useTests ++ multiDimTests ++ highDimTests
+         Just x | trueishStr x -> return$ allRegistered
          _                     -> return$ tests1 ++ tests2 ++ tests3
 
 
@@ -177,6 +179,10 @@ oneDimOrLessTests = words$
   ++ " p1d p6 " -- Array of tuples
 
 -- These tests are waiting on arrays of tuples:
+
+  -- DUMPING these in, go through them:
+  ++ "p5 p8 p9a p9b  p14d p14c  "
+  -- p9c p13 p14e
 
 useTests :: [String]
 useTests = words$ 
