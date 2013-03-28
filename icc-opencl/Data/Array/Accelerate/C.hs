@@ -29,9 +29,12 @@ import           Data.Array.Accelerate.Shared.EmitC (ParMode(..))
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc   as S
 import qualified Data.Array.Accelerate.BackendKit.SimpleArray     as SA
 import           Data.Array.Accelerate.BackendClass
+import           Data.Array.Accelerate.BackendKit.Utils.Helpers (dbgPrint)
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline
                   (phase0, phase1, phase2, repackAcc, unpackArray, Phantom(..))
 
+import Data.Time.Clock  (getCurrentTime,diffUTCTime)
+import Control.Exception  (evaluate)
 --------------------------------------------------------------------------------
 
 #if 0 
@@ -44,7 +47,14 @@ run acc = unsafePerformIO $ do
 -- Alternatively we can lift up from the `SimpleBackend` interface:
 run :: forall a . (Sug.Arrays a) => Acc a -> a
 run acc = unsafePerformIO $ do
-           remts <- (simpleRunRaw BKEND (phase1$ phase0 acc) Nothing)
+           t0 <- getCurrentTime
+           p  <- evaluateAccClone$ phase0 acc
+           t1 <- getCurrentTime           
+           p' <- evaluateSimpleAcc$ phase1 p
+           t2 <- getCurrentTime
+           dbgPrint 0 $"COMPILETIME_phase0: "++show(diffUTCTime t1 t0)
+           dbgPrint 0 $"COMPILETIME_phase1: "++show(diffUTCTime t2 t1)
+           remts <- (simpleRunRaw BKEND p' Nothing)
            arrs  <- mapM (simpleCopyToHost BKEND) remts
            return (repackAcc (undefined :: Acc a) arrs)
 #endif
@@ -136,7 +146,14 @@ instance SimpleBackend BKEND where
   -- simpleCompileFun1
 
   simpleRunRaw _ prog _blob =
-    do arrs <- J.rawRunIO PARMODE "" (phase2 prog)
+    do
+       t1 <- getCurrentTime           
+       p  <- evaluateSimpleAcc$ phase2 prog
+       t2 <- getCurrentTime
+       dbgPrint 0 $"COMPILETIME_phase2: "++show(diffUTCTime t2 t1)
+       -- TODO: need to pass these times around if we want to account for all the
+       -- stuff inbetween the big pieces.
+       arrs <- J.rawRunIO PARMODE "" p
        return$ [ CRemote [arr] | arr <- arrs ]
 
   -- simpleRunRawFun1
@@ -150,3 +167,7 @@ instance SimpleBackend BKEND where
   simpleWaitRemote _ _ = return () -- already copied!
   simpleSeparateMemorySpace _ = False
 
+
+-- TODO: Need to force beyond WHNF probably.
+evaluateAccClone = evaluate
+evaluateSimpleAcc = evaluate

@@ -22,6 +22,7 @@ import           Data.Time.Clock  (getCurrentTime,diffUTCTime)
 import qualified Data.Map         as M
 import           Data.Char        (isAlphaNum)
 import           Control.Monad    (when, forM_, forM)
+import           Control.Exception (evaluate)
 import           System.IO.Unsafe (unsafePerformIO)
 import           System.Process   (readProcess, system)
 import           System.Exit      (ExitCode(..))
@@ -91,8 +92,14 @@ run pm acc =
 -- Takes a program for which "phase2" has already been run.
 rawRunIO :: ParMode -> String -> C.LLProg () -> IO [S.AccArray]
 rawRunIO pm name prog = do
-  let prog2    = phase3_ltd prog -- $ phase2 prog
-      emitted  = emitC pm prog2
+  -----------
+  t0 <- getCurrentTime 
+  prog2 <- evaluateGPUIR (phase3_ltd prog) -- $ phase2 prog  
+  t1 <- getCurrentTime
+  dbgPrint 0$"COMPILETIME_phase3: "++show (diffUTCTime t1 t0)
+  -----------
+
+  let emitted  = emitC pm prog2
       thisprog = ".plainC_"++ stripFileName name
   b     <- doesFileExist (thisprog++".c")
   when b $ removeFile    (thisprog++".c") -- Remove file for safety
@@ -126,7 +133,7 @@ rawRunIO pm name prog = do
   t1 <- getCurrentTime 
   cd <- system$ ccCmd
   t2 <- getCurrentTime    
-  dbgPrint 0$"COMPILETIME2: "++show (diffUTCTime t2 t1)
+  dbgPrint 0$"COMPILETIME_C: "++show (diffUTCTime t2 t1)
 
   case cd of
     ExitSuccess -> return ()
@@ -305,3 +312,7 @@ foreign import ccall "dynamic"
 {-# INLINE uArrayPtr #-}
 uArrayPtr :: UArray Int a -> Ptr a
 uArrayPtr (UArray _ _ _ ba) = Ptr (byteArrayContents# ba)
+
+-- TODO: Need to force beyond WHNF probably.
+evaluateGPUIR = evaluate
+

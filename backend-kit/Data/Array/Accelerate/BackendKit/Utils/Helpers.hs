@@ -31,7 +31,7 @@ module Data.Array.Accelerate.BackendKit.Utils.Helpers
          defaultDupThreshold,
 
          -- * Debugging     
-         maybtrace, tracePrint, dbg -- Flag for debugging output.         
+         dbgPrint, maybtrace, tracePrint, dbg -- Flag for debugging output.         
          )
        where
 
@@ -49,7 +49,7 @@ import Debug.Trace                (trace)
 import Prelude as P
 import System.IO.Unsafe   (unsafePerformIO)
 import System.Environment (getEnvironment)
-
+import           System.IO        (stdout, hFlush)
 ----------------------------------------------------------------------------------------------------
 -- Compiler Conventions and global constants:
 ----------------------------------------------------------------------------------------------------
@@ -335,3 +335,9 @@ tracePrint s x =
 -- | Trace, but only if debugging is enabled.
 maybtrace :: String -> a -> a
 maybtrace = if dbg>1 then trace else \_ -> id 
+
+-- | Print if the debug level is at or above a threshold.
+dbgPrint :: Int -> String -> IO ()
+dbgPrint lvl str = if dbg < lvl then return () else do
+    putStrLn str
+    hFlush stdout
