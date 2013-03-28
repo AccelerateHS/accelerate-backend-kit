@@ -12,7 +12,7 @@ import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc   as S
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Type(..), Const(..))
 import qualified Data.Array.Accelerate.BackendKit.SimpleArray     as SA
-import           Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace, dbg)
+import           Data.Array.Accelerate.BackendKit.Utils.Helpers (maybtrace, dbg)
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1, phase2, repackAcc)
 import           Data.Array.Accelerate.Shared.EmitC (emitC, ParMode(..), getUseBinds, standardResultOrder)
 import           Data.Array.Accelerate.BackendKit.SimpleArray (payloadsFromList, payloadFromPtr)
@@ -44,7 +44,7 @@ import Data.Array.Accelerate.BackendKit.Phase3.KernFreeVars      (kernFreeVars)
 import Data.Array.Accelerate.BackendKit.Phase3.ToGPUIR           (convertToGPUIR)
 import Data.Array.Accelerate.BackendKit.Phase3.DesugarGenerate   (desugarGenerate)
 import Data.Array.Accelerate.BackendKit.Phase3.FuseGenReduce     (fuseGenReduce)
-import Data.Array.Accelerate.BackendKit.CompilerUtils            (runPass)
+import Data.Array.Accelerate.BackendKit.CompilerPipeline         (runPass)
 import qualified Data.Array.Accelerate.BackendKit.IRs.CLike     as C
 import qualified Data.Array.Accelerate.BackendKit.IRs.GPUIR     as G
 import           Data.Array.Accelerate.BackendKit.IRs.Metadata   (ArraySizeEstimate, FreeVars)
@@ -64,7 +64,7 @@ phase3_ltd prog =
   runPass    "kernFreeVars"      kernFreeVars      $     -- (freevars)
   prog
 
-cOptLvl = if dbg then " -O0 " else " -O3 "
+cOptLvl = if (dbg>0) then " -O0 " else " -O3 "
 
 --  "-march=pentium-m -msse3 -O{0|1|2|3|s} -pipe".
 -- | For ICC we actually strip out the vanilla opt level and use other flags:
@@ -119,7 +119,7 @@ rawRunIO pm name prog = do
          Sequential   -> pickCC (return$ "gcc "++cOptLvl)
          CilkParallel -> pickCC (error "ICC not found!  Need it for Cilk backend.")
 
-  let suppress = if dbg then " -g " else " -w " -- No warnings leaking through to the user.
+  let suppress = if dbg>0 then " -g " else " -w " -- No warnings leaking through to the user.
       ccCmd = cc++suppress++" -shared -fPIC -std=c99 "++thisprog++".c -o "++thisprog++".so"
   dbgPrint$ "[JIT]   Compiling with: "++ ccCmd
   cd <- system$ ccCmd
@@ -193,7 +193,7 @@ readPayload ty str =
 
 
 dbgPrint :: String -> IO ()
-dbgPrint str = if not dbg then return () else do
+dbgPrint str = if dbg <= 1 then return () else do
     putStrLn str
     hFlush stdout
 

@@ -26,7 +26,6 @@ Library
   Exposed-modules:
                      Data.Array.Accelerate.BackendKit.Tests
                      Data.Array.Accelerate.BackendKit.CompilerPipeline
-                     Data.Array.Accelerate.BackendKit.CompilerUtils
                      Data.Array.Accelerate.BackendKit.IRs.GPUIR
                      Data.Array.Accelerate.BackendKit.IRs.GPUIR.Interpreter
                      Data.Array.Accelerate.BackendKit.IRs.CLike

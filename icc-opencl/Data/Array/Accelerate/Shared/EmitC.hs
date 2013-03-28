@@ -32,7 +32,7 @@ import Data.Array.Accelerate.Shared.EmitCommon
 import Data.Array.Accelerate.BackendKit.IRs.Metadata  (FreeVars(..))
 import Data.Array.Accelerate.BackendKit.IRs.GPUIR as G
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Type(..), Const(..), AVar, Var, AccArray(arrDim), TrivialExp(..))
-import Data.Array.Accelerate.BackendKit.CompilerUtils (dbg)
+import Data.Array.Accelerate.BackendKit.Utils.Helpers (dbg)
 --------------------------------------------------------------------------------
 
 -- | Here is a new type just to create a new instance and implement the type class methods:
@@ -304,7 +304,7 @@ execBind e _prog (_ind, GPUProgBind {outarrs=resultBinds, op=(ScalarCode blk)}) 
       forM_ (zip resultBinds results) $ \ ((vr,_,_),res) ->
         set (varSyn vr) (varSyn res)
 
-   when dbg$ forM_ resultBinds $ \ (vr,_,ty) -> do
+   when (dbg P.> 1)$ forM_ resultBinds $ \ (vr,_,ty) -> do
      eprintf (" [dbg] Top lvl scalar binding: "++show vr++" = "++ printfFlag ty++"\n") [varSyn vr]
    return ()
 

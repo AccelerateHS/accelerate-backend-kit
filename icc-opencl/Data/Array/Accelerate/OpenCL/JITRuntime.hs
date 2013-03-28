@@ -43,7 +43,7 @@ import qualified Data.Array.Accelerate             as A
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 
 import           Data.Array.Accelerate.BackendKit.IRs.Metadata     (ArraySizeEstimate(..), FreeVars(..))
-import           Data.Array.Accelerate.BackendKit.CompilerUtils    (dbg,maybtrace)
+import           Data.Array.Accelerate.BackendKit.Utils.Helpers    (dbg,maybtrace)
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1, phase2, phase3, repackAcc)
 import           Data.Array.Accelerate.BackendKit.SimpleArray      (payloadToPtr)
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter (Value(..))
