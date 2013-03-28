@@ -40,6 +40,8 @@ import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc)
 import qualified Data.Array.Accelerate.AST                  as NAST
 import           Data.Array.Accelerate.AST                  ( Idx(..) )
 
+import Data.Array.Accelerate.BackendKit.Phase1.ToAccClone as Cvt (accToAccClone, expToExpClone)
+
 import Data.Typeable (gcast)
 import Data.Dynamic
 import Data.Map as M
@@ -246,6 +248,8 @@ extendA avr ty (EnvPack eS eA mp) = EnvPack eS ((avr,ty):eA) (M.insert avr ty mp
 extendE :: Var -> Type -> EnvPack -> EnvPack 
 extendE vr ty (EnvPack eS eA mp) = EnvPack ((vr,ty):eS) eA (M.insert vr ty mp)
 
+type AENV0 = ()
+
 -- convertExp :: S.Exp -> (forall a . Elt a => Exp a)
 -- | Convert an entire `SimpleAcc` expression into a fully-typed (but sealed) Accelerate one.
 --   Requires a type environments for the (open) `SimpleAcc` expression:    
@@ -254,7 +258,7 @@ extendE vr ty (EnvPack eS eA mp) = EnvPack ((vr,ty):eS) eA (M.insert vr ty mp)
 convertExp :: 
               EnvPack -> SealedLayout -> S.Exp -> SealedOpenExp
 convertExp ep@(EnvPack envE envA mp)
-           slayout@(SealedLayout (lyt :: Layout env env')) ex =
+           slayout@(SealedLayout (lyt :: Layout env0 env0')) ex =
   trace("Converting exp "++show ex++" with layout "++show lyt++" and dyn env "++show (envE,envA))$
   let cE = convertExp ep slayout in 
   case ex of
@@ -297,11 +301,36 @@ convertExp ep@(EnvPack envE envA mp)
 
     S.ELet (vr,ty,rhs) bod ->
       let rhs' = cE rhs
-          ep'  = extendE vr ty ep
-          slayout' = incSealedLayoutElt (scalarTypeD ty) slayout
+          ep'@(EnvPack _ _ m2) = extendE vr ty ep
+          resTy = scalarTypeD (S.recoverExpType m2 bod)
+          sty   = scalarTypeD ty
+          slayout' = incSealedLayoutElt sty slayout
+          bod'  = convertExp ep' slayout' bod
       in
-       trace ("Incremented "++show slayout++" to "++show slayout')
-       convertExp ep' slayout' bod
+       case (slayout',sty,resTy) of
+         -- Now pop open the types:         
+         (SealedLayout (lyt :: Layout env2 env2'),
+          SealedEltTuple (trhs :: EltTuple rhs_elt),
+          SealedEltTuple (tres :: EltTuple res_elt)) ->
+
+           case (trhs,tres) of
+             (SingleTuple _, SingleTuple _) -> 
+               let bod'' = (downcastOE bod') :: NAST.OpenExp env2 AENV0 res_elt
+                   rhs'' = undefined :: NAST.OpenExp env0 AENV0 rhs_elt
+                   oe :: NAST.OpenExp env0 AENV0 res_elt
+                   oe = undefined -- NAST.Let rhs'' bod''
+               in
+               trace ("Incremented "++show slayout++" to "++show slayout')
+        --       sealOpenExp oe
+               sealOpenExp bod''
+
+--        AST.Let (cvt boundExp) (convertSharingExp config lyt' alyt (se:env) aenv bodyExp)          
+
+  -- Let           :: (Elt bnd_t, Elt body_t)
+  --               => PreOpenExp acc env          aenv bnd_t
+  --               -> PreOpenExp acc (env, bnd_t) aenv body_t
+  --               -> PreOpenExp acc env          aenv body_t
+
 
     S.ECond e1 e2 e3 ->
       let d1 = cE e1

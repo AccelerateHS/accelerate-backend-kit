@@ -21,7 +21,7 @@
 -- language constructs.  Desugaring is postponed to phase 2.
 module Data.Array.Accelerate.BackendKit.Phase1.ToAccClone
        ( 
-         accToAccClone,
+         accToAccClone, expToExpClone,
          unpackArray, packArray, repackAcc, Phantom
        )
        where
@@ -59,6 +59,10 @@ import qualified Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone as T
 -- (isomorphic) `AccClone` representation.
 accToAccClone :: Sug.Arrays a => AST.Acc a -> TAExp
 accToAccClone = runEnvM . convertAcc 
+
+-- | Must take a closed expression.
+expToExpClone :: forall env aenv ans . OpenExp env aenv ans -> T.Exp
+expToExpClone = runEnvM . convertExp
 
 type TAExp = T.AExp S.Type
 
