@@ -13,7 +13,7 @@ module Data.Array.Accelerate.BackendKit.Phase1.StaticTuples
        ( staticTuples )
        where 
 
-import Data.Array.Accelerate.BackendKit.CompilerUtils (tracePrint)
+import Data.Array.Accelerate.BackendKit.Utils.Helpers(tracePrint)
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc         as S
 import Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone as T
 import Data.List as L

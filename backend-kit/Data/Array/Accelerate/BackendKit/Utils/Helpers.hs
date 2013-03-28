@@ -12,6 +12,9 @@ module Data.Array.Accelerate.BackendKit.Utils.Helpers
          -- * Helpers that capture certain conventions that the compiler follows *internally*
          strideName, mkIndTy, isTupleTy, mkIndExp,
          S.GensymM, S.genUnique, S.genUniqueWith,
+
+         -- * Naming conventions in particular 
+         shapeName, sizeName, isShapeName, isSizeName,
          
          -- * Other AST Helpers
          mkPrj, mapMAE, mapMAEWithEnv, mapMAEWithGEnv,
@@ -19,14 +22,16 @@ module Data.Array.Accelerate.BackendKit.Utils.Helpers
          -- * Helpers for constructing bits of AST syntax while incorporating small optimizations.
          addI, subI, mulI, ltI, quotI, remI,
          maybeLet, maybeLetE, maybeLetAllowETups, isTrivialE,
-         -- TODO [2013.02.10] Move these ^^ to CompilerUtils.hs
          
          -- * Miscellaneous
          fragileZip, fragileZip3, (#), 
 
          -- * Constants and functions for use in cost estimation:
          ifCost, derefCost, costPrim, costConst,
-         defaultDupThreshold
+         defaultDupThreshold,
+
+         -- * Debugging     
+         maybtrace, tracePrint, dbg -- Flag for debugging output.         
          )
        where
 
@@ -42,16 +47,38 @@ import Control.Monad.State.Strict (State, get, put)
 import Control.Applicative        ((<$>),(<*>),pure,Applicative)
 import Debug.Trace                (trace)
 import Prelude as P
+import System.IO.Unsafe   (unsafePerformIO)
+import System.Environment (getEnvironment)
 
 ----------------------------------------------------------------------------------------------------
--- Conventions:
+-- Compiler Conventions and global constants:
 ----------------------------------------------------------------------------------------------------
+
+-- | Given the name of an array variable, what is the name of the variable which will
+-- contain its shape.  This variable will refer to a tuple for rank>1 arrays.
+shapeName :: S.Var -> S.Var
+shapeName avr = S.var (show avr ++ "_shape")
+
+isShapeName :: S.Var -> Bool
+isShapeName v = reverse "_shape" == take 6 (reverse$ show v)
+
+-- | Given the name of an array variable, what is the name of the variable which will
+-- contain its SIZE.  This variable will always be of type TInt.
+sizeName :: S.Var -> S.Var
+sizeName avr = S.var (show avr ++ "_size")
+
+isSizeName :: S.Var -> Bool
+isSizeName v = reverse "_size" == take 5 (reverse$ show v)
 
 -- | Given the name of an array variable resulting from a
 --   non-segmented FOLD, what is the name of a scalar variable
 --   containing its stride.
 strideName :: Var -> Var
 strideName avr = S.var (P.show avr P.++ "_foldstride")
+
+----------------------------------------------------------------------------------------------------
+-- Tupling Conventions:
+----------------------------------------------------------------------------------------------------
 
 -- | Types for N-dimensional indices are just tuples of ints.
 mkIndTy ::Int -> Type
@@ -268,3 +295,43 @@ fragileZip3 a b c = loop a b c
     loop [] [] []                = Just []
     loop (h1:t1) (h2:t2) (h3:t3) = ((h1,h2,h3) :) <$> loop t1 t2 t3
     loop _ _ _                   = Nothing
+
+
+----------------------------------------------------------------------------------------------------
+-- DEBUGGING
+----------------------------------------------------------------------------------------------------
+
+-- | Debugging flag shared by all accelerate-backend-kit modules.
+--   This is activated by setting the environment variable DEBUG=1..5
+--
+--   Here is a general summary of debugging levels:
+--    0 : no printed debugging or expensive extra checks
+--    1 : turn on extra checks (e.g. frequent typechecking), but
+--        don't print much additional output
+--    2 : print relevant diagnostic messages, including victory messages
+--    3 : 
+--    4 : print the output of ALL passes    
+dbg :: Int
+dbg = case lookup "DEBUG" unsafeEnv of
+       Nothing  -> 0
+       Just ""  -> 0
+       Just "0" -> 0 
+       Just s   ->
+         trace (" ! Responding to env Var: DEBUG="++s)$
+         case reads s of
+           ((n,_):_) -> n
+           [] -> error$"Attempt to parse DEBUG env var as Int failed: "++show s
+
+unsafeEnv :: [(String,String)]
+unsafeEnv = unsafePerformIO getEnvironment
+
+-- | Print the value returned prefixed by a message.
+tracePrint :: Show a => String -> a -> a
+tracePrint s x = 
+  if dbg>1
+  then (trace (s ++ show x) x)
+  else x
+
+-- | Trace, but only if debugging is enabled.
+maybtrace :: String -> a -> a
+maybtrace = if dbg>1 then trace else \_ -> id 

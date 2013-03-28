@@ -7,9 +7,7 @@ import           Data.Array.Accelerate.BackendKit.IRs.GPUIR     as G
 -- import           Data.Array.Accelerate.BackendKit.Utils.Helpers (genUnique, genUniqueWith, GensymM, strideName)
 import           Data.Array.Accelerate.BackendKit.IRs.Metadata
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
-import Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace)
--- import           Control.Applicative   ((<$>))
--- import           Control.Monad.State.Strict (runState)
+import           Data.Array.Accelerate.BackendKit.Utils.Helpers(maybtrace)
 import qualified Data.Map                        as M
 import           Data.Maybe                      (fromJust,isJust,catMaybes) 
 import qualified Data.Set                        as S

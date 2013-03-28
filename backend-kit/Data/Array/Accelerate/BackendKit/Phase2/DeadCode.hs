@@ -10,7 +10,7 @@ import Data.Map  as M
 import Data.Set  as S
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
 import Data.Array.Accelerate.BackendKit.IRs.Metadata (Uses(Uses))
-import Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace, isShapeName, isSizeName)
+import Data.Array.Accelerate.BackendKit.Utils.Helpers (maybtrace, isShapeName, isSizeName)
 import qualified Data.Array.Accelerate.BackendKit.Phase2.TrackUses as TU
 
 -- | Dead code elimination.

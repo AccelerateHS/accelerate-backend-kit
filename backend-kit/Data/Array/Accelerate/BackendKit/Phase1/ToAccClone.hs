@@ -47,7 +47,7 @@ import qualified Data.Array.Accelerate.Array.Sugar as Sug
 -- import qualified Data.Array.Accelerate.Trafo.Sharing as Cvt
 import qualified Data.Array.Accelerate.BackendKit.SimpleArray as SA
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
-import           Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace)
+import           Data.Array.Accelerate.BackendKit.Utils.Helpers (maybtrace)
   -- Temporary AST before we get to the final one:
 import qualified Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone as T
 

@@ -41,7 +41,7 @@ where
   
 
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
-import Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace)
+import Data.Array.Accelerate.BackendKit.Utils.Helpers (maybtrace)
 
 import           Control.Applicative ((<$>))
 import           Debug.Trace

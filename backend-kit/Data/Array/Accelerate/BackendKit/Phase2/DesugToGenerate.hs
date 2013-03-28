@@ -6,7 +6,7 @@ module Data.Array.Accelerate.BackendKit.Phase2.DesugToGenerate (desugToGenerate)
 
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
 import Data.Array.Accelerate.BackendKit.IRs.Metadata (Uses(..), ArraySizeEstimate(..))
-import Data.Array.Accelerate.BackendKit.CompilerUtils (shapeName)
+import Data.Array.Accelerate.BackendKit.Utils.Helpers (shapeName)
 import qualified Data.Map as M
 import Debug.Trace
 

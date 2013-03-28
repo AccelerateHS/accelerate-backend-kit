@@ -17,12 +17,11 @@ import qualified Data.Map              as M
 import Text.PrettyPrint.GenericPretty (Out(doc))
 
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
-import Data.Array.Accelerate.BackendKit.CompilerUtils (sizeName)
 import Data.Array.Accelerate.BackendKit.Phase2.NormalizeExps (wrapLets)
 import Data.Array.Accelerate.BackendKit.IRs.Metadata (ArraySizeEstimate(..), SubBinds(..), Stride(..))
 import Data.Array.Accelerate.BackendKit.Utils.Helpers
        (GensymM, genUnique, genUniqueWith, mkPrj, mapMAEWithGEnv, isTupleTy, fragileZip, fragileZip3, (#),
-        isTrivialE)
+        isTrivialE, sizeName)
 ----------------------------------------------------------------------------------------------------
 
 -- | Map the original possibly-tuple-valued variable names to the

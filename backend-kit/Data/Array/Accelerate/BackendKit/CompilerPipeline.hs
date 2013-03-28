@@ -6,6 +6,10 @@ module Data.Array.Accelerate.BackendKit.CompilerPipeline
          phase0, phase1, phase2, phase3,
          -- * Reexport from ToAccClone:
          unpackArray, packArray, repackAcc, Phantom,
+
+         -- * Compiler construction
+         runPass, runOptPass, runSAPass1D, runSAPassND,
+         
          -- * Internal bits, exported for now:
          phase2A, typecheck1D, typecheckND
        )
@@ -24,7 +28,7 @@ import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import qualified Data.Array.Accelerate.BackendKit.IRs.CLike     as C
 import qualified Data.Array.Accelerate.BackendKit.IRs.GPUIR     as G
 import           Data.Array.Accelerate.BackendKit.IRs.Metadata   (Stride, ArraySizeEstimate, FreeVars)
-import           Data.Array.Accelerate.BackendKit.CompilerUtils  (runPass, runOptPass)
+import           Data.Array.Accelerate.BackendKit.Utils.Helpers (maybtrace)
 
 -- Phase 1 passes:
 ----------------------------------------
@@ -63,7 +67,7 @@ import Data.Array.Accelerate.BackendKit.Phase3.DesugarGenerate   (desugarGenerat
 
 
 --------------------------------------------------------------------------------
--- Exposed entrypoints for this module:
+-- The major pieces of the compiler.
 --------------------------------------------------------------------------------
 
 -- | Phase3: The final step: Lower to a GPU-targetting language.  Perform
@@ -134,6 +138,10 @@ phase0 = convertAccWith$
      , convertOffsetOfSegment = False
      }
 
+--------------------------------------------------------------------------------    
+-- Type Checking
+--------------------------------------------------------------------------------
+
 typecheckND = typecheckPass True
 typecheck1D = typecheckPass False
 
@@ -143,6 +151,37 @@ typecheckPass flg prog =
     Nothing -> prog
     Just s -> error$"Typecheck pass failed: "++s
 
+--------------------------------------------------------------------------------    
+-- Compiler Construction:
+--------------------------------------------------------------------------------
+
+-- TODO: Enable profiling support and a more sophisticated runtime representation of Compilers.
+
+-- | Pass composition:
+runPass :: Out a => String -> (t -> a) -> t -> a
+runPass msg pass input =
+  maybtrace ("\n" ++ msg ++ ", output was:\n"++
+                       "================================================================================\n"
+                       ++ show (doc x)) 
+  x
+ where x = pass input              
+
+-- An [optional] optimization pass:
+runOptPass :: Out a => String -> (t -> a) -> (t -> a) -> t -> a
+runOptPass str pass _otherwise = runPass str pass
+
+-- | A specific variant for passes that produce N-dimensional `SimpleAcc` output.
+runSAPassND :: Out a => String -> (t -> a) -> t -> a
+runSAPassND msg pass input =
+  runPass msg pass input     
+
+-- | A specific variant for passes that produce 1-dimensional `SimpleAcc` output.
+runSAPass1D :: Out a => String -> (t -> a) -> t -> a
+runSAPass1D = runPass
+
+--------------------------------------------------------------------------------
+-- Misc:
+--------------------------------------------------------------------------------
 
 -- instance Show a => Out (Sug.Acc a) where
 instance Out (AST.Acc a) where    

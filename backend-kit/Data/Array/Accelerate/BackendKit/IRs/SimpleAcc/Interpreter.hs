@@ -17,7 +17,7 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter
        )
        where
 
-import           Data.Array.Accelerate.BackendKit.CompilerUtils    (maybtrace, tracePrint)
+import           Data.Array.Accelerate.BackendKit.Utils.Helpers    (maybtrace, tracePrint)
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1, repackAcc)
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as T

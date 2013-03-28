@@ -2,10 +2,8 @@
 
 module Data.Array.Accelerate.BackendKit.Phase2.DesugToBackperm (desugToBackperm) where
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
-import Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace)
 import Data.Array.Accelerate.BackendKit.IRs.Metadata  (Uses(Uses), ArraySizeEstimate(..))
-import Data.Array.Accelerate.BackendKit.Utils.Helpers (mkIndTy,mkIndExp)
-import Data.Array.Accelerate.BackendKit.CompilerUtils (shapeName)
+import Data.Array.Accelerate.BackendKit.Utils.Helpers (mkIndTy,mkIndExp,maybtrace, shapeName)
 import Debug.Trace
 import Data.List as L
 

@@ -7,9 +7,8 @@ import Control.Applicative ((<$>),(<*>), pure)
 import qualified Data.Map              as M
 
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
-import Data.Array.Accelerate.BackendKit.Utils.Helpers ((#),isTrivialE, GensymM, maybeLetE)
+import Data.Array.Accelerate.BackendKit.Utils.Helpers ((#),isTrivialE, GensymM, maybeLetE, maybtrace)
 import Data.Array.Accelerate.BackendKit.IRs.Metadata (SubBinds(..), OpInputs(..))
-import Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace)
 --------------------------------------------------------------------------------
 
 

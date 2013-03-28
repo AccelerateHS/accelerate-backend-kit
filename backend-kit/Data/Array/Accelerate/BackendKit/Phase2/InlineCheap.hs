@@ -3,13 +3,12 @@
 
 module Data.Array.Accelerate.BackendKit.Phase2.InlineCheap (inlineCheap) where 
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
-import Data.Array.Accelerate.BackendKit.CompilerUtils (maybtrace)
 import Text.PrettyPrint.GenericPretty (Out(doc,docPrec))
 import Data.Map as M hiding (map)
 import Control.Applicative ((<$>),(<*>))
 import Control.Monad.State.Strict (runState)
 
-import Data.Array.Accelerate.BackendKit.Utils.Helpers (defaultDupThreshold,GensymM,mapMAE, (#))
+import Data.Array.Accelerate.BackendKit.Utils.Helpers (maybtrace, defaultDupThreshold,GensymM,mapMAE, (#))
 import Data.Array.Accelerate.BackendKit.IRs.Metadata  (ArraySizeEstimate(..))
 import Data.Array.Accelerate.BackendKit.Phase2.EstimateCost (Cost(Cost))
 

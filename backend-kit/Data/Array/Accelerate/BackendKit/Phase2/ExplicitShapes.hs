@@ -14,8 +14,8 @@ import           Data.List as L
 import qualified Data.Map as M
 
 import Data.Array.Accelerate.BackendKit.IRs.Metadata (ArraySizeEstimate(..))
-import Data.Array.Accelerate.BackendKit.Utils.Helpers (mkIndTy, mkPrj, mulI, genUnique, GensymM, (#), mkIndExp)
-import Data.Array.Accelerate.BackendKit.CompilerUtils (shapeName, maybtrace)
+import Data.Array.Accelerate.BackendKit.Utils.Helpers (mkIndTy, mkPrj, mulI, genUnique, GensymM,
+                                                       (#), mkIndExp, maybtrace, shapeName)
 import Text.PrettyPrint.GenericPretty (Out(doc))
 
 
