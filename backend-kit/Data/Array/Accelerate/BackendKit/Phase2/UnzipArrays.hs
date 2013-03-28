@@ -72,7 +72,7 @@ doBinds tenv env (ProgBind vo aty (SubBinds {subnames,arrsize},d2)
 doBinds tenv env (ProgBind vo ty dec@(SubBinds {subnames},_) op : rest) = do
   (dec',op') <-
       case op of
-        Left  ex -> do ex' <- doE env ex
+        Left  ex -> do ex' <- doE tenv env ex
                        return (OpInputs[], Left ex')
         Right ae -> do (ls,ae') <- doAE tenv env ae
                        return (OpInputs ls,Right ae')
@@ -86,41 +86,41 @@ doAE tenv env ae =
     Use _               -> return ([],ae)
     Cond a b c          -> do a' <- (exp a)
                               return ([sp b,sp c], Cond a' nukedVar nukedVar)
-    Generate e lam1     -> do l1 <- doLam1 lam1
+    Generate e lam1     -> do l1 <- doLam1 tenv lam1
                               e' <- (exp e)
                               return ([], Generate e' l1)
-    Fold lam2 e v       -> do l2 <- doLam2 lam2
+    Fold lam2 e v       -> do l2 <- doLam2 tenv lam2
                               e' <- (exp e)
                               return ([sp v],Fold l2 e' nukedVar)
-    Fold1    lam2 v     -> do l2 <- doLam2 lam2
+    Fold1    lam2 v     -> do l2 <- doLam2 tenv lam2
                               return ([sp v],Fold1 l2 nukedVar)
-    FoldSeg  lam2 e v w -> do l2 <- doLam2 lam2
+    FoldSeg  lam2 e v w -> do l2 <- doLam2 tenv lam2
                               e' <- (exp e)
                               return ([sp v,sp w],FoldSeg l2 e' nukedVar nukedVar)
-    Fold1Seg lam2 v w   -> do l2 <- doLam2 lam2
+    Fold1Seg lam2 v w   -> do l2 <- doLam2 tenv lam2
                               return ([sp v,sp w],Fold1Seg l2        nukedVar nukedVar)
-    Scanl    lam2 e v   -> do l2 <- doLam2 lam2
+    Scanl    lam2 e v   -> do l2 <- doLam2 tenv lam2
                               x  <- (exp e)
                               return ([sp v],Scanl  l2 x nukedVar)
-    Scanl'   lam2 e v   -> do l2 <- doLam2 lam2
+    Scanl'   lam2 e v   -> do l2 <- doLam2 tenv lam2
                               e' <- (exp e)
                               return ([sp v],Scanl' l2 e' nukedVar)
-    Scanl1   lam2   v   -> do l2 <- doLam2 lam2
+    Scanl1   lam2   v   -> do l2 <- doLam2 tenv lam2
                               return ([sp v],Scanl1 l2         nukedVar)
-    Scanr    lam2 e v   -> do l2 <- doLam2 lam2
+    Scanr    lam2 e v   -> do l2 <- doLam2 tenv lam2
                               e' <- (exp e)
                               return ([sp v],Scanr  l2 e' nukedVar)
-    Scanr'   lam2 e v   -> do l2 <- doLam2 lam2
+    Scanr'   lam2 e v   -> do l2 <- doLam2 tenv lam2
                               e' <- exp e
                               return ([sp v],Scanr' l2 e' nukedVar)
-    Scanr1   lam2   v   -> do l2 <- doLam2 lam2
+    Scanr1   lam2   v   -> do l2 <- doLam2 tenv lam2
                               return ([sp v],Scanr1 l2         nukedVar)
-    Stencil  lam1 b v   -> do l1 <- doLam1 lam1
+    Stencil  lam1 b v   -> do l1 <- doLam1 tenv lam1
                               return ([sp v],Stencil l1 b nukedVar)
-    Stencil2 l2 b v c w -> do l2' <- (doLam2 l2)
+    Stencil2 l2 b v c w -> do l2' <- (doLam2 tenv l2)
                               return ([sp v,sp w],Stencil2 l2' b nukedVar c nukedVar)
-    Permute l2 v l1 w   -> do l2' <- (doLam2 l2)
-                              l1' <- (doLam1 l1)
+    Permute l2 v l1 w   -> do l2' <- (doLam2 tenv l2)
+                              l1' <- (doLam1 tenv l1)
                               return ([sp v,sp w],Permute l2' nukedVar l1' nukedVar)
     Unit {}             -> err ae
     Map  {}             -> err ae
@@ -134,38 +134,38 @@ doAE tenv env ae =
    sp v = case M.lookup v env of
             Nothing -> error$"UnzipArrays.hs/doAE: could not find SubBinds for "++show v
             Just x  -> x
-   exp = doE env
+   exp = doE tenv env
    -- We're NOT detupling scalar vars at this point, so we don't bother extending the env:
-   doLam1 (Lam1 (v,ty) bod) = Lam1 (v,ty) <$> doE env bod
-   doLam2 (Lam2 b1 b2 bod)  = Lam2 b1 b2  <$> doE env bod
+   doLam1 tenv (Lam1 (v,ty) bod) = Lam1 (v,ty) <$> doE tenv env bod
+   doLam2 tenv (Lam2 b1 b2 bod)  = Lam2 b1 b2  <$> doE tenv env bod
 
-doE :: M.Map Var [Var] -> Exp -> GensymM Exp
-doE env ex =
+doE :: TEnv -> Env -> Exp -> GensymM Exp
+doE tenv env ex =
   case ex of
     ETupProject ix len (EIndexScalar avr ind) ->
       if len /= 1 then error$"UnzipArrays.hs: ETupProject with len/=1: "++show ex
       else
         maybtrace ("Projecting out of "++show (env # avr)++" for avr "++show avr++" want index "++show ix)$
-        EIndexScalar (reverse (env # avr) !! ix) <$> (doE env ind)
+        EIndexScalar (reverse (env # avr) !! ix) <$> (doE tenv env ind)
     EIndexScalar avr e -> 
-      do e' <- doE env e
-         let ty = error "FINISHME -- still need type"
+      do e' <- fn e
+         let ty = tenv#avr
          -- We may be forced to create an ETuple here, but it must be in tail position.
          maybeLetE e' ty $ \ e'' -> 
           mkETuple [ EIndexScalar avr' e'' | avr' <- env#avr ]
-    ETupProject ix l e  -> ETupProject ix l <$> doE env e
+    ETupProject ix l e  -> ETupProject ix l <$> fn e
     EShape _            -> err ex
     EShapeSize _        -> err ex
     EIndex _            -> err ex
     EConst _            -> return ex
     EVr _               -> return ex
-    ECond e1 e2 e3      -> ECond <$> doE env e1 <*> doE env e2 <*> doE env e3
-    ELet (v,t,rhs) bod  -> do rhs' <- doE env rhs
-                              ELet (v,t,rhs') <$> doE env bod
-    ETuple els          -> ETuple       <$> mapM (doE env) els
-    EPrimApp p t els    -> EPrimApp p t <$> mapM (doE env) els
- 
-
+    ECond e1 e2 e3      -> ECond <$> fn e1 <*> fn e2 <*> fn e3
+    ELet (v,t,rhs) bod  -> do rhs' <- fn rhs
+                              ELet (v,t,rhs') <$> fn bod
+    ETuple els          -> ETuple       <$> mapM fn els
+    EPrimApp p t els    -> EPrimApp p t <$> mapM fn els
+ where
+    fn = doE tenv env
 
 err :: Show a => a -> b
 err x = error$"UnzipArrays.hs: should have been eliminated before this pass: "++ show x
