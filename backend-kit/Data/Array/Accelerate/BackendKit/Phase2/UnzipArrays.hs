@@ -68,19 +68,19 @@ doBinds env (ProgBind vo aty (SubBinds {subnames,arrsize},d2)
      ]++)
     <$> doBinds (M.insert vo subnames env) rest
 
-doBinds env (ProgBind vo ty dec@(SubBinds {subnames},_) op : rest) =
-  (ProgBind nukedVar ty (dec',dec) op' :)
-  <$> doBinds (M.insert vo subnames env) rest
-  where
-    (dec',op') =
+doBinds env (ProgBind vo ty dec@(SubBinds {subnames},_) op : rest) = do
+  (dec',op') <-
       case op of
-        Left  ex -> (OpInputs[], Left$  doE  env ex)        
-        Right ae -> let (ls,ae') = doAE env ae in
-                    (OpInputs ls,Right ae')
+        Left  ex -> do ex' <- return$ doE env ex
+                       return (OpInputs[], Left ex')
+        Right ae -> do (ls,ae') <- doAE env ae
+                       return (OpInputs ls,Right ae')
+  (ProgBind nukedVar ty (dec',dec) op' :)
+    <$> doBinds (M.insert vo subnames env) rest
 
 -- | Returns (unzipped) operator INPUTS.
-doAE :: Env -> AExp -> ([[Var]], AExp)
-doAE env ae =
+doAE :: Env -> AExp -> GensymM ([[Var]], AExp)
+doAE env ae = return$
   case ae of
     Use _               -> ([],ae)
     Cond a b c          -> ([sp b,sp c], Cond (exp a) nukedVar nukedVar)
@@ -140,6 +140,8 @@ doE env ex =
     ELet (v,t,rhs) bod  -> ELet (v,t,doE env rhs) (doE env bod)
     ETuple els          -> ETuple       (map (doE env) els)
     EPrimApp p t els    -> EPrimApp p t (map (doE env) els)
+ 
+
 
 err :: Show a => a -> b
 err x = error$"UnzipArrays.hs: should have been eliminated before this pass: "++ show x
