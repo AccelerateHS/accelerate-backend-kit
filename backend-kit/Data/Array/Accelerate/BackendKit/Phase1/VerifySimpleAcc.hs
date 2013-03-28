@@ -59,14 +59,18 @@ assertTyEq msg got expected =
 doBinds :: Env -> [ProgBind t] -> Maybe ErrorMessage
 doBinds _env [] = Nothing
 doBinds env (ProgBind vo ty _ (Right ae) :rst) =
-  doAE ty env ae
-doBinds _ _ = error "doBinds"
-
+  doAE ty env ae `or`
+  doBinds env rst
+doBinds env (ProgBind vo ty _ (Left ex) :rst) =
+  assertTyEq ("Top-level scalar variable "++show vo)
+             (recoverExpType env ex) ty `or`
+  doBinds env rst
+  
 doAE :: Type -> Env -> AExp -> Maybe ErrorMessage
 doAE outTy env ae =
   case ae of
     Use arr -> verifyAccArray outTy arr
-    Vr v    -> lkup v $ \ty -> assertTyEq "Varref" ty outTy
+    Vr v    -> lkup v $ \ty -> assertTyEq ("Varref "++show v) ty outTy
     _ -> Nothing                       
 --     Map fn vr           -> addArrRef vr $ doFn1 fn mp
 --     ZipWith fn2 v1 v2   -> addArrRef v1 $ addArrRef v2 $ doFn2 fn2 mp
