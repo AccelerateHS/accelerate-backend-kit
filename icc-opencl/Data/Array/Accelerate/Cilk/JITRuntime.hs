@@ -97,7 +97,7 @@ rawRunIO pm name prog = do
   b     <- doesFileExist (thisprog++".c")
   when b $ removeFile    (thisprog++".c") -- Remove file for safety
   writeFile  (thisprog++".c") emitted
-  dbgPrint$ "[JIT] Invoking C compiler on: "++ thisprog++".c"
+  dbgPrint 2$ "[JIT] Invoking C compiler on: "++ thisprog++".c"
 
   -- TODO, obey the $CC environment variable:
   let pickCC onfail = do
@@ -105,7 +105,7 @@ rawRunIO pm name prog = do
         let icc_args = " -fast -ww13397 -vec-report2 "++ stripOptFlag cOptLvl
         env <- getEnvironment
         case lookup "CC" env of
-          Just cc -> do dbgPrint $"[JIT] using CC environment variable = "++show cc
+          Just cc -> do dbgPrint 1$"[JIT] using CC environment variable = "++show cc
                         if cc == "icc" || cc == "icpc"
                         then return$ cc ++ icc_args   
                         else return$ cc ++" "++ cOptLvl
@@ -113,7 +113,7 @@ rawRunIO pm name prog = do
             code <- system "which icc" 
             case code of
               ExitFailure _  -> onfail
-              ExitSuccess    -> do dbgPrint $"[JIT] Found ICC. Using it."
+              ExitSuccess    -> do dbgPrint 1$"[JIT] Found ICC. Using it."
                                    return$ "icc" ++ icc_args
   cc <- case pm of
          Sequential   -> pickCC (return$ "gcc "++cOptLvl)
@@ -121,21 +121,26 @@ rawRunIO pm name prog = do
 
   let suppress = if dbg>0 then " -g " else " -w " -- No warnings leaking through to the user.
       ccCmd = cc++suppress++" -shared -fPIC -std=c99 "++thisprog++".c -o "++thisprog++".so"
-  dbgPrint$ "[JIT]   Compiling with: "++ ccCmd
+  dbgPrint 1$ "[JIT]   Compiling with: "++ ccCmd
+
+  t1 <- getCurrentTime 
   cd <- system$ ccCmd
+  t2 <- getCurrentTime    
+  dbgPrint 0$"COMPILETIME2: "++show (diffUTCTime t2 t1)
+
   case cd of
     ExitSuccess -> return ()
     ExitFailure c -> error$"C Compiler failed with code "++show c
   -- Run the program and capture its output:
 #if 0     
-  dbgPrint$ "[JIT] Invoking external executable: "++ thisprog++".exe"  
+  dbgPrint 1$ "[JIT] Invoking external executable: "++ thisprog++".exe"  
   result <- readProcess ("./"++thisprog++".exe") [] ""
   let elts = tyToElts (S.progType prog)
-  dbgPrint$ "[JIT] Executable completed, parsing results, element types "++
+  dbgPrint 1$ "[JIT] Executable completed, parsing results, element types "++
      show elts++", "++show (length result)++" characters:\n "++take 80 result
   return$ parseMultiple result elts
 #else
-  dbgPrint $ "[JIT]: Working directory: " ++ (unsafePerformIO $ readProcess "pwd" [] [])
+  dbgPrint 2 $ "[JIT]: Working directory: " ++ (unsafePerformIO $ readProcess "pwd" [] [])
   loadAndRunSharedObj prog2 ("./" ++ thisprog++".so")
 #endif
  where
@@ -192,8 +197,8 @@ readPayload ty str =
 --     TArray _ _ -> 
 
 
-dbgPrint :: String -> IO ()
-dbgPrint str = if dbg <= 1 then return () else do
+dbgPrint :: Int -> String -> IO ()
+dbgPrint lvl str = if dbg < lvl then return () else do
     putStrLn str
     hFlush stdout
 
@@ -218,7 +223,7 @@ loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv, G.progType } soNam
     resultsRec <- mkCreateRecord crr    
     forM_ (zip [1..] useBinds) $ \ (ix,(vr,ty,S.AccArray { S.arrDim, S.arrPayloads })) -> do
 
-      dbgPrint$"[JIT] Attempting to load Use array arg of type "++show ty++" and size "++show arrDim
+      dbgPrint 2$"[JIT] Attempting to load Use array arg of type "++show ty++" and size "++show arrDim
       
       oneLoad <- dlsym dl ("LoadArg_"++show vr) 
       case arrPayloads of
@@ -229,7 +234,7 @@ loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv, G.progType } soNam
           let ptr = SA.payloadToPtr payload
               [len] = arrDim
           (mkLoadArg oneLoad) argsRec len ptr
-          dbgPrint$"[JIT] successfully loaded Use arg "++show ix++", type "++show ty          
+          dbgPrint 2$"[JIT] successfully loaded Use arg "++show ix++", type "++show ty          
           return ()
 
     ----------RUN IT------------
@@ -238,15 +243,15 @@ loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv, G.progType } soNam
     t2 <- getCurrentTime    
     ----------------------------
 
-    dbgPrint$"SELFTIMED: "++show (diffUTCTime t2 t1)
-    dbgPrint$"[JIT] Finished executing dynamically loaded Acc computation!"
+    dbgPrint 0$"SELFTIMED: "++show (diffUTCTime t2 t1)
+    dbgPrint 1$"[JIT] Finished executing dynamically loaded Acc computation!"
     
     arrs <- forM allResults $ \ (rname,snames) -> do
       oneFetch <- dlsym dl ("GetResult_"++show rname)
       oneSize  <- dlsym dl ("GetResultSize_"++show rname)
       ptr  <- mkGetResult oneFetch resultsRec
       size <- mkGetResultSize oneSize resultsRec
-      dbgPrint$"[JIT] Fetched result ptr: "++show rname++" = "++show ptr++" and size "++show size
+      dbgPrint 1$"[JIT] Fetched result ptr: "++show rname++" = "++show ptr++" and size "++show size
       payl <- payloadFromPtr (fst$ sizeEnv # rname) size (castPtr ptr)
 
       shape <- forM snames $ \ sname -> do
@@ -254,13 +259,13 @@ loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv, G.progType } soNam
           mkGetResultSize oneShape resultsRec
       return (S.AccArray shape [payl])
       
-    dbgPrint$"[JIT] Destroying args record: "++show argsRec
+    dbgPrint 2$"[JIT] Destroying args record: "++show argsRec
     (mkDestroyRecord dar) argsRec
-    dbgPrint$"[JIT] Destroying results record: "++show resultsRec
+    dbgPrint 2$"[JIT] Destroying results record: "++show resultsRec
     (mkDestroyRecord drr) resultsRec
     let table = M.fromList $ zip (map fst allResults) arrs
         results = map (table #) (map fst progResults)
-    dbgPrint$"[JIT] FULL RESULTS read back to Haskell (type "++show progType++"):\n  "++show results
+    dbgPrint 3$"[JIT] FULL RESULTS read back to Haskell (type "++show progType++"):\n  "++show results
     return results
 
 
