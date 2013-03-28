@@ -104,6 +104,10 @@ rawRunIO pm name prog = do
   b     <- doesFileExist (thisprog++".c")
   when b $ removeFile    (thisprog++".c") -- Remove file for safety
   writeFile  (thisprog++".c") emitted
+  t2 <- getCurrentTime
+  dbgPrint 0$"COMPILETIME_emit: "++show (diffUTCTime t2 t1)
+  -----------
+  
   dbgPrint 2$ "[JIT] Invoking C compiler on: "++ thisprog++".c"
 
   -- TODO, obey the $CC environment variable:

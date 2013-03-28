@@ -49,6 +49,8 @@ type Env = M.Map Var Type
 -- This does not handle the full GPUProg grammar, rather it requires
 -- that there be no SSynchronizeThreads or EGetLocalID / EGetGlobalID
 -- constructs.
+--
+-- FIXME: At least use ByteString!!
 emitC :: ParMode -> GPUProg (FreeVars) -> String
 emitC pm prog@GPUProg{progBinds} =
     emitGeneric (CEmitter pm (M.fromList binds)) prog
