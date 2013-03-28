@@ -148,11 +148,12 @@ doE tenv env ex =
         maybtrace ("Projecting out of "++show (env # avr)++" for avr "++show avr++" want index "++show ix)$
         EIndexScalar (reverse (env # avr) !! ix) <$> (doE tenv env ind)
     EIndexScalar avr e -> 
-      do e' <- fn e
-         let ty = tenv#avr
+      do let ixty = recoverExpType tenv e
+         e' <- fn e
          -- We may be forced to create an ETuple here, but it must be in tail position.
-         maybeLetE e' ty $ \ e'' -> 
-          mkETuple [ EIndexScalar avr' e'' | avr' <- env#avr ]
+         maybeLetE e' ixty $ \ e'' ->
+           mkETuple [ EIndexScalar avr' e'' | avr' <- env#avr ]
+          
     ETupProject ix l e  -> ETupProject ix l <$> fn e
     EShape _            -> err ex
     EShapeSize _        -> err ex
