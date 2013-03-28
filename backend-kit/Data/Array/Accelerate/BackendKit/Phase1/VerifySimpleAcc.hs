@@ -84,8 +84,15 @@ doAE outTy env ae =
       arrVariable v1 (TArray ndim it1) `or`
       arrVariable v2 (TArray ndim it2)
       
---     Cond e1 v1 v2       -> addArrRef v1 $ addArrRef v2 $ doE e1 mp
---     Generate e1 fn1     -> doE e1       $ doFn1 fn1 mp
+    Cond e1 v1 v2 -> expr "Array-level conditional test" e1 TBool `or`
+                     arrVariable v1 outTy `or`
+                     arrVariable v2 outTy 
+    Generate e1 fn1 ->
+      let (it,ot,err) = typeFn1 "Map" fn1
+          e1ty = recoverExpType env e1 in 
+      err `or`
+      assertTyEq "Generate index exp" e1ty it  `or`
+      assertTyEq "Generate output" (TArray ndim ot) outTy 
 
 --     Fold fn e1 vr       -> addArrRef vr$ doE e1 $ doFn2 fn mp
 --     Fold1  fn vr        -> addArrRef vr$          doFn2 fn mp
@@ -120,6 +127,8 @@ doAE outTy env ae =
             assertTyEq "Array variable element type" elty' expected_elt `or`
             assertTyEq "Array variable dimension" ndim' expected_dim)
 
+   expr msg ex expected =
+     assertTyEq msg (recoverExpType env ex) expected
    
    lkup v k =
      case M.lookup v env of
