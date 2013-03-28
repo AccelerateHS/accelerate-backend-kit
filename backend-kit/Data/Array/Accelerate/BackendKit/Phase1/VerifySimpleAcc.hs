@@ -86,32 +86,66 @@ doAE VerifierConfig{multiDim} outTy env ae =
     Map fn vr               ->      
       let (it,ot,err) = typeFn1 "Map" fn in
       err `or`
-      assertTyEq "Map result" ot elty `or`
-      arrVariable vr (TArray ndim it)
+      assertTyEq "Map result" ot out_elty `or`
+      arrVariable vr (TArray out_dim it)
 
     ZipWith fn2 v1 v2   ->
       let (it1,it2,ot,err) = typeFn2 "ZipWith" fn2 in
       err `or`
-      assertTyEq "ZipWith result" ot elty `or`
-      arrVariable v1 (TArray ndim it1) `or`
-      arrVariable v2 (TArray ndim it2)
+      assertTyEq "ZipWith result" ot out_elty `or`
+      arrVariable v1 (TArray out_dim it1) `or`
+      arrVariable v2 (TArray out_dim it2)
       
     Cond e1 v1 v2 -> expr "Array-level conditional test" e1 TBool `or`
                      arrVariable v1 outTy `or`
                      arrVariable v2 outTy 
     Generate e1 fn1 ->
-      let (it,ot,err) = typeFn1 "Map" fn1
+      let (it,ot,err) = typeFn1 "Generate" fn1
           e1ty = recoverExpType env e1 in 
       err `or`
       assertTyEq "Generate index exp" e1ty it  `or`
-      assertTyEq "Generate output" (TArray ndim ot) outTy 
+      assertTyEq "Generate output" (TArray out_dim ot) outTy 
 
     Fold fn e1 vr ->
       let (elt,err) = foldHelper "Fold" fn vr in
       err `or` expr  "Fold initializer" e1 elt
     Fold1  fn vr ->
       snd$ foldHelper "Fold1" fn vr
-      
+
+    Unit e1 ->
+      assertTyEq "Unit output dimension" out_dim 0 `or`
+      expr "Unit input expression" e1 out_elty
+    Replicate tmplt e1 vr | multiDim ->
+      let numFixed = length$ P.filter (==Fixed) tmplt
+          numAll   = length$ P.filter (==All) tmplt
+          exprTy   = recoverExpType env e1 
+      in
+       arrVariable vr (TArray numAll out_elty) `or`
+       assertTyEq "Template length in Replicate" (length tmplt) out_dim 
+
+-- FIXME: The encoding has the obnoxious problem that it ELIDES unit entries on one end:
+       -- (shapeType exprTy $ \ len -> 
+       --    assertTyEq "Number of components in replicate scalar expr"
+       --               -- The scalar expression includes the new and old dims:
+       --               len (length tmplt))
+       
+    Replicate {} -> Just"Should NOT see a Replicate after OneDimensionalize"
+
+    Backpermute e1 fn1 vr ->
+      let (it,ot,err) = typeFn1 "Backpermute" fn1
+          shpTy = recoverExpType env e1 in 
+      err `or`
+      assertTyEq "Backpermute index function input" shpTy it `or`
+      -- (shapeType shpTy $ \len -> 
+      --   assertTyEq "Backpermute shape expression" len out_dim) `or`
+      (shapeType ot $ \inDim ->
+       arrVariable vr (TArray inDim out_elty))
+
+
+    -- TODO: FINISHME:
+    Reshape e1 vr     -> Nothing
+    Index tmplt vr e1 -> Nothing
+
 --     FoldSeg fn e1 v1 v2 -> addArrRef v1 $ addArrRef v2 $
 --                            doE e1       $ doFn2 fn mp 
 --     Fold1Seg  fn v1 v2  -> addArrRef v1 $ addArrRef v2 $ doFn2 fn mp
@@ -123,27 +157,33 @@ doAE VerifierConfig{multiDim} outTy env ae =
 --     Scanr1 fn2     vr   -> addArrRef vr $                doFn2 fn2 mp
 --     Permute fn2 v1 fn1 v2 -> addArrRef v1 $ addArrRef v2 $
 --                              doFn1 fn1    $ doFn2 fn2 mp
---     Backpermute e1 fn1 vr -> addArrRef vr $ doE e1 $ doFn1 fn1 mp
 --     Stencil fn1 _b vr     -> addArrRef vr $ doFn1 fn1 mp
 --     Stencil2 fn2 _b1 v1 _b2 v2 -> addArrRef v1 $ addArrRef v2 $ doFn2 fn2 mp
 
---     Reshape e1 vr       -> addArrRef vr $ doE e1 mp
---     Replicate _slt e1 vr -> addArrRef vr $ doE e1 mp
---     Index _slt vr e1     -> addArrRef vr $ doE e1 mp
---     Unit _ -> error "trackUses: Unit is not part of the grammar accepted by this pass"
-    _  ->  Nothing
+    _ -> error$"FINISHME: Unhandled operator in verifySimpleAcc:\n"++show ae
     
  where
+   TArray out_dim out_elty = outTy
+   
    foldHelper variant fn vr =    
       let (it1,it2,ot,err) = typeFn2 variant fn in
       (it1,
        err `or`
        assertTyEq (variant++" arguments not the same type") it1 it2 `or`
        assertTyEq (variant++" output not expected type") it1 ot `or`
-       assertTyEq (variant++" output") (TArray ndim ot) outTy `or`
-       arrVariable vr (TArray (if multiDim then ndim+1 else 1) it1)
+       assertTyEq (variant++" output") (TArray out_dim ot) outTy `or`
+       arrVariable vr (TArray (if multiDim then out_dim+1 else 1) it1)
       )
-   TArray ndim elty = outTy
+
+   shapeType exprTy k =
+     case exprTy of
+       intTy     | isValid intTy      -> k 1 
+       TTuple ls | all isValid ls -> k (length ls)
+       _ -> Just$"Invalid type for a *shape*: "++ show exprTy
+     where
+       isValid (TTuple [])     = True
+       isValid t | isIntType t = True
+       isValid _               = False
 
    arrVariable vr (TArray expected_dim expected_elt) =
      (lkup vr $ \ argty -> 
