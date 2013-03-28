@@ -1,4 +1,5 @@
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 module Data.Array.Accelerate.BackendKit.CompilerPipeline
        (
@@ -37,7 +38,7 @@ import Data.Array.Accelerate.BackendKit.Phase1.LiftLets          (gatherLets)
 import Data.Array.Accelerate.BackendKit.Phase1.LiftComplexRands  (liftComplexRands)
 import Data.Array.Accelerate.BackendKit.Phase1.StaticTuples      (staticTuples)
 import Data.Array.Accelerate.BackendKit.Phase1.RemoveArrayTuple  (removeArrayTuple)
-import Data.Array.Accelerate.BackendKit.Phase1.VerifySimpleAcc   (verifySimpleAcc, VerifierConfig(..))
+import Data.Array.Accelerate.BackendKit.Phase1.VerifySimpleAcc   (verifySimpleAcc, VerifierConfig(..), DimCheckMode(..))
 
 -- Phase 2 passes:
 ----------------------------------------
@@ -96,15 +97,15 @@ phase2 prog =
 phase2A :: S.Prog () -> S.Prog (Maybe (Stride S.Exp),ArraySizeEstimate)
 phase2A prog =
   runSAPass1D  "oneDimensionalize" oneDimensionalize   $  -- (foldstride,size)
-  runOptPassND "deadCode"          deadCode (fmap fst) $  -- (size)
-  runSAPassND  "trackUses"         trackUses           $  -- (size,uses)
-  runOptPassND "inlineCheap"     inlineCheap (fmap fst) $ -- (size)
-  runSAPassND  "estimateCost"    estimateCost      $      -- (size,cost)
-  runSAPassND  "desugtoGenerate" desugToGenerate   $      -- (size)
-  runSAPassND  "desugToBackperm" desugToBackperm   $      -- (size,uses)
-  runOptPassND  "fuseMaps"       fuseMaps  id      $      -- (size,uses)
-  runSAPassND   "trackUses"      trackUses         $      -- (size,uses)
-  runSAPassND "explicitShapes"   explicitShapes    $      -- (size)
+  runOptPassNoD "deadCode"          deadCode (fmap fst) $  -- (size)
+  runSAPassNoD  "trackUses"         trackUses           $  -- (size,uses)
+  runOptPassNoD "inlineCheap"     inlineCheap (fmap fst) $ -- (size)
+  runSAPassNoD  "estimateCost"    estimateCost      $      -- (size,cost)
+  runSAPassNoD  "desugtoGenerate" desugToGenerate   $      -- (size)
+  runSAPassNoD  "desugToBackperm" desugToBackperm   $      -- (size,uses)
+  runOptPassNoD  "fuseMaps"       fuseMaps  id      $      -- (size,uses)
+  runSAPassNoD   "trackUses"      trackUses         $      -- (size,uses)
+  runSAPassNoD "explicitShapes"   explicitShapes    $      -- (size)
   runSAPassND "sizeAnalysis"     sizeAnalysis      $      -- (size)
   runSAPassND "desugarUnit"      desugarUnit       $      -- ()
   prog
@@ -141,14 +142,14 @@ phase0 = convertAccWith$
 --------------------------------------------------------------------------------
 
 typecheckND :: S.Prog a -> S.Prog a
-typecheckND = typecheckPass True
+typecheckND = typecheckPass NDim
 
 typecheck1D :: S.Prog a -> S.Prog a
-typecheck1D = typecheckPass False
+typecheck1D = typecheckPass OneDim
 
-typecheckPass :: Bool -> S.Prog a -> S.Prog a
-typecheckPass flg prog =
-  case verifySimpleAcc VerifierConfig{multiDim=flg} prog of
+typecheckPass :: DimCheckMode -> S.Prog a -> S.Prog a
+typecheckPass dimMode prog =
+  case verifySimpleAcc VerifierConfig{dimMode} prog of
     Nothing -> prog
     Just s -> error$"Typecheck pass failed: "++s
 
@@ -161,10 +162,11 @@ typecheckPass flg prog =
 -- | Pass composition:
 runPass :: Out a => String -> (t -> a) -> t -> a
 runPass msg pass input =
-  maybtrace ("\n" ++ msg ++ ", output was:\n"++
-                       "================================================================================\n"
-                       ++ show (doc x))
-  x
+  if dbg>=4 then
+    trace ("\n" ++ msg ++ ", output was:\n"++
+           "================================================================================\n"
+           ++ show (doc x)) x
+  else x
  where x = pass input              
 
 -- An [optional] optimization pass:
@@ -177,11 +179,24 @@ runOptPassND :: Out a => String -> (S.Prog t -> S.Prog a) -> (S.Prog t -> S.Prog
 runOptPassND str pass _otherwise =
   runSAPassND str pass
 
+runOptPassNoD :: Out a => String -> (S.Prog t -> S.Prog a) -> (S.Prog t -> S.Prog a) -> S.Prog t -> S.Prog a
+runOptPassNoD str pass _otherwise =
+  runSAPassNoD str pass
+
+
 -- | A specific variant for passes that produce N-dimensional `SimpleAcc` output.
 runSAPassND :: Out a => String -> (S.Prog t -> S.Prog a) -> S.Prog t -> S.Prog a
 runSAPassND msg pass input =
   optionalTC typecheckND $ 
   runPass msg pass input
+
+-- | This version allows implicit coercion between different dimensionalities.
+-- I.e. reshape desugars to NOTHING.
+runSAPassNoD :: Out a => String -> (S.Prog t -> S.Prog a) -> S.Prog t -> S.Prog a
+runSAPassNoD msg pass input =
+  optionalTC (typecheckPass NoDim) $  
+  runPass msg pass input
+
 
 -- | A specific variant for passes that produce 1-dimensional `SimpleAcc` output.
 runSAPass1D :: Out a => String -> (S.Prog t -> S.Prog a) -> S.Prog t -> S.Prog a
