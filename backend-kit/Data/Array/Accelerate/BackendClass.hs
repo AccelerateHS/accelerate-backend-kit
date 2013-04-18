@@ -188,8 +188,9 @@ class SimpleBackend b where
                     -> SACC.Fun1 (SACC.Prog ())
                     -> IO (SimpleBlob b)
 
-  -- | Run an already-optimized Accelerate program (`AST.Acc`) and leave the
-  -- results on the accelerator device.
+  -- | Run an already-optimized Accelerate program (`AST.Acc`) and leave the results
+  -- on the accelerator device.  The list of results should be equal in length to the
+  -- `progResults` field of the input `Prog`.
   --
   -- The result of `runRaw` is both asynchronous uses the constructor `Remote`
   -- to signal that the result is still located on the device rather than the
@@ -206,6 +207,9 @@ class SimpleBackend b where
   -- | Execute a function that expects N arrays, repeatedly.  Each time the compiled
   --   function is called, it takes inputs that are already on the device, and
   --   returns leaves the results on the device as well.
+  --
+  -- The list of results should be equal in length to the
+  -- `progResults` field of the input `Prog`.
   simpleRunRawFun1 :: b -> Int 
                    -> ([SACC.AVar] -> SACC.Prog ())
                    -> Maybe (SimpleBlob b)
