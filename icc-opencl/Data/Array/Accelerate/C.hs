@@ -52,8 +52,8 @@ run acc = unsafePerformIO $ do
            t1 <- getCurrentTime           
            p' <- evaluateSimpleAcc$ phase1 p
            t2 <- getCurrentTime
-           dbgPrint 0 $"COMPILETIME_phase0: "++show(diffUTCTime t1 t0)
-           dbgPrint 0 $"COMPILETIME_phase1: "++show(diffUTCTime t2 t1)
+           dbgPrint 1 $"COMPILETIME_phase0: "++show(diffUTCTime t1 t0)
+           dbgPrint 1 $"COMPILETIME_phase1: "++show(diffUTCTime t2 t1)
            remts <- (simpleRunRaw BKEND p' Nothing)
            arrs  <- mapM (simpleCopyToHost BKEND) remts
            return (repackAcc (undefined :: Acc a) arrs)
@@ -150,7 +150,7 @@ instance SimpleBackend BKEND where
        t1 <- getCurrentTime           
        p  <- evaluateSimpleAcc$ phase2 prog
        t2 <- getCurrentTime
-       dbgPrint 0 $"COMPILETIME_phase2: "++show(diffUTCTime t2 t1)
+       dbgPrint 1 $"COMPILETIME_phase2: "++show(diffUTCTime t2 t1)
        -- TODO: need to pass these times around if we want to account for all the
        -- stuff inbetween the big pieces.
        arrs <- J.rawRunIO PARMODE "" p

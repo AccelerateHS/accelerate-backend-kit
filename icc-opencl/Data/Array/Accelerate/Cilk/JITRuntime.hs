@@ -96,7 +96,7 @@ rawRunIO pm name prog = do
   t0 <- getCurrentTime 
   prog2 <- evaluateGPUIR (phase3_ltd prog) -- $ phase2 prog  
   t1 <- getCurrentTime
-  dbgPrint 0$"COMPILETIME_phase3: "++show (diffUTCTime t1 t0)
+  dbgPrint 1 $"COMPILETIME_phase3: "++show (diffUTCTime t1 t0)
   -----------
 
   let emitted  = emitC pm prog2
@@ -105,10 +105,10 @@ rawRunIO pm name prog = do
   when b $ removeFile    (thisprog++".c") -- Remove file for safety
   writeFile  (thisprog++".c") emitted
   t2 <- getCurrentTime
-  dbgPrint 0$"COMPILETIME_emit: "++show (diffUTCTime t2 t1)
+  dbgPrint 1 $"COMPILETIME_emit: "++show (diffUTCTime t2 t1)
   -----------
   
-  dbgPrint 2$ "[JIT] Invoking C compiler on: "++ thisprog++".c"
+  dbgPrint 2 $ "[JIT] Invoking C compiler on: "++ thisprog++".c"
 
   -- TODO, obey the $CC environment variable:
   let pickCC onfail = do
@@ -124,7 +124,7 @@ rawRunIO pm name prog = do
             code <- system "which icc" 
             case code of
               ExitFailure _  -> onfail
-              ExitSuccess    -> do dbgPrint 1$"[JIT] Found ICC. Using it."
+              ExitSuccess    -> do dbgPrint 2 $"[JIT] Found ICC. Using it."
                                    return$ "icc" ++ icc_args
   cc <- case pm of
          Sequential   -> pickCC (return$ "gcc "++cOptLvl)
@@ -132,12 +132,12 @@ rawRunIO pm name prog = do
 
   let suppress = if dbg>0 then " -g " else " -w " -- No warnings leaking through to the user.
       ccCmd = cc++suppress++" -shared -fPIC -std=c99 "++thisprog++".c -o "++thisprog++".so"
-  dbgPrint 1$ "[JIT]   Compiling with: "++ ccCmd
+  dbgPrint 2 $ "[JIT]   Compiling with: "++ ccCmd
 
   t1 <- getCurrentTime 
   cd <- system$ ccCmd
   t2 <- getCurrentTime    
-  dbgPrint 0$"COMPILETIME_C: "++show (diffUTCTime t2 t1)
+  dbgPrint 1 $"COMPILETIME_C: "++show (diffUTCTime t2 t1)
 
   case cd of
     ExitSuccess -> return ()
@@ -234,7 +234,7 @@ loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv, G.progType } soNam
     resultsRec <- mkCreateRecord crr    
     forM_ (zip [1..] useBinds) $ \ (ix,(vr,ty,S.AccArray { S.arrDim, S.arrPayloads })) -> do
 
-      dbgPrint 2$"[JIT] Attempting to load Use array arg of type "++show ty++" and size "++show arrDim
+      dbgPrint 2 $ "[JIT] Attempting to load Use array arg of type "++show ty++" and size "++show arrDim
       
       oneLoad <- dlsym dl ("LoadArg_"++show vr) 
       case arrPayloads of
@@ -254,8 +254,8 @@ loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv, G.progType } soNam
     t2 <- getCurrentTime    
     ----------------------------
 
-    dbgPrint 0$"SELFTIMED: "++show (diffUTCTime t2 t1)
-    dbgPrint 1$"[JIT] Finished executing dynamically loaded Acc computation!"
+    dbgPrint 1 $ "SELFTIMED: "++show (diffUTCTime t2 t1)
+    dbgPrint 2 $ "[JIT] Finished executing dynamically loaded Acc computation!"
     
     arrs <- forM allResults $ \ (rname,snames) -> do
       oneFetch <- dlsym dl ("GetResult_"++show rname)
@@ -270,13 +270,13 @@ loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv, G.progType } soNam
           mkGetResultSize oneShape resultsRec
       return (S.AccArray shape [payl])
       
-    dbgPrint 2$"[JIT] Destroying args record: "++show argsRec
+    dbgPrint 2 $ "[JIT] Destroying args record: "++show argsRec
     (mkDestroyRecord dar) argsRec
-    dbgPrint 2$"[JIT] Destroying results record: "++show resultsRec
+    dbgPrint 2 $ "[JIT] Destroying results record: "++show resultsRec
     (mkDestroyRecord drr) resultsRec
     let table = M.fromList $ zip (map fst allResults) arrs
         results = map (table #) (map fst progResults)
-    dbgPrint 3$"[JIT] FULL RESULTS read back to Haskell (type "++show progType++"):\n  "++show results
+    dbgPrint 3 $ "[JIT] FULL RESULTS read back to Haskell (type "++show progType++"):\n  "++show results
     return results
 
 
