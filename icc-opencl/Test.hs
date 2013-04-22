@@ -104,7 +104,7 @@ main = do
                                  "C"      -> CRun.run
                         str = show (runit prg)
                         iotest :: IO Bool
-                        iotest = do putStrLn$ "Repacked: "++ str
+                        iotest = do evaluate str
                                     return (length str > 0)
                     in testGroup ("run test "++show i++" "++name) $
                        hUnitTestToTests (iotest ~? "non-empty result string")
