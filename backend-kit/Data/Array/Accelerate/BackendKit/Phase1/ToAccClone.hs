@@ -384,7 +384,7 @@ convertExp e =
     LinearIndex {} -> error "ToAccClone.hs: TODO: handle LinearIndex"
     Intersect {} -> error "ToAccClone.hs: TODO: handle Intersect"
     Iterate {}  -> error "ToAccClone.hs: TODO: handle Iterate"
-    ForeignExp {}  -> error "ToAccClone.hs: TODO: handle ForeignExp"
+--    ForeignExp {}  -> error "ToAccClone.hs: TODO: handle ForeignExp"
 
     Cond c t ex -> T.ECond <$> convertExp c 
                            <*> convertExp t
