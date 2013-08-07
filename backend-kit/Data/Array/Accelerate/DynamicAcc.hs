@@ -237,24 +237,6 @@ useD arr =
 mapD :: SealedFun -> SealedAcc -> SealedAcc 
 mapD = error "mapD"
 
-{-
--- | Convert a `SimpleAcc` constant into a fully-typed (but sealed) Accelerate one.
-constantD :: Const -> SealedExp
-constantD c = 
-  case c of
-    I   i -> sealExp$ A.constant i
-    I8  i -> sealExp$ A.constant i
-    I16 i -> sealExp$ A.constant i    
-    I32 i -> sealExp$ A.constant i
-    I64 i -> sealExp$ A.constant i
-    W   i -> sealExp$ A.constant i
-    W8  i -> sealExp$ A.constant i
-    W16 i -> sealExp$ A.constant i    
-    W32 i -> sealExp$ A.constant i
-    W64 i -> sealExp$ A.constant i
-
-    B   b -> sealExp$ A.constant b
--}
 
 constantOE :: Const -> SealedOpenExp
 constantOE c = 
@@ -264,19 +246,15 @@ constantOE c =
                  y :: NAST.OpenExp () () Int
                  y = NAST.Const r
              in sealOpenExp y
-    _ -> error "finishme"    
-    -- I8  i -> sealOpenExp$ A.constant i
-    -- I16 i -> sealOpenExp$ A.constant i    
-    -- I32 i -> sealOpenExp$ A.constant i
-    -- I64 i -> sealOpenExp$ A.constant i
-    -- W   i -> sealOpenExp$ A.constant i
-    -- W8  i -> sealOpenExp$ A.constant i
-    -- W16 i -> sealOpenExp$ A.constant i    
-    -- W32 i -> sealOpenExp$ A.constant i
-    -- W64 i -> sealOpenExp$ A.constant i
-
-    -- B   b -> sealOpenExp$ A.constant b
-
+    I8 i  -> sealOpenExp ((NAST.Const (((),i) :: Sug.EltRepr Int8 )) :: NAST.OpenExp () () Int8)
+    I16 i -> sealOpenExp ((NAST.Const (((),i) :: Sug.EltRepr Int16)) :: NAST.OpenExp () () Int16)
+    I32 i -> sealOpenExp ((NAST.Const (((),i) :: Sug.EltRepr Int32)) :: NAST.OpenExp () () Int32)
+    I64 i -> sealOpenExp ((NAST.Const (((),i) :: Sug.EltRepr Int64)) :: NAST.OpenExp () () Int64)
+    W8 i  -> sealOpenExp ((NAST.Const (((),i) :: Sug.EltRepr Word8 )) :: NAST.OpenExp () () Word8)
+    W16 i -> sealOpenExp ((NAST.Const (((),i) :: Sug.EltRepr Word16)) :: NAST.OpenExp () () Word16)
+    W32 i -> sealOpenExp ((NAST.Const (((),i) :: Sug.EltRepr Word32)) :: NAST.OpenExp () () Word32)
+    W64 i -> sealOpenExp ((NAST.Const (((),i) :: Sug.EltRepr Word64)) :: NAST.OpenExp () () Word64)
+    B   b -> sealOpenExp ((NAST.Const (((),b) :: Sug.EltRepr Bool)) :: NAST.OpenExp () () Bool)
 
   
 
@@ -339,7 +317,6 @@ convertExp ep@(EnvPack envE envA mp)
           ep'@(EnvPack _ _ m2) = extendE vr ty ep
           resTy = scalarTypeD (S.recoverExpType m2 bod)
           sty   = scalarTypeD ty
---          slayout' = consEnv sty slayout
       in
        case sty of
         SealedEltTuple (trhs :: EltTuple rhs_elt) ->
@@ -365,7 +342,7 @@ convertExp ep@(EnvPack envE envA mp)
                in
                trace ("Incremented "++show slayout++" to "++show newLayout)
                sealOpenExp oe
-{-
+
     S.ECond e1 e2 e3 ->
       let d1 = cE e1
           d2 = cE e2
@@ -376,18 +353,21 @@ convertExp ep@(EnvPack envE envA mp)
            -- #define a macro for this?
            case t of
              UnitTuple -> 
-               sealExp(((downcastOE d1::Exp Bool) A.?
-                        (downcastOE d2::Exp elt,
-                         downcastOE d3::Exp elt))::Exp elt)
+               sealOpenExp((NAST.Cond
+                            (downcastOE d1::NAST.Exp () Bool) 
+                            (downcastOE d2::NAST.Exp () elt)
+                            (downcastOE d3::NAST.Exp () elt))::NAST.Exp () elt)
              SingleTuple _ ->
-               sealExp(((downcastOE d1::Exp Bool) A.?
-                        (downcastOE d2::Exp elt,
-                         downcastOE d3::Exp elt))::Exp elt)
+               sealOpenExp((NAST.Cond
+                            (downcastOE d1::NAST.Exp () Bool) 
+                            (downcastOE d2::NAST.Exp () elt)
+                            (downcastOE d3::NAST.Exp () elt))::NAST.Exp () elt)
              PairTuple _ _ ->
-               sealExp(((downcastOE d1::Exp Bool) A.?
-                        (downcastOE d2::Exp elt,
-                         downcastOE d3::Exp elt))::Exp elt)
--}
+               sealOpenExp((NAST.Cond
+                            (downcastOE d1::NAST.Exp () Bool) 
+                            (downcastOE d2::NAST.Exp () elt)
+                            (downcastOE d3::NAST.Exp () elt))::NAST.Exp () elt)
+
     ex -> error$ "convertExp: expression not handled yet "++show ex
   where
     lookupInd :: Var -> [(Var,Type)] -> (Int,Type)
@@ -473,19 +453,6 @@ prjEltTuple (SealedEltTuple elt) ix slay =
       let (_::Phantom s,x) = prjSealed "" ix slay in x
     PairTuple (_ :: EltTuple l) (_ :: EltTuple r) ->
       let (_::Phantom (l,r),x) = prjSealed "" ix slay in x
-
--- | This BOTH increments a layout and then pushes the new zero idx on.
-consEnv :: -- forall elT a . (elT ~ EltTuple a) =>
-                      -- forall eltt . -- (Typeable eltt) =>
-                      SealedEltTuple -> SealedLayout -> SealedLayout
-consEnv (SealedEltTuple (elt :: EltTuple a))
-                   (SealedLayout (lyt :: Layout env env'))
- = SealedLayout y
-  where
-    x :: Layout (env, a) env'
-    x = incLayout lyt 
-    y :: Layout (env, a) (env',a)
-    y = x `PushLayout` ZeroIdx
 
 
 emptySealedLayout :: SealedLayout 
