@@ -1,5 +1,6 @@
 {-# LANGUAGE RankNTypes, ScopedTypeVariables, GADTs #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts, FlexibleInstances #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 
@@ -43,7 +44,8 @@ import           Data.Array.Accelerate.AST                  ( Idx(..) )
 import Data.Array.Accelerate.BackendKit.Phase1.ToAccClone as Cvt (accToAccClone, expToExpClone)
 
 import Data.Typeable (gcast)
-import Data.Dynamic
+import Data.Dynamic (Dynamic, fromDyn, fromDynamic, toDyn,
+                     Typeable, Typeable3, mkTyConApp, TyCon, mkTyCon3, typeOf3, typeOf)
 import Data.Map as M
 import Prelude as P
 import Data.Maybe (fromMaybe, fromJust)
@@ -290,14 +292,23 @@ convertExp ep@(EnvPack envE envA mp)
           ep'@(EnvPack _ _ m2) = extendE vr ty ep
           resTy = scalarTypeD (S.recoverExpType m2 bod)
           sty   = scalarTypeD ty
-          slayout' = incSealedLayoutElt sty slayout
-          bod'  = convertExp ep' slayout' bod
+--          slayout' = consEnv sty slayout
       in
-       case (slayout',sty,resTy) of
-         -- Now pop open the types:         
-         (SealedLayout (lyt :: Layout env2 env2'),
-          SealedEltTuple (trhs :: EltTuple rhs_elt),
-          SealedEltTuple (tres :: EltTuple res_elt)) ->
+       case sty of
+        SealedEltTuple (trhs :: EltTuple rhs_elt) ->
+         let
+          -- To extend the env first we bump debruijn indices...
+            bumped :: Layout (env0, rhs_elt) env0'
+            bumped = incLayout lyt
+            -- ... then we push the zero index in:
+            newLayout :: Layout (env0, rhs_elt) (env0',rhs_elt)
+            newLayout = bumped `PushLayout` ZeroIdx
+
+            bod'  = convertExp ep' (SealedLayout newLayout) bod
+         in
+          --          SealedLayout (lyt :: Layout env2 env2'),
+         case (resTy) of
+         (SealedEltTuple (tres :: EltTuple res_elt)) ->
            -- Need to verify that env2 ~ (env0,rhs_elt)
 --            case (gcast lyt) :: Maybe (Layout (env0,rhs_elt) (env0',rhs_elt)) of
 --              Just (lyt') ->
@@ -305,21 +316,14 @@ convertExp ep@(EnvPack envE envA mp)
 --                error "FINISH"
            case (trhs,tres) of
              (SingleTuple _, SingleTuple _) -> 
-               let bod'' = (downcastOE bod') :: NAST.OpenExp env2 AENV0 res_elt
+               let bod'' = (downcastOE bod') :: NAST.OpenExp (env0,rhs_elt) AENV0 res_elt
                    rhs'' = (downcastOE rhs') :: NAST.OpenExp env0 AENV0 rhs_elt
---                   oe :: NAST.OpenExp env0 AENV0 res_elt
---                   oe = NAST.Let rhs'' bod''
+                   oe :: NAST.OpenExp env0 AENV0 res_elt
+                   oe = NAST.Let rhs'' bod''
                in
-               trace ("Incremented "++show slayout++" to "++show slayout')
-               sealOpenExp bod''
-
---        AST.Let (cvt boundExp) (convertSharingExp config lyt' alyt (se:env) aenv bodyExp)          
-
-  -- Let           :: (Elt bnd_t, Elt body_t)
-  --               => PreOpenExp acc env          aenv bnd_t
-  --               -> PreOpenExp acc (env, bnd_t) aenv body_t
-  --               -> PreOpenExp acc env          aenv body_t
-
+               trace ("Incremented "++show slayout++" to "++show newLayout)
+               sealOpenExp oe
+--               sealOpenExp bod''
 
     S.ECond e1 e2 e3 ->
       let d1 = cE e1
@@ -426,10 +430,11 @@ prjEltTuple (SealedEltTuple elt) ix slay =
     PairTuple (_ :: EltTuple l) (_ :: EltTuple r) ->
       let (_::Phantom (l,r),x) = prjSealed "" ix slay in x
 
-incSealedLayoutElt :: -- forall elT a . (elT ~ EltTuple a) =>
+-- | This BOTH increments a layout and then pushes the new zero idx on.
+consEnv :: -- forall elT a . (elT ~ EltTuple a) =>
                       -- forall eltt . -- (Typeable eltt) =>
                       SealedEltTuple -> SealedLayout -> SealedLayout
-incSealedLayoutElt (SealedEltTuple (elt :: EltTuple a))
+consEnv (SealedEltTuple (elt :: EltTuple a))
                    (SealedLayout (lyt :: Layout env env'))
  = SealedLayout y
   where
@@ -559,14 +564,17 @@ t1 = -- convertClosedExp
 t1b :: Exp Int
 t1b = downcastE t1
 
+t2 :: SealedOpenExp
 t2 = convertExp emptyEnvPack emptySealedLayout
      (S.ELet (v, TInt, (S.EConst (I 33))) (S.EVr v))
  where v = S.var "v" 
+
 t2a :: Exp Int
 t2a = downcastE t2
 
 -- t2b :: NAST.OpenExp ((),(EltTuple Int)) () Int
 t2b :: NAST.OpenExp ((),Int) () Int
+-- t2b :: NAST.OpenExp () () Int
 t2b = downcastOE t2
 
 t4 = simpleProg
