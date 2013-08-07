@@ -27,7 +27,8 @@ module Data.Array.Accelerate.DynamicAcc
 -}
        where
 
-import           Data.Array.Accelerate as A
+import           Data.Array.Accelerate as A hiding (Exp)
+import qualified Data.Array.Accelerate as A
 import qualified Data.Array.Accelerate.Type as T
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
@@ -62,11 +63,11 @@ import Debug.Trace (trace)
 
 -- TODO: make these pairs that keep around some printed rep for debugging purposes in
 -- the case of a downcast error.  Also make them newtypes!
-newtype SealedExp = SealedExp Dynamic deriving Show
-type SealedAcc = Dynamic
+newtype SealedExp     = SealedExp     Dynamic deriving Show
 newtype SealedOpenExp = SealedOpenExp Dynamic deriving Show
+type SealedAcc = Dynamic
 
-sealExp :: Typeable a => Exp a -> SealedExp
+sealExp :: Typeable a => NAST.Exp () a -> SealedExp
 sealExp = SealedExp . toDyn
 
 sealAcc :: Typeable a => Acc a -> SealedAcc
@@ -87,10 +88,10 @@ downcastOE (SealedOpenExp dyn) =
   case fromDynamic dyn of
     Just (oe :: t1) -> oe
     Nothing ->
-      error$"Attempt to unpack SealedExp with type "++show dyn
+      error$"Attempt to unpack SealedOpenExp with type "++show dyn
       ++ ", expected type "++ show (toDyn (unused::t1))
 
-downcastE :: forall a . Typeable a => SealedExp -> Exp a
+downcastE :: forall a . Typeable a => SealedExp -> NAST.Exp () a
 downcastE (SealedExp d) =
   case fromDynamic d of
     Just e -> e
@@ -206,6 +207,7 @@ data SealedFun -- ??
 -- AST Construction
 --------------------------------------------------------------------------------
 
+#if 0 
 -- | Dynamically typed variant of `Data.Array.Accelerate.unit`.
 unitD :: SealedEltTuple -> SealedExp -> SealedAcc
 unitD elt exp =
@@ -214,9 +216,9 @@ unitD elt exp =
       case t of
         UnitTuple -> sealAcc$ unit$ constant ()
         SingleTuple (_ :: T.ScalarType s) ->
-          sealAcc$ unit (downcastE exp :: Exp s)
+          sealAcc$ unit (downcastE exp :: NAST.Exp () s)
         PairTuple (_ :: EltTuple l) (_ :: EltTuple r) ->
-          sealAcc$ unit (downcastE exp :: Exp (l,r))
+          sealAcc$ unit (downcastE exp :: NAST.Exp () (l,r))
 
 -- | Dynamically-typed variant of `Data.Array.Accelerate.use`.  However, this version
 -- is less powerful, it only takes a single, logical array, not a tuple of arrays.
@@ -229,12 +231,13 @@ useD arr =
  where
    dty = S.accArrayToType arr
    sty = arrayTypeD dty
-
+#endif
 
 -- TODO: How to handle functions?
 mapD :: SealedFun -> SealedAcc -> SealedAcc 
 mapD = error "mapD"
 
+{-
 -- | Convert a `SimpleAcc` constant into a fully-typed (but sealed) Accelerate one.
 constantD :: Const -> SealedExp
 constantD c = 
@@ -251,19 +254,16 @@ constantD c =
     W64 i -> sealExp$ A.constant i
 
     B   b -> sealExp$ A.constant b
+-}
 
 constantOE :: Const -> SealedOpenExp
 constantOE c = 
   case c of
-    I   i -> let x :: Exp Int
-                 x = A.constant i
-                 r :: Sug.EltRepr Int
+    I   i -> let r :: Sug.EltRepr Int
                  r = ((),i)
                  y :: NAST.OpenExp () () Int
                  y = NAST.Const r
-             in
---              error "FINISH"
-              sealOpenExp y
+             in sealOpenExp y
     _ -> error "finishme"    
     -- I8  i -> sealOpenExp$ A.constant i
     -- I16 i -> sealOpenExp$ A.constant i    
@@ -309,13 +309,10 @@ convertExp ::
 -- TODO: Add a second SealedLayout for array bindings.
 convertExp ep@(EnvPack envE envA mp)
            slayout@(SealedLayout (lyt :: Layout env0 env0')) ex =
---  trace("Converting exp "++show ex++" with layout "++show lyt++" and dyn env "++show (envE,envA))$
+  trace("Converting exp "++show ex++" with layout "++show lyt++" and dyn env "++show (envE,envA))$
   let cE = convertExp ep slayout in 
   case ex of
-    S.EConst c ->
-      let cnst = constantD c in 
-      trace ("Trying to convert constant to open..."++show cnst) $
-      toOpen cnst
+    S.EConst c -> constantOE c
     -- This is tricky, because it needs to become a deBruin index ultimately...
     -- Or we need to stay at the level of HOAS...
     S.EVr vr -> -- Scalar (not array) variable.
@@ -390,7 +387,8 @@ convertExp ep@(EnvPack envE envA mp)
                sealExp(((downcastOE d1::Exp Bool) A.?
                         (downcastOE d2::Exp elt,
                          downcastOE d3::Exp elt))::Exp elt)
--}               
+-}
+    ex -> error$ "convertExp: expression not handled yet "++show ex
   where
     lookupInd :: Var -> [(Var,Type)] -> (Int,Type)
     lookupInd v [] = error$"convertExp: unbound variable: "++show v
@@ -411,11 +409,12 @@ convertProg :: S.Prog a -> SealedAcc
 convertProg S.Prog{progBinds,progResults} =
   error "convertProg"
 
+{-
 convertClosedAExp :: S.AExp -> SealedAcc
 convertClosedAExp ae =
   case ae of
     S.Use arr -> useD arr
-
+-}
 
 -- -- | Scopes are conversions from an environment to a super-environment of that environment.
 -- type Scope scopeEnv globalEnv = forall el.(NAST.Idx scopeEnv el -> NAST.Idx globalEnv el)
@@ -602,12 +601,14 @@ c0 = constantOE (I 99)
 c0a :: NAST.Exp () Int
 c0a = downcastOE c0
 
+{-
 -- Small tests:
 t0 :: SealedAcc
 t0 = convertClosedAExp $
      S.Use (S.AccArray [5,2] (payloadsFromList1$ P.map I [1..10]))
 t0b :: Acc (Array DIM2 (Int))
 t0b = downcastA t0
+-}
 
 t1 = -- convertClosedExp
      convertExp emptyEnvPack emptySealedLayout
