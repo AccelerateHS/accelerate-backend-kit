@@ -7,6 +7,7 @@
 -- | A library for the runtime construction of fully typed Accelerate programs.
 
 module Data.Array.Accelerate.DynamicAcc
+{-
        (-- * Dynamically typed AST pieces
          SealedExp, SealedAcc,
          
@@ -23,6 +24,7 @@ module Data.Array.Accelerate.DynamicAcc
 
          t0, t1, t2  -- TEMP
        )
+-}
        where
 
 import           Data.Array.Accelerate as A
@@ -60,12 +62,12 @@ import Debug.Trace (trace)
 
 -- TODO: make these pairs that keep around some printed rep for debugging purposes in
 -- the case of a downcast error.  Also make them newtypes!
-type SealedExp = Dynamic
+newtype SealedExp = SealedExp Dynamic deriving Show
 type SealedAcc = Dynamic
-type SealedOpenExp = Dynamic
+newtype SealedOpenExp = SealedOpenExp Dynamic deriving Show
 
 sealExp :: Typeable a => Exp a -> SealedExp
-sealExp = toDyn
+sealExp = SealedExp . toDyn
 
 sealAcc :: Typeable a => Acc a -> SealedAcc
 sealAcc = toDyn
@@ -73,13 +75,13 @@ sealAcc = toDyn
 -- sealOpenExp :: Typeable a => NAST.OpenExp env aenv results -> SealedOpenExp
 -- sealOpenExp :: (Typeable t1, t1 ~ NAST.OpenExp env aenv results, Typeable results) => t1 -> SealedOpenExp
 sealOpenExp :: (Typeable t1, t1 ~ NAST.OpenExp env aenv results) => t1 -> SealedOpenExp
-sealOpenExp x = toDyn x 
+sealOpenExp x = SealedOpenExp (toDyn x)
   
 -- Dynamic seems to succeed here whereas my "Sealed" approach + gcast did not:
 downcastOE :: forall t1 env aenv results .
               (Typeable t1, t1 ~ NAST.OpenExp env aenv results, Typeable results) =>
-              Dynamic -> t1
-downcastOE dyn =
+              SealedOpenExp -> t1
+downcastOE (SealedOpenExp dyn) =
   case fromDynamic dyn of
     Just (oe :: t1) -> oe
     Nothing ->
@@ -87,11 +89,12 @@ downcastOE dyn =
       ++ ", expected type "++ show (toDyn (unused::t1))
 
 downcastE :: forall a . Typeable a => SealedExp -> Exp a
-downcastE d = case fromDynamic d of
-                Just e -> e
-                Nothing ->
-                  error$"Attempt to unpack SealedExp with type "++show d
-                     ++ ", expected type Exp "++ show (toDyn (unused::a))
+downcastE (SealedExp d) =
+  case fromDynamic d of
+    Just e -> e
+    Nothing ->
+      error$"Attempt to unpack SealedExp with type "++show d
+         ++ ", expected type Exp "++ show (toDyn (unused::a))
 
 downcastA :: forall a . Typeable a => SealedAcc -> Acc a
 downcastA d = case fromDynamic d of
@@ -99,6 +102,21 @@ downcastA d = case fromDynamic d of
                 Nothing ->
                   error$"Attempt to unpack SealedAcc with type "++show d
                      ++ ", expected type Acc "++ show (toDyn (unused::a))
+
+toOpen :: SealedExp -> SealedOpenExp
+toOpen (SealedExp dyn) =
+#if 0   
+  -- Make sure it casts appropriately:
+  case fromDynamic dyn of
+    -- No instance of Typeable elt:
+    Just (oe :: NAST.OpenExp () aenv elt) -> SealedOpenExp (toDyn oe)
+    Nothing ->
+      error$"Attempt to unpack SealedExp with type "++show dyn
+         ++ ", expected type Exp "++ show (toDyn (unused::a))
+#else
+  SealedOpenExp dyn
+#endif
+  
 
 -- | Typed de-bruijn indices carry a full type-level environment and a cursor into
 -- it.  This just seals such an index up as a monomorphic type.
@@ -217,7 +235,7 @@ mapD = error "mapD"
 
 -- | Convert a `SimpleAcc` constant into a fully-typed (but sealed) Accelerate one.
 constantD :: Const -> SealedExp
-constantD c =
+constantD c = 
   case c of
     I   i -> sealExp$ A.constant i
     I8  i -> sealExp$ A.constant i
@@ -232,6 +250,8 @@ constantD c =
 
     B   b -> sealExp$ A.constant b
 --    _ -> error$"constantD: finishme: "++show c
+
+  
 
 --------------------------------------------------------------------------------
 -- TODO: These conversion functions could move to their own module:
@@ -262,10 +282,10 @@ convertExp ::
 -- TODO: Add a second SealedLayout for array bindings.
 convertExp ep@(EnvPack envE envA mp)
            slayout@(SealedLayout (lyt :: Layout env0 env0')) ex =
-  trace("Converting exp "++show ex++" with layout "++show lyt++" and dyn env "++show (envE,envA))$
+--  trace("Converting exp "++show ex++" with layout "++show lyt++" and dyn env "++show (envE,envA))$
   let cE = convertExp ep slayout in 
   case ex of
-    S.EConst c -> constantD c
+    S.EConst c -> toOpen $ constantD c
     -- This is tricky, because it needs to become a deBruin index ultimately...
     -- Or we need to stay at the level of HOAS...
     S.EVr vr -> -- Scalar (not array) variable.
@@ -324,7 +344,7 @@ convertExp ep@(EnvPack envE envA mp)
                trace ("Incremented "++show slayout++" to "++show newLayout)
                sealOpenExp oe
 --               sealOpenExp bod''
-
+{-
     S.ECond e1 e2 e3 ->
       let d1 = cE e1
           d2 = cE e2
@@ -335,17 +355,18 @@ convertExp ep@(EnvPack envE envA mp)
            -- #define a macro for this?
            case t of
              UnitTuple -> 
-               sealExp(((downcastE d1::Exp Bool) A.?
-                        (downcastE d2::Exp elt,
-                         downcastE d3::Exp elt))::Exp elt)
+               sealExp(((downcastOE d1::Exp Bool) A.?
+                        (downcastOE d2::Exp elt,
+                         downcastOE d3::Exp elt))::Exp elt)
              SingleTuple _ ->
-               sealExp(((downcastE d1::Exp Bool) A.?
-                        (downcastE d2::Exp elt,
-                         downcastE d3::Exp elt))::Exp elt)
+               sealExp(((downcastOE d1::Exp Bool) A.?
+                        (downcastOE d2::Exp elt,
+                         downcastOE d3::Exp elt))::Exp elt)
              PairTuple _ _ ->
-               sealExp(((downcastE d1::Exp Bool) A.?
-                        (downcastE d2::Exp elt,
-                         downcastE d3::Exp elt))::Exp elt)
+               sealExp(((downcastOE d1::Exp Bool) A.?
+                        (downcastOE d2::Exp elt,
+                         downcastOE d3::Exp elt))::Exp elt)
+-}               
   where
     lookupInd :: Var -> [(Var,Type)] -> (Int,Type)
     lookupInd v [] = error$"convertExp: unbound variable: "++show v
@@ -358,7 +379,7 @@ convertExp ep@(EnvPack envE envA mp)
 -- | Convert a closed `SimpleAcc` expression (no free vars) into a fully-typed (but
 -- sealed) Accelerate one.
 convertClosedExp :: S.Exp -> SealedExp
-convertClosedExp ex =
+convertClosedExp ex = SealedExp $ 
   case ex of
     S.EVr v -> error$"convertClosedExp: free variable found: "++show v
 
@@ -558,6 +579,7 @@ t0 = convertClosedAExp $
 t0b :: Acc (Array DIM2 (Int))
 t0b = downcastA t0
 
+{-
 t1 = -- convertClosedExp
      convertExp emptyEnvPack emptySealedLayout
      (S.ECond (S.EConst (B True)) (S.EConst (I 33)) (S.EConst (I 34)))
@@ -576,6 +598,8 @@ t2a = downcastE t2
 t2b :: NAST.OpenExp ((),Int) () Int
 -- t2b :: NAST.OpenExp () () Int
 t2b = downcastOE t2
+
+-}
 
 t4 = simpleProg
  where
