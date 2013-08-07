@@ -37,7 +37,7 @@ import           Data.Array.Accelerate.BackendKit.SimpleArray (payloadsFromList1
 -- import Data.Array.Accelerate.Interpreter as I
 -- import           Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone (repackAcc)
 import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc)
--- import qualified Data.Array.Accelerate.Array.Sugar as Sug
+import qualified Data.Array.Accelerate.Array.Sugar as Sug
 -- import qualified Data.Array.Accelerate.Array.Data  as Dat
 
 import qualified Data.Array.Accelerate.AST                  as NAST
@@ -72,10 +72,12 @@ sealExp = SealedExp . toDyn
 sealAcc :: Typeable a => Acc a -> SealedAcc
 sealAcc = toDyn
 
--- sealOpenExp :: Typeable a => NAST.OpenExp env aenv results -> SealedOpenExp
--- sealOpenExp :: (Typeable t1, t1 ~ NAST.OpenExp env aenv results, Typeable results) => t1 -> SealedOpenExp
-sealOpenExp :: (Typeable t1, t1 ~ NAST.OpenExp env aenv results) => t1 -> SealedOpenExp
-sealOpenExp x = SealedOpenExp (toDyn x)
+-- sealOpenExp :: (Typeable t1, t1 ~ NAST.OpenExp env aenv results) => t1 -> SealedOpenExp
+-- sealOpenExp :: Typeable res => NAST.OpenExp env aenv res -> SealedOpenExp
+
+sealOpenExp :: (Typeable env, Typeable aenv, Typeable results) =>
+               NAST.OpenExp env aenv results -> SealedOpenExp
+sealOpenExp (x :: NAST.OpenExp env aenv results) = SealedOpenExp (toDyn x)
   
 -- Dynamic seems to succeed here whereas my "Sealed" approach + gcast did not:
 downcastOE :: forall t1 env aenv results .
@@ -249,7 +251,32 @@ constantD c =
     W64 i -> sealExp$ A.constant i
 
     B   b -> sealExp$ A.constant b
---    _ -> error$"constantD: finishme: "++show c
+
+constantOE :: Const -> SealedOpenExp
+constantOE c = 
+  case c of
+    I   i -> let x :: Exp Int
+                 x = A.constant i
+                 r :: Sug.EltRepr Int
+                 r = ((),i)
+                 y :: NAST.OpenExp () () Int
+                 y = NAST.Const r
+             in
+--              error "FINISH"
+              sealOpenExp y
+    _ -> error "finishme"    
+    -- I8  i -> sealOpenExp$ A.constant i
+    -- I16 i -> sealOpenExp$ A.constant i    
+    -- I32 i -> sealOpenExp$ A.constant i
+    -- I64 i -> sealOpenExp$ A.constant i
+    -- W   i -> sealOpenExp$ A.constant i
+    -- W8  i -> sealOpenExp$ A.constant i
+    -- W16 i -> sealOpenExp$ A.constant i    
+    -- W32 i -> sealOpenExp$ A.constant i
+    -- W64 i -> sealOpenExp$ A.constant i
+
+    -- B   b -> sealOpenExp$ A.constant b
+
 
   
 
@@ -285,7 +312,10 @@ convertExp ep@(EnvPack envE envA mp)
 --  trace("Converting exp "++show ex++" with layout "++show lyt++" and dyn env "++show (envE,envA))$
   let cE = convertExp ep slayout in 
   case ex of
-    S.EConst c -> toOpen $ constantD c
+    S.EConst c ->
+      let cnst = constantD c in 
+      trace ("Trying to convert constant to open..."++show cnst) $
+      toOpen cnst
     -- This is tricky, because it needs to become a deBruin index ultimately...
     -- Or we need to stay at the level of HOAS...
     S.EVr vr -> -- Scalar (not array) variable.
@@ -329,11 +359,6 @@ convertExp ep@(EnvPack envE envA mp)
           --          SealedLayout (lyt :: Layout env2 env2'),
          case (resTy) of
          (SealedEltTuple (tres :: EltTuple res_elt)) ->
-           -- Need to verify that env2 ~ (env0,rhs_elt)
---            case (gcast lyt) :: Maybe (Layout (env0,rhs_elt) (env0',rhs_elt)) of
---              Just (lyt') ->
--- --             Just (lyt' :: Layout Int8 Int16) ->             
---                error "FINISH"
            case (trhs,tres) of
              (SingleTuple _, SingleTuple _) -> 
                let bod'' = (downcastOE bod') :: NAST.OpenExp (env0,rhs_elt) AENV0 res_elt
@@ -343,7 +368,6 @@ convertExp ep@(EnvPack envE envA mp)
                in
                trace ("Incremented "++show slayout++" to "++show newLayout)
                sealOpenExp oe
---               sealOpenExp bod''
 {-
     S.ECond e1 e2 e3 ->
       let d1 = cE e1
@@ -559,7 +583,7 @@ instance Typeable3 (NAST.OpenExp) where
 
   
 --------------------------------------------------------------------------------
--- Misc
+-- Misc, Tests, and Examples
 --------------------------------------------------------------------------------  
 
 unused :: a
@@ -572,6 +596,12 @@ mp # k = case M.lookup k mp of
           Nothing -> error$"Map.lookup: key "++show k++" is not in map:\n  "++show mp
           Just x  -> x
 
+c0 :: SealedOpenExp
+c0 = constantOE (I 99)
+
+c0a :: NAST.Exp () Int
+c0a = downcastOE c0
+
 -- Small tests:
 t0 :: SealedAcc
 t0 = convertClosedAExp $
@@ -579,27 +609,24 @@ t0 = convertClosedAExp $
 t0b :: Acc (Array DIM2 (Int))
 t0b = downcastA t0
 
-{-
 t1 = -- convertClosedExp
      convertExp emptyEnvPack emptySealedLayout
      (S.ECond (S.EConst (B True)) (S.EConst (I 33)) (S.EConst (I 34)))
-t1b :: Exp Int
-t1b = downcastE t1
+t1b :: NAST.Exp () Int
+t1b = downcastOE t1
 
 t2 :: SealedOpenExp
 t2 = convertExp emptyEnvPack emptySealedLayout
      (S.ELet (v, TInt, (S.EConst (I 33))) (S.EVr v))
  where v = S.var "v" 
 
-t2a :: Exp Int
-t2a = downcastE t2
+-- t2a :: Exp Int
+-- t2a = downcastE t2
 
 -- t2b :: NAST.OpenExp ((),(EltTuple Int)) () Int
-t2b :: NAST.OpenExp ((),Int) () Int
--- t2b :: NAST.OpenExp () () Int
+-- t2b :: NAST.OpenExp ((),Int) () Int
+t2b :: NAST.OpenExp () () Int
 t2b = downcastOE t2
-
--}
 
 t4 = simpleProg
  where
