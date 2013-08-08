@@ -6,7 +6,7 @@
 
 -- | A library for the runtime construction of fully typed Accelerate programs.
 
-module Data.Array.Accelerate.DynamicAcc
+module Data.Array.Accelerate.DynamicAcc2
 {-
        (-- * Dynamically typed AST pieces
          SealedExp, SealedAcc,
@@ -262,18 +262,28 @@ convertExp ep@(EnvPack envE envA mp)
     S.EVr vr -> case mp # vr of (_,Left se) -> se
 
     S.EPrimApp outTy op ls ->
-      let args = P.map (convertExp ep) ls
-      in
+      let args = P.map (convertExp ep) ls in
+      
       case scalarTypeD outTy of
         SealedEltTuple t ->
+#define REPBOP(which, prim, binop) which prim -> let a1,a2 :: Exp elt2; \
+                            a1 = downcastE (args P.!! 0); \
+                            a2 = downcastE (args P.!! 1); \
+                        in sealExp (a1 + a2);
+          
           case t of
             SingleTuple (_ :: T.ScalarType elt2) -> 
              case op of
-              NP Add -> let a1,a2,res :: Exp elt2
-                            a1 = downcastE (args P.!! 0)
-                            a2 = downcastE (args P.!! 1)                            
-                            res  = (a1 + a2) 
-                        in sealExp res
+               REPBOP(NP, Add, (+))
+               REPBOP(NP, Sub, (+))
+               REPBOP(NP, Mul, (+))
+--               REPUOP(NP, Neg, (+))
+--               REPUOP(NP, Abs, abs)
+            _ -> error$ "Primop "++ show op++" expects a scalar type, got "++show outTy
+            --   NP Add -> let a1,a2 :: Exp elt2
+            --                 a1 = downcastE (args P.!! 0)
+            --                 a2 = downcastE (args P.!! 1)                            
+            --             in sealExp (a1 + a2) 
 
     S.ELet (vr,ty,rhs) bod ->
       let rhs' = cE rhs
