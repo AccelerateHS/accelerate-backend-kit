@@ -62,13 +62,19 @@ import Debug.Trace (trace)
 -- the case of a downcast error.  Also make them newtypes!
 newtype SealedExp     = SealedExp     Dynamic deriving Show
 newtype SealedOpenExp = SealedOpenExp Dynamic deriving Show
-type SealedAcc = Dynamic
+newtype SealedAcc     = SealedAcc     Dynamic deriving Show
+-- data SealedFun = SealedFun
+newtype SealedFun     = SealedFun     Dynamic deriving Show
 
 sealExp :: Typeable a => A.Exp a -> SealedExp
 sealExp = SealedExp . toDyn
 
 sealAcc :: Typeable a => Acc a -> SealedAcc
-sealAcc = toDyn
+sealAcc = SealedAcc . toDyn
+
+sealFun :: (Elt a, Elt b) => (Exp a -> Exp b) -> SealedFun
+sealFun = undefined
+
 
 downcastE :: forall a . Typeable a => SealedExp -> A.Exp a
 downcastE (SealedExp d) =
@@ -79,11 +85,12 @@ downcastE (SealedExp d) =
          ++ ", expected type Exp "++ show (toDyn (unused::a))
 
 downcastA :: forall a . Typeable a => SealedAcc -> Acc a
-downcastA d = case fromDynamic d of
-                Just e -> e
-                Nothing ->
-                  error$"Attempt to unpack SealedAcc with type "++show d
-                     ++ ", expected type Acc "++ show (toDyn (unused::a))
+downcastA (SealedAcc d) =
+  case fromDynamic d of
+    Just e -> e
+    Nothing ->
+       error$"Attempt to unpack SealedAcc with type "++show d
+          ++ ", expected type Acc "++ show (toDyn (unused::a))
 
 -- | Convert a `SimpleAcc` constant into a fully-typed (but sealed) Accelerate one.
 constantE :: Const -> SealedExp
@@ -173,7 +180,6 @@ scalarTypeD ty =
     TWord   -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word)
     TArray {} -> error$"scalarTypeD: expected scalar type, got "++show ty
 
-data SealedFun -- ??
 
 
 --------------------------------------------------------------------------------
@@ -210,6 +216,7 @@ mapD :: SealedFun -> SealedAcc -> SealedAcc
 mapD = error "mapD"
 
 
+
 --------------------------------------------------------------------------------
 -- TODO: These conversion functions could move to their own module:
 --------------------------------------------------------------------------------
@@ -240,12 +247,11 @@ type AENV0 = ()
 --   Requires a type environments for the (open) `SimpleAcc` expression:    
 --   one for free expression variables, one for free array variables.
 --     
-convertExp :: 
-              EnvPack -> S.Exp -> SealedExp
+convertExp :: EnvPack -> S.Exp -> SealedExp
 convertExp ep@(EnvPack envE envA mp)
 --           slayout@(SealedLayout (lyt :: Layout env0 env0'))
            ex =
---  trace("Converting exp "++show ex++" with layout "++show lyt++" and dyn env "++show (envE,envA))$
+  trace("Converting exp "++show ex++" with env "++show mp++" and dyn env "++show (envE,envA))$
   let cE = convertExp ep in 
   case ex of
     S.EConst c -> constantE c
@@ -287,10 +293,47 @@ convertExp ep@(EnvPack envE envA mp)
 
 -- | Convert a closed `SimpleAcc` expression (no free vars) into a fully-typed (but
 -- sealed) Accelerate one.
-convertClosedExp :: S.Exp -> SealedExp
-convertClosedExp ex = SealedExp $ 
-  case ex of
-    S.EVr v -> error$"convertClosedExp: free variable found: "++show v
+convertAcc :: EnvPack -> S.AExp -> SealedAcc
+convertAcc env@(EnvPack _ _ mp) ae = 
+  case ae of
+    S.Vr vr   -> case mp # vr of (_,Right se) -> se
+    S.Unit ex ->
+      let ex' = convertExp env ex
+          ty  = S.recoverExpType (M.map P.fst mp) ex
+      in unitD (scalarTypeD ty) ex'
+    S.Map (S.Lam1 (vr,ty) bod) inA ->
+      let bodfn :: SealedExp -> SealedExp
+          bodfn ex = convertExp (extendE vr ty ex env) bod
+          aty@(TArray dims inty) = P.fst (mp # inA)
+          bodty = S.recoverExpType (M.insert vr ty $ M.map P.fst mp) bod
+          newAty = arrayTypeD (TArray dims bodty)
+      in
+       case (shapeTypeD dims, scalarTypeD inty, scalarTypeD bodty) of
+         (SealedShapeType (_ :: Phantom shp), 
+          SealedEltTuple (inET  :: EltTuple inT),
+          SealedEltTuple (outET :: EltTuple outT)) ->
+          let
+            rawfn :: Exp inT -> Exp outT
+            rawfn x = downcastE (bodfn (sealExp x))
+            realIn :: Acc (Array shp inT)
+            realIn = downcastA (case mp # inA of (_,Right sa) -> sa)
+          in
+           -- Here we suffer PAIN to recover the Elt/Typeable instances:
+           case (inET, outET) of
+             (UnitTuple,     UnitTuple)     -> sealAcc $ A.map rawfn realIn
+             (SingleTuple _, UnitTuple)     -> sealAcc $ A.map rawfn realIn
+             (PairTuple _ _, UnitTuple)     -> sealAcc $ A.map rawfn realIn
+             (UnitTuple,     SingleTuple _) -> sealAcc $ A.map rawfn realIn
+             (SingleTuple _, SingleTuple _) -> sealAcc $ A.map rawfn realIn             
+             (PairTuple _ _, SingleTuple _) -> sealAcc $ A.map rawfn realIn
+             (UnitTuple,     PairTuple _ _) -> sealAcc $ A.map rawfn realIn
+             (SingleTuple _, PairTuple _ _) -> sealAcc $ A.map rawfn realIn             
+             (PairTuple _ _, PairTuple _ _) -> sealAcc $ A.map rawfn realIn
+
+
+
+
+    _ -> error$"FINISHME: unhandled: " ++show ae
 
 convertProg :: S.Prog a -> SealedAcc
 convertProg S.Prog{progBinds,progResults} =
@@ -365,3 +408,14 @@ t4 = simpleProg
  where
    TestEntry {simpleProg} = allProgsMap # "p1a"
 
+t5 = convertAcc emptyEnvPack (S.Unit (S.EConst (I 33)))
+t5a :: Acc (Scalar Int)
+t5a = downcastA t5
+
+
+t6 = convertAcc (extendA arr (TArray 0 TInt) t5 emptyEnvPack)
+        (S.Map (S.Lam1 (v,TInt) (S.EVr v)) arr)
+  where v   = S.var "v"
+        arr = S.var "arr"
+t6a :: Acc (Scalar Int)
+t6a = downcastA t6
