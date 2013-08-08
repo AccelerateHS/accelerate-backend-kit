@@ -32,7 +32,8 @@ import qualified Data.Array.Accelerate as A
 import qualified Data.Array.Accelerate.Type as T
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
-                 (Type(..), Const(..), AVar, Var, Prog(..))
+                 (Type(..), Const(..), AVar, Var, Prog(..),
+                  Prim(..), NumPrim(..), IntPrim(..), FloatPrim(..))
 import           Data.Array.Accelerate.BackendKit.Tests (allProgsMap, p1a, TestEntry(..))
 import           Data.Array.Accelerate.BackendKit.SimpleArray (payloadsFromList1)
 -- import Data.Array.Accelerate.Interpreter as I
@@ -115,7 +116,7 @@ constantE c =
 -- | We enhance "Data.Array.Accelerate.Type.TupleType" with Elt constraints.
 data EltTuple a where
   UnitTuple   ::                                               EltTuple ()
-  SingleTuple :: Elt a          => T.ScalarType a           -> EltTuple a
+  SingleTuple :: (Elt a, IsNum a) => T.ScalarType a         -> EltTuple a
   PairTuple   :: (Elt a, Elt b) => EltTuple a -> EltTuple b -> EltTuple (a, b)
  deriving Typeable
 
@@ -258,7 +259,21 @@ convertExp ep@(EnvPack envE envA mp)
 
     -- This is tricky, because it needs to become a deBruin index ultimately...
     -- Or we need to stay at the level of HOAS...
-    S.EVr vr -> case mp # vr of (_,Left se) -> se 
+    S.EVr vr -> case mp # vr of (_,Left se) -> se
+
+    S.EPrimApp outTy op ls ->
+      let args = P.map (convertExp ep) ls
+      in
+      case scalarTypeD outTy of
+        SealedEltTuple t ->
+          case t of
+            SingleTuple (_ :: T.ScalarType elt2) -> 
+             case op of
+              NP Add -> let a1,a2,res :: Exp elt2
+                            a1 = downcastE (args P.!! 0)
+                            a2 = downcastE (args P.!! 1)                            
+                            res  = (a1 + a2) 
+                        in sealExp res
 
     S.ELet (vr,ty,rhs) bod ->
       let rhs' = cE rhs
@@ -419,3 +434,18 @@ t6 = convertAcc (extendA arr (TArray 0 TInt) t5 emptyEnvPack)
         arr = S.var "arr"
 t6a :: Acc (Scalar Int)
 t6a = downcastA t6
+
+
+t7 = convertAcc (extendA arr (TArray 0 TInt) t5 emptyEnvPack)
+        (S.Map (S.Lam1 (v,TInt) (S.EPrimApp TInt (S.NP S.Add) [S.EVr v, S.EVr v])) arr)
+  where v   = S.var "v"
+        arr = S.var "arr"
+t7a :: Acc (Scalar Int)
+t7a = downcastA t7
+
+
+p1 = convertExp emptyEnvPack
+        (S.EPrimApp TInt (S.NP S.Add) [S.EConst (I 1), S.EConst (I 2)])
+p1_ :: Exp Int
+p1_ = downcastE p1
+
