@@ -3,6 +3,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts, FlexibleInstances #-}
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 -- | A library for the runtime construction of fully typed Accelerate programs.
 
@@ -96,19 +97,23 @@ downcastA (SealedAcc d) =
 
 -- | Convert a `SimpleAcc` constant into a fully-typed (but sealed) Accelerate one.
 constantE :: Const -> SealedExp
+
+#define SEALIT(pat) pat x -> sealExp (A.constant x); 
 constantE c =
-  case c of
-    I   i -> sealExp$ A.constant i
-    I8  i -> sealExp$ A.constant i
-    I16 i -> sealExp$ A.constant i
-    I32 i -> sealExp$ A.constant i
-    I64 i -> sealExp$ A.constant i
-    W   i -> sealExp$ A.constant i
-    W8  i -> sealExp$ A.constant i
-    W16 i -> sealExp$ A.constant i
-    W32 i -> sealExp$ A.constant i
-    W64 i -> sealExp$ A.constant i
-    B   b -> sealExp$ A.constant b
+  case c of {
+    SEALIT(I) SEALIT(I8) SEALIT(I16) SEALIT(I32) SEALIT(I64)
+    SEALIT(W) SEALIT(W8) SEALIT(W16) SEALIT(W32) SEALIT(W64)
+    SEALIT(F) SEALIT(D)
+    SEALIT(B)
+-- Temporary: Accelerate is missing Elt instances for C types presently:    
+--    SEALIT(CS) SEALIT(CI) SEALIT(CL) SEALIT(CLL)
+--    SEALIT(CUS) SEALIT(CUI) SEALIT(CUL) SEALIT(CULL)
+--    SEALIT(C) SEALIT(CC) SEALIT(CSC) SEALIT(CUC)    
+--    SEALIT(CF) SEALIT(CD)
+    Tup [] -> sealExp $ A.constant ();
+    Tup ls -> error$ "constantE: Cannot handle tuple constants!  These should be ETuple's: "++show c 
+--    Tup [a,b] -> A.tup2 (constantE 
+  }
 
 --------------------------------------------------------------------------------
 -- Type representations
@@ -305,6 +310,19 @@ convertExp ep@(EnvPack envE envA mp)
                REPUOP(POPINT, POPIDICT, NP, Neg, (\x -> (-x)))
                REPUOP(POPINT, POPIDICT, NP, Sig, signum)
 
+               REPBOP(POPINT, POPIDICT, IP, Quot, quot)
+               REPBOP(POPINT, POPIDICT, IP, Rem,  rem)
+               REPBOP(POPINT, POPIDICT, IP, IDiv, div)
+               REPBOP(POPINT, POPIDICT, IP, Mod,  mod)
+               REPBOP(POPINT, POPIDICT, IP, BAnd, (.&.))
+               REPBOP(POPINT, POPIDICT, IP, BOr,  (.|.))
+               REPBOP(POPINT, POPIDICT, IP, BXor, xor)
+--               REPUOP(POPINT, POPIDICT, IP, BNot, A.not)
+--               REPBOP(POPINT, POPIDICT, IP, BShiftL, A.shiftL)
+--               REPBOP(POPINT, POPIDICT, IP, BShiftR, A.shiftR)
+--               REPBOP(POPINT, POPIDICT, IP, BRotateL, A.rotateL)
+--               REPBOP(POPINT, POPIDICT, IP, BRotateR, A.rotateR)
+
                REPBOP(POPFLT, POPFDICT, FP, FDiv, (/))
                REPBOP(POPFLT, POPFDICT, FP, FPow, (**))
                REPBOP(POPFLT, POPFDICT, FP, LogBase, logBase)
@@ -331,20 +349,6 @@ convertExp ep@(EnvPack envE envA mp)
 --               REPBOP(POPFLT, POPFDICT, FP, Ceiling, A.ceiling)
 #if 0               
 
---               REPBOP(IP, Quot, quot)
-               -- REPBOP(IP, Rem,  rem)
-               -- REPBOP(IP, IDiv, div)
-               -- REPBOP(IP, Mod,  mod)
-               -- REPBOP(IP, BAnd, (.&.))
-               -- REPBOP(IP, BOr,  (.|.))
-               -- REPBOP(IP, BXor, xor)
---               REPUOP(IP, BNot, A.not)
---               REPBOP(IP, BShiftL, A.shiftL)
---               REPBOP(IP, BShiftR, A.shiftR)
---               REPBOP(IP, BRotateL, A.rotateL)
---               REPBOP(IP, BRotateR, A.rotateR)
-
---               REPBOP(IP, , )
 #endif
             _ -> error$ "Primop "++ show op++" expects a scalar type, got "++show outTy
 
