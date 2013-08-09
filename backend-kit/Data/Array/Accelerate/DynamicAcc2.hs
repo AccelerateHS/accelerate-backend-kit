@@ -57,6 +57,24 @@ import Debug.Trace (trace)
 -- import Control.Exception (bracket)
 -- import Control.Monad (when)
 
+-- INCOMPLETE: In several places we have an incomplete pattern match
+-- due to no Elt instances for C types: [2013.08.09]
+#define CTYERR error "DynamicAcc: Could not handle CType, it is not in Elt yet!"
+#define INSERT_CTY_ERR_CASES \
+  TCFloat  -> CTYERR; \
+  TCDouble -> CTYERR; \
+  TCShort  -> CTYERR; \
+  TCInt    -> CTYERR; \
+  TCLong   -> CTYERR; \
+  TCLLong  -> CTYERR; \
+  TCUShort  -> CTYERR; \
+  TCUInt    -> CTYERR; \
+  TCULong   -> CTYERR; \
+  TCULLong  -> CTYERR; \
+  TCChar    -> CTYERR; \
+  TCSChar   -> CTYERR; \
+  TCUChar   -> CTYERR; \
+
 --------------------------------------------------------------------------------
 -- AST Representations
 --------------------------------------------------------------------------------
@@ -99,17 +117,17 @@ downcastA (SealedAcc d) =
 constantE :: Const -> SealedExp
 
 #define SEALIT(pat) pat x -> sealExp (A.constant x); 
+#define ERRIT(pat) pat x -> error$"constantE: Accelerate is missing Elt instances for C types presently: "++show x;
 constantE c =
   case c of {
     SEALIT(I) SEALIT(I8) SEALIT(I16) SEALIT(I32) SEALIT(I64)
     SEALIT(W) SEALIT(W8) SEALIT(W16) SEALIT(W32) SEALIT(W64)
     SEALIT(F) SEALIT(D)
     SEALIT(B)
--- Temporary: Accelerate is missing Elt instances for C types presently:    
---    SEALIT(CS) SEALIT(CI) SEALIT(CL) SEALIT(CLL)
---    SEALIT(CUS) SEALIT(CUI) SEALIT(CUL) SEALIT(CULL)
---    SEALIT(C) SEALIT(CC) SEALIT(CSC) SEALIT(CUC)    
---    SEALIT(CF) SEALIT(CD)
+    ERRIT(CS) ERRIT(CI) ERRIT(CL) ERRIT(CLL)
+    ERRIT(CUS) ERRIT(CUI) ERRIT(CUL) ERRIT(CULL)
+    ERRIT(C) ERRIT(CC) ERRIT(CSC) ERRIT(CUC)    
+    ERRIT(CF) ERRIT(CD)
     Tup [] -> sealExp $ A.constant ();
     Tup ls -> error$ "constantE: Cannot handle tuple constants!  These should be ETuple's: "++show c 
 --    Tup [a,b] -> A.tup2 (constantE 
@@ -139,7 +157,7 @@ data SealedArrayType where
 -- | Tuples of arrays rather than scalar `Elt`s.
 data ArrTuple a where
   UnitTupleA   ::                                                     ArrTuple ()
-  SingleTupleA :: Arrays a             => T.ScalarType a           -> ArrTuple a
+  SingleTupleA :: Arrays a             => Phantom a                -> ArrTuple a
   PairTupleA   :: (Arrays a, Arrays b) => ArrTuple a -> ArrTuple b -> ArrTuple (a, b)
 
 -- TODO: CAN WE PHASE OUT SealedArrayType in favor of SealedArrTuple?
@@ -169,12 +187,22 @@ arrayTypeD (TArray ndim elty) =
        ATY(TFloat,Float) ATY(TDouble,Double)
        ATY(TChar,Char) ATY(TBool,Bool)
 
-       -- FIXME: Again, incomplete pattern match due to no Elt instances for C types:
-       -- ATY(TCFloat,CFloat) ATY(TCDouble,CDouble)
-       -- ATY(TCShort,CShort) 
+       INSERT_CTY_ERR_CASES
 
+       -- TODO: Handling tuples would require a switch to SealedArrTuple
+       -- TTuple []    -> SealedArrayType UnitTupleA;
+       -- TTuple (hd:tl) ->
+       --   case (arrayTypeD hd, arrayTypeD (TTuple tl)) of
+       --     (SealedArrayType (Phantom at1 :: a),
+       --      SealedArrayType (Phantom at2 :: b)) ->
+       --       SealedArrayType$ PairTupleA at1 at2       
+
+       TTuple ls -> (case scalarTypeD elty of 
+                      SealedEltTuple (et :: EltTuple etty) -> 
+                       SealedArrayType (Phantom(unused:: Array sh etty)));
        TArray _ _ -> error$"arrayTypeD: nested array type, not allowed in Accelerate: "++show(TArray ndim elty)
      }
+arrayTypeD x@(TTuple _) = error$"arrayTypeD: does not handle tuples of arrays yet: "++show x
 arrayTypeD oth = error$"arrayTypeD: expected array type, got "++show oth
 
 -- | Construct a Haskell type from an Int!  Why not?
@@ -204,8 +232,8 @@ scalarTypeD ty =
     TDouble  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Double)    
     TBool    -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Bool)
     TChar    -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Char)
--- FIXME: Again, incomplete pattern match due to no Elt instances for C types:
---    TCFloat  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType CFloat)
+
+    INSERT_CTY_ERR_CASES
 
     TTuple []    -> SealedEltTuple UnitTuple
     TTuple (hd:tl) ->
@@ -259,6 +287,13 @@ mapD = error "mapD"
 data EnvPack = EnvPack [(Var,Type)] [(AVar,Type)]
                  (M.Map Var (Type, Either SealedExp SealedAcc))
 
+expectEVar :: Either SealedExp SealedAcc -> SealedExp
+expectEVar (Left se)  = se
+expectEVar (Right sa) = error$"expected scalar variable, got variable bound to: "++show sa
+
+expectAVar :: Either SealedExp SealedAcc -> SealedAcc
+expectAVar (Left se)  = error$"expected array variable, got variable bound to: "++show se
+expectAVar (Right sa) = sa
 
 emptyEnvPack :: EnvPack 
 emptyEnvPack = EnvPack [] [] M.empty 
@@ -292,7 +327,7 @@ convertExp ep@(EnvPack envE envA mp)
 
     -- This is tricky, because it needs to become a deBruin index ultimately...
     -- Or we need to stay at the level of HOAS...
-    S.EVr vr -> case mp # vr of (_,Left se) -> se
+    S.EVr vr -> let (_,se) = mp # vr in expectEVar se
 
     S.EPrimApp outTy op ls ->
       let args = P.map (convertExp ep) ls in
@@ -412,7 +447,7 @@ convertExp ep@(EnvPack envE envA mp)
 convertAcc :: EnvPack -> S.AExp -> SealedAcc
 convertAcc env@(EnvPack _ _ mp) ae = 
   case ae of
-    S.Vr vr   -> case mp # vr of (_,Right se) -> se
+    S.Vr vr   -> let (_,s) = mp # vr in expectAVar s
     S.Unit ex ->
       let ex' = convertExp env ex
           ty  = S.recoverExpType (M.map P.fst mp) ex
@@ -432,7 +467,7 @@ convertAcc env@(EnvPack _ _ mp) ae =
             rawfn :: Exp inT -> Exp outT
             rawfn x = downcastE (bodfn (sealExp x))
             realIn :: Acc (Array shp inT)
-            realIn = downcastA (case mp # inA of (_,Right sa) -> sa)
+            realIn = downcastA (let (_,sa) = mp # inA in expectAVar sa)
           in
            -- Here we suffer PAIN to recover the Elt/Typeable instances:
            case (inET, outET) of
