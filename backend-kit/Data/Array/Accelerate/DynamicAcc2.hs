@@ -44,6 +44,7 @@ import qualified Data.Array.Accelerate.Array.Sugar as Sug
 
 import Data.Array.Accelerate.BackendKit.Phase1.ToAccClone as Cvt (accToAccClone, expToExpClone)
 
+import Data.Bits as B
 import Data.Typeable (gcast)
 import Data.Dynamic (Dynamic, fromDyn, fromDynamic, toDyn,
                      Typeable, Typeable3, mkTyConApp, TyCon, mkTyCon3, typeOf3, typeOf)
@@ -116,7 +117,7 @@ constantE c =
 -- | We enhance "Data.Array.Accelerate.Type.TupleType" with Elt constraints.
 data EltTuple a where
   UnitTuple   ::                                               EltTuple ()
-  SingleTuple :: (Elt a, IsNum a) => T.ScalarType a         -> EltTuple a
+  SingleTuple :: (Elt a)        => T.ScalarType a           -> EltTuple a
   PairTuple   :: (Elt a, Elt b) => EltTuple a -> EltTuple b -> EltTuple (a, b)
  deriving Typeable
 
@@ -176,11 +177,14 @@ scalarTypeD ty =
     TInt8   -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Int8)
     TInt16  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Int16)
     TInt32  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Int32)
-    TInt64  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Int64)
-
-    TWord   -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word)
+    TInt64  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Int64)    
+    TWord    -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word)
+    TWord8   -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word8)
+    TWord16  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word16)
+    TWord32  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word32)
+    TWord64  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word64)
+    TBool    -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Bool)
     TArray {} -> error$"scalarTypeD: expected scalar type, got "++show ty
-
 
 
 --------------------------------------------------------------------------------
@@ -266,24 +270,83 @@ convertExp ep@(EnvPack envE envA mp)
       
       case scalarTypeD outTy of
         SealedEltTuple t ->
-#define REPBOP(which, prim, binop) which prim -> let a1,a2 :: Exp elt2; \
-                            a1 = downcastE (args P.!! 0); \
-                            a2 = downcastE (args P.!! 1); \
-                        in sealExp (a1 + a2);
-          
           case t of
-            SingleTuple (_ :: T.ScalarType elt2) -> 
-             case op of
-               REPBOP(NP, Add, (+))
-               REPBOP(NP, Sub, (+))
-               REPBOP(NP, Mul, (+))
---               REPUOP(NP, Neg, (+))
---               REPUOP(NP, Abs, abs)
+            SingleTuple (sty :: T.ScalarType elt) ->
+-----------------------------------------------------------------------------------              
+#define REPBOP(numpat, popdict, which, prim, binop) (numpat, which prim) -> popdict (case args of { \
+         [a1,a2] -> let a1',a2' :: Exp elt;    \
+                        a1' = downcastE a1;     \
+                        a2' = downcastE a2;     \
+                    in sealExp (binop a1' a2'); \
+         _ -> error$ "Binary operator "++show prim++" expects two args, got "++show args ; })
+#define REPUOP(numpat, popdict, which, prim, unop) (numpat, which prim) -> popdict (case args of { \
+         [a1] -> let a1' :: Exp elt;     \
+                     a1' = downcastE a1;  \
+                 in sealExp (unop a1');  \
+         _ -> error$ "Unary operator "++show prim++" expects one arg, got "++show args ; })
+#define POPINT T.NumScalarType (T.IntegralNumType (nty :: T.IntegralType elt))
+#define POPFLT T.NumScalarType (T.FloatingNumType (nty :: T.FloatingType elt))
+#define POPIDICT case T.integralDict nty of (T.IntegralDict :: T.IntegralDict elt) ->
+#define POPFDICT case T.floatingDict nty of (T.FloatingDict :: T.FloatingDict elt) ->
+-----------------------------------------------------------------------------------
+             case (sty,op) of
+               -- (T.NumScalarType (T.IntegralNumType (ity :: T.IntegralType elt)), NP Add) -> 
+               --   case T.integralDict ity of 
+               --     (T.IntegralDict :: T.IntegralDict elt) -> 
+               --           let a1,a2,res :: Exp elt
+               --               a1 = downcastE (args P.!! 0)
+               --               a2 = downcastE (args P.!! 1)
+               --               res = a1 + a2
+               --           in sealExp res
+               REPBOP(POPINT, POPIDICT, NP, Add, (+))
+               REPBOP(POPINT, POPIDICT, NP, Sub, (-))
+               REPBOP(POPINT, POPIDICT, NP, Mul, (*))
+               REPUOP(POPINT, POPIDICT, NP, Abs, abs)
+               REPUOP(POPINT, POPIDICT, NP, Neg, (\x -> (-x)))
+               REPUOP(POPINT, POPIDICT, NP, Sig, signum)
+
+               REPBOP(POPFLT, POPFDICT, FP, FDiv, (/))
+               REPBOP(POPFLT, POPFDICT, FP, FPow, (**))
+               REPBOP(POPFLT, POPFDICT, FP, LogBase, logBase)
+               REPBOP(POPFLT, POPFDICT, FP, Atan2, atan2)
+               
+               REPUOP(POPFLT, POPFDICT, FP, Recip, recip)
+               REPUOP(POPFLT, POPFDICT, FP, Sin, sin)
+               REPUOP(POPFLT, POPFDICT, FP, Cos, cos)
+               REPUOP(POPFLT, POPFDICT, FP, Tan, tan)
+               REPUOP(POPFLT, POPFDICT, FP, Asin, asin)
+               REPUOP(POPFLT, POPFDICT, FP, Acos, acos)
+               REPUOP(POPFLT, POPFDICT, FP, Atan, atan)
+               REPUOP(POPFLT, POPFDICT, FP, Asinh, asinh)
+               REPUOP(POPFLT, POPFDICT, FP, Acosh, acosh)
+               REPUOP(POPFLT, POPFDICT, FP, Atanh, atanh)
+               REPUOP(POPFLT, POPFDICT, FP, ExpFloating, exp)
+               REPUOP(POPFLT, POPFDICT, FP, Sqrt, sqrt)
+               REPUOP(POPFLT, POPFDICT, FP, Log, log)
+
+-- Warning!  Heterogeneous input/output types:               
+--               REPBOP(POPFLT, POPFDICT, FP, Truncate, A.truncate)
+--               REPBOP(POPFLT, POPFDICT, FP, Round, A.round)
+--               REPBOP(POPFLT, POPFDICT, FP, Floor, A.floor)
+--               REPBOP(POPFLT, POPFDICT, FP, Ceiling, A.ceiling)
+#if 0               
+
+--               REPBOP(IP, Quot, quot)
+               -- REPBOP(IP, Rem,  rem)
+               -- REPBOP(IP, IDiv, div)
+               -- REPBOP(IP, Mod,  mod)
+               -- REPBOP(IP, BAnd, (.&.))
+               -- REPBOP(IP, BOr,  (.|.))
+               -- REPBOP(IP, BXor, xor)
+--               REPUOP(IP, BNot, A.not)
+--               REPBOP(IP, BShiftL, A.shiftL)
+--               REPBOP(IP, BShiftR, A.shiftR)
+--               REPBOP(IP, BRotateL, A.rotateL)
+--               REPBOP(IP, BRotateR, A.rotateR)
+
+--               REPBOP(IP, , )
+#endif
             _ -> error$ "Primop "++ show op++" expects a scalar type, got "++show outTy
-            --   NP Add -> let a1,a2 :: Exp elt2
-            --                 a1 = downcastE (args P.!! 0)
-            --                 a2 = downcastE (args P.!! 1)                            
-            --             in sealExp (a1 + a2) 
 
     S.ELet (vr,ty,rhs) bod ->
       let rhs' = cE rhs
@@ -418,44 +481,49 @@ t0b = downcastA t0
 t1 = -- convertClosedExp
      convertExp emptyEnvPack 
      (S.ECond (S.EConst (B True)) (S.EConst (I 33)) (S.EConst (I 34)))
-t1a :: A.Exp Int
-t1a = downcastE t1
+t1_ :: A.Exp Int
+t1_ = downcastE t1
 
 t2 :: SealedExp
 t2 = convertExp emptyEnvPack 
      (S.ELet (v, TInt, (S.EConst (I 33))) (S.EVr v))
  where v = S.var "v" 
-
-t2a :: Exp Int
-t2a = downcastE t2
+t2_ :: Exp Int
+t2_ = downcastE t2
 
 t4 = simpleProg
  where
    TestEntry {simpleProg} = allProgsMap # "p1a"
 
 t5 = convertAcc emptyEnvPack (S.Unit (S.EConst (I 33)))
-t5a :: Acc (Scalar Int)
-t5a = downcastA t5
+t5_ :: Acc (Scalar Int)
+t5_ = downcastA t5
 
 
 t6 = convertAcc (extendA arr (TArray 0 TInt) t5 emptyEnvPack)
         (S.Map (S.Lam1 (v,TInt) (S.EVr v)) arr)
   where v   = S.var "v"
         arr = S.var "arr"
-t6a :: Acc (Scalar Int)
-t6a = downcastA t6
+t6_ :: Acc (Scalar Int)
+t6_ = downcastA t6
 
 
 t7 = convertAcc (extendA arr (TArray 0 TInt) t5 emptyEnvPack)
         (S.Map (S.Lam1 (v,TInt) (S.EPrimApp TInt (S.NP S.Add) [S.EVr v, S.EVr v])) arr)
   where v   = S.var "v"
         arr = S.var "arr"
-t7a :: Acc (Scalar Int)
-t7a = downcastA t7
+t7_ :: Acc (Scalar Int)
+t7_ = downcastA t7
 
 
 p1 = convertExp emptyEnvPack
         (S.EPrimApp TInt (S.NP S.Add) [S.EConst (I 1), S.EConst (I 2)])
 p1_ :: Exp Int
 p1_ = downcastE p1
+
+
+p2 = convertExp emptyEnvPack
+        (S.EPrimApp TInt (S.NP S.Sig) [S.EConst (I (-11))])
+p2_ :: Exp Int
+p2_ = downcastE p2
 

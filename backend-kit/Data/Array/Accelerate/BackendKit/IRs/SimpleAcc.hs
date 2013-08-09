@@ -326,8 +326,10 @@ data IntPrim = Quot | Rem |
 data FloatPrim = 
       -- Unary:
       Recip | Sin | Cos | Tan | Asin | Acos | Atan | Asinh | Acosh | Atanh | ExpFloating | Sqrt | Log |
+      -- Unary but with different input and output types:
+      Truncate | Round | Floor | Ceiling | 
       -- Binary:                  
-      FDiv | FPow | LogBase | Atan2 | Truncate | Round | Floor | Ceiling
+      FDiv | FPow | LogBase | Atan2 
   deriving (Read,Show,Eq,Ord,Generic)
            
 -- | Relational and equality operators
