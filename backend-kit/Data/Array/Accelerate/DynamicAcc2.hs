@@ -128,7 +128,7 @@ data EltTuple a where
 
 -- | This GADT allows monomorphic value to carry a type inside.
 data SealedEltTuple where
-  SealedEltTuple :: (Typeable a) =>
+  SealedEltTuple :: (Typeable a, Elt a) =>
                     EltTuple a -> SealedEltTuple
 
 -- | This is a bottle in which to store a type that satisfyies the Array class.
@@ -154,15 +154,27 @@ data SealedShapeType where
 -- | Just a simple signal that the value is not used, only the type.
 data Phantom a = Phantom a deriving Show
 
--- | Dependent types!  Dynamically construct a type in a bottle.  It can be opened up
--- and used as a goal type when repacking array data or returning an Acc computation.
+-- | Almost dependent types!  Dynamically construct a type in a bottle
+-- that is isomorphic to an input value.  It can be opened up and used
+-- as a goal type when repacking array data or returning an Acc
+-- computation.
 arrayTypeD :: Type -> SealedArrayType
 arrayTypeD (TArray ndim elty) =
   case shapeTypeD ndim of
-    SealedShapeType (_ :: Phantom sh) ->
-     case elty of
-       TInt   -> SealedArrayType (Phantom(unused:: Array sh Int))
-       TFloat -> SealedArrayType (Phantom(unused:: Array sh Float))
+    SealedShapeType (_ :: Phantom sh) ->      
+#define ATY(t1,t2) t1 -> SealedArrayType (Phantom(unused:: Array sh t2));
+     case elty of {
+       ATY(TInt,Int) ATY(TInt8,Int8) ATY(TInt16,Int16) ATY(TInt32,Int32) ATY(TInt64,Int64) 
+       ATY(TWord,Word) ATY(TWord8,Word8) ATY(TWord16,Word16) ATY(TWord32,Word32) ATY(TWord64,Word64) 
+       ATY(TFloat,Float) ATY(TDouble,Double)
+       ATY(TChar,Char) ATY(TBool,Bool)
+
+       -- FIXME: Again, incomplete pattern match due to no Elt instances for C types:
+       -- ATY(TCFloat,CFloat) ATY(TCDouble,CDouble)
+       -- ATY(TCShort,CShort) 
+
+       TArray _ _ -> error$"arrayTypeD: nested array type, not allowed in Accelerate: "++show(TArray ndim elty)
+     }
 arrayTypeD oth = error$"arrayTypeD: expected array type, got "++show oth
 
 -- | Construct a Haskell type from an Int!  Why not?
@@ -188,7 +200,19 @@ scalarTypeD ty =
     TWord16  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word16)
     TWord32  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word32)
     TWord64  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word64)
+    TFloat   -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Float)
+    TDouble  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Double)    
     TBool    -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Bool)
+    TChar    -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Char)
+-- FIXME: Again, incomplete pattern match due to no Elt instances for C types:
+--    TCFloat  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType CFloat)
+
+    TTuple []    -> SealedEltTuple UnitTuple
+    TTuple (hd:tl) ->
+      case (scalarTypeD hd, scalarTypeD (TTuple tl)) of
+        (SealedEltTuple (et1 :: EltTuple a),
+         SealedEltTuple (et2 :: EltTuple b)) ->
+          SealedEltTuple$ PairTuple et1 et2
     TArray {} -> error$"scalarTypeD: expected scalar type, got "++show ty
 
 
@@ -531,3 +555,9 @@ p2 = convertExp emptyEnvPack
 p2_ :: Exp Int
 p2_ = downcastE p2
 
+
+c1 :: SealedEltTuple
+c1 = scalarTypeD (TTuple [TInt, TInt32, TInt64])
+
+c1b :: SealedEltTuple
+c1b = scalarTypeD (TTuple [TTuple [TInt, TInt32], TInt64])
