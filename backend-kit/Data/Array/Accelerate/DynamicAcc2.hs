@@ -86,18 +86,12 @@ import Debug.Trace (trace)
 newtype SealedExp     = SealedExp     Dynamic deriving Show
 newtype SealedOpenExp = SealedOpenExp Dynamic deriving Show
 newtype SealedAcc     = SealedAcc     Dynamic deriving Show
--- data SealedFun = SealedFun
-newtype SealedFun     = SealedFun     Dynamic deriving Show
 
 sealExp :: Typeable a => A.Exp a -> SealedExp
 sealExp = SealedExp . toDyn
 
 sealAcc :: Typeable a => Acc a -> SealedAcc
 sealAcc = SealedAcc . toDyn
-
-sealFun :: (Elt a, Elt b) => (Exp a -> Exp b) -> SealedFun
-sealFun = undefined
-
 
 downcastE :: forall a . Typeable a => SealedExp -> A.Exp a
 downcastE (SealedExp d) =
@@ -266,7 +260,6 @@ useD arr =
    dty = S.accArrayToType arr
    sty = arrayTypeD dty
 
--- TODO: How to handle functions?
 mapD :: (SealedExp -> SealedExp) -> SealedAcc ->
         S.Type -> S.Type -> SealedAcc 
 mapD bodfn sealedInArr inArrTy outElmTy = 
@@ -350,6 +343,7 @@ convertExp ep@(EnvPack envE envA mp)
     -- Or we need to stay at the level of HOAS...
     S.EVr vr -> let (_,se) = mp # vr in expectEVar se
 
+-- FINISHME:
     -- S.EShape _          -> undefined
     -- S.EShapeSize _      -> undefined
     -- S.EIndex _          -> undefined
@@ -761,7 +755,13 @@ convertExp ep@(EnvPack envE envA mp)
                  _ -> error$ "Boolean NOT operator expects one arg, got "++show args ; })
 
 
---               REPBOP(POPBL, POPBDICT, BP, , )
+               -------------- Relational/Equality Primitives --------------
+
+-- FINSHME
+
+               -------------- Other Primitives --------------
+
+-- FINSHME
 
 --               _ -> error$ "Primop "++ show op++" expects a scalar type, got "++show outTy
                )
