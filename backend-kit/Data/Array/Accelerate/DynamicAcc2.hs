@@ -689,8 +689,6 @@ convertExp ep@(EnvPack envE envA mp)
                     in sealExp (unop a1')));  \
            _ -> error$ "Unary operator "++show prim++" expects one arg, got "++show args ; }))
 
--- T.NumScalarType (T.FloatingNumType (fty :: T.FloatingType eltF))
-
 -----------------------------------------------------------------------------------
              (case (sty,op) of
                REPBOP(POPINT, POPIDICT, NP, Add, (+))
@@ -714,11 +712,6 @@ convertExp ep@(EnvPack envE envA mp)
                REPBOPMONO(POPINT, POPIDICT, IP, BRotateL, A.rotateL)
                REPBOPMONO(POPINT, POPIDICT, IP, BRotateR, A.rotateR)
 
-               -- TODO: it would be a pain to add more precise error messages for everytihng here:
-               (T.NumScalarType (T.IntegralNumType _), FP _) -> error$"Floating prim applied integral type: "++show(op,sty)
-               (T.NumScalarType (T.IntegralNumType _), SP _) -> error$"Non-int prim applied to integral type: "++show(op,sty)
-               (T.NumScalarType (T.IntegralNumType _), BP _) -> error$"Non-Bool prim applied to integral type: "++show(op,sty)
-
                REPBOP(POPFLT, POPFDICT, FP, FDiv, (/))
                REPBOP(POPFLT, POPFDICT, FP, FPow, (**))
                REPBOP(POPFLT, POPFDICT, FP, LogBase, logBase)
@@ -740,16 +733,30 @@ convertExp ep@(EnvPack envE envA mp)
 -- Warning!  Heterogeneous input/output types:               
 --               REPUOP_I2F(FP, Truncate, A.truncate)
                -- Here the *output* type is an Integral and input is Floating:
-#if 0
                (T.NumScalarType (T.IntegralNumType (ity :: T.IntegralType elt)), FP Truncate) ->
                  (case T.integralDict ity of { (T.IntegralDict :: T.IntegralDict elt) -> 
-                   case args of {
-                   [a1] -> case T.floatingDict fty of { (T.FloatingDict :: T.FloatingDict eltF) ->
-                           (let a1' :: Exp eltF;   
+                  case styIn1 of { T.NumScalarType (T.FloatingNumType (fty :: T.FloatingType eltF)) ->
+                  case T.floatingDict fty of { (T.FloatingDict :: T.FloatingDict eltF) -> 
+                  case args of {
+                   [a1] -> (let a1' :: Exp eltF;   
                                 a1' = downcastE a1;
-                            in sealExp (unop a1')); }; 
-                   _ -> error$ "Unary operator "++show prim++" expects one arg, got "++show args ;};})
-#endif
+                                res :: Exp elt;
+                                res = A.truncate a1'
+                            in sealExp res); 
+                   _ -> error$ "Unary operator "++show Truncate++" expects one arg, got "++show args ;};};};})
+
+               (T.NumScalarType (T.IntegralNumType (ity :: T.IntegralType elt)), FP Round) ->
+                 (case T.integralDict ity of { (T.IntegralDict :: T.IntegralDict elt) -> 
+                  case styIn1 of { T.NumScalarType (T.FloatingNumType (fty :: T.FloatingType eltF)) ->
+                  case T.floatingDict fty of { (T.FloatingDict :: T.FloatingDict eltF) -> 
+                  case args of {
+                   [a1] -> (let a1' :: Exp eltF;   
+                                a1' = downcastE a1;
+                                res :: Exp elt;
+                                res = A.round a1'
+                            in sealExp res); 
+                   _ -> error$ "Unary operator "++show Round++" expects one arg, got "++show args ;};};};})
+
 --               REPBOP(POPFLT, POPFDICT, FP, Round, A.round)
 --               REPBOP(POPFLT, POPFDICT, FP, Floor, A.floor)
 --               REPBOP(POPFLT, POPFDICT, FP, Ceiling, A.ceiling)
@@ -942,6 +949,12 @@ p2 = convertExp emptyEnvPack
         (S.EPrimApp TInt (S.NP S.Sig) [S.EConst (I (-11))])
 p2_ :: Exp Int
 p2_ = downcastE p2
+
+p3 = convertExp emptyEnvPack
+        (S.EPrimApp TInt (S.FP Round) [S.EConst (F (9.99))])
+p3_ :: Exp Int
+p3_ = downcastE p3
+
 
 c1 :: SealedEltTuple
 c1 = scalarTypeD (TTuple [TInt, TInt32, TInt64])
