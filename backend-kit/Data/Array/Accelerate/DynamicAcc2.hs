@@ -28,7 +28,8 @@ module Data.Array.Accelerate.DynamicAcc2
 -}
        where
 
-import           Data.Array.Accelerate as A 
+import           Data.Array.Accelerate as A
+import           Data.Array.Accelerate.Tuple
 import qualified Data.Array.Accelerate as A
 import qualified Data.Array.Accelerate.Smart as Sm
 import qualified Data.Array.Accelerate.Type as T
@@ -131,7 +132,6 @@ constantE c =
     ERRIT(CF) ERRIT(CD)
     Tup [] -> sealExp $ A.constant ();
     Tup ls -> error$ "constantE: Cannot handle tuple constants!  These should be ETuple's: "++show c 
---    Tup [a,b] -> A.tup2 (constantE 
   }
 
 --------------------------------------------------------------------------------
@@ -349,6 +349,50 @@ convertExp ep@(EnvPack envE envA mp)
          SealedEltTuple (et2 :: EltTuple bty)) ->
           sealExp$ Sm.tup2 (downcastE a' :: Exp aty,
                             downcastE b' :: Exp bty)
+
+    -- Version 2:
+    S.ETuple [a,b] ->
+      let ta = S.recoverExpType typeEnv a
+          tb = S.recoverExpType typeEnv b
+          a' = convertExp ep a
+          b' = convertExp ep b
+      in 
+      case (scalarTypeD ta, scalarTypeD tb) of
+        (SealedEltTuple (et1 :: EltTuple aty),
+         SealedEltTuple (et2 :: EltTuple bty)) ->
+          let
+              -- tup :: Tuple Exp ((), aty)
+              tup :: Tuple Exp (TupleRepr (aty,bty))
+              tup = NilTup
+                    `SnocTup` (downcastE a' :: Exp aty)
+                    `SnocTup` (downcastE b' :: Exp bty)
+              tup' :: Sm.PreExp acc Exp (aty,bty)
+              tup' = Sm.Tuple tup
+          in
+          sealExp$ Sm.Exp tup'          
+
+    -- Version 3: try to generalize
+    S.ETuple (hd:tl) ->
+      let ta = S.recoverExpType typeEnv hd
+          tb = S.recoverExpType typeEnv (S.ETuple tl)
+          hd' = convertExp ep hd
+          tl' = convertExp ep (S.ETuple tl)
+      in 
+      case (scalarTypeD ta, scalarTypeD tb) of
+        (SealedEltTuple (et1 :: EltTuple aty),
+         SealedEltTuple (et2 :: EltTuple bty)) ->
+          error "FINISHME" 
+          -- let
+          --     -- tup :: Tuple Exp ((), aty)
+          --     tup :: Tuple Exp (TupleRepr (aty,bty))
+          --     tup = NilTup
+          --           `SnocTup` (downcastE a' :: Exp aty)
+          --           `SnocTup` (downcastE b' :: Exp bty)
+          --     tup' :: Sm.PreExp acc Exp (aty,bty)
+          --     tup' = Sm.Tuple tup
+          -- in
+          -- sealExp$ Sm.Exp tup'          
+          
           
     S.ETupProject {S.indexFromRight, S.projlen, S.tupexpr} -> undefined
 
@@ -627,5 +671,5 @@ p2_ = downcastE p2
 c1 :: SealedEltTuple
 c1 = scalarTypeD (TTuple [TInt, TInt32, TInt64])
 
-c1b :: SealedEltTuple
-c1b = scalarTypeD (TTuple [TTuple [TInt, TInt32], TInt64])
+c2 :: SealedEltTuple
+c2 = scalarTypeD (TTuple [TTuple [TInt, TInt32], TInt64])
