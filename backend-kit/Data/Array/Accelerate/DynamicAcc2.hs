@@ -1,6 +1,7 @@
 {-# LANGUAGE RankNTypes, ScopedTypeVariables, GADTs #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE FlexibleContexts, FlexibleInstances #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
@@ -58,6 +59,11 @@ import Data.Maybe (fromMaybe, fromJust)
 import Debug.Trace (trace)
 -- import Control.Exception (bracket)
 -- import Control.Monad (when)
+
+import qualified Data.Array.Unboxed as U
+
+------------------------------------------------------------------------------------------
+
 
 -- INCOMPLETE: In several places we have an incomplete pattern match
 -- due to no Elt instances for C types: [2013.08.09]
@@ -195,6 +201,7 @@ arrayTypeD oth = error$"arrayTypeD: expected array type, got "++show oth
 -- | Construct a Haskell type from an Int!  Why not?
 shapeTypeD :: Int -> SealedShapeType
 shapeTypeD 0 = SealedShapeType (Phantom Z)
+shapeTypeD n | n < 0 = error "shapeTypeD: Cannot take a negative number!"
 shapeTypeD n =
   case shapeTypeD (n-1) of
     SealedShapeType (Phantom x :: Phantom sh) ->
@@ -290,6 +297,29 @@ mapD bodfn sealedInArr inArrTy outElmTy =
              (PairTuple _ _, PairTuple _ _) -> sealAcc $ A.map rawfn realIn
 
 
+foldD :: (SealedExp -> SealedExp -> SealedExp) -> SealedExp -> SealedAcc ->
+         S.Type -> SealedAcc 
+foldD bodfn initE sealedInArr inArrTy = 
+      let (TArray dims inty) = inArrTy
+          -- Knock off one dimension:
+          newAty = arrayTypeD (TArray (dims - 1) inty)
+      in
+       case (shapeTypeD (dims - 1), scalarTypeD inty) of
+         (SealedShapeType (_ :: Phantom shp), 
+          SealedEltTuple (inET  :: EltTuple inT)) ->
+           let
+               rawfn :: Exp inT -> Exp inT -> Exp inT
+               rawfn x y = downcastE (bodfn (sealExp x) (sealExp y))
+               realIn :: Acc (Array (shp :. Int) inT)
+               realIn = downcastA sealedInArr
+               init :: Exp inT
+               init = downcastE initE
+           in
+            case inET of
+              (UnitTuple    )     -> sealAcc $ A.fold rawfn init realIn
+              (SingleTuple _)     -> sealAcc $ A.fold rawfn init realIn
+              (PairTuple _ _)     -> sealAcc $ A.fold rawfn init realIn
+  
 
 --------------------------------------------------------------------------------
 -- TODO: These conversion functions could move to their own module:
@@ -806,6 +836,7 @@ convertAcc :: EnvPack -> S.AExp -> SealedAcc
 convertAcc env@(EnvPack _ _ mp) ae = 
   case ae of
     S.Vr vr   -> let (_,s) = mp # vr in expectAVar s
+    S.Use accarr -> useD accarr
     S.Unit ex ->
       let ex' = convertExp env ex
           ty  = S.recoverExpType (M.map P.fst mp) ex
@@ -818,6 +849,17 @@ convertAcc env@(EnvPack _ _ mp) ae =
           sealedInArr = let (_,sa) = mp # inA in expectAVar sa
       in
         mapD bodfn sealedInArr aty bodty
+
+    S.Fold (S.Lam2 (v1,ty) (v2,ty2) bod) initE inA ->
+      trace ("FOLD CASE.. fold of "++show (mp # inA))$
+       let init' = convertExp env initE
+           bodfn x y = convertExp (extendE v1 ty x$ extendE v2 ty y env) bod
+           aty@(TArray dims inty) = P.fst (mp # inA)
+           sealedInArr = let (_,sa) = mp # inA in expectAVar sa
+       in
+        if ty /= ty2 || ty2 /= inty
+        then error "Mal-formed Fold.  Input types to Lam2 must match eachother and array input."
+        else foldD bodfn init' sealedInArr aty
 
 --    _ -> error$"FINISHME: unhandled: " ++show ae
 
@@ -916,6 +958,22 @@ t7_ = downcastA t7
 t8 = convertExp emptyEnvPack (S.ETuple [S.EConst (I 11), S.EConst (F 3.3)])
 t8_ :: Exp (Int,Float)
 t8_ = downcastE t8
+
+
+t9 = convertAcc emptyEnvPack $
+     S.Use$ S.AccArray [10] [S.ArrayPayloadInt (U.listArray (0,9) [1..10])]
+t9_ :: Acc (Vector Int)
+t9_ = downcastA t9
+
+t10 = convertAcc (extendA arr (TArray 1 TInt) t9 emptyEnvPack)
+        (S.Fold (S.Lam2 (v,TInt) (w,TInt) (S.EPrimApp TInt (S.NP S.Add) [S.EVr v, S.EVr w]))
+                (S.EConst (I 0)) arr)
+  where v   = S.var "v"
+        w   = S.var "w"
+        arr = S.var "arr"
+t10_ :: Acc (Scalar Int)
+t10_ = downcastA t10
+
 
 p1 = convertExp emptyEnvPack
         (S.EPrimApp TInt (S.NP S.Add) [S.EConst (I 1), S.EConst (I 2)])
