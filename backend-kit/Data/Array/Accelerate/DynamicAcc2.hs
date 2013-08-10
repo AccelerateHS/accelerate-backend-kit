@@ -332,10 +332,12 @@ convertExp ep@(EnvPack envE envA mp)
     -- Or we need to stay at the level of HOAS...
     S.EVr vr -> let (_,se) = mp # vr in expectEVar se
 
-    S.EShape _          -> undefined
-    S.EShapeSize _      -> undefined
-    S.EIndex _          -> undefined
-    S.EIndexScalar _ _  -> undefined
+    -- S.EShape _          -> undefined
+    -- S.EShapeSize _      -> undefined
+    -- S.EIndex _          -> undefined
+    -- S.EIndexScalar _ _  -> undefined
+    -- S.ETupProject {S.indexFromRight, S.projlen, S.tupexpr} -> undefined
+    
     S.ETuple []    -> constantE (Tup [])
     S.ETuple [ex]  -> convertExp ep ex
     S.ETuple [a,b] ->
@@ -369,30 +371,6 @@ convertExp ep@(EnvPack envE envA mp)
                       `SnocTup` (downcastE b' :: Exp bty)
                       `SnocTup` (downcastE c' :: Exp cty)
                 tup' :: Sm.PreExp acc Exp (aty,bty,cty)
-                tup' = Sm.Tuple tup
-            in sealExp$ Sm.Exp tup'
-
-    S.ETuple [a,b,c,d] ->
-      let ta = S.recoverExpType typeEnv a
-          tb = S.recoverExpType typeEnv b
-          tc = S.recoverExpType typeEnv c
-          td = S.recoverExpType typeEnv d
-          a' = convertExp ep a
-          b' = convertExp ep b
-          c' = convertExp ep c
-          d' = convertExp ep d               
-      in case (scalarTypeD ta, scalarTypeD tb, scalarTypeD tc, scalarTypeD td) of
-          (SealedEltTuple (et1 :: EltTuple aty),
-           SealedEltTuple (et2 :: EltTuple bty),
-           SealedEltTuple (et3 :: EltTuple cty),
-           SealedEltTuple (et4 :: EltTuple dty)) ->
-            let tup :: Tuple Exp (TupleRepr (aty,bty,cty,dty))
-                tup = NilTup
-                      `SnocTup` (downcastE a' :: Exp aty)
-                      `SnocTup` (downcastE b' :: Exp bty)
-                      `SnocTup` (downcastE c' :: Exp cty)
-                      `SnocTup` (downcastE d' :: Exp dty)
-                tup' :: Sm.PreExp acc Exp (aty,bty,cty,dty)
                 tup' = Sm.Tuple tup
             in sealExp$ Sm.Exp tup'
 
@@ -637,8 +615,6 @@ convertExp ep@(EnvPack envE envA mp)
                 -- sealExp$ Sm.Exp tup'
 #endif
           
-    S.ETupProject {S.indexFromRight, S.projlen, S.tupexpr} -> undefined
-
     S.EPrimApp outTy op ls ->
       let args = P.map (convertExp ep) ls in
       
@@ -662,9 +638,15 @@ convertExp ep@(EnvPack envE envA mp)
          _ -> error$ "Unary operator "++show prim++" expects one arg, got "++show args ; })
 #define POPINT T.NumScalarType (T.IntegralNumType (nty :: T.IntegralType elt))
 #define POPFLT T.NumScalarType (T.FloatingNumType (nty :: T.FloatingType elt))
+
+#define POPBL  T.NonNumScalarType (nty :: T.NonNumType elt)
+#define POPBDICT case T.nonNumDict nty of (T.NonNumDict :: T.NonNumDict Bool) ->
+-- define POPBDICT case T.nonNumDict nty of (T.NonNumDict :: T.NonNumDict elt) ->
+
 #define POPIDICT case T.integralDict nty of (T.IntegralDict :: T.IntegralDict elt) ->
 #define POPFDICT case T.floatingDict nty of (T.FloatingDict :: T.FloatingDict elt) ->
 
+                                              
 -- Monomorphic in secodn arg:
 #define REPBOPMONO(numpat, popdict, which, prim, binop) (numpat, which prim) -> popdict (case args of { \
          [a1,a2] -> let a1' :: Exp elt;         \
@@ -691,13 +673,13 @@ convertExp ep@(EnvPack envE envA mp)
                REPBOP(POPINT, POPIDICT, IP, BOr,  (.|.))
                REPBOP(POPINT, POPIDICT, IP, BXor, xor)
                REPUOP(POPINT, POPIDICT, IP, BNot, complement)
-               
                -- These take monomorphic Int arguments:
                REPBOPMONO(POPINT, POPIDICT, IP, BShiftL, A.shiftL)
                REPBOPMONO(POPINT, POPIDICT, IP, BShiftR, A.shiftR)
                REPBOPMONO(POPINT, POPIDICT, IP, BRotateL, A.rotateL)
                REPBOPMONO(POPINT, POPIDICT, IP, BRotateR, A.rotateR)
 
+               -- TODO: it would be a pain to add more precise error messages for everytihng here:
                (T.NumScalarType (T.IntegralNumType _), FP _) -> error$"Floating prim applied integral type: "++show(op,sty)
                (T.NumScalarType (T.IntegralNumType _), SP _) -> error$"Non-int prim applied to integral type: "++show(op,sty)
                (T.NumScalarType (T.IntegralNumType _), BP _) -> error$"Non-Bool prim applied to integral type: "++show(op,sty)
@@ -706,7 +688,6 @@ convertExp ep@(EnvPack envE envA mp)
                REPBOP(POPFLT, POPFDICT, FP, FPow, (**))
                REPBOP(POPFLT, POPFDICT, FP, LogBase, logBase)
                REPBOP(POPFLT, POPFDICT, FP, Atan2, atan2)
-               
                REPUOP(POPFLT, POPFDICT, FP, Recip, recip)
                REPUOP(POPFLT, POPFDICT, FP, Sin, sin)
                REPUOP(POPFLT, POPFDICT, FP, Cos, cos)
@@ -727,7 +708,32 @@ convertExp ep@(EnvPack envE envA mp)
 --               REPBOP(POPFLT, POPFDICT, FP, Floor, A.floor)
 --               REPBOP(POPFLT, POPFDICT, FP, Ceiling, A.ceiling)
 
-               _ -> error$ "Primop "++ show op++" expects a scalar type, got "++show outTy)
+--               REPBOP(POPBL, POPBDICT, BP, S.And, (A.&&*))
+               (_, BP S.And) -> (case args of { 
+                 [a1,a2] -> let a1', a2' :: Exp Bool;
+                                a1' = downcastE a1;     
+                                a2' = downcastE a2;     
+                            in sealExp (a1' A.&&* a2'); 
+                 _ -> error$ "Boolean AND operator expects two args, got "++show args ; })
+
+               (_, BP S.Or) -> (case args of { 
+                 [a1,a2] -> let a1', a2' :: Exp Bool;
+                                a1' = downcastE a1;     
+                                a2' = downcastE a2;     
+                            in sealExp (a1' A.||* a2'); 
+                 _ -> error$ "Boolean OR operator expects two args, got "++show args ; })
+
+               (_, BP S.Not) -> (case args of { 
+                 [a1] -> let a1' :: Exp Bool;
+                             a1' = downcastE a1;  
+                         in sealExp (A.not a1'); 
+                 _ -> error$ "Boolean NOT operator expects one arg, got "++show args ; })
+
+
+--               REPBOP(POPBL, POPBDICT, BP, , )
+
+--               _ -> error$ "Primop "++ show op++" expects a scalar type, got "++show outTy
+               )
 
     S.ELet (vr,ty,rhs) bod ->
       let rhs' = cE rhs
@@ -800,13 +806,11 @@ convertAcc env@(EnvPack _ _ mp) ae =
              (PairTuple _ _, PairTuple _ _) -> sealAcc $ A.map rawfn realIn
 
 
-
-
-    _ -> error$"FINISHME: unhandled: " ++show ae
+--    _ -> error$"FINISHME: unhandled: " ++show ae
 
 convertProg :: S.Prog a -> SealedAcc
 convertProg S.Prog{progBinds,progResults} =
-  error "convertProg"
+  error "FINISHME: convertProg"
 
 
 --------------------------------------------------------------------------------
