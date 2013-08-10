@@ -350,29 +350,271 @@ convertExp ep@(EnvPack envE envA mp)
           sealExp$ Sm.tup2 (downcastE a' :: Exp aty,
                             downcastE b' :: Exp bty)
 
-    -- Version 2:
-    S.ETuple [a,b] ->
+    -- <EXTREME PAIN>
+    -------------------------------------------------------------------------------
+    S.ETuple [a,b,c] ->
       let ta = S.recoverExpType typeEnv a
           tb = S.recoverExpType typeEnv b
+          tc = S.recoverExpType typeEnv c
           a' = convertExp ep a
           b' = convertExp ep b
-      in 
-      case (scalarTypeD ta, scalarTypeD tb) of
-        (SealedEltTuple (et1 :: EltTuple aty),
-         SealedEltTuple (et2 :: EltTuple bty)) ->
-          let
-              -- tup :: Tuple Exp ((), aty)
-              tup :: Tuple Exp (TupleRepr (aty,bty))
-              tup = NilTup
-                    `SnocTup` (downcastE a' :: Exp aty)
-                    `SnocTup` (downcastE b' :: Exp bty)
-              tup' :: Sm.PreExp acc Exp (aty,bty)
-              tup' = Sm.Tuple tup
-          in
-          sealExp$ Sm.Exp tup'          
+          c' = convertExp ep c          
+      in case (scalarTypeD ta, scalarTypeD tb, scalarTypeD tc) of
+          (SealedEltTuple (et1 :: EltTuple aty),
+           SealedEltTuple (et2 :: EltTuple bty),
+           SealedEltTuple (et3 :: EltTuple cty)) ->
+            let tup :: Tuple Exp (TupleRepr (aty,bty,cty))
+                tup = NilTup
+                      `SnocTup` (downcastE a' :: Exp aty)
+                      `SnocTup` (downcastE b' :: Exp bty)
+                      `SnocTup` (downcastE c' :: Exp cty)
+                tup' :: Sm.PreExp acc Exp (aty,bty,cty)
+                tup' = Sm.Tuple tup
+            in sealExp$ Sm.Exp tup'
 
-    -- Version 3: try to generalize
-#if 1
+    S.ETuple [a,b,c,d] ->
+      let ta = S.recoverExpType typeEnv a
+          tb = S.recoverExpType typeEnv b
+          tc = S.recoverExpType typeEnv c
+          td = S.recoverExpType typeEnv d
+          a' = convertExp ep a
+          b' = convertExp ep b
+          c' = convertExp ep c
+          d' = convertExp ep d               
+      in case (scalarTypeD ta, scalarTypeD tb, scalarTypeD tc, scalarTypeD td) of
+          (SealedEltTuple (et1 :: EltTuple aty),
+           SealedEltTuple (et2 :: EltTuple bty),
+           SealedEltTuple (et3 :: EltTuple cty),
+           SealedEltTuple (et4 :: EltTuple dty)) ->
+            let tup :: Tuple Exp (TupleRepr (aty,bty,cty,dty))
+                tup = NilTup
+                      `SnocTup` (downcastE a' :: Exp aty)
+                      `SnocTup` (downcastE b' :: Exp bty)
+                      `SnocTup` (downcastE c' :: Exp cty)
+                      `SnocTup` (downcastE d' :: Exp dty)
+                tup' :: Sm.PreExp acc Exp (aty,bty,cty,dty)
+                tup' = Sm.Tuple tup
+            in sealExp$ Sm.Exp tup'
+
+    S.ETuple [a,b,c,d] ->
+      let ta = S.recoverExpType typeEnv a
+          tb = S.recoverExpType typeEnv b
+          tc = S.recoverExpType typeEnv c
+          td = S.recoverExpType typeEnv d
+          a' = convertExp ep a
+          b' = convertExp ep b
+          c' = convertExp ep c
+          d' = convertExp ep d               
+      in case (scalarTypeD ta, scalarTypeD tb, scalarTypeD tc, scalarTypeD td) of
+          (SealedEltTuple (et1 :: EltTuple aty),
+           SealedEltTuple (et2 :: EltTuple bty),
+           SealedEltTuple (et3 :: EltTuple cty),
+           SealedEltTuple (et4 :: EltTuple dty)) ->
+            let tup :: Tuple Exp (TupleRepr (aty,bty,cty,dty))
+                tup = NilTup
+                      `SnocTup` (downcastE a' :: Exp aty)
+                      `SnocTup` (downcastE b' :: Exp bty)
+                      `SnocTup` (downcastE c' :: Exp cty)
+                      `SnocTup` (downcastE d' :: Exp dty)
+                tup' :: Sm.PreExp acc Exp (aty,bty,cty,dty)
+                tup' = Sm.Tuple tup
+            in sealExp$ Sm.Exp tup'
+
+    S.ETuple [a,b,c,d,e] ->
+      let ta = S.recoverExpType typeEnv a
+          tb = S.recoverExpType typeEnv b
+          tc = S.recoverExpType typeEnv c
+          td = S.recoverExpType typeEnv d
+          te = S.recoverExpType typeEnv e          
+          a' = convertExp ep a
+          b' = convertExp ep b
+          c' = convertExp ep c
+          d' = convertExp ep d
+          e' = convertExp ep e          
+      in case (scalarTypeD ta, scalarTypeD tb, scalarTypeD tc, scalarTypeD td,
+               scalarTypeD te) of
+          (SealedEltTuple (_ :: EltTuple aty),
+           SealedEltTuple (_ :: EltTuple bty),
+           SealedEltTuple (_ :: EltTuple cty),
+           SealedEltTuple (_ :: EltTuple dty),
+           SealedEltTuple (_ :: EltTuple ety)) ->
+            let tup :: Tuple Exp (TupleRepr (aty,bty,cty,dty,ety))
+                tup = NilTup
+                      `SnocTup` (downcastE a' :: Exp aty)
+                      `SnocTup` (downcastE b' :: Exp bty)
+                      `SnocTup` (downcastE c' :: Exp cty)
+                      `SnocTup` (downcastE d' :: Exp dty)
+                      `SnocTup` (downcastE e' :: Exp ety)
+                tup' :: Sm.PreExp acc Exp (aty,bty,cty,dty,ety)
+                tup' = Sm.Tuple tup
+            in sealExp$ Sm.Exp tup'
+
+    S.ETuple [a,b,c,d,e,f] ->
+      let ta = S.recoverExpType typeEnv a
+          tb = S.recoverExpType typeEnv b
+          tc = S.recoverExpType typeEnv c
+          td = S.recoverExpType typeEnv d
+          te = S.recoverExpType typeEnv e
+          tf = S.recoverExpType typeEnv f
+          a' = convertExp ep a
+          b' = convertExp ep b
+          c' = convertExp ep c
+          d' = convertExp ep d
+          e' = convertExp ep e
+          f' = convertExp ep f
+      in case (scalarTypeD ta, scalarTypeD tb, scalarTypeD tc, scalarTypeD td,
+               scalarTypeD te, scalarTypeD tf) of
+          (SealedEltTuple (_ :: EltTuple aty),
+           SealedEltTuple (_ :: EltTuple bty),
+           SealedEltTuple (_ :: EltTuple cty),
+           SealedEltTuple (_ :: EltTuple dty),
+           SealedEltTuple (_ :: EltTuple ety),
+           SealedEltTuple (_ :: EltTuple fty)) ->
+            let tup :: Tuple Exp (TupleRepr (aty,bty,cty,dty,ety,fty))
+                tup = NilTup
+                      `SnocTup` (downcastE a' :: Exp aty)
+                      `SnocTup` (downcastE b' :: Exp bty)
+                      `SnocTup` (downcastE c' :: Exp cty)
+                      `SnocTup` (downcastE d' :: Exp dty)
+                      `SnocTup` (downcastE e' :: Exp ety)
+                      `SnocTup` (downcastE f' :: Exp fty)
+                tup' :: Sm.PreExp acc Exp (aty,bty,cty,dty,ety,fty)
+                tup' = Sm.Tuple tup
+            in sealExp$ Sm.Exp tup'
+
+    S.ETuple [a,b,c,d,e,f,g] ->
+      let ta = S.recoverExpType typeEnv a
+          tb = S.recoverExpType typeEnv b
+          tc = S.recoverExpType typeEnv c
+          td = S.recoverExpType typeEnv d
+          te = S.recoverExpType typeEnv e
+          tf = S.recoverExpType typeEnv f
+          tg = S.recoverExpType typeEnv g
+          a' = convertExp ep a
+          b' = convertExp ep b
+          c' = convertExp ep c
+          d' = convertExp ep d
+          e' = convertExp ep e
+          f' = convertExp ep f
+          g' = convertExp ep g
+      in case (scalarTypeD ta, scalarTypeD tb, scalarTypeD tc, scalarTypeD td,
+               scalarTypeD te, scalarTypeD tf, scalarTypeD tg) of
+          (SealedEltTuple (_ :: EltTuple aty),
+           SealedEltTuple (_ :: EltTuple bty),
+           SealedEltTuple (_ :: EltTuple cty),
+           SealedEltTuple (_ :: EltTuple dty),
+           SealedEltTuple (_ :: EltTuple ety),
+           SealedEltTuple (_ :: EltTuple fty),
+           SealedEltTuple (_ :: EltTuple gty)) ->
+            let tup :: Tuple Exp (TupleRepr (aty,bty,cty,dty,ety,fty,gty))
+                tup = NilTup
+                      `SnocTup` (downcastE a' :: Exp aty)
+                      `SnocTup` (downcastE b' :: Exp bty)
+                      `SnocTup` (downcastE c' :: Exp cty)
+                      `SnocTup` (downcastE d' :: Exp dty)
+                      `SnocTup` (downcastE e' :: Exp ety)
+                      `SnocTup` (downcastE f' :: Exp fty)
+                      `SnocTup` (downcastE g' :: Exp gty)
+                tup' :: Sm.PreExp acc Exp (aty,bty,cty,dty,ety,fty,gty)
+                tup' = Sm.Tuple tup
+            in sealExp$ Sm.Exp tup'
+
+    S.ETuple [a,b,c,d,e,f,g,h] ->
+      let ta = S.recoverExpType typeEnv a
+          tb = S.recoverExpType typeEnv b
+          tc = S.recoverExpType typeEnv c
+          td = S.recoverExpType typeEnv d
+          te = S.recoverExpType typeEnv e
+          tf = S.recoverExpType typeEnv f
+          tg = S.recoverExpType typeEnv g
+          th = S.recoverExpType typeEnv h
+          a' = convertExp ep a
+          b' = convertExp ep b
+          c' = convertExp ep c
+          d' = convertExp ep d
+          e' = convertExp ep e
+          f' = convertExp ep f
+          g' = convertExp ep g
+          h' = convertExp ep h
+      in case (scalarTypeD ta, scalarTypeD tb, scalarTypeD tc, scalarTypeD td,
+               scalarTypeD te, scalarTypeD tf, scalarTypeD tg, scalarTypeD th) of
+          (SealedEltTuple (_ :: EltTuple aty),
+           SealedEltTuple (_ :: EltTuple bty),
+           SealedEltTuple (_ :: EltTuple cty),
+           SealedEltTuple (_ :: EltTuple dty),
+           SealedEltTuple (_ :: EltTuple ety),
+           SealedEltTuple (_ :: EltTuple fty),
+           SealedEltTuple (_ :: EltTuple gty),
+           SealedEltTuple (_ :: EltTuple hty)) ->
+            let tup :: Tuple Exp (TupleRepr (aty,bty,cty,dty,ety,fty,gty,hty))
+                tup = NilTup
+                      `SnocTup` (downcastE a' :: Exp aty)
+                      `SnocTup` (downcastE b' :: Exp bty)
+                      `SnocTup` (downcastE c' :: Exp cty)
+                      `SnocTup` (downcastE d' :: Exp dty)
+                      `SnocTup` (downcastE e' :: Exp ety)
+                      `SnocTup` (downcastE f' :: Exp fty)
+                      `SnocTup` (downcastE g' :: Exp gty)
+                      `SnocTup` (downcastE h' :: Exp hty)
+                tup' :: Sm.PreExp acc Exp (aty,bty,cty,dty,ety,fty,gty,hty)
+                tup' = Sm.Tuple tup
+            in sealExp$ Sm.Exp tup'
+
+    S.ETuple [a,b,c,d,e,f,g,h,i] ->
+      let ta = S.recoverExpType typeEnv a
+          tb = S.recoverExpType typeEnv b
+          tc = S.recoverExpType typeEnv c
+          td = S.recoverExpType typeEnv d
+          te = S.recoverExpType typeEnv e
+          tf = S.recoverExpType typeEnv f
+          tg = S.recoverExpType typeEnv g
+          th = S.recoverExpType typeEnv h
+          ti = S.recoverExpType typeEnv i
+          a' = convertExp ep a
+          b' = convertExp ep b
+          c' = convertExp ep c
+          d' = convertExp ep d
+          e' = convertExp ep e
+          f' = convertExp ep f
+          g' = convertExp ep g
+          h' = convertExp ep h
+          i' = convertExp ep i
+      in case (scalarTypeD ta, scalarTypeD tb, scalarTypeD tc, scalarTypeD td,
+               scalarTypeD te, scalarTypeD tf, scalarTypeD tg, scalarTypeD th,
+               scalarTypeD ti) of
+          (SealedEltTuple (_ :: EltTuple aty),
+           SealedEltTuple (_ :: EltTuple bty),
+           SealedEltTuple (_ :: EltTuple cty),
+           SealedEltTuple (_ :: EltTuple dty),
+           SealedEltTuple (_ :: EltTuple ety),
+           SealedEltTuple (_ :: EltTuple fty),
+           SealedEltTuple (_ :: EltTuple gty),
+           SealedEltTuple (_ :: EltTuple hty),
+           SealedEltTuple (_ :: EltTuple ity)) ->
+            let tup :: Tuple Exp (TupleRepr (aty,bty,cty,dty,ety,fty,gty,hty,ity))
+                tup = NilTup
+                      `SnocTup` (downcastE a' :: Exp aty)
+                      `SnocTup` (downcastE b' :: Exp bty)
+                      `SnocTup` (downcastE c' :: Exp cty)
+                      `SnocTup` (downcastE d' :: Exp dty)
+                      `SnocTup` (downcastE e' :: Exp ety)
+                      `SnocTup` (downcastE f' :: Exp fty)
+                      `SnocTup` (downcastE g' :: Exp gty)
+                      `SnocTup` (downcastE h' :: Exp hty)
+                      `SnocTup` (downcastE i' :: Exp ity)
+                tup' :: Sm.PreExp acc Exp (aty,bty,cty,dty,ety,fty,gty,hty,ity)
+                tup' = Sm.Tuple tup
+            in sealExp$ Sm.Exp tup'
+
+    S.ETuple (a:b:c:d:e:f:g:h:i:tl) ->
+      error$"convertExp: Alas, tuples greater than size nine are not handled by Accelerate: "++
+            show (a:b:c:d:e:f:g:h:i:tl)
+
+    -------------------------------------------------------------------------------
+    -- </EXTREME PAIN>
+
+    -- Version 3: try to generalize.  Failed, but leave it in a compiling state:
+#if 0
     S.ETuple (hd:tl) ->
       let ta = S.recoverExpType typeEnv hd
           tb = S.recoverExpType typeEnv (S.ETuple tl)
