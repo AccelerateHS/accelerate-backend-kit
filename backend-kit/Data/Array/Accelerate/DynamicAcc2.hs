@@ -679,15 +679,18 @@ convertExp ep@(EnvPack envE envA mp)
                     in sealExp (binop a1' a2'); \
          _ -> error$ "Binary operator "++show prim++" expects two args, got "++show args ; })
 
-#define REPUOP_I2F(which, prim, unop)  \
-       (T.NumScalarType (T.IntegralNumType (ity :: T.IntegralType elt)), which prim) -> \
-         (case T.integralDict ity of (T.IntegralDict :: T.IntegralDict elt) -> \
-          (case args of { \
-           [a1] -> (case T.floatingDict fty of (T.FloatingDict :: T.FloatingDict eltF) -> \
-                   (let a1' :: Exp eltF;    \
-                        a1' = downcastE a1; \
-                    in sealExp (unop a1')));  \
-           _ -> error$ "Unary operator "++show prim++" expects one arg, got "++show args ; }))
+#define REPUOP_I2F(prim, unop)  \
+      (T.NumScalarType (T.IntegralNumType (ity :: T.IntegralType elt)), FP prim) -> \
+        (case T.integralDict ity of { (T.IntegralDict :: T.IntegralDict elt) ->     \
+         case styIn1 of { T.NumScalarType (T.FloatingNumType (fty :: T.FloatingType eltF)) -> \
+         case T.floatingDict fty of { (T.FloatingDict :: T.FloatingDict eltF) -> \
+         case args of { \
+          [a1] -> (let a1' :: Exp eltF;    \
+                       a1' = downcastE a1; \
+                       res :: Exp elt;     \
+                       res = unop a1';     \
+                   in sealExp res);        \
+          _ -> error$ "Unary operator "++show prim++" expects one arg, got "++show args ;};};};})
 
 -----------------------------------------------------------------------------------
              (case (sty,op) of
@@ -730,38 +733,13 @@ convertExp ep@(EnvPack envE envA mp)
                REPUOP(POPFLT, POPFDICT, FP, Sqrt, sqrt)
                REPUOP(POPFLT, POPFDICT, FP, Log, log)
 
--- Warning!  Heterogeneous input/output types:               
---               REPUOP_I2F(FP, Truncate, A.truncate)
-               -- Here the *output* type is an Integral and input is Floating:
-               (T.NumScalarType (T.IntegralNumType (ity :: T.IntegralType elt)), FP Truncate) ->
-                 (case T.integralDict ity of { (T.IntegralDict :: T.IntegralDict elt) -> 
-                  case styIn1 of { T.NumScalarType (T.FloatingNumType (fty :: T.FloatingType eltF)) ->
-                  case T.floatingDict fty of { (T.FloatingDict :: T.FloatingDict eltF) -> 
-                  case args of {
-                   [a1] -> (let a1' :: Exp eltF;   
-                                a1' = downcastE a1;
-                                res :: Exp elt;
-                                res = A.truncate a1'
-                            in sealExp res); 
-                   _ -> error$ "Unary operator "++show Truncate++" expects one arg, got "++show args ;};};};})
+               -- Warning!  Heterogeneous input/output types:               
+               REPUOP_I2F(Truncate, A.truncate)
+               REPUOP_I2F(Round, A.round)
+               REPUOP_I2F(Floor, A.floor)
+               REPUOP_I2F(Ceiling, A.ceiling)
 
-               (T.NumScalarType (T.IntegralNumType (ity :: T.IntegralType elt)), FP Round) ->
-                 (case T.integralDict ity of { (T.IntegralDict :: T.IntegralDict elt) -> 
-                  case styIn1 of { T.NumScalarType (T.FloatingNumType (fty :: T.FloatingType eltF)) ->
-                  case T.floatingDict fty of { (T.FloatingDict :: T.FloatingDict eltF) -> 
-                  case args of {
-                   [a1] -> (let a1' :: Exp eltF;   
-                                a1' = downcastE a1;
-                                res :: Exp elt;
-                                res = A.round a1'
-                            in sealExp res); 
-                   _ -> error$ "Unary operator "++show Round++" expects one arg, got "++show args ;};};};})
-
---               REPBOP(POPFLT, POPFDICT, FP, Round, A.round)
---               REPBOP(POPFLT, POPFDICT, FP, Floor, A.floor)
---               REPBOP(POPFLT, POPFDICT, FP, Ceiling, A.ceiling)
-
---               REPBOP(POPBL, POPBDICT, BP, S.And, (A.&&*))
+               -------------- Boolean Primitives --------------
                (_, BP S.And) -> (case args of { 
                  [a1,a2] -> let a1', a2' :: Exp Bool;
                                 a1' = downcastE a1;     
