@@ -190,14 +190,6 @@ arrayTypeD (TArray ndim elty) =
 
        INSERT_CTY_ERR_CASES
 
-       -- TODO: Handling tuples would require a switch to SealedArrTuple
-       -- TTuple []    -> SealedArrayType UnitTupleA;
-       -- TTuple (hd:tl) ->
-       --   case (arrayTypeD hd, arrayTypeD (TTuple tl)) of
-       --     (SealedArrayType (Phantom at1 :: a),
-       --      SealedArrayType (Phantom at2 :: b)) ->
-       --       SealedArrayType$ PairTupleA at1 at2       
-
        TTuple ls -> (case scalarTypeD elty of 
                       SealedEltTuple (et :: EltTuple etty) -> 
                        SealedArrayType (Phantom(unused:: Array sh etty)));
@@ -275,8 +267,34 @@ useD arr =
    sty = arrayTypeD dty
 
 -- TODO: How to handle functions?
-mapD :: SealedFun -> SealedAcc -> SealedAcc 
-mapD = error "mapD"
+mapD :: (SealedExp -> SealedExp) -> SealedAcc ->
+        S.Type -> S.Type -> SealedAcc 
+mapD bodfn sealedInArr inArrTy outElmTy = 
+      let 
+          (TArray dims inty) = inArrTy 
+          newAty = arrayTypeD (TArray dims outElmTy)
+      in
+       case (shapeTypeD dims, scalarTypeD inty, scalarTypeD outElmTy) of
+         (SealedShapeType (_ :: Phantom shp), 
+          SealedEltTuple (inET  :: EltTuple inT),
+          SealedEltTuple (outET :: EltTuple outT)) ->
+          let
+            rawfn :: Exp inT -> Exp outT
+            rawfn x = downcastE (bodfn (sealExp x))
+            realIn :: Acc (Array shp inT)
+            realIn = downcastA sealedInArr
+          in
+           -- Here we suffer PAIN to recover the Elt/Typeable instances:
+           case (inET, outET) of
+             (UnitTuple,     UnitTuple)     -> sealAcc $ A.map rawfn realIn
+             (SingleTuple _, UnitTuple)     -> sealAcc $ A.map rawfn realIn
+             (PairTuple _ _, UnitTuple)     -> sealAcc $ A.map rawfn realIn
+             (UnitTuple,     SingleTuple _) -> sealAcc $ A.map rawfn realIn
+             (SingleTuple _, SingleTuple _) -> sealAcc $ A.map rawfn realIn             
+             (PairTuple _ _, SingleTuple _) -> sealAcc $ A.map rawfn realIn
+             (UnitTuple,     PairTuple _ _) -> sealAcc $ A.map rawfn realIn
+             (SingleTuple _, PairTuple _ _) -> sealAcc $ A.map rawfn realIn             
+             (PairTuple _ _, PairTuple _ _) -> sealAcc $ A.map rawfn realIn
 
 
 
@@ -725,7 +743,7 @@ convertExp ep@(EnvPack envE envA mp)
 
                (_, BP S.Not) -> (case args of { 
                  [a1] -> let a1' :: Exp Bool;
-                             a1' = downcastE a1;  
+                             a1' = downcastE a1;
                          in sealExp (A.not a1'); 
                  _ -> error$ "Boolean NOT operator expects one arg, got "++show args ; })
 
@@ -776,35 +794,14 @@ convertAcc env@(EnvPack _ _ mp) ae =
       let ex' = convertExp env ex
           ty  = S.recoverExpType (M.map P.fst mp) ex
       in unitD (scalarTypeD ty) ex'
-    S.Map (S.Lam1 (vr,ty) bod) inA ->
-      let bodfn :: SealedExp -> SealedExp
-          bodfn ex = convertExp (extendE vr ty ex env) bod
+    S.Map (S.Lam1 (vr,ty) bod) inA ->      
+      let bodfn ex = convertExp (extendE vr ty ex env) bod
           aty@(TArray dims inty) = P.fst (mp # inA)
           bodty = S.recoverExpType (M.insert vr ty $ M.map P.fst mp) bod
           newAty = arrayTypeD (TArray dims bodty)
+          sealedInArr = let (_,sa) = mp # inA in expectAVar sa
       in
-       case (shapeTypeD dims, scalarTypeD inty, scalarTypeD bodty) of
-         (SealedShapeType (_ :: Phantom shp), 
-          SealedEltTuple (inET  :: EltTuple inT),
-          SealedEltTuple (outET :: EltTuple outT)) ->
-          let
-            rawfn :: Exp inT -> Exp outT
-            rawfn x = downcastE (bodfn (sealExp x))
-            realIn :: Acc (Array shp inT)
-            realIn = downcastA (let (_,sa) = mp # inA in expectAVar sa)
-          in
-           -- Here we suffer PAIN to recover the Elt/Typeable instances:
-           case (inET, outET) of
-             (UnitTuple,     UnitTuple)     -> sealAcc $ A.map rawfn realIn
-             (SingleTuple _, UnitTuple)     -> sealAcc $ A.map rawfn realIn
-             (PairTuple _ _, UnitTuple)     -> sealAcc $ A.map rawfn realIn
-             (UnitTuple,     SingleTuple _) -> sealAcc $ A.map rawfn realIn
-             (SingleTuple _, SingleTuple _) -> sealAcc $ A.map rawfn realIn             
-             (PairTuple _ _, SingleTuple _) -> sealAcc $ A.map rawfn realIn
-             (UnitTuple,     PairTuple _ _) -> sealAcc $ A.map rawfn realIn
-             (SingleTuple _, PairTuple _ _) -> sealAcc $ A.map rawfn realIn             
-             (PairTuple _ _, PairTuple _ _) -> sealAcc $ A.map rawfn realIn
-
+        mapD bodfn sealedInArr aty bodty
 
 --    _ -> error$"FINISHME: unhandled: " ++show ae
 
