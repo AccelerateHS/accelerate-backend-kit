@@ -609,7 +609,7 @@ convertExp ep@(EnvPack envE envA mp)
     -------------------------------------------------------------------------------
     -- </EXTREME PAIN>
 
-    -- Version 3: try to generalize.  Failed, but leave it in a compiling state:
+    -- Version 3: try to generalize tuple handling.  Failed, but leave it in a compiling state:
 #if 0
     S.ETuple (hd:tl) ->
       let ta = S.recoverExpType typeEnv hd
@@ -632,16 +632,27 @@ convertExp ep@(EnvPack envE envA mp)
                 error "FINISHME"    
                 -- sealExp$ Sm.Exp tup'
 #endif
-          
+
+    {- ========================================================================================== -}
     S.EPrimApp outTy op ls ->
-      let args = P.map (convertExp ep) ls in
-      
-      case scalarTypeD outTy of
+      let args = P.map (convertExp ep) ls 
+          (fstArg :_) = ls
+          fstArgTy = S.recoverExpType typeEnv fstArg
+      in 
+      (case scalarTypeD fstArgTy of {
+       SealedEltTuple t0 -> 
+      (case t0 of {
+       PairTuple _ _ -> error$ "Primitive "++show op++" should not have a tuple 1st argument type.";
+       UnitTuple     -> error$ "Primitive "++show op++" should not have a unit 1st argument type.";
+       SingleTuple (styIn1 :: T.ScalarType eltIn1) ->
+      (case scalarTypeD outTy of 
         SealedEltTuple t ->
           case t of
             PairTuple _ _ -> error$ "Primitive "++show op++" should not have a tuple output type."
             UnitTuple     -> error$ "Primitive "++show op++" should not have a unit output type."
             SingleTuple (sty :: T.ScalarType elt) ->
+
+-- <BOILERPLATE abstracted as CPP macros>
 -----------------------------------------------------------------------------------              
 #define REPBOP(numpat, popdict, which, prim, binop) (numpat, which prim) -> popdict (case args of { \
          [a1,a2] -> let a1',a2' :: Exp elt;    \
@@ -656,16 +667,10 @@ convertExp ep@(EnvPack envE envA mp)
          _ -> error$ "Unary operator "++show prim++" expects one arg, got "++show args ; })
 #define POPINT T.NumScalarType (T.IntegralNumType (nty :: T.IntegralType elt))
 #define POPFLT T.NumScalarType (T.FloatingNumType (nty :: T.FloatingType elt))
-
-#define POPBL  T.NonNumScalarType (nty :: T.NonNumType elt)
-#define POPBDICT case T.nonNumDict nty of (T.NonNumDict :: T.NonNumDict Bool) ->
--- define POPBDICT case T.nonNumDict nty of (T.NonNumDict :: T.NonNumDict elt) ->
-
 #define POPIDICT case T.integralDict nty of (T.IntegralDict :: T.IntegralDict elt) ->
 #define POPFDICT case T.floatingDict nty of (T.FloatingDict :: T.FloatingDict elt) ->
-
                                               
--- Monomorphic in secodn arg:
+-- Monomorphic in second arg:
 #define REPBOPMONO(numpat, popdict, which, prim, binop) (numpat, which prim) -> popdict (case args of { \
          [a1,a2] -> let a1' :: Exp elt;         \
                         a1' = downcastE a1;     \
@@ -673,6 +678,18 @@ convertExp ep@(EnvPack envE envA mp)
                         a2' = downcastE a2;     \
                     in sealExp (binop a1' a2'); \
          _ -> error$ "Binary operator "++show prim++" expects two args, got "++show args ; })
+
+#define REPUOP_I2F(which, prim, unop)  \
+       (T.NumScalarType (T.IntegralNumType (ity :: T.IntegralType elt)), which prim) -> \
+         (case T.integralDict ity of (T.IntegralDict :: T.IntegralDict elt) -> \
+          (case args of { \
+           [a1] -> (case T.floatingDict fty of (T.FloatingDict :: T.FloatingDict eltF) -> \
+                   (let a1' :: Exp eltF;    \
+                        a1' = downcastE a1; \
+                    in sealExp (unop a1')));  \
+           _ -> error$ "Unary operator "++show prim++" expects one arg, got "++show args ; }))
+
+-- T.NumScalarType (T.FloatingNumType (fty :: T.FloatingType eltF))
 
 -----------------------------------------------------------------------------------
              (case (sty,op) of
@@ -721,7 +738,18 @@ convertExp ep@(EnvPack envE envA mp)
                REPUOP(POPFLT, POPFDICT, FP, Log, log)
 
 -- Warning!  Heterogeneous input/output types:               
---               REPBOP(POPFLT, POPFDICT, FP, Truncate, A.truncate)
+--               REPUOP_I2F(FP, Truncate, A.truncate)
+               -- Here the *output* type is an Integral and input is Floating:
+#if 0
+               (T.NumScalarType (T.IntegralNumType (ity :: T.IntegralType elt)), FP Truncate) ->
+                 (case T.integralDict ity of { (T.IntegralDict :: T.IntegralDict elt) -> 
+                   case args of {
+                   [a1] -> case T.floatingDict fty of { (T.FloatingDict :: T.FloatingDict eltF) ->
+                           (let a1' :: Exp eltF;   
+                                a1' = downcastE a1;
+                            in sealExp (unop a1')); }; 
+                   _ -> error$ "Unary operator "++show prim++" expects one arg, got "++show args ;};})
+#endif
 --               REPBOP(POPFLT, POPFDICT, FP, Round, A.round)
 --               REPBOP(POPFLT, POPFDICT, FP, Floor, A.floor)
 --               REPBOP(POPFLT, POPFDICT, FP, Ceiling, A.ceiling)
@@ -752,6 +780,9 @@ convertExp ep@(EnvPack envE envA mp)
 
 --               _ -> error$ "Primop "++ show op++" expects a scalar type, got "++show outTy
                )
+      )  -- End outTy dispatch.
+      })}) -- End fstArgTy dispatch.
+    -- End PrimApp case.
 
     S.ELet (vr,ty,rhs) bod ->
       let rhs' = cE rhs
