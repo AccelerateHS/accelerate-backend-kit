@@ -372,6 +372,7 @@ convertExp ep@(EnvPack envE envA mp)
           sealExp$ Sm.Exp tup'          
 
     -- Version 3: try to generalize
+#if 1
     S.ETuple (hd:tl) ->
       let ta = S.recoverExpType typeEnv hd
           tb = S.recoverExpType typeEnv (S.ETuple tl)
@@ -381,18 +382,18 @@ convertExp ep@(EnvPack envE envA mp)
       case (scalarTypeD ta, scalarTypeD tb) of
         (SealedEltTuple (et1 :: EltTuple aty),
          SealedEltTuple (et2 :: EltTuple bty)) ->
-          error "FINISHME" 
-          -- let
-          --     -- tup :: Tuple Exp ((), aty)
-          --     tup :: Tuple Exp (TupleRepr (aty,bty))
-          --     tup = NilTup
-          --           `SnocTup` (downcastE a' :: Exp aty)
-          --           `SnocTup` (downcastE b' :: Exp bty)
-          --     tup' :: Sm.PreExp acc Exp (aty,bty)
-          --     tup' = Sm.Tuple tup
-          -- in
-          -- sealExp$ Sm.Exp tup'          
-          
+          case downcastE tl' :: Exp bty of
+            Sm.Exp (Sm.Tuple (tupRst :: Tuple Exp (TupleRepr bty))) ->
+             case tupRst of
+               (_ :: Tuple Exp brep) ->
+                let tup :: Tuple Exp (brep,aty)
+                    tup = tupRst `SnocTup` (downcastE hd' :: Exp aty)
+--                    tup' :: Sm.PreExp acc Exp (??? bty,aty ???)
+--                    tup' = Sm.Tuple tup
+                in
+                error "FINISHME"    
+                -- sealExp$ Sm.Exp tup'
+#endif
           
     S.ETupProject {S.indexFromRight, S.projlen, S.tupexpr} -> undefined
 
