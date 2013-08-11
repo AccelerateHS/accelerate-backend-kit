@@ -40,7 +40,7 @@ import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
                   Prim(..), NumPrim(..), IntPrim(..), FloatPrim(..))
 import           Data.Array.Accelerate.BackendKit.Tests (allProgsMap, p1a, TestEntry(..))
 import           Data.Array.Accelerate.BackendKit.SimpleArray (payloadsFromList1)
--- import Data.Array.Accelerate.Interpreter as I
+import Data.Array.Accelerate.Interpreter as I
 -- import           Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone (repackAcc)
 import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc)
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
@@ -274,15 +274,15 @@ generateD indSealed bodfn outArrTy =
       let (TArray dims outty) = outArrTy in
        case (shapeTypeD dims, scalarTypeD outty) of
          (SealedShapeType (_ :: Phantom shp), 
-          SealedEltTuple (outET :: EltTuple outT)) ->
-           trace ("Generate: downcasting dim "++show indSealed) $
+          SealedEltTuple (outET :: EltTuple outT)) ->           
           let
             rawfn :: Exp shp -> Exp outT
             rawfn x =
               trace ("Inside generate fun, downcasting bod bod "++show (bodfn (sealExp x)))$
               downcastE (bodfn (sealExp x))
             dimE :: Exp shp
-            dimE = downcastE indSealed
+            dimE = trace ("Generate: downcasting dim "++show indSealed++" Expecting Z-based index of dims "++show dims) $
+                   downcastE indSealed
           in sealAcc$ A.generate dimE rawfn
 
 
@@ -855,6 +855,7 @@ convertExp ep@(EnvPack envE envA mp)
 indexToTup :: S.Type -> SealedExp -> SealedExp
 indexToTup ty ex = 
   case ty of
+    TTuple [] -> sealExp (constant ())
     TTuple ls -> error$ " implement indexToTup "++show(ty,ex)
     TArray{}  -> error$ "indexToTup: expected tuple-of-scalar type, got: "++show ty
     _ ->
@@ -867,10 +868,47 @@ indexToTup ty ex =
               Z :. e' = unlift z
           in sealExp e'
 
+-- | The inverse of `indexToTup`
 tupToIndex :: S.Type -> SealedExp -> SealedExp
 tupToIndex ty ex =
   case ty of
-    TTuple ls -> error$ " implement tupToIndex "++show(ty,ex)
+    TTuple []  -> sealExp (constant Z)
+    TTuple [a] -> error$ "tupToIndex: internal error, singleton tuple: "++show (ty,ex)
+
+    TTuple [a,b] ->
+      trace ("Converting tuple type to index type... "++show ty) $
+      case scalarTypeD ty of      
+        SealedEltTuple ((PairTuple (lf:: EltTuple eltL) (rg:: EltTuple eltR))) ->
+          let
+              tup :: Exp (eltL,eltR)
+              tup  = downcastE ex
+              l :: Exp eltL; r :: Exp eltR
+              (l,r) = unlift tup
+              tup' :: Z :. Exp eltL :. Exp eltR
+              tup' = (Z :. l :. r)
+              -- tup'' :: Exp (Z :. eltL :. eltR)
+              -- tup'' = lift (Z :. l :. r)
+
+              test :: Exp (Z :. eltL)
+              test = lift (Z :. l)
+
+              -- This works:
+              test2 :: Exp (Z :. Int :. eltR)
+              test2 = lift ((Z :. 1 :. r) :: (Z :. Exp Int :. Exp eltR))
+              
+              -- Doesn't work:
+              -- Wants:
+              --    (Slice (Z :. eltL)) arising from a use of `lift'
+              -- 
+              -- test3 :: Exp (Z :. eltL :. Int)
+              -- test3 = lift ((Z :. l :. 2) :: (Z :. Exp eltL :. Exp Int))
+              
+          in undefined -- sealExp tup''
+      
+    -- TTuple (a:b:rst) ->
+    --   tupToIndex (TTuple (b:rst)) ex
+    --   Sm.IndexCons 
+
     TArray{}  -> error$ "tupToIndex: expected tuple-of-scalar type, got: "++show ty
     _ -> 
       case scalarTypeD ty of      
@@ -1041,21 +1079,16 @@ t10 = convertAcc emptyEnvPack $
 t10_ :: Acc (Vector Int)
 t10_ = downcastA t10
 
--- Generate (TArray 1 TFloat)
---          (EConst (I 10))
---          (Lam1 (v0, TInt)
---                (EPrimApp TFloat (OP FromIntegral) [EIndexHeadDynamic (EVr v0)]))
 
+t11 = convertAcc emptyEnvPack $
+      S.Generate (S.ETuple [S.EConst (I 3), S.EConst (I 2)]) -- (S.EIndex [S.EConst (I 10)])
+                 (S.Lam1 (v, TTuple [TInt,TInt]) (S.EVr v))
+  where v   = S.var "v"
+-- t11_ :: Acc (Array DIM2 (Int,Int))
+-- t11_ :: Acc (Array DIM2 (Z :. Int :. Int))
+t11_ :: Acc (Array DIM2 (Int,(Int,())))
+t11_ = downcastA t11
 
--- Prog {progBinds = [ProgBind tmp_0
---                             (TArray 1 TFloat)
---                             ()
---                             (Right Generate (EConst (I 10))
---                                             (Lam1 (v0, TInt)
---                                                   (EPrimApp TFloat (OP FromIntegral) [EVr v0])))],
---       progResults = WithoutShapes [tmp_0],
---       progType = TArray 1 TFloat,
---       uniqueCounter = 0,
 
 
 p1 = convertExp emptyEnvPack
