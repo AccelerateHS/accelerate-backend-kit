@@ -267,6 +267,25 @@ useD arr =
    dty = S.accArrayToType arr
    sty = arrayTypeD dty
 
+generateD :: SealedExp -> (SealedExp -> SealedExp) ->
+        S.Type -> SealedAcc 
+generateD indSealed bodfn outArrTy =
+  trace ("Generate: outArrTy "++show (outArrTy)) $
+      let (TArray dims outty) = outArrTy in
+       case (shapeTypeD dims, scalarTypeD outty) of
+         (SealedShapeType (_ :: Phantom shp), 
+          SealedEltTuple (outET :: EltTuple outT)) ->
+           trace ("Generate: downcasting dim "++show indSealed) $
+          let
+            rawfn :: Exp shp -> Exp outT
+            rawfn x =
+              trace ("Inside generate fun, downcasting bod bod "++show (bodfn (sealExp x)))$
+              downcastE (bodfn (sealExp x))
+            dimE :: Exp shp
+            dimE = downcastE indSealed
+          in sealAcc$ A.generate dimE rawfn
+
+
 mapD :: (SealedExp -> SealedExp) -> SealedAcc ->
         S.Type -> S.Type -> SealedAcc 
 mapD bodfn sealedInArr inArrTy outElmTy = 
@@ -829,11 +848,48 @@ convertExp ep@(EnvPack envE envA mp)
                         (downcastE d2::Exp elt,
                          downcastE d3::Exp elt))::Exp elt)
 
+-- | The SimpleAcc representation does NOT keep index types disjoint
+-- from regular tuples.  To convert back to Acc we need to reassert
+-- this distinction, which involves "casting" indices to tuples and
+-- tuples to indices at the appropriate places.
+indexToTup :: S.Type -> SealedExp -> SealedExp
+indexToTup ty ex = 
+  case ty of
+    TTuple ls -> error$ " implement indexToTup "++show(ty,ex)
+    TArray{}  -> error$ "indexToTup: expected tuple-of-scalar type, got: "++show ty
+    _ ->
+      case scalarTypeD ty of      
+        SealedEltTuple (t :: EltTuple elt) ->
+          let
+              z :: Exp (Z :. elt)
+              z = downcastE ex
+              e' :: Exp (elt)
+              Z :. e' = unlift z
+          in sealExp e'
+
+tupToIndex :: S.Type -> SealedExp -> SealedExp
+tupToIndex ty ex =
+  case ty of
+    TTuple ls -> error$ " implement tupToIndex "++show(ty,ex)
+    TArray{}  -> error$ "tupToIndex: expected tuple-of-scalar type, got: "++show ty
+    _ -> 
+      case scalarTypeD ty of      
+        SealedEltTuple (t :: EltTuple elt) ->
+          let
+              z :: Z :. Exp elt
+              z = Z :. ((downcastE ex) :: Exp elt)
+              z' :: Exp (Z :. elt)
+              z' = lift z
+          in sealExp z'
+
+
+tupTyToIndex = error "finish me"
 
 -- | Convert a closed `SimpleAcc` expression (no free vars) into a fully-typed (but
 -- sealed) Accelerate one.
 convertAcc :: EnvPack -> S.AExp -> SealedAcc
-convertAcc env@(EnvPack _ _ mp) ae = 
+convertAcc env@(EnvPack _ _ mp) ae =
+  let typeEnv = M.map P.fst mp in
   case ae of
     S.Vr vr   -> let (_,s) = mp # vr in expectAVar s
     S.Use accarr -> useD accarr
@@ -841,7 +897,20 @@ convertAcc env@(EnvPack _ _ mp) ae =
       let ex' = convertExp env ex
           ty  = S.recoverExpType (M.map P.fst mp) ex
       in unitD (scalarTypeD ty) ex'
-    S.Map (S.Lam1 (vr,ty) bod) inA ->      
+
+    S.Generate initE (S.Lam1 (vr,ty) bod) ->
+      let indexTy = tupTyToIndex ty -- "ty" is a plain tuple.
+          bodfn ex  = convertExp (extendE vr ty (indexToTup ty ex) env) bod
+          bodty     = S.recoverExpType (M.insert vr ty typeEnv) bod
+          -- TODO: Replace this by simply passing in the result type to convertAcc:
+          dims = case S.recoverExpType typeEnv initE of
+                  TTuple ls -> length ls
+                  _         -> 1
+          outArrTy  = TArray dims bodty
+          init' = tupToIndex ty$ convertExp env initE 
+      in generateD init' bodfn outArrTy
+         
+    S.Map (S.Lam1 (vr,ty) bod) inA -> 
       let bodfn ex = convertExp (extendE vr ty ex env) bod
           aty@(TArray dims inty) = P.fst (mp # inA)
           bodty = S.recoverExpType (M.insert vr ty $ M.map P.fst mp) bod
@@ -965,14 +1034,28 @@ t9 = convertAcc emptyEnvPack $
 t9_ :: Acc (Vector Int)
 t9_ = downcastA t9
 
-t10 = convertAcc (extendA arr (TArray 1 TInt) t9 emptyEnvPack)
-        (S.Fold (S.Lam2 (v,TInt) (w,TInt) (S.EPrimApp TInt (S.NP S.Add) [S.EVr v, S.EVr w]))
-                (S.EConst (I 0)) arr)
+t10 = convertAcc emptyEnvPack $
+      S.Generate (S.EConst (I 10)) -- (S.EIndex [S.EConst (I 10)])
+                 (S.Lam1 (v,TInt) (S.EVr v))
   where v   = S.var "v"
-        w   = S.var "w"
-        arr = S.var "arr"
-t10_ :: Acc (Scalar Int)
+t10_ :: Acc (Vector Int)
 t10_ = downcastA t10
+
+-- Generate (TArray 1 TFloat)
+--          (EConst (I 10))
+--          (Lam1 (v0, TInt)
+--                (EPrimApp TFloat (OP FromIntegral) [EIndexHeadDynamic (EVr v0)]))
+
+
+-- Prog {progBinds = [ProgBind tmp_0
+--                             (TArray 1 TFloat)
+--                             ()
+--                             (Right Generate (EConst (I 10))
+--                                             (Lam1 (v0, TInt)
+--                                                   (EPrimApp TFloat (OP FromIntegral) [EVr v0])))],
+--       progResults = WithoutShapes [tmp_0],
+--       progType = TArray 1 TFloat,
+--       uniqueCounter = 0,
 
 
 p1 = convertExp emptyEnvPack

@@ -318,7 +318,7 @@ convertTupleIdx tix = loop tix
 convertBoundary :: Boundary a -> S.Boundary
 convertBoundary = error "convertBoundary: implement me" -- FIXME TODO
 
--- Evaluate a closed expression
+-- Takes a closed expression
 convertExp :: forall env aenv ans . OpenExp env aenv ans -> EnvM T.Exp
 convertExp e = 
   case e of 
@@ -596,7 +596,7 @@ tupleTy ls = S.TTuple ls
 -- convertConst :: Sug.Elt t => Sug.EltRepr t -> S.Const
 convertConst :: TupleType a -> a -> S.Const
 convertConst ty c = 
---  tracePrint "Converting tuple const: " $
+--  trace ("Converting tuple const: "++show ty) $
   case ty of 
     UnitTuple -> S.Tup []
     PairTuple ty1 ty0 -> let (c1,c0) = c 
