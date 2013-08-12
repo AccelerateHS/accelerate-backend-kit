@@ -271,7 +271,7 @@ data Exp =
   | EShape Var                -- Get the shape of an Array [variable].
   | EShapeSize Exp            -- Number of elements of a shape
   | EIndex [Exp]              -- An index into a multi-dimensional array.
-  | ETuple [Exp]              -- Build a tuple.
+  | ETuple [Exp]              -- Build a tuple.  They are store in REVERSE of textual order in the IR.
   | ETupProject {             -- Project a consecutive series of fields from a tuple.
       indexFromRight :: Int , --  * where to start the slice
       projlen        :: Int , --  * how many scalars to extract
@@ -287,7 +287,7 @@ data TrivialExp = TrivConst Int | TrivVarref Var
 data Const = I Int  | I8 Int8  | I16 Int16  | I32 Int32  | I64 Int64
            | W Word | W8 Word8 | W16 Word16 | W32 Word32 | W64 Word64
            | F Float | D Double | C Char | B Bool
-           | Tup [Const]
+           | Tup [Const] -- NOTE!  Tuples are stored in the REVERSE order from textual order in the source.
             -- C types, rather annoying:
            | CF CFloat   | CD CDouble 
            | CS  CShort  | CI  CInt  | CL  CLong  | CLL  CLLong

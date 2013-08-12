@@ -46,8 +46,6 @@ import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc)
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 -- import qualified Data.Array.Accelerate.Array.Data  as Dat
 
-import Data.Array.Accelerate.BackendKit.Phase1.ToAccClone as Cvt (accToAccClone, expToExpClone)
-
 import Data.Bits as B
 import Data.Typeable (gcast)
 import Data.Dynamic (Dynamic, fromDyn, fromDynamic, toDyn,
@@ -61,6 +59,12 @@ import Debug.Trace (trace)
 -- import Control.Monad (when)
 
 import qualified Data.Array.Unboxed as U
+
+----------------------------------------
+-- TEMP:
+import Data.Array.Accelerate.BackendKit.Phase1.ToAccClone as Cvt (accToAccClone, expToExpClone)
+import Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1)
+import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec))
 
 ------------------------------------------------------------------------------------------
 
@@ -373,6 +377,10 @@ extendE vr ty sld (EnvPack eS eA mp) =
 type AENV0 = ()
 
 
+resealTup _ [sing] = sing
+resealTup ty components =
+  error$ "FINISHME: reseal "++show components++" as type "++show ty
+
 -- | Convert an entire `SimpleAcc` expression into a fully-typed (but sealed) Accelerate one.
 --   Requires a type environments for the (open) `SimpleAcc` expression:    
 --   one for free expression variables, one for free array variables.
@@ -383,7 +391,8 @@ convertExp ep@(EnvPack envE envA mp)
            ex =
   trace("Converting exp "++show ex++" with env "++show mp++" and dyn env "++show (envE,envA))$
   let cE = convertExp ep
-      typeEnv = M.map P.fst mp -- Strip out the SealedExp/Acc bits leaving just the types.
+      typeEnv  = M.map P.fst mp -- Strip out the SealedExp/Acc bits leaving just the types.
+      resultTy = S.recoverExpType typeEnv ex
   in 
   case ex of
     S.EConst c -> constantE c
@@ -397,7 +406,39 @@ convertExp ep@(EnvPack envE envA mp)
     -- S.EShapeSize _      -> undefined
     -- S.EIndex _          -> undefined
     -- S.EIndexScalar _ _  -> undefined
-    -- S.ETupProject {S.indexFromRight, S.projlen, S.tupexpr} -> undefined
+    S.ETupProject {S.indexFromRight=ind, S.projlen=len, S.tupexpr=tex} ->
+      let tup = convertExp ep tex
+          tty  = S.recoverExpType typeEnv tex
+      in       
+       case scalarTypeD tty of
+         SealedEltTuple (et1 :: EltTuple tupT) ->
+           case et1 of
+             UnitTuple -> error "Tup projection from unit."
+             PairTuple (etA :: EltTuple aa) (PairTuple (etB :: EltTuple bb) UnitTuple) ->
+               let (a,b) = unlift (downcastE tup :: Exp (aa,bb))
+               in resealTup resultTy $ 
+                P.take len $ P.drop ind $ [sealExp a, sealExp b]
+
+             PairTuple (_ :: EltTuple aa) (PairTuple (_ :: EltTuple bb) (PairTuple (_ :: EltTuple cc) UnitTuple)) ->
+               let (a,b,c) = unlift (downcastE tup :: Exp (aa,bb,cc))
+               in resealTup resultTy $ 
+                P.take len $ P.drop ind $ [sealExp a, sealExp b, sealExp c]
+
+
+             PairTuple a (SingleTuple b) ->
+               trace (" got pairtuple "++show(a,b)) $
+               undefined -- P.take len $ P.drop ind $ [a,b]
+               
+--             NilTup ->
+--             SnocTup NilTup
+--         2 -> let a,b = unlift tup
+--              in take len [] 
+
+  -- Prj         :: (Elt t, IsTuple t, Elt e)
+  --             => TupleIdx (TupleRepr t) e
+  --             -> exp t                          -> PreExp acc exp e
+
+--      error "finishme: handle tupproject"
     
     S.ETuple []    -> constantE (Tup [])
     S.ETuple [ex]  -> convertExp ep ex
@@ -856,6 +897,14 @@ indexToTup :: S.Type -> SealedExp -> SealedExp
 indexToTup ty ex = 
   case ty of
     TTuple [] -> sealExp (constant ())
+
+    TTuple [TInt,TInt] -> 
+      let l,r :: Exp Int
+          (Z :. l :. r) = unlift (downcastE ex :: Exp (Z :. Int :. Int))
+          tup :: Exp (Int, Int)
+          tup = lift (l, r)
+      in sealExp tup
+    
     TTuple ls -> error$ " implement indexToTup "++show(ty,ex)
     TArray{}  -> error$ "indexToTup: expected tuple-of-scalar type, got: "++show ty
     _ ->
@@ -875,35 +924,13 @@ tupToIndex ty ex =
     TTuple []  -> sealExp (constant Z)
     TTuple [a] -> error$ "tupToIndex: internal error, singleton tuple: "++show (ty,ex)
 
-    TTuple [a,b] ->
+    TTuple [TInt,TInt] -> 
       trace ("Converting tuple type to index type... "++show ty) $
-      case scalarTypeD ty of      
-        SealedEltTuple ((PairTuple (lf:: EltTuple eltL) (rg:: EltTuple eltR))) ->
-          let
-              tup :: Exp (eltL,eltR)
-              tup  = downcastE ex
-              l :: Exp eltL; r :: Exp eltR
-              (l,r) = unlift tup
-              tup' :: Z :. Exp eltL :. Exp eltR
-              tup' = (Z :. l :. r)
-              -- tup'' :: Exp (Z :. eltL :. eltR)
-              -- tup'' = lift (Z :. l :. r)
-
-              test :: Exp (Z :. eltL)
-              test = lift (Z :. l)
-
-              -- This works:
-              test2 :: Exp (Z :. Int :. eltR)
-              test2 = lift ((Z :. 1 :. r) :: (Z :. Exp Int :. Exp eltR))
-              
-              -- Doesn't work:
-              -- Wants:
-              --    (Slice (Z :. eltL)) arising from a use of `lift'
-              -- 
-              -- test3 :: Exp (Z :. eltL :. Int)
-              -- test3 = lift ((Z :. l :. 2) :: (Z :. Exp eltL :. Exp Int))
-              
-          in undefined -- sealExp tup''
+          let l,r :: Exp Int
+              (l,r) = unlift (downcastE ex :: Exp (Int,Int))
+              ind' :: Exp (Z :. Int :. Int)
+              ind' = lift (Z :. l :. r)
+          in sealExp ind'
       
     -- TTuple (a:b:rst) ->
     --   tupToIndex (TTuple (b:rst)) ex
@@ -923,6 +950,9 @@ tupToIndex ty ex =
 
 tupTyToIndex = error "finish me"
 
+tupTyLen (TTuple ls) = length ls
+tupTyLen _           = 1
+
 -- | Convert a closed `SimpleAcc` expression (no free vars) into a fully-typed (but
 -- sealed) Accelerate one.
 convertAcc :: EnvPack -> S.AExp -> SealedAcc
@@ -941,9 +971,7 @@ convertAcc env@(EnvPack _ _ mp) ae =
           bodfn ex  = convertExp (extendE vr ty (indexToTup ty ex) env) bod
           bodty     = S.recoverExpType (M.insert vr ty typeEnv) bod
           -- TODO: Replace this by simply passing in the result type to convertAcc:
-          dims = case S.recoverExpType typeEnv initE of
-                  TTuple ls -> length ls
-                  _         -> 1
+          dims = tupTyLen$ S.recoverExpType typeEnv initE 
           outArrTy  = TArray dims bodty
           init' = tupToIndex ty$ convertExp env initE 
       in generateD init' bodfn outArrTy
@@ -1084,10 +1112,48 @@ t11 = convertAcc emptyEnvPack $
       S.Generate (S.ETuple [S.EConst (I 3), S.EConst (I 2)]) -- (S.EIndex [S.EConst (I 10)])
                  (S.Lam1 (v, TTuple [TInt,TInt]) (S.EVr v))
   where v   = S.var "v"
--- t11_ :: Acc (Array DIM2 (Int,Int))
+t11_ :: Acc (Array DIM2 (Int,Int))
+-- Generate: outArrTy TArray 2 (TTuple [TInt,TInt])
+-- *** Exception: Attempt to unpack SealedAcc with type <<Acc (Array (:. (:. Z Int) Int) (Int,(Int,())))>>, expected type Acc <<Array (:. (:. Z Int) Int) (Int,Int)>>
+
 -- t11_ :: Acc (Array DIM2 (Z :. Int :. Int))
-t11_ :: Acc (Array DIM2 (Int,(Int,())))
+-- t11_ :: Acc (Array DIM2 (Int,(Int,())))
 t11_ = downcastA t11
+-- enerate: outArrTy TArray 2 (TTuple [TInt,TInt])
+-- Converting tuple type to index type... TTuple [TInt,TInt]
+-- Generate: downcasting dim SealedExp <<Exp (:. (:. Z Int) Int)>> Expecting Z-based index of dims 2
+-- Converting exp ETuple [EConst (I 3),EConst (I 2)] with env fromList [] and dyn env ([],[])
+-- Converting exp EConst (I 3) with env fromList [] and dyn env ([],[])
+-- Converting exp EConst (I 2) with env fromList [] and dyn env ([],[])
+-- Converting exp EVr v with env fromList [(v,(TTuple [TInt,TInt],Left (SealedExp <<Exp (Int,Int)>>)))] and dyn env ([(v,TTuple [TInt,TInt])],[])
+-- Inside generate fun, downcasting bod bod SealedExp <<Exp (Int,Int)>>
+-- Converting exp EVr v with env fromList [(v,(TTuple [TInt,TInt],Left (SealedExp <<Exp (Int,Int)>>)))] and dyn env ([(v,TTuple [TInt,TInt])],[])
+-- *** Exception: Attempt to unpack SealedExp with type <<Exp (Int,Int)>>, expected type Exp <<(Int,(Int,()))>>
+
+
+
+-- | This test exercises only tuples on the input side, plus tuple field projection.
+t12 = convertAcc emptyEnvPack $
+      S.Generate (S.ETuple [S.EConst (I 3), S.EConst (I 2)]) -- (S.EIndex [S.EConst (I 10)])
+                 (S.Lam1 (v, TTuple [TInt,TInt]) (S.ETupProject 0 1 (S.EVr v)))
+  where v   = S.var "v"
+t12_ :: Acc (Array DIM2 Int)
+t12_ = downcastA t12
+
+
+--t12A = A.generate (let x0 = (3, 2) in Z :. A.fst x0 :. A.snd x0)
+t12A = A.generate (constant (Z :. (3::Int) :. (2 :: Int)))
+                  (\x0 -> indexHead (indexTail x0))
+
+-- | Now project TWO components out of THREE.
+t13 = convertAcc emptyEnvPack $
+      S.Generate (S.ETuple [S.EConst (I 3), S.EConst (I 2), S.EConst (I 1)]) -- (S.EIndex [S.EConst (I 10)])
+                 (S.Lam1 (v, TTuple [TInt,TInt,TInt])
+                    (S.ETupProject 1 2 (S.EVr v)))
+  where v   = S.var "v"
+-- t13_ :: Acc (Array DIM3 (Int,Int))
+t13_ :: Acc (Array DIM3 (Int,(Int,())))
+t13_ = downcastA t13
 
 
 

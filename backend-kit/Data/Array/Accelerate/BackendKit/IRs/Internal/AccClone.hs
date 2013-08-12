@@ -97,7 +97,7 @@ data Exp =
   | EIndexHeadDynamic Exp     -- Project just the first dimension of an index.
   | EIndexTailDynamic Exp     -- Retain all dimensions but the first.
   -----------------------------------
-  | ETuple [Exp]            -- Build a tuple.
+  | ETuple [Exp]            -- Build a tuple.  Stored in REVERSE of textual order in the IR.
   | ETupProject Int Int Exp -- Project a consecutive series of fields from a tuple.
   | EVr Var
   | ELet (Var,Type,Exp) Exp
