@@ -1098,7 +1098,7 @@ case_generatePrj2 = H.assertEqual "generate4"
                    "Array (Z :. 3 :. 2 :. 1) [(0,0),(1,0),(0,0),(1,0),(0,0),(1,0)]"
                    -- (show$ I.run t12A)
 
--- This is the program that MATCHES t13_.  Whether that is correct we should audit.
+-- This is the program that matches t13_.  Whether that is correct we should audit.
 ref13 = A.generate (constant (Z :. (3::Int) :. (2 :: Int) :. (1 :: Int)))
           (\x -> let a,b,c :: Exp Int
                      (Z :. a :. b :. c) = unlift x
@@ -1107,14 +1107,19 @@ ref13 = A.generate (constant (Z :. (3::Int) :. (2 :: Int) :. (1 :: Int)))
 t14 = convertAcc emptyEnvPack $
       S.Generate (S.ETuple [S.EConst (I 3), S.EConst (I 2), S.EConst (I 1)]) 
                  (S.Lam1 (v, TTuple [TInt,TInt,TInt]) (S.EVr v))
-t14_ :: Acc (Array DIM3 (Int,Int,Int))
--- t14_ :: Acc (Array DIM3 (Int,(Int,Int)))
+-- t14_ :: Acc (Array DIM3 (Int,Int,Int))
+t14_ :: Acc (Array DIM3 (Int,(Int,Int)))
 t14_ = downcastA t14
--- case_generate5 = H.assertEqual "generate5"
---                    (show$ I.run$ t14_)
+case_generate5 = H.assertEqual "generate5"
+                   (show$ I.run$ t14_)
+                   "Array (Z :. 3 :. 2 :. 1) [(0,0,0),(0,1,0),(1,0,0),(1,1,0),(2,0,0),(2,1,0)]"
+--                 "Array (Z :. 3 :. 2 :. 1) [(0,(0,0)),(0,(1,0)),(1,(0,0)),(1,(1,0)),(2,(0,0)),(2,(1,0))]"
 
+ref14 = A.generate (constant (Z :. (3::Int) :. (2 :: Int) :. (1 :: Int)))
+          (\x -> let a,b,c :: Exp Int
+                     (Z :. a :. b :. c) = unlift x
+                 in lift (a,(b,c)))
 
--- | Here's an example of what DOESNT work: a non-canonical tuple representation.
 i15 = convertAcc emptyEnvPack $
       S.Generate (S.ETuple [S.EConst (I 3), S.EConst (I 2), S.EConst (I 1)]) 
                  (S.Lam1 (v, TTuple [TInt,TInt,TInt])
@@ -1125,24 +1130,34 @@ i15 = convertAcc emptyEnvPack $
   where v   = S.var "v"
 i15_ :: Acc (Array DIM3 ((Int,Int),Int))
 i15_ = downcastA i15
+case_generateTupLeftNest = H.assertEqual "generate6"
+                           (show$ I.run$ i15_)
+                           "Array (Z :. 3 :. 2 :. 1) [((0,0),0),((0,1),0),((1,0),0),((1,1),0),((2,0),0),((2,1),0)]"
 
-
+--------------------------------------------------
+-- Test PrimApps:
 
 p1 = convertExp emptyEnvPack
         (S.EPrimApp TInt (S.NP S.Add) [S.EConst (I 1), S.EConst (I 2)])
 p1_ :: Exp Int
 p1_ = downcastE p1
 
+case_primApp_Add = H.assertEqual "primapp_add" (show p1_) "3"
 
 p2 = convertExp emptyEnvPack
         (S.EPrimApp TInt (S.NP S.Sig) [S.EConst (I (-11))])
 p2_ :: Exp Int
 p2_ = downcastE p2
+case_primApp_Sig = H.assertEqual "primapp_sig" (show p2_) "-1"
 
 p3 = convertExp emptyEnvPack
         (S.EPrimApp TInt (S.FP Round) [S.EConst (F (9.99))])
 p3_ :: Exp Int
 p3_ = downcastE p3
+case_primApp_Round = H.assertEqual "primapp_sig" (show p3_) "10"
+
+--------------------------------------------------
+-- Test Constant conversion
 
 c0 :: SealedExp
 c0 = constantE (I 99)
@@ -1164,6 +1179,8 @@ case_const1 = H.assertEqual "tuple repr 1"
 case_const2 = H.assertEqual "tuple repr 2"
             (show c2) "Sealed:((Int,Int32),Int64)"
 
+--------------------------------------------------
+-- Aggregate tests:
 
 runTests = defaultMain [unitTests]
 
