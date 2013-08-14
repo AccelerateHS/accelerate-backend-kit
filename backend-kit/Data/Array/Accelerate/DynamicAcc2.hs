@@ -40,7 +40,8 @@ import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
                  (Type(..), Const(..), AVar, Var, Prog(..), 
                   Prim(..), NumPrim(..), IntPrim(..), FloatPrim(..))
-import           Data.Array.Accelerate.BackendKit.Tests (allProgsMap, p1a, TestEntry(..))
+import           Data.Array.Accelerate.BackendKit.Tests
+                    (allProgs, allProgsMap, p1a, TestEntry(..), AccProg(..))
 import           Data.Array.Accelerate.BackendKit.SimpleArray (payloadsFromList1)
 import Data.Array.Accelerate.Interpreter as I
 -- import           Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone (repackAcc)
@@ -65,7 +66,7 @@ import qualified Data.Array.Unboxed as U
 ----------------------------------------
 
 import qualified Test.HUnit as H
-import Test.Framework (defaultMain)
+import qualified Test.Framework as TF
 import Test.Framework.Providers.HUnit (testCase)
 import Test.Framework.TH (defaultMainGenerator, testGroupGenerator)
 
@@ -78,6 +79,7 @@ import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec))
 
 ------------------------------------------------------------------------------------------
 
+-- define DEBUG
 #ifdef DEBUG
 dbgtrace = trace
 #else 
@@ -451,11 +453,11 @@ convertExp ep@(EnvPack envE envA mp) ex =
     -- Or we need to stay at the level of HOAS...
     S.EVr vr -> let (_,se) = mp # vr in expectEVar se
 
--- FINISHME:
-    -- S.EShape _          -> undefined
-    -- S.EShapeSize _      -> undefined
-    -- S.EIndex _          -> undefined
-    -- S.EIndexScalar _ _  -> undefined
+    S.EShape _          -> error "FINISHME: convertExp needs to handle EShape"
+    S.EShapeSize _      -> error "FINISHME: convertExp needs to handle EShapeSize"
+    S.EIndex _          -> error "FINISHME: convertExp needs to handle EIndex"
+    S.EIndexScalar _ _  -> error "FINISHME: convertExp needs to handle EIndexScalar"
+    
     S.ETupProject {S.indexFromRight=ind, S.projlen=len, S.tupexpr=tex} ->
       let tup = convertExp ep tex
           tty  = S.recoverExpType typeEnv tex
@@ -652,7 +654,7 @@ convertExp ep@(EnvPack envE envA mp) ex =
           case t of
             PairTuple _ _ -> error$ "Primitive "++show op++" should not have a tuple output type."
             UnitTuple     -> error$ "Primitive "++show op++" should not have a unit output type."
-            SingleTuple (sty :: T.ScalarType elt) ->
+            SingleTuple (styOut :: T.ScalarType elt) ->
 
 -- <BOILERPLATE abstracted as CPP macros>
 -----------------------------------------------------------------------------------              
@@ -695,13 +697,20 @@ convertExp ep@(EnvPack envE envA mp) ex =
           _ -> error$ "Unary operator "++show prim++" expects one arg, got "++show args ;};};};})
 
 -----------------------------------------------------------------------------------
-             (case (sty,op) of
+             (case (styOut,op) of
                REPBOP(POPINT, POPIDICT, NP, Add, (+))
                REPBOP(POPINT, POPIDICT, NP, Sub, (-))
                REPBOP(POPINT, POPIDICT, NP, Mul, (*))
                REPUOP(POPINT, POPIDICT, NP, Abs, abs)
                REPUOP(POPINT, POPIDICT, NP, Neg, (\x -> (-x)))
                REPUOP(POPINT, POPIDICT, NP, Sig, signum)
+               -- UGH, do the same thing with float dicts:
+               REPBOP(POPFLT, POPFDICT, NP, Add, (+))
+               REPBOP(POPFLT, POPFDICT, NP, Sub, (-))
+               REPBOP(POPFLT, POPFDICT, NP, Mul, (*))
+               REPUOP(POPFLT, POPFDICT, NP, Abs, abs)
+               REPUOP(POPFLT, POPFDICT, NP, Neg, (\x -> (-x)))
+               REPUOP(POPFLT, POPFDICT, NP, Sig, signum)
 
                REPBOP(POPINT, POPIDICT, IP, Quot, quot)
                REPBOP(POPINT, POPIDICT, IP, Rem,  rem)
@@ -740,7 +749,7 @@ convertExp ep@(EnvPack envE envA mp) ex =
                REPUOP_I2F(Round, A.round)
                REPUOP_I2F(Floor, A.floor)
                REPUOP_I2F(Ceiling, A.ceiling)
-
+     
                -------------- Boolean Primitives --------------
                (_, BP S.And) -> (case args of { 
                  [a1,a2] -> let a1', a2' :: Exp Bool;
@@ -769,9 +778,39 @@ convertExp ep@(EnvPack envE envA mp) ex =
 
                -------------- Other Primitives --------------
 
--- FINSHME
+               -------------- Other Primitives --------------
 
---               _ -> error$ "Primop "++ show op++" expects a scalar type, got "++show outTy
+               -- FromIntegral case 1/2: integral->integral
+               (T.NumScalarType (T.IntegralNumType (ityOut :: T.IntegralType elt)), 
+                OP S.FromIntegral) -> 
+                (case T.integralDict ityOut of { (T.IntegralDict :: T.IntegralDict elt) -> 
+                 case styIn1 of { T.NumScalarType (T.IntegralNumType (ity :: T.IntegralType inElt)) ->
+                 case T.integralDict ity of { (T.IntegralDict :: T.IntegralDict inElt) -> 
+                 case args of {
+                 [a1] -> let a1' :: Exp inElt;
+                             a1' = downcastE a1;
+                             res :: Exp elt
+                             res = A.fromIntegral a1'
+                         in sealExp res;
+                 _ -> error$ "fromIntegral operator expects one arg, got "++show args ;};};};})
+
+               -- FromIntegral case 2/2: integral->floating
+               (T.NumScalarType (T.FloatingNumType (ityOut :: T.FloatingType elt)), 
+                OP S.FromIntegral) -> 
+                (case T.floatingDict ityOut of { (T.FloatingDict :: T.FloatingDict eltF) -> 
+                 case styIn1 of { T.NumScalarType (T.IntegralNumType (ity :: T.IntegralType inElt)) ->
+                 case T.integralDict ity of { (T.IntegralDict :: T.IntegralDict inElt) -> 
+                 case args of {
+                 [a1] -> let a1' :: Exp inElt;
+                             a1' = downcastE a1;
+                             res :: Exp elt
+                             res = A.fromIntegral a1'
+                         in sealExp res;
+                 _ -> error$ "fromIntegral operator expects one arg, got "++show args ;};};};})
+
+-- FINSHME
+               --------------------------------------------------
+               _ -> error$ "Primop unhandled or got wrong argument type: "++show op++" / "++show outTy
                )
       )  -- End outTy dispatch.
       })}) -- End fstArgTy dispatch.
@@ -781,7 +820,6 @@ convertExp ep@(EnvPack envE envA mp) ex =
       let rhs' = cE rhs
           ep'@(EnvPack _ _ m2) = extendE vr ty rhs' ep
           resTy = scalarTypeD (S.recoverExpType (M.map P.fst m2) bod)
-          sty   = scalarTypeD ty
       in
        convertExp ep' bod
 
@@ -944,11 +982,26 @@ convertAcc env@(EnvPack _ _ mp) ae =
         then error "Mal-formed Fold.  Input types to Lam2 must match eachother and array input."
         else foldD bodfn init' sealedInArr aty
 
---    _ -> error$"FINISHME: unhandled: " ++show ae
+    _ -> error$"FINISHME: convertAcc: unhandled array operation: " ++show ae
 
-convertProg :: S.Prog a -> SealedAcc
+convertProg :: S.Prog () -> SealedAcc
 convertProg S.Prog{progBinds,progResults} =
-  error "FINISHME: convertProg"
+    doBinds emptyEnvPack progBinds
+  where 
+  doBinds env (S.ProgBind vr ty dec eith : rst) =
+    dbgtrace (" dobinds of "++show (vr,ty,rst)++" "++show env) $ 
+    case eith of
+      Left ex  -> let se = convertExp env ex
+                      env' = extendE vr ty se env
+                  in doBinds env' rst
+      Right ae -> let sa = convertAcc env ae
+                      env' = extendA vr ty sa env
+                  in doBinds env' rst
+  doBinds (EnvPack _ _ mp) [] =
+    case S.resultNames progResults of
+      [resVr] -> expectAVar$ P.snd$ mp # resVr
+      _ -> error$ "FINISHME: convertProg with multiple results: "++show progResults
+  
 
 
 --------------------------------------------------------------------------------
@@ -1010,9 +1063,11 @@ t2_ :: Exp Int
 t2_ = downcastE t2
 case_const = H.assertEqual "simple const" (show t2_) "33"
 
-t4 = simpleProg
+t4 = convertProg simpleProg
  where
    TestEntry {simpleProg} = allProgsMap # "p1a"
+t4_ :: Acc (Vector Float)
+t4_ = downcastA t4
 
 t5 = convertAcc emptyEnvPack (S.Unit (S.EConst (I 33)))
 t5_ :: Acc (Scalar Int)
@@ -1180,8 +1235,31 @@ case_const2 = H.assertEqual "tuple repr 2"
             (show c2) "Sealed:((Int,Int32),Int64)"
 
 --------------------------------------------------
+-- Complete program unit tests
+
+allProg_tests = TF.testGroup "Backend kit unit tests" $
+                [ testCase ("progtest_"++name te) (roundTrip te)
+                | te <- allProgs ]
+
+-- Note, most don't work yet, as expecte,d [2013.08.14] but check out
+-- p12e, which seems to indicate a bug.
+
+roundTrip :: TestEntry -> IO ()
+roundTrip TestEntry{name, simpleProg, origProg= AccProg (acc :: Acc aty) } = do 
+  let cvt :: Acc aty
+      cvt = downcastA $ convertProg simpleProg
+  dbgtrace ("RoundTripping:\n" ++ show acc) $ 
+   H.assertEqual ("roundTrip "++name)
+                 (show$ I.run cvt)
+                 (show$ I.run acc)
+
+--------------------------------------------------
 -- Aggregate tests:
 
-runTests = defaultMain [unitTests]
+runTests = TF.defaultMain [unitTests]
 
-unitTests = $(testGroupGenerator)
+unitTests =
+  TF.testGroup "AllTests" [
+    $(testGroupGenerator),
+    allProg_tests
+  ]
