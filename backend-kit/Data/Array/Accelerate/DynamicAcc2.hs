@@ -4,6 +4,8 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE FlexibleContexts, FlexibleInstances #-}
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE TemplateHaskell #-}
+
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 -- | A library for the runtime construction of fully typed Accelerate programs.
@@ -63,9 +65,9 @@ import qualified Data.Array.Unboxed as U
 ----------------------------------------
 
 import qualified Test.HUnit as H
--- import Test.Framework ()
--- import Test.Framework.Providers.HUnit (testCase)
-import Test.Framework.TH (testGroupGenerator)
+import Test.Framework (defaultMain)
+import Test.Framework.Providers.HUnit (testCase)
+import Test.Framework.TH (defaultMainGenerator, testGroupGenerator)
 
 ----------------------------------------
 -- TEMP:
@@ -150,6 +152,7 @@ constantE c =
 --------------------------------------------------------------------------------                
 
 -- | We enhance "Data.Array.Accelerate.Type.TupleType" with Elt constraints.
+--   This can only construct/represent binary-tree tuples.
 data EltTuple a where
   UnitTuple   ::                                               EltTuple ()
   SingleTuple :: (Elt a)        => T.ScalarType a           -> EltTuple a
@@ -246,6 +249,11 @@ scalarTypeD ty =
     -- representation.... What canonical tuple representation do we use?
     TTuple []      -> SealedEltTuple UnitTuple
     TTuple [sing]  -> scalarTypeD sing
+
+    -- TTuple [a,b] -> case (scalarTypeD a, scalarTypeD b) of
+    --                   (SealedEltTuple (_ :: EltTuple ta),
+    --                    SealedEltTuple (_ :: EltTuple ta)) ->
+
     TTuple (hd:tl) ->
       case (scalarTypeD hd, scalarTypeD (TTuple tl)) of
         (SealedEltTuple (et1 :: EltTuple a),
@@ -403,21 +411,30 @@ resealTup [(SealedEltTuple (_ :: EltTuple aty), a'),
     sealExp$ Sm.tup2 (downcastE a' :: Exp aty,
                       downcastE b' :: Exp bty)
 
-resealTup [(SealedEltTuple (_ :: EltTuple aty), a),
-           (SealedEltTuple (_ :: EltTuple bty), b),
-           (SealedEltTuple (_ :: EltTuple cty), c)] =
-    sealExp$ Sm.tup3 (downcastE a :: Exp aty,
-                      downcastE b :: Exp bty,
-                      downcastE c :: Exp cty)
 
 resealTup [(SealedEltTuple (_ :: EltTuple aty), a),
            (SealedEltTuple (_ :: EltTuple bty), b),
-           (SealedEltTuple (_ :: EltTuple cty), c),
-           (SealedEltTuple (_ :: EltTuple dty), d)] =
-    sealExp$ Sm.tup4 (downcastE a :: Exp aty,
-                      downcastE b :: Exp bty,
-                      downcastE c :: Exp cty,
-                      downcastE d :: Exp dty)
+           (SealedEltTuple (_ :: EltTuple cty), c)] =
+    sealExp$ Sm.tup2 (downcastE a :: Exp aty,
+                      Sm.tup2 (downcastE b :: Exp bty,
+                               downcastE c :: Exp cty))
+
+
+-- resealTup [(SealedEltTuple (_ :: EltTuple aty), a),
+--            (SealedEltTuple (_ :: EltTuple bty), b),
+--            (SealedEltTuple (_ :: EltTuple cty), c)] =
+--     sealExp$ Sm.tup3 (downcastE a :: Exp aty,
+--                       downcastE b :: Exp bty,
+--                       downcastE c :: Exp cty)
+
+-- resealTup [(SealedEltTuple (_ :: EltTuple aty), a),
+--            (SealedEltTuple (_ :: EltTuple bty), b),
+--            (SealedEltTuple (_ :: EltTuple cty), c),
+--            (SealedEltTuple (_ :: EltTuple dty), d)] =
+--     sealExp$ Sm.tup4 (downcastE a :: Exp aty,
+--                       downcastE b :: Exp bty,
+--                       downcastE c :: Exp cty,
+--                       downcastE d :: Exp dty)
 
 resealTup components =  
   error$ "resealTup: mismatched or unhandled tuple: "++show components
@@ -474,6 +491,7 @@ convertExp ep@(EnvPack envE envA mp) ex =
     
     S.ETuple []    -> constantE (Tup [])
     S.ETuple [ex]  -> convertExp ep ex
+#if 0    
     S.ETuple [a,b] ->
       let ta = S.recoverExpType typeEnv a
           tb = S.recoverExpType typeEnv b
@@ -603,28 +621,22 @@ convertExp ep@(EnvPack envE envA mp) ex =
     -------------------------------------------------------------------------------
     -- </EXTREME PAIN>
 
+#else 
+
     -- Version 3: try to generalize tuple handling.  Failed, but leave it in a compiling state:
-#if 0
     S.ETuple (hd:tl) ->
       let ta = S.recoverExpType typeEnv hd
-          tb = S.recoverExpType typeEnv (S.ETuple tl)
+          tb = S.recoverExpType typeEnv tltup
           hd' = convertExp ep hd
-          tl' = convertExp ep (S.ETuple tl)
+          tl' = convertExp ep tltup
+          tltup = if P.null (P.tail tl) 
+                  then head tl else S.ETuple tl
       in 
       case (scalarTypeD ta, scalarTypeD tb) of
         (SealedEltTuple (et1 :: EltTuple aty),
          SealedEltTuple (et2 :: EltTuple bty)) ->
-          case downcastE tl' :: Exp bty of
-            Sm.Exp (Sm.Tuple (tupRst :: Tuple Exp (TupleRepr bty))) ->
-             case tupRst of
-               (_ :: Tuple Exp brep) ->
-                let tup :: Tuple Exp (brep,aty)
-                    tup = tupRst `SnocTup` (downcastE hd' :: Exp aty)
---                    tup' :: Sm.PreExp acc Exp (??? bty,aty ???)
---                    tup' = Sm.Tuple tup
-                in
-                error "FINISHME"    
-                -- sealExp$ Sm.Exp tup'
+          sealExp$ Sm.tup2 (downcastE hd' :: Exp aty,
+                            downcastE tl' :: Exp bty)
 #endif
 
     {- ========================================================================================== -}
@@ -1034,7 +1046,6 @@ t8 = convertExp emptyEnvPack (S.ETuple [S.EConst (I 11), S.EConst (F 3.3)])
 t8_ :: Exp (Int,Float)
 t8_ = downcastE t8
 
-
 t9 = convertAcc emptyEnvPack $
      S.Use$ S.AccArray [10] [S.ArrayPayloadInt (U.listArray (0,9) [1..10])]
 t9_ :: Acc (Vector Int)
@@ -1090,8 +1101,8 @@ t14 = convertAcc emptyEnvPack $
                  (S.Lam1 (v, TTuple [TInt,TInt,TInt])
                     (S.EVr v) -- (S.ETupProject 0 3 (S.EVr v))
                  )
-t14_ :: Acc (Array DIM3 (Int,Int,Int))
--- t14_ :: Acc (Array DIM3 (Int,(Int,Int)))
+-- t14_ :: Acc (Array DIM3 (Int,Int,Int))
+t14_ :: Acc (Array DIM3 (Int,(Int,Int)))
 t14_ = downcastA t14
 
 
@@ -1125,13 +1136,11 @@ p3 = convertExp emptyEnvPack
 p3_ :: Exp Int
 p3_ = downcastE p3
 
-
 c1 :: SealedEltTuple
 c1 = scalarTypeD (TTuple [TInt, TInt32, TInt64])
 
 c2 :: SealedEltTuple
 c2 = scalarTypeD (TTuple [TTuple [TInt, TInt32], TInt64])
-
 
 --------------------------------------------------------------------------------
 -- Bulk-runnable unit tests
@@ -1139,4 +1148,3 @@ c2 = scalarTypeD (TTuple [TTuple [TInt, TInt32], TInt64])
 
 -- case_tupcvt =
 --   assertEqual "" 
-
