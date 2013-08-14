@@ -1063,11 +1063,6 @@ t2_ :: Exp Int
 t2_ = downcastE t2
 case_const = H.assertEqual "simple const" (show t2_) "33"
 
-t4 = convertProg simpleProg
- where
-   TestEntry {simpleProg} = allProgsMap # "p1a"
-t4_ :: Acc (Vector Float)
-t4_ = downcastA t4
 
 t5 = convertAcc emptyEnvPack (S.Unit (S.EConst (I 33)))
 t5_ :: Acc (Scalar Int)
@@ -1162,10 +1157,10 @@ ref13 = A.generate (constant (Z :. (3::Int) :. (2 :: Int) :. (1 :: Int)))
 t14 = convertAcc emptyEnvPack $
       S.Generate (S.ETuple [S.EConst (I 3), S.EConst (I 2), S.EConst (I 1)]) 
                  (S.Lam1 (v, TTuple [TInt,TInt,TInt]) (S.EVr v))
--- t14_ :: Acc (Array DIM3 (Int,Int,Int))
-t14_ :: Acc (Array DIM3 (Int,(Int,Int)))
+t14_ :: Acc (Array DIM3 (Int,Int,Int))
+-- t14_ :: Acc (Array DIM3 (Int,(Int,Int)))
 t14_ = downcastA t14
-case_generate5 = H.assertEqual "generate5"
+case_t14_generate = H.assertEqual "generate5"
                    (show$ I.run$ t14_)
                    "Array (Z :. 3 :. 2 :. 1) [(0,0,0),(0,1,0),(1,0,0),(1,1,0),(2,0,0),(2,1,0)]"
 --                 "Array (Z :. 3 :. 2 :. 1) [(0,(0,0)),(0,(1,0)),(1,(0,0)),(1,(1,0)),(2,(0,0)),(2,(1,0))]"
