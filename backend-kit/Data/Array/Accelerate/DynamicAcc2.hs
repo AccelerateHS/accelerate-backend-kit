@@ -61,6 +61,13 @@ import Debug.Trace (trace)
 import qualified Data.Array.Unboxed as U
 
 ----------------------------------------
+
+import qualified Test.HUnit as H
+-- import Test.Framework ()
+-- import Test.Framework.Providers.HUnit (testCase)
+import Test.Framework.TH (testGroupGenerator)
+
+----------------------------------------
 -- TEMP:
 import Data.Array.Accelerate.BackendKit.Phase1.ToAccClone as Cvt (accToAccClone, expToExpClone)
 import Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1)
@@ -108,16 +115,16 @@ downcastE (SealedExp d) =
   case fromDynamic d of
     Just e -> e
     Nothing ->
-      error$"Attempt to unpack SealedExp with type "++show d
-         ++ ", expected type Exp "++ show (toDyn (unused::a))
+      error$"Attempt to unpack SealedExp "++show d
+         ++ ", expecting type Exp "++ show (toDyn (unused::a))
 
 downcastA :: forall a . Typeable a => SealedAcc -> Acc a
 downcastA (SealedAcc d) =
   case fromDynamic d of
     Just e -> e
     Nothing ->
-       error$"Attempt to unpack SealedAcc with type "++show d
-          ++ ", expected type Acc "++ show (toDyn (unused::a))
+       error$"Attempt to unpack SealedAcc "++show d
+          ++ ", expecting type Acc "++ show (toDyn (unused::a))
 
 -- | Convert a `SimpleAcc` constant into a fully-typed (but sealed) Accelerate one.
 constantE :: Const -> SealedExp
@@ -279,7 +286,7 @@ useD arr =
 generateD :: SealedExp -> (SealedExp -> SealedExp) ->
         S.Type -> SealedAcc 
 generateD indSealed bodfn outArrTy =
-  trace ("starting generateD fun: outArrTy "++show (outArrTy)) $
+  trace (" ** starting generateD fun: outArrTy "++show (outArrTy)) $
       let (TArray dims outty) = outArrTy in
        case (shapeTypeD dims, scalarTypeD outty) of
          (SealedShapeType (_ :: Phantom shp), 
@@ -287,14 +294,16 @@ generateD indSealed bodfn outArrTy =
           let
             rawfn :: Exp shp -> Exp outT
             rawfn x =
-              trace ("Inside generate fun, downcasting bod bod "++show (bodfn (sealExp x)))$
+              trace (" ** Inside generate scalar fun, downcasting bod "++
+                     show (bodfn (sealExp x))++" to "++ show (typeOf (undefined::outT))) $
               downcastE (bodfn (sealExp x))
             dimE :: Exp shp
-            dimE = trace ("Generate: downcasting dim "++show indSealed++" Expecting Z-based index of dims "++show dims) $
+            dimE = trace (" ** Generate: downcasting dim "++show indSealed++" Expecting Z-based index of dims "++show dims) $
                    downcastE indSealed
+            acc = A.generate dimE rawfn
           in
-           trace (" .. Body of generateD... ") $
-           sealAcc$ A.generate dimE rawfn
+           trace (" ** .. Body of generateD: raw acc: "++show acc) $
+           sealAcc acc
 
 
 mapD :: (SealedExp -> SealedExp) -> SealedAcc ->
@@ -418,15 +427,16 @@ resealTup components =
 --   one for free expression variables, one for free array variables.
 --     
 convertExp :: EnvPack -> S.Exp -> SealedExp
-convertExp ep@(EnvPack envE envA mp)
---           slayout@(SealedLayout (lyt :: Layout env0 env0'))
-           ex =
-  trace("Converting exp "++show ex++" with env "++show mp++" and dyn env "++show (envE,envA))$
-  let cE = convertExp ep
-      typeEnv  = M.map P.fst mp -- Strip out the SealedExp/Acc bits leaving just the types.
-      resultTy = S.recoverExpType typeEnv ex
-  in 
-  case ex of
+convertExp ep@(EnvPack envE envA mp) ex =
+  trace(" @ Converting exp "++show ex++" with env "++show mp++"\n    and dyn env "++show (envE,envA)) $
+  trace(" @-> converted exp result: "++show result) $
+  result
+ where 
+  cE = convertExp ep
+  typeEnv  = M.map P.fst mp -- Strip out the SealedExp/Acc bits leaving just the types.
+  resultTy = S.recoverExpType typeEnv ex
+  result =  
+   case ex of
     S.EConst c -> constantE c
 
     -- This is tricky, because it needs to become a deBruin index ultimately...
@@ -795,8 +805,8 @@ convertExp ep@(EnvPack envE envA mp)
 -- tuples to indices at the appropriate places.
 indexToTup :: S.Type -> SealedExp -> SealedExp
 indexToTup ty ex =
-  trace ("starting indexToTup... ")$ 
-  trace ("indexTo tup, converting "++show (ty,ex)++" to "++ show res)
+  trace (" -- starting indexToTup... ")$ 
+  trace (" -- indexTo tup, converting "++show (ty,ex)++" to "++ show res)
    res
   where
     res = 
@@ -834,8 +844,8 @@ indexToTup ty ex =
 -- | The inverse of `indexToTup`
 tupToIndex :: S.Type -> SealedExp -> SealedExp
 tupToIndex ty ex =
-    trace ("starting tupToIndex... ")$ 
-    trace ("tupToIndex tup, converting "++show (ty,ex)++" to "++ show res) res
+    trace (" ~~ starting tupToIndex... ")$ 
+    trace (" ~~ tupToIndex tup, converting "++show (ty,ex)++" to "++ show res) res
  where
  res =  
   case ty of
@@ -1121,3 +1131,12 @@ c1 = scalarTypeD (TTuple [TInt, TInt32, TInt64])
 
 c2 :: SealedEltTuple
 c2 = scalarTypeD (TTuple [TTuple [TInt, TInt32], TInt64])
+
+
+--------------------------------------------------------------------------------
+-- Bulk-runnable unit tests
+--------------------------------------------------------------------------------
+
+-- case_tupcvt =
+--   assertEqual "" 
+
