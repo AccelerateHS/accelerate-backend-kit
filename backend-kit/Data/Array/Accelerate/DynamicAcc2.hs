@@ -40,7 +40,8 @@ import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
                  (Type(..), Const(..), AVar, Var, Prog(..), 
                   Prim(..), NumPrim(..), IntPrim(..), FloatPrim(..))
-import           Data.Array.Accelerate.BackendKit.Tests (allProgsMap, p1a, TestEntry(..))
+import           Data.Array.Accelerate.BackendKit.Tests
+                    (allProgs, allProgsMap, p1a, TestEntry(..), AccProg(..))
 import           Data.Array.Accelerate.BackendKit.SimpleArray (payloadsFromList1)
 import Data.Array.Accelerate.Interpreter as I
 -- import           Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone (repackAcc)
@@ -65,11 +66,12 @@ import qualified Data.Array.Unboxed as U
 ----------------------------------------
 
 import qualified Test.HUnit as H
-import Test.Framework (defaultMain)
+import qualified Test.Framework as TF
 import Test.Framework.Providers.HUnit (testCase)
 import Test.Framework.TH (defaultMainGenerator, testGroupGenerator)
 
-----------------------------------------
+----------------
+
 -- TEMP:
 import Data.Array.Accelerate.BackendKit.Phase1.ToAccClone as Cvt (accToAccClone, expToExpClone)
 import Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1)
@@ -77,6 +79,12 @@ import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec))
 
 ------------------------------------------------------------------------------------------
 
+-- define DEBUG
+#ifdef DEBUG
+dbgtrace = trace
+#else 
+dbgtrace x y = y
+#endif
 
 -- INCOMPLETE: In several places we have an incomplete pattern match
 -- due to no Elt instances for C types: [2013.08.09]
@@ -294,7 +302,7 @@ useD arr =
 generateD :: SealedExp -> (SealedExp -> SealedExp) ->
         S.Type -> SealedAcc 
 generateD indSealed bodfn outArrTy =
-  trace (" ** starting generateD fun: outArrTy "++show (outArrTy)) $
+  dbgtrace (" ** starting generateD fun: outArrTy "++show (outArrTy)) $
       let (TArray dims outty) = outArrTy in
        case (shapeTypeD dims, scalarTypeD outty) of
          (SealedShapeType (_ :: Phantom shp), 
@@ -302,15 +310,15 @@ generateD indSealed bodfn outArrTy =
           let
             rawfn :: Exp shp -> Exp outT
             rawfn x =
-              trace (" ** Inside generate scalar fun, downcasting bod "++
+              dbgtrace (" ** Inside generate scalar fun, downcasting bod "++
                      show (bodfn (sealExp x))++" to "++ show (typeOf (undefined::outT))) $
               downcastE (bodfn (sealExp x))
             dimE :: Exp shp
-            dimE = trace (" ** Generate: downcasting dim "++show indSealed++" Expecting Z-based index of dims "++show dims) $
+            dimE = dbgtrace (" ** Generate: downcasting dim "++show indSealed++" Expecting Z-based index of dims "++show dims) $
                    downcastE indSealed
             acc = A.generate dimE rawfn
           in
-           trace (" ** .. Body of generateD: raw acc: "++show acc) $
+           dbgtrace (" ** .. Body of generateD: raw acc: "++show acc) $
            sealAcc acc
 
 
@@ -445,8 +453,8 @@ resealTup components =
 --     
 convertExp :: EnvPack -> S.Exp -> SealedExp
 convertExp ep@(EnvPack envE envA mp) ex =
-  trace(" @ Converting exp "++show ex++" with env "++show mp++"\n    and dyn env "++show (envE,envA)) $
-  trace(" @-> converted exp result: "++show result) $
+  dbgtrace(" @ Converting exp "++show ex++" with env "++show mp++"\n    and dyn env "++show (envE,envA)) $
+  dbgtrace(" @-> converted exp result: "++show result) $
   result
  where 
   cE = convertExp ep
@@ -460,11 +468,11 @@ convertExp ep@(EnvPack envE envA mp) ex =
     -- Or we need to stay at the level of HOAS...
     S.EVr vr -> let (_,se) = mp # vr in expectEVar se
 
--- FINISHME:
-    -- S.EShape _          -> undefined
-    -- S.EShapeSize _      -> undefined
-    -- S.EIndex _          -> undefined
-    -- S.EIndexScalar _ _  -> undefined
+    S.EShape _          -> error "FINISHME: convertExp needs to handle EShape"
+    S.EShapeSize _      -> error "FINISHME: convertExp needs to handle EShapeSize"
+    S.EIndex _          -> error "FINISHME: convertExp needs to handle EIndex"
+    S.EIndexScalar _ _  -> error "FINISHME: convertExp needs to handle EIndexScalar"
+    
     S.ETupProject {S.indexFromRight=ind, S.projlen=len, S.tupexpr=tex} ->
       let tup = convertExp ep tex
           tty  = S.recoverExpType typeEnv tex
@@ -656,7 +664,7 @@ convertExp ep@(EnvPack envE envA mp) ex =
           case t of
             PairTuple _ _ -> error$ "Primitive "++show op++" should not have a tuple output type."
             UnitTuple     -> error$ "Primitive "++show op++" should not have a unit output type."
-            SingleTuple (sty :: T.ScalarType elt) ->
+            SingleTuple (styOut :: T.ScalarType elt) ->
 
 -- <BOILERPLATE abstracted as CPP macros>
 -----------------------------------------------------------------------------------              
@@ -699,13 +707,20 @@ convertExp ep@(EnvPack envE envA mp) ex =
           _ -> error$ "Unary operator "++show prim++" expects one arg, got "++show args ;};};};})
 
 -----------------------------------------------------------------------------------
-             (case (sty,op) of
+             (case (styOut,op) of
                REPBOP(POPINT, POPIDICT, NP, Add, (+))
                REPBOP(POPINT, POPIDICT, NP, Sub, (-))
                REPBOP(POPINT, POPIDICT, NP, Mul, (*))
                REPUOP(POPINT, POPIDICT, NP, Abs, abs)
                REPUOP(POPINT, POPIDICT, NP, Neg, (\x -> (-x)))
                REPUOP(POPINT, POPIDICT, NP, Sig, signum)
+               -- UGH, do the same thing with float dicts:
+               REPBOP(POPFLT, POPFDICT, NP, Add, (+))
+               REPBOP(POPFLT, POPFDICT, NP, Sub, (-))
+               REPBOP(POPFLT, POPFDICT, NP, Mul, (*))
+               REPUOP(POPFLT, POPFDICT, NP, Abs, abs)
+               REPUOP(POPFLT, POPFDICT, NP, Neg, (\x -> (-x)))
+               REPUOP(POPFLT, POPFDICT, NP, Sig, signum)
 
                REPBOP(POPINT, POPIDICT, IP, Quot, quot)
                REPBOP(POPINT, POPIDICT, IP, Rem,  rem)
@@ -744,7 +759,7 @@ convertExp ep@(EnvPack envE envA mp) ex =
                REPUOP_I2F(Round, A.round)
                REPUOP_I2F(Floor, A.floor)
                REPUOP_I2F(Ceiling, A.ceiling)
-
+     
                -------------- Boolean Primitives --------------
                (_, BP S.And) -> (case args of { 
                  [a1,a2] -> let a1', a2' :: Exp Bool;
@@ -773,9 +788,39 @@ convertExp ep@(EnvPack envE envA mp) ex =
 
                -------------- Other Primitives --------------
 
--- FINSHME
+               -------------- Other Primitives --------------
 
---               _ -> error$ "Primop "++ show op++" expects a scalar type, got "++show outTy
+               -- FromIntegral case 1/2: integral->integral
+               (T.NumScalarType (T.IntegralNumType (ityOut :: T.IntegralType elt)), 
+                OP S.FromIntegral) -> 
+                (case T.integralDict ityOut of { (T.IntegralDict :: T.IntegralDict elt) -> 
+                 case styIn1 of { T.NumScalarType (T.IntegralNumType (ity :: T.IntegralType inElt)) ->
+                 case T.integralDict ity of { (T.IntegralDict :: T.IntegralDict inElt) -> 
+                 case args of {
+                 [a1] -> let a1' :: Exp inElt;
+                             a1' = downcastE a1;
+                             res :: Exp elt
+                             res = A.fromIntegral a1'
+                         in sealExp res;
+                 _ -> error$ "fromIntegral operator expects one arg, got "++show args ;};};};})
+
+               -- FromIntegral case 2/2: integral->floating
+               (T.NumScalarType (T.FloatingNumType (ityOut :: T.FloatingType elt)), 
+                OP S.FromIntegral) -> 
+                (case T.floatingDict ityOut of { (T.FloatingDict :: T.FloatingDict eltF) -> 
+                 case styIn1 of { T.NumScalarType (T.IntegralNumType (ity :: T.IntegralType inElt)) ->
+                 case T.integralDict ity of { (T.IntegralDict :: T.IntegralDict inElt) -> 
+                 case args of {
+                 [a1] -> let a1' :: Exp inElt;
+                             a1' = downcastE a1;
+                             res :: Exp elt
+                             res = A.fromIntegral a1'
+                         in sealExp res;
+                 _ -> error$ "fromIntegral operator expects one arg, got "++show args ;};};};})
+
+-- FINSHME
+               --------------------------------------------------
+               _ -> error$ "Primop unhandled or got wrong argument type: "++show op++" / "++show outTy
                )
       )  -- End outTy dispatch.
       })}) -- End fstArgTy dispatch.
@@ -785,7 +830,6 @@ convertExp ep@(EnvPack envE envA mp) ex =
       let rhs' = cE rhs
           ep'@(EnvPack _ _ m2) = extendE vr ty rhs' ep
           resTy = scalarTypeD (S.recoverExpType (M.map P.fst m2) bod)
-          sty   = scalarTypeD ty
       in
        convertExp ep' bod
 
@@ -817,8 +861,8 @@ convertExp ep@(EnvPack envE envA mp) ex =
 -- tuples to indices at the appropriate places.
 indexToTup :: S.Type -> SealedExp -> SealedExp
 indexToTup ty ex =
-  trace (" -- starting indexToTup... ")$ 
-  trace (" -- indexTo tup, converting "++show (ty,ex)++" to "++ show res)
+  dbgtrace (" -- starting indexToTup... ")$ 
+  dbgtrace (" -- indexTo tup, converting "++show (ty,ex)++" to "++ show res)
    res
   where
     res = 
@@ -856,8 +900,8 @@ indexToTup ty ex =
 -- | The inverse of `indexToTup`
 tupToIndex :: S.Type -> SealedExp -> SealedExp
 tupToIndex ty ex =
-    trace (" ~~ starting tupToIndex... ")$ 
-    trace (" ~~ tupToIndex tup, converting "++show (ty,ex)++" to "++ show res) res
+    dbgtrace (" ~~ starting tupToIndex... ")$ 
+    dbgtrace (" ~~ tupToIndex tup, converting "++show (ty,ex)++" to "++ show res) res
  where
  res =  
   case ty of
@@ -865,7 +909,7 @@ tupToIndex ty ex =
     TTuple [a] -> error$ "tupToIndex: internal error, singleton tuple: "++show (ty,ex)
 
     TTuple [TInt,TInt] -> 
-      trace ("Converting tuple type to index type... "++show ty) $
+      dbgtrace ("Converting tuple type to index type... "++show ty) $
           let l,r :: Exp Int
               (l,r) = unlift (downcastE ex :: Exp (Int,Int))
               ind' :: Exp (Z :. Int :. Int)
@@ -873,7 +917,7 @@ tupToIndex ty ex =
           in sealExp ind'
 
     TTuple [TInt,TInt,TInt] -> 
-      trace ("Converting tuple type to index type... "++show ty) $
+      dbgtrace ("Converting tuple type to index type... "++show ty) $
           let a,b,c :: Exp Int
               (a,b,c) = unlift (downcastE ex :: Exp (Int,Int,Int))
               ind' :: Exp (Z :. Int :. Int :. Int)
@@ -917,7 +961,7 @@ convertAcc env@(EnvPack _ _ mp) ae =
     S.Generate initE (S.Lam1 (vr,ty) bod) ->
       let indexTy = tupTyToIndex ty -- "ty" is a plain tuple.
           bodfn ex  = let env' = extendE vr ty (indexToTup ty ex) env in
-                      trace ("Generate/bodyfun called: extended environment to: "++show env')$
+                      dbgtrace ("Generate/bodyfun called: extended environment to: "++show env')$
                       convertExp env' bod
           bodty     = S.recoverExpType (M.insert vr ty typeEnv) bod
           -- TODO: Replace this by simply passing in the result type to convertAcc:
@@ -925,7 +969,7 @@ convertAcc env@(EnvPack _ _ mp) ae =
           outArrTy  = TArray dims bodty
           init' = tupToIndex ty$ convertExp env initE 
       in
-       trace ("Generate: computed body type: "++show bodty) $ 
+       dbgtrace ("Generate: computed body type: "++show bodty) $ 
        generateD init' bodfn outArrTy
          
     S.Map (S.Lam1 (vr,ty) bod) inA -> 
@@ -938,7 +982,7 @@ convertAcc env@(EnvPack _ _ mp) ae =
         mapD bodfn sealedInArr aty bodty
 
     S.Fold (S.Lam2 (v1,ty) (v2,ty2) bod) initE inA ->
-      trace ("FOLD CASE.. fold of "++show (mp # inA))$
+      dbgtrace ("FOLD CASE.. fold of "++show (mp # inA))$
        let init' = convertExp env initE
            bodfn x y = convertExp (extendE v1 ty x$ extendE v2 ty y env) bod
            aty@(TArray dims inty) = P.fst (mp # inA)
@@ -948,11 +992,26 @@ convertAcc env@(EnvPack _ _ mp) ae =
         then error "Mal-formed Fold.  Input types to Lam2 must match eachother and array input."
         else foldD bodfn init' sealedInArr aty
 
---    _ -> error$"FINISHME: unhandled: " ++show ae
+    _ -> error$"FINISHME: convertAcc: unhandled array operation: " ++show ae
 
-convertProg :: S.Prog a -> SealedAcc
+convertProg :: S.Prog () -> SealedAcc
 convertProg S.Prog{progBinds,progResults} =
-  error "FINISHME: convertProg"
+    doBinds emptyEnvPack progBinds
+  where 
+  doBinds env (S.ProgBind vr ty dec eith : rst) =
+    dbgtrace (" dobinds of "++show (vr,ty,rst)++" "++show env) $ 
+    case eith of
+      Left ex  -> let se = convertExp env ex
+                      env' = extendE vr ty se env
+                  in doBinds env' rst
+      Right ae -> let sa = convertAcc env ae
+                      env' = extendA vr ty sa env
+                  in doBinds env' rst
+  doBinds (EnvPack _ _ mp) [] =
+    case S.resultNames progResults of
+      [resVr] -> expectAVar$ P.snd$ mp # resVr
+      _ -> error$ "FINISHME: convertProg with multiple results: "++show progResults
+  
 
 
 --------------------------------------------------------------------------------
@@ -990,12 +1049,6 @@ mp # k = case M.lookup k mp of
           Nothing -> error$"Map.lookup: key "++show k++" is not in map:\n  "++show mp
           Just x  -> x
 
-c0 :: SealedExp
-c0 = constantE (I 99)
-
-c0a :: A.Exp Int
-c0a = downcastE c0
-
 {-
 -- Small tests:
 t0 :: SealedAcc
@@ -1010,6 +1063,7 @@ t1 = -- convertClosedExp
      (S.ECond (S.EConst (B True)) (S.EConst (I 33)) (S.EConst (I 34)))
 t1_ :: A.Exp Int
 t1_ = downcastE t1
+case_if = H.assertEqual "if and const" (show t1_) "33"
 
 t2 :: SealedExp
 t2 = convertExp emptyEnvPack 
@@ -1017,15 +1071,13 @@ t2 = convertExp emptyEnvPack
  where v = S.var "v" 
 t2_ :: Exp Int
 t2_ = downcastE t2
+case_const = H.assertEqual "simple const" (show t2_) "33"
 
-t4 = simpleProg
- where
-   TestEntry {simpleProg} = allProgsMap # "p1a"
 
 t5 = convertAcc emptyEnvPack (S.Unit (S.EConst (I 33)))
 t5_ :: Acc (Scalar Int)
 t5_ = downcastA t5
-
+case_unit = H.assertEqual "unit array" (show$ I.run t5_) "Array (Z) [33]"
 
 t6 = convertAcc (extendA arr (TArray 0 TInt) t5 emptyEnvPack)
         (S.Map (S.Lam1 (v,TInt) (S.EVr v)) arr)
@@ -1033,6 +1085,7 @@ t6 = convertAcc (extendA arr (TArray 0 TInt) t5 emptyEnvPack)
         arr = S.var "arr"
 t6_ :: Acc (Scalar Int)
 t6_ = downcastA t6
+case_mapId = H.assertEqual "map id function" (show$ I.run t6_) "Array (Z) [33]"
 
 
 t7 = convertAcc (extendA arr (TArray 0 TInt) t5 emptyEnvPack)
@@ -1041,15 +1094,22 @@ t7 = convertAcc (extendA arr (TArray 0 TInt) t5 emptyEnvPack)
         arr = S.var "arr"
 t7_ :: Acc (Scalar Int)
 t7_ = downcastA t7
+case_mapAdd = H.assertEqual "map add fun" (show$ I.run t7_) "Array (Z) [66]"
 
 t8 = convertExp emptyEnvPack (S.ETuple [S.EConst (I 11), S.EConst (F 3.3)])
 t8_ :: Exp (Int,Float)
 t8_ = downcastE t8
+case_pairExp = H.assertEqual "simple pair"
+             (show $ I.run$ A.unit t8_)
+--             (A.fromList Z [(11,3.3)]) -- Why is there no EQ for Accelerate arrays?
+             "Array (Z) [(11,3.3)]"
 
 t9 = convertAcc emptyEnvPack $
      S.Use$ S.AccArray [10] [S.ArrayPayloadInt (U.listArray (0,9) [1..10])]
 t9_ :: Acc (Vector Int)
 t9_ = downcastA t9
+case_use = H.assertEqual "use array" (show $ I.run$ t9_)
+           "Array (Z :. 10) [1,2,3,4,5,6,7,8,9,10]"
 
 t10 = convertAcc emptyEnvPack $
       S.Generate (S.EConst (I 10)) -- (S.EIndex [S.EConst (I 10)])
@@ -1057,7 +1117,8 @@ t10 = convertAcc emptyEnvPack $
   where v   = S.var "v"
 t10_ :: Acc (Vector Int)
 t10_ = downcastA t10
-
+case_generate1 = H.assertEqual "generate1" (show $ I.run$ t10_)
+                 "Array (Z :. 10) [0,1,2,3,4,5,6,7,8,9]"
 
 t11 = convertAcc emptyEnvPack $
       S.Generate (S.ETuple [S.EConst (I 3), S.EConst (I 2)]) -- (S.EIndex [S.EConst (I 10)])
@@ -1065,7 +1126,8 @@ t11 = convertAcc emptyEnvPack $
   where v   = S.var "v"
 t11_ :: Acc (Array DIM2 (Int,Int))
 t11_ = downcastA t11
-
+case_generate2D = H.assertEqual "generate2" (show $ I.run$ t11_)
+                 "Array (Z :. 3 :. 2) [(0,0),(0,1),(1,0),(1,1),(2,0),(2,1)]"
 
 -- | This test exercises only tuples on the input side, plus tuple field projection.
 t12 = convertAcc emptyEnvPack $
@@ -1074,7 +1136,11 @@ t12 = convertAcc emptyEnvPack $
   where v   = S.var "v"
 t12_ :: Acc (Array DIM2 Int)
 t12_ = downcastA t12
-
+case_generatePrj = H.assertEqual "generate3"
+                   (show$ I.run$ t12_)
+                   (show$ I.run t12A)
+--                   "Array (Z :. 3 :. 2) [0,0,1,1,2,2]"
+-- Manually translated version:
 t12A = A.generate (constant (Z :. (3::Int) :. (2 :: Int)))
                   (\x0 -> indexHead (indexTail x0))
 
@@ -1087,26 +1153,33 @@ t13 = convertAcc emptyEnvPack $
                     (S.ETupProject 1 2 (S.EVr v)))
 t13_ :: Acc (Array DIM3 (Int,Int))
 t13_ = downcastA t13
+case_generatePrj2 = H.assertEqual "generate4"
+                   (show$ I.run$ t13_)
+                   "Array (Z :. 3 :. 2 :. 1) [(0,0),(1,0),(0,0),(1,0),(0,0),(1,0)]"
+                   -- (show$ I.run t12A)
 
+-- This is the program that matches t13_.  Whether that is correct we should audit.
 ref13 = A.generate (constant (Z :. (3::Int) :. (2 :: Int) :. (1 :: Int)))
           (\x -> let a,b,c :: Exp Int
                      (Z :. a :. b :. c) = unlift x
-                 in lift (a,b,c))
-
--- t13A = A.generate (constant (Z :. (3::Int) :. (2 :: Int) :. (1 :: Int)))
---         (\ -> )
+                 in lift (b,c))
 
 t14 = convertAcc emptyEnvPack $
       S.Generate (S.ETuple [S.EConst (I 3), S.EConst (I 2), S.EConst (I 1)]) 
-                 (S.Lam1 (v, TTuple [TInt,TInt,TInt])
-                    (S.EVr v) -- (S.ETupProject 0 3 (S.EVr v))
-                 )
--- t14_ :: Acc (Array DIM3 (Int,Int,Int))
-t14_ :: Acc (Array DIM3 (Int,(Int,Int)))
+                 (S.Lam1 (v, TTuple [TInt,TInt,TInt]) (S.EVr v))
+t14_ :: Acc (Array DIM3 (Int,Int,Int))
+-- t14_ :: Acc (Array DIM3 (Int,(Int,Int)))
 t14_ = downcastA t14
+case_t14_generate = H.assertEqual "generate5"
+                   (show$ I.run$ t14_)
+                   "Array (Z :. 3 :. 2 :. 1) [(0,0,0),(0,1,0),(1,0,0),(1,1,0),(2,0,0),(2,1,0)]"
+--                 "Array (Z :. 3 :. 2 :. 1) [(0,(0,0)),(0,(1,0)),(1,(0,0)),(1,(1,0)),(2,(0,0)),(2,(1,0))]"
 
+ref14 = A.generate (constant (Z :. (3::Int) :. (2 :: Int) :. (1 :: Int)))
+          (\x -> let a,b,c :: Exp Int
+                     (Z :. a :. b :. c) = unlift x
+                 in lift (a,(b,c)))
 
--- | Here's an example of what DOESNT work: a non-canonical tuple representation.
 i15 = convertAcc emptyEnvPack $
       S.Generate (S.ETuple [S.EConst (I 3), S.EConst (I 2), S.EConst (I 1)]) 
                  (S.Lam1 (v, TTuple [TInt,TInt,TInt])
@@ -1117,24 +1190,39 @@ i15 = convertAcc emptyEnvPack $
   where v   = S.var "v"
 i15_ :: Acc (Array DIM3 ((Int,Int),Int))
 i15_ = downcastA i15
+case_generateTupLeftNest = H.assertEqual "generate6"
+                           (show$ I.run$ i15_)
+                           "Array (Z :. 3 :. 2 :. 1) [((0,0),0),((0,1),0),((1,0),0),((1,1),0),((2,0),0),((2,1),0)]"
 
-
+--------------------------------------------------
+-- Test PrimApps:
 
 p1 = convertExp emptyEnvPack
         (S.EPrimApp TInt (S.NP S.Add) [S.EConst (I 1), S.EConst (I 2)])
 p1_ :: Exp Int
 p1_ = downcastE p1
 
+case_primApp_Add = H.assertEqual "primapp_add" (show p1_) "3"
 
 p2 = convertExp emptyEnvPack
         (S.EPrimApp TInt (S.NP S.Sig) [S.EConst (I (-11))])
 p2_ :: Exp Int
 p2_ = downcastE p2
+case_primApp_Sig = H.assertEqual "primapp_sig" (show p2_) "-1"
 
 p3 = convertExp emptyEnvPack
         (S.EPrimApp TInt (S.FP Round) [S.EConst (F (9.99))])
 p3_ :: Exp Int
 p3_ = downcastE p3
+case_primApp_Round = H.assertEqual "primapp_sig" (show p3_) "10"
+
+--------------------------------------------------
+-- Test Constant conversion
+
+c0 :: SealedExp
+c0 = constantE (I 99)
+c0_ :: A.Exp Int
+c0_ = downcastE c0
 
 c1 :: SealedEltTuple
 c1 = scalarTypeD (TTuple [TInt, TInt32, TInt64])
@@ -1142,9 +1230,41 @@ c1 = scalarTypeD (TTuple [TInt, TInt32, TInt64])
 c2 :: SealedEltTuple
 c2 = scalarTypeD (TTuple [TTuple [TInt, TInt32], TInt64])
 
---------------------------------------------------------------------------------
--- Bulk-runnable unit tests
---------------------------------------------------------------------------------
+case_const0 = H.assertEqual "int const" (show c0_) "99"
 
--- case_tupcvt =
---   assertEqual "" 
+-- For now we are NOT recovering tuple structure for tuple size > 3.
+case_const1 = H.assertEqual "tuple repr 1"
+            (show c1)  "Sealed:(Int,(Int32,Int64))"
+            
+case_const2 = H.assertEqual "tuple repr 2"
+            (show c2) "Sealed:((Int,Int32),Int64)"
+
+--------------------------------------------------
+-- Complete program unit tests
+
+allProg_tests = TF.testGroup "Backend kit unit tests" $
+                [ testCase ("progtest_"++name te) (roundTrip te)
+                | te <- allProgs ]
+
+-- Note, most don't work yet, as expecte,d [2013.08.14] but check out
+-- p12e, which seems to indicate a bug.
+
+roundTrip :: TestEntry -> IO ()
+roundTrip TestEntry{name, simpleProg, origProg= AccProg (acc :: Acc aty) } = do 
+  let cvt :: Acc aty
+      cvt = downcastA $ convertProg simpleProg
+  dbgtrace ("RoundTripping:\n" ++ show acc) $ 
+   H.assertEqual ("roundTrip "++name)
+                 (show$ I.run cvt)
+                 (show$ I.run acc)
+
+--------------------------------------------------
+-- Aggregate tests:
+
+runTests = TF.defaultMain [unitTests]
+
+unitTests =
+  TF.testGroup "AllTests" [
+    $(testGroupGenerator),
+    allProg_tests
+  ]

@@ -120,7 +120,7 @@ type AVar = Var
 --------------------------------------------------------------------------------
 
 -- | A complete program consists of a set of top-level array
---   bindings (with mutual interdependencies), followed by a list
+--   bindings (with interdependencies), followed by a list
 --   (tuple) of result arrays.
 -- 
 --   The top level bindings may bind either arrays or scalar
@@ -147,6 +147,10 @@ data Prog decor = Prog {
   typeEnv :: M.Map Var Type
 } deriving (Read,Show,Eq,Generic, Ord)
 
+-- | The details of the what constitutes the final results changes
+--  over the course of the compiler.  In general, results can be
+--  tuples-of-arrays-of-tuples.  Also, the shape of the output
+--  array(s) is an implicit output of the program.
 data ProgResults = WithoutShapes [AVar]
                  | WithShapes [(AVar,Var)] -- Later in the compiler.
                  | WithShapesUnzipped [(AVar,[Var])] -- Even later, unzipETups
