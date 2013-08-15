@@ -64,7 +64,7 @@ Library
 
                      -- These will move to another package:
                      Data.Array.Accelerate.BackendClass
-                     Data.Array.Accelerate.DynamicAcc                 
+                     Data.Array.Accelerate.DynamicAcc2
 
                      -- Temporarily exposed:
                      Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone
@@ -87,7 +87,7 @@ Library
 --                        ghc             >= 7.2
                         vector          >= 0.9,
                         deepseq         >= 1.3,
-                        test-framework, test-framework-hunit, HUnit,
+                        test-framework, test-framework-hunit, HUnit, test-framework-th,
                         split >= 0.2,
                         bytestring, primitive
 

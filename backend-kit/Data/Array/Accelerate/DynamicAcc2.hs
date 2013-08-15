@@ -453,7 +453,7 @@ resealTup components =
 --     
 convertExp :: EnvPack -> S.Exp -> SealedExp
 convertExp ep@(EnvPack envE envA mp) ex =
-  dbgtrace(" @ Converting exp "++show ex++" with env "++show mp++"\n    and dyn env "++show (envE,envA)) $
+  dbgtrace(" @ Converting exp "++show ex++" with env "++show (M.map P.snd mp)) $
   dbgtrace(" @-> converted exp result: "++show result) $
   result
  where 
@@ -490,146 +490,21 @@ convertExp ep@(EnvPack envE envA mp) ex =
              PairTuple (ta :: EltTuple aa)
                (PairTuple (tb :: EltTuple bb)
                 (tc@SingleTuple{} :: EltTuple cc)) ->
-               let (a,b,c) = unlift (downcastE tup :: Exp (aa,bb,cc))
+               let a :: Exp aa
+                   b :: Exp bb
+                   c :: Exp cc
+                   bc :: Exp (bb,cc)
+                   (a,bc) = unlift (downcastE tup :: Exp (aa,(bb,cc)))
+                   (b,c) = unlift bc
                in resealTup $ 
                 P.take len $ P.drop ind $ P.zip [SealedEltTuple ta, SealedEltTuple tb, SealedEltTuple tc]
                                                 [sealExp a, sealExp b, sealExp c]
+         -- FIXME: recursive case.
 
              _ -> error ("ETupProject got unhandled tuple type: "++show et1)                
     
     S.ETuple []    -> constantE (Tup [])
     S.ETuple [ex]  -> convertExp ep ex
-#if 0    
-    S.ETuple [a,b] ->
-      let ta = S.recoverExpType typeEnv a
-          tb = S.recoverExpType typeEnv b
-          a' = convertExp ep a
-          b' = convertExp ep b
-      in
-      resealTup $ P.zip [scalarTypeD ta, scalarTypeD tb] [a',b']
-
-    -- <EXTREME PAIN>
-    -------------------------------------------------------------------------------
-    S.ETuple [a,b,c] ->
-      let ta = S.recoverExpType typeEnv a
-          tb = S.recoverExpType typeEnv b
-          tc = S.recoverExpType typeEnv c
-          a' = convertExp ep a
-          b' = convertExp ep b
-          c' = convertExp ep c          
-      in
-      resealTup $ P.zip (P.map scalarTypeD [ta, tb, tc]) [a',b',c']
-
-    S.ETuple [a,b,c,d] ->
-      let ta = S.recoverExpType typeEnv a
-          tb = S.recoverExpType typeEnv b
-          tc = S.recoverExpType typeEnv c
-          td = S.recoverExpType typeEnv d
-          a' = convertExp ep a
-          b' = convertExp ep b
-          c' = convertExp ep c
-          d' = convertExp ep d               
-      in
-       resealTup $ P.zip (P.map scalarTypeD [ta,tb,tc,td]) [a',b',c',d']
-
-    S.ETuple [a,b,c,d,e] ->
-      let ta = S.recoverExpType typeEnv a
-          tb = S.recoverExpType typeEnv b
-          tc = S.recoverExpType typeEnv c
-          td = S.recoverExpType typeEnv d
-          te = S.recoverExpType typeEnv e          
-          a' = convertExp ep a
-          b' = convertExp ep b
-          c' = convertExp ep c
-          d' = convertExp ep d
-          e' = convertExp ep e          
-      in
-       resealTup $ P.zip (P.map scalarTypeD [ta,tb,tc,td,te]) [a',b',c',d',e']
-
-    S.ETuple [a,b,c,d,e,f] ->
-      let ta = S.recoverExpType typeEnv a
-          tb = S.recoverExpType typeEnv b
-          tc = S.recoverExpType typeEnv c
-          td = S.recoverExpType typeEnv d
-          te = S.recoverExpType typeEnv e
-          tf = S.recoverExpType typeEnv f
-          a' = convertExp ep a
-          b' = convertExp ep b
-          c' = convertExp ep c
-          d' = convertExp ep d
-          e' = convertExp ep e
-          f' = convertExp ep f
-      in
-       resealTup $ P.zip (P.map scalarTypeD [ta,tb,tc,td,te,tf]) [a',b',c',d',e',f']
-
-    S.ETuple [a,b,c,d,e,f,g] ->
-      let ta = S.recoverExpType typeEnv a
-          tb = S.recoverExpType typeEnv b
-          tc = S.recoverExpType typeEnv c
-          td = S.recoverExpType typeEnv d
-          te = S.recoverExpType typeEnv e
-          tf = S.recoverExpType typeEnv f
-          tg = S.recoverExpType typeEnv g
-          a' = convertExp ep a
-          b' = convertExp ep b
-          c' = convertExp ep c
-          d' = convertExp ep d
-          e' = convertExp ep e
-          f' = convertExp ep f
-          g' = convertExp ep g
-      in resealTup $ P.zip (P.map scalarTypeD [ta,tb,tc,td,te,tf,tg])
-                           [a',b',c',d',e',f',g']
-
-    S.ETuple [a,b,c,d,e,f,g,h] ->
-      let ta = S.recoverExpType typeEnv a
-          tb = S.recoverExpType typeEnv b
-          tc = S.recoverExpType typeEnv c
-          td = S.recoverExpType typeEnv d
-          te = S.recoverExpType typeEnv e
-          tf = S.recoverExpType typeEnv f
-          tg = S.recoverExpType typeEnv g
-          th = S.recoverExpType typeEnv h
-          a' = convertExp ep a
-          b' = convertExp ep b
-          c' = convertExp ep c
-          d' = convertExp ep d
-          e' = convertExp ep e
-          f' = convertExp ep f
-          g' = convertExp ep g
-          h' = convertExp ep h
-      in resealTup $ P.zip (P.map scalarTypeD [ta,tb,tc,td,te,tf,tg,th])
-                           [a',b',c',d',e',f',g',h']
-
-    S.ETuple [a,b,c,d,e,f,g,h,i] ->
-      let ta = S.recoverExpType typeEnv a
-          tb = S.recoverExpType typeEnv b
-          tc = S.recoverExpType typeEnv c
-          td = S.recoverExpType typeEnv d
-          te = S.recoverExpType typeEnv e
-          tf = S.recoverExpType typeEnv f
-          tg = S.recoverExpType typeEnv g
-          th = S.recoverExpType typeEnv h
-          ti = S.recoverExpType typeEnv i
-          a' = convertExp ep a
-          b' = convertExp ep b
-          c' = convertExp ep c
-          d' = convertExp ep d
-          e' = convertExp ep e
-          f' = convertExp ep f
-          g' = convertExp ep g
-          h' = convertExp ep h
-          i' = convertExp ep i
-      in resealTup $ P.zip (P.map scalarTypeD [ta,tb,tc,td,te,tf,tg,th,ti])
-                           [a',b',c',d',e',f',g',h',i']
-
-    S.ETuple (a:b:c:d:e:f:g:h:i:tl) ->
-      error$"convertExp: Alas, tuples greater than size nine are not handled by Accelerate: "++
-            show (a:b:c:d:e:f:g:h:i:tl)
-
-    -------------------------------------------------------------------------------
-    -- </EXTREME PAIN>
-
-#else 
 
     -- Version 3: try to generalize tuple handling.  Failed, but leave it in a compiling state:
     S.ETuple (hd:tl) ->
@@ -645,7 +520,6 @@ convertExp ep@(EnvPack envE envA mp) ex =
          SealedEltTuple (et2 :: EltTuple bty)) ->
           sealExp$ Sm.tup2 (downcastE hd' :: Exp aty,
                             downcastE tl' :: Exp bty)
-#endif
 
     {- ========================================================================================== -}
     S.EPrimApp outTy op ls ->
@@ -879,8 +753,8 @@ indexToTup ty ex =
        TTuple [TInt,TInt,TInt] -> 
          let a,b,c :: Exp Int
              (Z :. a :. b :. c) = unlift (downcastE ex :: Exp (Z :. Int :. Int :. Int))
-             tup :: Exp (Int, Int, Int)
-             tup = lift (a,b,c)
+             tup :: Exp (Int, (Int, Int))
+             tup = lift (a,(b,c))
          in sealExp tup
 
 -- FINISHME: Go up to tuple size 9.
@@ -897,32 +771,57 @@ indexToTup ty ex =
                  Z :. e' = unlift z
              in sealExp e'
 
+liftScons :: (Slice a, Elt b) => 
+             Exp a -> Exp b -> Exp (a :. b)
+liftScons a b = lift (a :. b)
+
 -- | The inverse of `indexToTup`
 tupToIndex :: S.Type -> SealedExp -> SealedExp
-tupToIndex ty ex =
+tupToIndex ty ex0 =
     dbgtrace (" ~~ starting tupToIndex... ")$ 
-    dbgtrace (" ~~ tupToIndex tup, converting "++show (ty,ex)++" to "++ show res) res
+    dbgtrace (" ~~ tupToIndex tup, converting "++show (ty,ex0)++" to "++ show res) res
  where
  res =  
   case ty of
     TTuple []  -> sealExp (constant Z)
-    TTuple [a] -> error$ "tupToIndex: internal error, singleton tuple: "++show (ty,ex)
+    TTuple [a] -> error$ "tupToIndex: internal error, singleton tuple: "++show (ty,ex0)
 
     TTuple [TInt,TInt] -> 
       dbgtrace ("Converting tuple type to index type... "++show ty) $
           let l,r :: Exp Int
-              (l,r) = unlift (downcastE ex :: Exp (Int,Int))
+              (l,r) = unlift (downcastE ex0 :: Exp (Int,Int))
               ind' :: Exp (Z :. Int :. Int)
               ind' = lift (Z :. l :. r)
           in sealExp ind'
 
     TTuple [TInt,TInt,TInt] -> 
       dbgtrace ("Converting tuple type to index type... "++show ty) $
+          -- On the Acc side we're ONLY using pairs:
           let a,b,c :: Exp Int
-              (a,b,c) = unlift (downcastE ex :: Exp (Int,Int,Int))
+              bc :: Exp (Int,Int)
+              (a,bc) = unlift (downcastE ex0 :: Exp (Int,(Int,Int)))
+              (b,c) = unlift bc
               ind' :: Exp (Z :. Int :. Int :. Int)
               ind' = lift (Z :. a :. b :. c)
           in sealExp ind'
+
+ -- PROBLEM: Doing this in general requires knowing (Slice rstElt):
+ -- We could conceivable do something like SealedEltTuple that stores the Slice instance...
+    TTuple ls@(hd:tl) | P.all (TInt ==) ls -> 
+      dbgtrace ("Converting tuple type to index type... "++show ty) $
+       case scalarTypeD (TTuple tl) of
+          SealedEltTuple (_ :: EltTuple rstElt) ->
+           -- On the Acc side we're ONLY using pairs:
+           let a :: Exp Int
+               b :: Exp rstElt
+               (a,b) = unlift (downcastE ex0 :: Exp (Int,rstElt))
+--              ind  :: Exp rstElt
+--              ind   = tupToIndex (TTuple tl) (sealExp b)
+--               ind' :: Exp (rstElt :. Int)
+-- PROBLEMS:
+--               ind'  = lift (ind :. a)
+--               ind'  = lift (b :. a)
+           in error "FINISHME: tupToIndex recursive case" -- sealExp ind'
       
 -- FINISHME: Go up to tuple size 9.
 
@@ -934,7 +833,7 @@ tupToIndex ty ex =
         SealedEltTuple (t :: EltTuple elt) ->
           let
               z :: Z :. Exp elt
-              z = Z :. ((downcastE ex) :: Exp elt)
+              z = Z :. ((downcastE ex0) :: Exp elt)
               z' :: Exp (Z :. elt)
               z' = lift z
           in sealExp z'
@@ -960,8 +859,8 @@ convertAcc env@(EnvPack _ _ mp) ae =
 
     S.Generate initE (S.Lam1 (vr,ty) bod) ->
       let indexTy = tupTyToIndex ty -- "ty" is a plain tuple.
-          bodfn ex  = let env' = extendE vr ty (indexToTup ty ex) env in
-                      dbgtrace ("Generate/bodyfun called: extended environment to: "++show env')$
+          bodfn ex  = let env'@(EnvPack _ _ m2) = extendE vr ty (indexToTup ty ex) env in
+                      dbgtrace ("Generate/bodyfun called: extended environment to: "++show (M.map P.snd m2))$
                       convertExp env' bod
           bodty     = S.recoverExpType (M.insert vr ty typeEnv) bod
           -- TODO: Replace this by simply passing in the result type to convertAcc:
@@ -1167,13 +1066,11 @@ ref13 = A.generate (constant (Z :. (3::Int) :. (2 :: Int) :. (1 :: Int)))
 t14 = convertAcc emptyEnvPack $
       S.Generate (S.ETuple [S.EConst (I 3), S.EConst (I 2), S.EConst (I 1)]) 
                  (S.Lam1 (v, TTuple [TInt,TInt,TInt]) (S.EVr v))
-t14_ :: Acc (Array DIM3 (Int,Int,Int))
--- t14_ :: Acc (Array DIM3 (Int,(Int,Int)))
+t14_ :: Acc (Array DIM3 (Int,(Int,Int)))
 t14_ = downcastA t14
 case_t14_generate = H.assertEqual "generate5"
                    (show$ I.run$ t14_)
-                   "Array (Z :. 3 :. 2 :. 1) [(0,0,0),(0,1,0),(1,0,0),(1,1,0),(2,0,0),(2,1,0)]"
---                 "Array (Z :. 3 :. 2 :. 1) [(0,(0,0)),(0,(1,0)),(1,(0,0)),(1,(1,0)),(2,(0,0)),(2,(1,0))]"
+                   "Array (Z :. 3 :. 2 :. 1) [(0,(0,0)),(0,(1,0)),(1,(0,0)),(1,(1,0)),(2,(0,0)),(2,(1,0))]"
 
 ref14 = A.generate (constant (Z :. (3::Int) :. (2 :: Int) :. (1 :: Int)))
           (\x -> let a,b,c :: Exp Int
