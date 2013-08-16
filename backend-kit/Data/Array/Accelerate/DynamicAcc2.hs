@@ -78,6 +78,9 @@ import Data.Array.Accelerate.BackendKit.Phase1.ToAccClone as Cvt (accToAccClone,
 import Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1)
 import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec))
 
+import qualified Data.Array.Accelerate.Trafo.Sharing as Trafo
+import Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone (convertExps)
+
 ------------------------------------------------------------------------------------------
 
 -- define DEBUG
@@ -178,7 +181,6 @@ data SealedEltTuple where
 -- | This is a bottle in which to store a type that satisfyies the Array class.
 data SealedArrayType where
   -- Do we care about the ArrayElt class here?
---  SealedArrayType :: Arrays a => Phantom a -> SealedArrayType
   SealedArrayType :: (Shape sh, Elt elt, Arrays (Array sh elt)) =>
                      Phantom (Array sh elt) -> SealedArrayType  
 
@@ -477,10 +479,11 @@ convertExp ep@(EnvPack envE envA mp) ex =
     S.EIndexScalar vr indEx ->
       let (aty,s) = mp # vr
           sa = expectAVar s
+          tupTy = S.recoverExpType typeEnv indEx
       in
        case arrayTypeD aty of
          SealedArrayType (_ :: Phantom (Array sh elt)) ->
-           let indEx' = convertExp ep indEx
+           let indEx' = tupToIndex tupTy $ convertExp ep indEx
                res :: Exp elt
                res = (A.!) (downcastA sa :: Acc (Array sh elt))
                            (downcastE indEx' :: Exp sh) in 
@@ -1057,6 +1060,7 @@ t12A = A.generate (constant (Z :. (3::Int) :. (2 :: Int)))
                   (\x0 -> indexHead (indexTail x0))
 
 v = S.var "v"
+avr = S.var "arr"
 
 -- | Now project TWO components out of THREE.
 t13 = convertAcc emptyEnvPack $
@@ -1103,6 +1107,17 @@ i15_ = downcastA i15
 case_generateTupLeftNest = H.assertEqual "generate6"
                            (show$ I.run$ i15_)
                            "Array (Z :. 3 :. 2 :. 1) [((0,0),0),((0,1),0),((1,0),0),((1,1),0),((2,0),0),((2,1),0)]"
+
+t16 :: SealedExp
+t16 = convertExp (extendA avr (TArray 0 TInt) t5 emptyEnvPack)
+                 (S.EIndexScalar avr nullInd)
+t16_ :: Exp Int
+t16_ = downcastE t16
+case_indexScalar = H.assertEqual "EIndexScalar" (show$ I.run (A.unit t16_)) "Array (Z) [33]"
+
+nullInd :: S.Exp
+nullInd = convertExps $
+          expToExpClone  (Trafo.convertExp True (constant Z))
 
 --------------------------------------------------
 -- Test PrimApps:
