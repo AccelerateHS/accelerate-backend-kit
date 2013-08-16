@@ -156,7 +156,7 @@ constantE c =
     ERRIT(C) ERRIT(CC) ERRIT(CSC) ERRIT(CUC)    
     ERRIT(CF) ERRIT(CD)
     Tup [] -> sealExp $ A.constant ();
-    Tup ls -> error$ "constantE: Cannot handle tuple constants!  These should be ETuple's: "++show c 
+    Tup ls -> convertExp emptyEnvPack (S.ETuple$ P.map S.EConst ls)
   }
 
 --------------------------------------------------------------------------------
