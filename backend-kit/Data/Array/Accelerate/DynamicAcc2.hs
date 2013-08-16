@@ -41,7 +41,8 @@ import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
                  (Type(..), Const(..), AVar, Var, Prog(..), 
                   Prim(..), NumPrim(..), IntPrim(..), FloatPrim(..))
 import           Data.Array.Accelerate.BackendKit.Tests
-                    (allProgs, allProgsMap, p1a, TestEntry(..), AccProg(..))
+                    (allProgs, allProgsMap, TestEntry(..), AccProg(..),
+                     p1a, p12e)
 import           Data.Array.Accelerate.BackendKit.SimpleArray (payloadsFromList1)
 import Data.Array.Accelerate.Interpreter as I
 -- import           Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone (repackAcc)
@@ -177,7 +178,9 @@ data SealedEltTuple where
 -- | This is a bottle in which to store a type that satisfyies the Array class.
 data SealedArrayType where
   -- Do we care about the ArrayElt class here?
-  SealedArrayType :: Arrays a => Phantom a -> SealedArrayType
+--  SealedArrayType :: Arrays a => Phantom a -> SealedArrayType
+  SealedArrayType :: (Shape sh, Elt elt, Arrays (Array sh elt)) =>
+                     Phantom (Array sh elt) -> SealedArrayType  
 
 -- | Tuples of arrays rather than scalar `Elt`s.
 data ArrTuple a where
@@ -292,9 +295,9 @@ unitD elt exp =
 useD :: S.AccArray -> SealedAcc
 useD arr =
   case sty of
-    SealedArrayType (Phantom (_ :: aT)) ->
+    SealedArrayType (Phantom (_ :: (Array sh elt))) ->
       sealAcc$ A.use$
-      repackAcc (unused::Acc aT) [arr]
+      repackAcc (unused::Acc (Array sh elt)) [arr]
  where
    dty = S.accArrayToType arr
    sty = arrayTypeD dty
@@ -471,7 +474,17 @@ convertExp ep@(EnvPack envE envA mp) ex =
     S.EShape _          -> error "FINISHME: convertExp needs to handle EShape"
     S.EShapeSize _      -> error "FINISHME: convertExp needs to handle EShapeSize"
     S.EIndex _          -> error "FINISHME: convertExp needs to handle EIndex"
-    S.EIndexScalar _ _  -> error "FINISHME: convertExp needs to handle EIndexScalar"
+    S.EIndexScalar vr indEx ->
+      let (aty,s) = mp # vr
+          sa = expectAVar s
+      in
+       case arrayTypeD aty of
+         SealedArrayType (_ :: Phantom (Array sh elt)) ->
+           let indEx' = convertExp ep indEx
+               res :: Exp elt
+               res = (A.!) (downcastA sa :: Acc (Array sh elt))
+                           (downcastE indEx' :: Exp sh) in 
+           sealExp res
     
     S.ETupProject {S.indexFromRight=ind, S.projlen=len, S.tupexpr=tex} ->
       let tup = convertExp ep tex
@@ -930,8 +943,8 @@ instance Show SealedShapeType where
     "Sealed:"++show (toDyn (unused::sh))
     
 instance Show SealedArrayType where
-  show (SealedArrayType (Phantom (_ :: sh))) =
-    "Sealed:"++show (toDyn (unused::sh))
+  show (SealedArrayType (Phantom (_ :: Array sh elt))) =
+    "Sealed:"++show (toDyn (unused :: Array sh elt))
 
 
 --------------------------------------------------------------------------------
