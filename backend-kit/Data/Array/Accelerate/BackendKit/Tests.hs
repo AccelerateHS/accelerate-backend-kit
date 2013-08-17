@@ -18,7 +18,7 @@ module Data.Array.Accelerate.BackendKit.Tests
 
     -- * Individual tests:
     p1a, p1aa, p1ab, p1ac, p1ba,
-    p2aa, p2a, p2f, p4, p4b, p4c, p5, p0, p1, p1b, p1bb, p1c, p1d,
+    p2aa, p2a, p2f, p4, p4b, p4c, p5, p0, p1, p1b, p1bb, p1c, p1d, p1e, p1f,
     p2, p2b, p2bb, p2c, p2cc, p2cd, p2ce, p2d, p2e, p2g, p2h, p2i, 
     p3,
     p6, p6b,
@@ -122,7 +122,7 @@ otherProgs =
   go "p0" p0,                
   go "p1" p1, 
   go "p1b" p1b,  go "p1bb" p1bb,
-  go "p1c" p1c, go "p1d" p1d,
+  go "p1c" p1c, go "p1d" p1d, go "p1e" p1e, go "p1f" p1f,
   go "p2" p2, go "p2aa" p2aa, go "p2b" p2b, go "p2bb" p2bb,
   go "p2c" p2c, go "p2cc" p2cc, go "p2cd" p2cd, go "p2ce" p2ce,
   go "p2d" p2d, go "p2e" p2e, go "p2g" p2g, go "p2h" p2h,  go "p2i" p2i,
@@ -266,15 +266,23 @@ p1bb :: Acc (Vector Float)
 p1bb = fold (+) 0 p17b
 
 
--- This one is JUST a zipwith:
+-- | This one is JUST a zipwith:
 p1c :: Acc (Vector Word)
 p1c = let xs = use$ fromList (Z :. (5::Int)) [1..10::Word] 
       in zipWith (*) xs xs
   
--- Zipwith yielding a tuple:
+-- | Zipwith yielding a tuple:
 p1d :: Acc (Vector (Word,Word))
 p1d = let xs = use$ fromList (Z :. (5::Int)) [1..10::Word] 
       in zipWith (\ x y -> lift (x*y, x+y)) xs xs
+
+-- | Simple tuple constant
+p1e :: Acc (Scalar (Int,Int))
+p1e = A.unit (constant (3::Int,4::Int))
+
+-- | The same as `p1e` but with a different way to form the tuple constant.
+p1f :: Acc (Scalar (Int,Int))
+p1f = A.unit ((lift (constant (3::Int),constant (4::Int))) :: Exp (Int,Int))
 
 ----------------------------------------
 

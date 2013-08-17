@@ -76,7 +76,7 @@ doEx mp ex =
              code' <- freshenExpNames code
              maybtrace ("!! Victory, inlineCheap: inlining reference to "++show avr) $
               doEx mp code'
-      else return$ EIndexScalar avr ex'
+       else return$ EIndexScalar avr ex'
 
     -- Boilerplate:     
     ----------------------------------------
