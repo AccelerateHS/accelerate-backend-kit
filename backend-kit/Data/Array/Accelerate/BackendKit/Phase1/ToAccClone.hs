@@ -486,7 +486,7 @@ tupleNumLeaves _             = 1
 
 convertType :: TupleType a -> S.Type
 convertType origty = 
-  trace ("CONVERTTYPE of "++show origty++":  ") $
+  -- trace ("CONVERTTYPE of "++show origty++":  ") $
   tupleTy $ flattenTupTy $ 
   loop origty
  where   

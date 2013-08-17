@@ -272,18 +272,15 @@ scalarTypeD ty =
     -- Here we have a problem... we've lost the surface tuple
     -- representation.... What canonical tuple representation do we use?
     TTuple []      -> SealedEltTuple UnitTuple
-    TTuple [sing]  -> scalarTypeD sing
+    TTuple [sing]  -> scalarTypeD sing -- Allow irregular TTuple.
 
-    -- TTuple [a,b] -> case (scalarTypeD a, scalarTypeD b) of
-    --                   (SealedEltTuple (_ :: EltTuple ta),
-    --                    SealedEltTuple (_ :: EltTuple ta)) ->
-
-    -- TTuple's are the REVERSE order from the user's source.  SNOC lists.
-    TTuple (hd:tl) ->
-      case (scalarTypeD hd, scalarTypeD (TTuple tl)) of
+    -- Here we encode tuple (a..i) as TupleRepr (a..i): a snoclist format.
+    TTuple ls ->
+      let (lst,rst) = splitLast ls in
+      case (scalarTypeD (TTuple rst), scalarTypeD lst) of
         (SealedEltTuple (et1 :: EltTuple a),
          SealedEltTuple (et2 :: EltTuple b)) ->
-          SealedEltTuple$ PairTuple et2 et1
+          SealedEltTuple$ PairTuple et1 et2
     TArray {} -> error$"scalarTypeD: expected scalar type, got "++show ty
 
 
@@ -426,23 +423,22 @@ type AENV0 = ()
 
 -- | Reseal as a real Acceelerate tuple, but still use the internal
 -- tuple representation.  This function takes tuple components in the
--- same order as ETuple (i.e. reverse-order).
+-- same order as ETuple.
 resealTup [] = sealExp$ A.constant ()
 
 resealTup [(_,sing)] = sing
 
 resealTup [(SealedEltTuple (_ :: EltTuple aty), a'),
            (SealedEltTuple (_ :: EltTuple bty), b')] =
-    sealExp$ Sm.tup2 (downcastE b' :: Exp bty,
-                      downcastE a' :: Exp aty)
+    sealExp$ Sm.tup2 (downcastE a' :: Exp bty,
+                      downcastE b' :: Exp aty)
 
 resealTup [(SealedEltTuple (_ :: EltTuple aty), a),
            (SealedEltTuple (_ :: EltTuple bty), b),
            (SealedEltTuple (_ :: EltTuple cty), c)] =
-    let tup1 = Sm.tup2 (downcastE c :: Exp cty, downcastE b :: Exp bty)
-        tup0 = Sm.tup2 (tup1, downcastE a :: Exp aty)
-    in sealExp tup0
-
+    let tup1 = Sm.tup2 (downcastE a :: Exp aty, downcastE b :: Exp bty)
+        tup2 = Sm.tup2 (tup1, downcastE c :: Exp cty)
+    in sealExp tup2
 
 -- resealTup [(SealedEltTuple (_ :: EltTuple aty), a),
 --            (SealedEltTuple (_ :: EltTuple bty), b),
@@ -541,23 +537,24 @@ convertExp ep@(EnvPack envE envA mp) ex =
     S.ETuple []    -> constantE (Tup [])
     S.ETuple [ex]  -> convertExp ep ex
 
-    -- ETuple is the REVERSE of textual order in the source program.
+    -- ETuple is a flattened N-tuple representation.
     -- This is converted directly into a nested/pair-based TupleRepr.
     --   type TupleRepr (a, b, c)  = (TupleRepr (a, b), c)
-    S.ETuple (hd:tl) ->
+    S.ETuple ls ->
       let
-          ta = S.recoverExpType typeEnv hd
-          tb = S.recoverExpType typeEnv tltup
+          (hd,tl) = splitLast ls
+          thd = S.recoverExpType typeEnv hd
+          ttl = S.recoverExpType typeEnv tltup
           hd' = convertExp ep hd
           tl' = convertExp ep tltup
           tltup = if P.null (P.tail tl) 
                   then head tl else S.ETuple tl
       in 
-      case (scalarTypeD ta, scalarTypeD tb) of
-        (SealedEltTuple (et1 :: EltTuple aty),
-         SealedEltTuple (et2 :: EltTuple bty)) ->
-          sealExp$ Sm.tup2 (downcastE tl' :: Exp bty,
-                            downcastE hd' :: Exp aty)
+      case (scalarTypeD thd, scalarTypeD ttl) of
+        (SealedEltTuple (et1 :: EltTuple hdty),
+         SealedEltTuple (et2 :: EltTuple tlty)) ->
+          sealExp$ Sm.tup2 (downcastE tl' :: Exp tlty,
+                            downcastE hd' :: Exp hdty)
 
     {- ========================================================================================== -}
     S.EPrimApp outTy op ls ->
@@ -973,8 +970,15 @@ instance Show SealedArrayType where
 
 
 --------------------------------------------------------------------------------
--- Misc, Tests, and Examples
---------------------------------------------------------------------------------  
+-- Misc Helpers
+--------------------------------------------------------------------------------
+  
+splitLast []                 =  error "splitLast: cannot take empty list"
+splitLast (x:xs)             =  go x xs
+  where go lst []   = (lst,[])
+        go y (z:zs) =
+          let (lst,zs') = go z zs in
+          (lst, y:zs')
 
 unused :: a
 unused = error "This dummy value should not be used"
@@ -986,14 +990,9 @@ mp # k = case M.lookup k mp of
           Nothing -> error$"Map.lookup: key "++show k++" is not in map:\n  "++show mp
           Just x  -> x
 
-{-
--- Small tests:
-t0 :: SealedAcc
-t0 = convertClosedAExp $
-     S.Use (S.AccArray [5,2] (payloadsFromList1$ P.map I [1..10]))
-t0b :: Acc (Array DIM2 (Int))
-t0b = downcastA t0
--}
+--------------------------------------------------------------------------------
+-- Tests, and Examples
+--------------------------------------------------------------------------------
 
 t1 = -- convertClosedExp
      convertExp emptyEnvPack 
@@ -1010,17 +1009,19 @@ t2_ :: Exp Int
 t2_ = downcastE t2
 case_const = H.assertEqual "simple const" (show t2_) "33"
 
-t3 = makeTestEntry "t3" (A.unit (constant (3::Int,4::Int)))
+t3 = makeTestEntry "t3" (A.unit (constant (3::Int,4::Int64)))
 t3_ = roundTrip t3
 case_tup = t3_
 -- case_tup = H.assertEqual "tup const" "" (show$ I.run )
 
 -- | The same as t3 but with a different way to form the tuple:
-t3B = makeTestEntry "t3B" (A.unit ((lift (constant (3::Int),constant (4::Int))) :: Exp (Int,Int)))
+t3B = makeTestEntry "t3B" (A.unit ((lift (constant (3::Int),constant (4::Int64))) :: Exp (Int,Int64)))
 t3B_ = roundTrip t3B
 case_tupB = t3B_
 
-
+-- | This one actually returns an array index.  The problem is, from
+-- the SimpleAcc converted representation, there's no way to tell that
+-- an index should be returned rather than a plain tuple.
 t4 = makeTestEntry "t4" (A.unit (constant (Z :. (3::Int) :. (4::Int))))
 t4_ = roundTrip t4
 case_tupInd = t4_
@@ -1195,7 +1196,7 @@ case_const0 = H.assertEqual "int const" (show c0_) "99"
 
 -- For now we are NOT recovering tuple structure for tuple size > 3.
 case_const1 = H.assertEqual "tuple repr 1"
-            (show c1)  "Sealed:(Int,(Int32,Int64))"
+            (show c1)  "Sealed:((Int,Int32),Int64)"
             
 case_const2 = H.assertEqual "tuple repr 2"
             (show c2) "Sealed:((Int,Int32),Int64)"
