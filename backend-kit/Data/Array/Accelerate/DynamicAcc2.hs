@@ -474,7 +474,12 @@ convertExp ep@(EnvPack envE envA mp) ex =
     S.EVr vr -> let (_,se) = mp # vr in expectEVar se
 
     S.EShape _          -> error "FINISHME: convertExp needs to handle EShape"
-    S.EShapeSize _      -> error "FINISHME: convertExp needs to handle EShapeSize"
+    S.EShapeSize ex     ->
+      let ty = S.recoverExpType typeEnv ex
+          tup = convertExp ep ex in
+      
+      (error "FINISHME: convertExp needs to handle EShapeSize")
+      
     S.EIndex _          -> error "FINISHME: convertExp needs to handle EIndex"
     S.EIndexScalar vr indEx ->
       let (aty,s) = mp # vr
@@ -500,8 +505,9 @@ convertExp ep@(EnvPack envE envA mp) ex =
              PairTuple (etA :: EltTuple aa) (etB@SingleTuple{} :: EltTuple bb) ->
                let (a,b) = unlift (downcastE tup :: Exp (aa,bb))
                in resealTup $ 
-                P.take len $ P.drop ind $ P.zip [SealedEltTuple etA, SealedEltTuple etB]
-                                                [sealExp a, sealExp b]
+                P.reverse $ P.take len $ P.drop ind $ P.reverse $
+                P.zip [SealedEltTuple etA, SealedEltTuple etB]
+                      [sealExp a, sealExp b]
 
              PairTuple (ta :: EltTuple aa)
                (PairTuple (tb :: EltTuple bb)
@@ -513,10 +519,11 @@ convertExp ep@(EnvPack envE envA mp) ex =
                    (a,bc) = unlift (downcastE tup :: Exp (aa,(bb,cc)))
                    (b,c) = unlift bc
                in resealTup $ 
-                P.take len $ P.drop ind $ P.zip [SealedEltTuple ta, SealedEltTuple tb, SealedEltTuple tc]
-                                                [sealExp a, sealExp b, sealExp c]
+                P.reverse $ P.take len $ P.drop ind $ P.reverse $
+                P.zip [SealedEltTuple ta, SealedEltTuple tb, SealedEltTuple tc]
+                      [sealExp a, sealExp b, sealExp c]
          -- FIXME: recursive case.
-
+         --------------------------------------------------------------------------------
              _ -> error ("ETupProject got unhandled tuple type: "++show et1)                
     
     S.ETuple []    -> constantE (Tup [])
@@ -1173,6 +1180,22 @@ allProg_tests = TF.testGroup "Backend kit unit tests" $
 
 -- Note, most don't work yet, as expecte,d [2013.08.14] but check out
 -- p12e, which seems to indicate a bug.
+
+bug2 :: Acc (Scalar Int)
+bug2 = unit $
+  let tup :: Exp (Int,Int64)
+      tup   = constant True ? (lift (11::Int, 22::Int64),
+                               lift (100::Int, 200::Int64))
+      (a,b) = unlift tup :: (Exp Int, Exp Int64)
+  in a + 33
+
+bug2_ :: Acc (Scalar Int)
+bug2_ = downcastA $ convertProg$ phase1$ phase0 bug2
+
+-- Current problems: p2c, p2g
+
+bug :: Acc (Scalar Int)
+bug = downcastA (convertProg (simpleProg (allProgsMap # "p12e")))
 
 roundTrip :: TestEntry -> IO ()
 roundTrip TestEntry{name, simpleProg, origProg= AccProg (acc :: Acc aty) } = do 
