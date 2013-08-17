@@ -220,8 +220,8 @@ instance EmitBackend CEmitter where
       forM_ allResults $ \ (name,_) -> do
         let elt = P.fst$ sizeEnv # name 
         if S.member name allUses
-        then comm$"NOT freeing "++show name++" because it came in from Haskell."
-        else freeCStorage elt (arg `arrow` varSyn name)
+         then comm$"NOT freeing "++show name++" because it came in from Haskell."
+         else freeCStorage elt (arg `arrow` varSyn name)
       E.emitStmt$ function "free" [arg]
     forM_ allResults $ \ (name,_) -> do 
       let elt = P.fst $ sizeEnv#name

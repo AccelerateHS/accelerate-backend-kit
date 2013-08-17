@@ -10,6 +10,15 @@
 
 -- | A library for the runtime construction of fully typed Accelerate programs.
 
+-- IMPORTANT: Tuple representation.
+-- We use the same conventions as the TupleRepr type function in Accelerate.
+-- We map the untyped tuple constructs onto combinations of pair tuples, i.e.
+-- no tuples of arity 3 or higher.  The convention is to nest to the left:
+-- 
+--    type TupleRepr (a, b, c)  = (TupleRepr (a, b), c)
+--
+-- 
+
 -- define HACK
 
 module Data.Array.Accelerate.DynamicAcc2
@@ -269,11 +278,12 @@ scalarTypeD ty =
     --                   (SealedEltTuple (_ :: EltTuple ta),
     --                    SealedEltTuple (_ :: EltTuple ta)) ->
 
+    -- TTuple's are the REVERSE order from the user's source.  SNOC lists.
     TTuple (hd:tl) ->
       case (scalarTypeD hd, scalarTypeD (TTuple tl)) of
         (SealedEltTuple (et1 :: EltTuple a),
          SealedEltTuple (et2 :: EltTuple b)) ->
-          SealedEltTuple$ PairTuple et1 et2
+          SealedEltTuple$ PairTuple et2 et1
     TArray {} -> error$"scalarTypeD: expected scalar type, got "++show ty
 
 
@@ -288,11 +298,9 @@ unitD elt exp =
   case elt of
     SealedEltTuple (t :: EltTuple et) ->
       case t of
-        UnitTuple -> sealAcc$ unit$ constant ()
-        SingleTuple (_ :: T.ScalarType s) ->
-          sealAcc$ unit (downcastE exp :: A.Exp  s)
-        PairTuple (_ :: EltTuple l) (_ :: EltTuple r) ->
-          sealAcc$ unit (downcastE exp :: A.Exp  (l,r))
+        UnitTuple                                     -> sealAcc$ unit$ constant ()
+        SingleTuple (_ :: T.ScalarType s)             -> sealAcc$ unit (downcastE exp :: A.Exp  s)
+        PairTuple (_ :: EltTuple l) (_ :: EltTuple r) -> sealAcc$ unit (downcastE exp :: A.Exp  (l,r))
 
 -- | Dynamically-typed variant of `Data.Array.Accelerate.use`.  However, this version
 -- is less powerful, it only takes a single, logical array, not a tuple of arrays.
@@ -416,23 +424,24 @@ extendE vr ty sld (EnvPack eS eA mp) =
 
 type AENV0 = ()
 
-
+-- | Reseal as a real Acceelerate tuple, but still use the internal
+-- tuple representation.  This function takes tuple components in the
+-- same order as ETuple (i.e. reverse-order).
 resealTup [] = sealExp$ A.constant ()
 
 resealTup [(_,sing)] = sing
 
 resealTup [(SealedEltTuple (_ :: EltTuple aty), a'),
            (SealedEltTuple (_ :: EltTuple bty), b')] =
-    sealExp$ Sm.tup2 (downcastE a' :: Exp aty,
-                      downcastE b' :: Exp bty)
-
+    sealExp$ Sm.tup2 (downcastE b' :: Exp bty,
+                      downcastE a' :: Exp aty)
 
 resealTup [(SealedEltTuple (_ :: EltTuple aty), a),
            (SealedEltTuple (_ :: EltTuple bty), b),
            (SealedEltTuple (_ :: EltTuple cty), c)] =
-    sealExp$ Sm.tup2 (downcastE a :: Exp aty,
-                      Sm.tup2 (downcastE b :: Exp bty,
-                               downcastE c :: Exp cty))
+    let tup1 = Sm.tup2 (downcastE c :: Exp cty, downcastE b :: Exp bty)
+        tup0 = Sm.tup2 (tup1, downcastE a :: Exp aty)
+    in sealExp tup0
 
 
 -- resealTup [(SealedEltTuple (_ :: EltTuple aty), a),
@@ -524,6 +533,7 @@ convertExp ep@(EnvPack envE envA mp) ex =
                 P.reverse $ P.take len $ P.drop ind $ P.reverse $
                 P.zip [SealedEltTuple ta, SealedEltTuple tb, SealedEltTuple tc]
                       [sealExp a, sealExp b, sealExp c]
+         --------------------------------------------------------------------------------                
          -- FIXME: recursive case.
          --------------------------------------------------------------------------------
              _ -> error ("ETupProject got unhandled tuple type: "++show et1)                
@@ -532,11 +542,10 @@ convertExp ep@(EnvPack envE envA mp) ex =
     S.ETuple [ex]  -> convertExp ep ex
 
     -- ETuple is the REVERSE of textual order in the source program.
-    -- type TupleRepr (a, b, c)  = (TupleRepr (a, b), c)
-    S.ETuple ls ->
+    -- This is converted directly into a nested/pair-based TupleRepr.
+    --   type TupleRepr (a, b, c)  = (TupleRepr (a, b), c)
+    S.ETuple (hd:tl) ->
       let
---          (hd:tl) = P.reverse ls -- FIXME: quadratic
-          (hd:tl) = ls
           ta = S.recoverExpType typeEnv hd
           tb = S.recoverExpType typeEnv tltup
           hd' = convertExp ep hd
@@ -547,8 +556,8 @@ convertExp ep@(EnvPack envE envA mp) ex =
       case (scalarTypeD ta, scalarTypeD tb) of
         (SealedEltTuple (et1 :: EltTuple aty),
          SealedEltTuple (et2 :: EltTuple bty)) ->
-          sealExp$ Sm.tup2 (downcastE hd' :: Exp aty,
-                            downcastE tl' :: Exp bty)
+          sealExp$ Sm.tup2 (downcastE tl' :: Exp bty,
+                            downcastE hd' :: Exp aty)
 
     {- ========================================================================================== -}
     S.EPrimApp outTy op ls ->
@@ -736,27 +745,22 @@ convertExp ep@(EnvPack envE envA mp) ex =
       in
        convertExp ep' bod
 
+-- Reduce repetition when all you need is to peek inside a single sealed EltTuple to retrieve instances:
+#define POP_SELTUPLE(et, bod) case et of { SealedEltTuple (tt :: EltTuple elt) -> \
+                              case tt of { UnitTuple -> bod; \
+                                           SingleTuple _ -> bod; \
+                                           PairTuple _ _ -> bod; }; }
     S.ECond e1 e2 e3 ->
       let d1 = cE e1
           d2 = cE e2
           d3 = cE e3
           ty = S.recoverExpType typeEnv e2
-      in case scalarTypeD ty of
-          SealedEltTuple (t :: EltTuple elt) ->
-           -- #define a macro for this?
-           case t of
-             UnitTuple -> 
-               sealExp(((downcastE d1::Exp Bool) A.?
-                        (downcastE d2::Exp elt,
-                         downcastE d3::Exp elt))::Exp elt)
-             SingleTuple _ ->
-               sealExp(((downcastE d1::Exp Bool) A.?
-                        (downcastE d2::Exp elt,
-                         downcastE d3::Exp elt))::Exp elt)
-             PairTuple _ _ ->
-               sealExp(((downcastE d1::Exp Bool) A.?
-                        (downcastE d2::Exp elt,
-                         downcastE d3::Exp elt))::Exp elt)
+      in 
+      POP_SELTUPLE(scalarTypeD ty, 
+                   sealExp(((downcastE d1::Exp Bool) A.?
+                            (downcastE d2::Exp elt,
+                             downcastE d3::Exp elt))::Exp elt))
+
 
 -- | The SimpleAcc representation does NOT keep index types disjoint
 -- from regular tuples.  To convert back to Acc we need to reassert
@@ -875,9 +879,6 @@ tupToIndex ty ex0 =
               z' = lift z
           in sealExp z'
 
-
-tupTyToIndex = error "finish me"
-
 tupTyLen (TTuple ls) = length ls
 tupTyLen _           = 1
 
@@ -895,7 +896,7 @@ convertAcc env@(EnvPack _ _ mp) ae =
       in unitD (scalarTypeD ty) ex'
 
     S.Generate initE (S.Lam1 (vr,ty) bod) ->
-      let indexTy = tupTyToIndex ty -- "ty" is a plain tuple.
+      let 
           bodfn ex  = let env'@(EnvPack _ _ m2) = extendE vr ty (indexToTup ty ex) env in
                       dbgtrace ("Generate/bodyfun called: extended environment to: "++show (M.map P.snd m2))$
                       convertExp env' bod
@@ -1013,6 +1014,12 @@ t3 = makeTestEntry "t3" (A.unit (constant (3::Int,4::Int)))
 t3_ = roundTrip t3
 case_tup = t3_
 -- case_tup = H.assertEqual "tup const" "" (show$ I.run )
+
+-- | The same as t3 but with a different way to form the tuple:
+t3B = makeTestEntry "t3B" (A.unit ((lift (constant (3::Int),constant (4::Int))) :: Exp (Int,Int)))
+t3B_ = roundTrip t3B
+case_tupB = t3B_
+
 
 t4 = makeTestEntry "t4" (A.unit (constant (Z :. (3::Int) :. (4::Int))))
 t4_ = roundTrip t4
@@ -1217,7 +1224,6 @@ bug2_ = downcastA $ convertProg$ phase1$ phase0 bug2
 -- Current problems: p2c, p2g
 
 bug :: Acc (Array DIM2 (Int,Int))
--- bug = downcastA (convertProg (simpleProg (allProgsMap # "p2g")))
 bug = downcastA (convertProg$ phase1$ phase0 p2g')
 
 -- | Similar to p2c, except now simply return indices:
