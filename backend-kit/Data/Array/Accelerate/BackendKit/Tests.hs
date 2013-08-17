@@ -277,12 +277,12 @@ p1d = let xs = use$ fromList (Z :. (5::Int)) [1..10::Word]
       in zipWith (\ x y -> lift (x*y, x+y)) xs xs
 
 -- | Simple tuple constant
-p1e :: Acc (Scalar (Int,Int))
-p1e = A.unit (constant (3::Int,4::Int))
+p1e :: Acc (Scalar (Int,Int64))
+p1e = A.unit (constant (3::Int,4::Int64))
 
 -- | The same as `p1e` but with a different way to form the tuple constant.
-p1f :: Acc (Scalar (Int,Int))
-p1f = A.unit ((lift (constant (3::Int),constant (4::Int))) :: Exp (Int,Int))
+p1f :: Acc (Scalar (Int,Int64))
+p1f = A.unit ((lift (constant (3::Int),constant (4::Int64))) :: Exp (Int,Int64))
 
 ----------------------------------------
 

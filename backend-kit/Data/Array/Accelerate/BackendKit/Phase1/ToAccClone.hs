@@ -456,7 +456,7 @@ convertExp e =
 
 -- | Convert a tuple expression to our simpler Tuple representation (containing a list):
 --   ASSUMES that the target expression is in fact a tuple construct.
-#ifdef SURFACE_TUPLES                     
+#ifdef SURFACE_TUPLES  
 convertTuple :: Tuple (PreOpenExp OpenAcc env aenv) t' -> EnvM T.Exp
 convertTuple NilTup = return$ T.ETuple []
 convertTuple (SnocTup tup e) = 
@@ -593,19 +593,30 @@ tupleTy ls = S.TTuple ls
 -- Convert constants    
 -------------------------------------------------------------------------------
 
--- convertConst :: Sug.Elt t => Sug.EltRepr t -> S.Const
+-- | Convert a constant to the simplified, explicit format.
 convertConst :: TupleType a -> a -> S.Const
-convertConst ty c = 
---  trace ("Converting tuple const: "++show ty) $
+convertConst ty c =
+  trace ("Converting tuple const: "++show ty) $
   case ty of 
     UnitTuple -> S.Tup []
+#ifdef SURFACE_TUPLES    
+    PairTuple ty0 ty1 -> let (c0,c1) = c 
+                             c0' = convertConst ty0 c0
+                             c1' = convertConst ty1 c1
+                         in 
+                         case c0' of
+                           S.Tup [] -> c1'
+                           S.Tup ls -> S.Tup (ls ++ [c1'])
+                           singl    -> S.Tup [singl, c1']
+#else
     PairTuple ty1 ty0 -> let (c1,c0) = c 
                              c0' = convertConst ty0 c0
                          in 
                          case convertConst ty1 c1 of
-                           S.Tup [] -> c0' 
+                           S.Tup [] -> c0'
                            S.Tup ls -> S.Tup (c0' : ls)
                            singl -> S.Tup [c0', singl]
+#endif
 --                           oth -> error$ "mal constructed tuple on RHS of PairTuple: "++ show oth
     SingleTuple scalar -> 
       case scalar of 
