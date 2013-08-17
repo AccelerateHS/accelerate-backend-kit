@@ -10,6 +10,8 @@
 
 -- | A library for the runtime construction of fully typed Accelerate programs.
 
+-- define HACK
+
 module Data.Array.Accelerate.DynamicAcc2
 {-
        (-- * Dynamically typed AST pieces
@@ -41,8 +43,8 @@ import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
                  (Type(..), Const(..), AVar, Var, Prog(..), 
                   Prim(..), NumPrim(..), IntPrim(..), FloatPrim(..))
 import           Data.Array.Accelerate.BackendKit.Tests
-                    (allProgs, allProgsMap, TestEntry(..), AccProg(..),
-                     p1a, p12e)
+                    (allProgs, allProgsMap, TestEntry(..), AccProg(..), makeTestEntry, 
+                     p1a, p12e, p2g)
 import           Data.Array.Accelerate.BackendKit.SimpleArray (payloadsFromList1)
 import Data.Array.Accelerate.Interpreter as I
 -- import           Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone (repackAcc)
@@ -529,9 +531,13 @@ convertExp ep@(EnvPack envE envA mp) ex =
     S.ETuple []    -> constantE (Tup [])
     S.ETuple [ex]  -> convertExp ep ex
 
-    -- Version 3: try to generalize tuple handling.  Failed, but leave it in a compiling state:
-    S.ETuple (hd:tl) ->
-      let ta = S.recoverExpType typeEnv hd
+    -- ETuple is the REVERSE of textual order in the source program.
+    -- type TupleRepr (a, b, c)  = (TupleRepr (a, b), c)
+    S.ETuple ls ->
+      let
+--          (hd:tl) = P.reverse ls -- FIXME: quadratic
+          (hd:tl) = ls
+          ta = S.recoverExpType typeEnv hd
           tb = S.recoverExpType typeEnv tltup
           hd' = convertExp ep hd
           tl' = convertExp ep tltup
@@ -767,10 +773,14 @@ indexToTup ty ex =
        TTuple [] -> sealExp (constant ())
 
        TTuple [TInt,TInt] -> 
-         let l,r :: Exp Int
-             (Z :. l :. r) = unlift (downcastE ex :: Exp (Z :. Int :. Int))
+         let a,b :: Exp Int
+             (Z :. a :. b) = unlift (downcastE ex :: Exp (Z :. Int :. Int))
              tup :: Exp (Int, Int)
-             tup = lift (l, r)
+#ifdef HACK
+             tup = lift (b,a)
+#else
+             tup = lift (a, b)
+#endif
          in sealExp tup
 
        TTuple [TInt,TInt,TInt] -> 
@@ -811,10 +821,14 @@ tupToIndex ty ex0 =
 
     TTuple [TInt,TInt] -> 
       dbgtrace ("Converting tuple type to index type... "++show ty) $
-          let l,r :: Exp Int
-              (l,r) = unlift (downcastE ex0 :: Exp (Int,Int))
+          let a,b :: Exp Int
+              (a,b) = unlift (downcastE ex0 :: Exp (Int,Int))
               ind' :: Exp (Z :. Int :. Int)
-              ind' = lift (Z :. l :. r)
+#ifdef HACK
+              ind' = lift (Z :. b :. a)
+#else
+              ind' = lift (Z :. a :. b)
+#endif
           in sealExp ind'
 
     TTuple [TInt,TInt,TInt] -> 
@@ -995,6 +1009,14 @@ t2_ :: Exp Int
 t2_ = downcastE t2
 case_const = H.assertEqual "simple const" (show t2_) "33"
 
+t3 = makeTestEntry "t3" (A.unit (constant (3::Int,4::Int)))
+t3_ = roundTrip t3
+case_tup = t3_
+-- case_tup = H.assertEqual "tup const" "" (show$ I.run )
+
+t4 = makeTestEntry "t4" (A.unit (constant (Z :. (3::Int) :. (4::Int))))
+t4_ = roundTrip t4
+case_tupInd = t4_
 
 t5 = convertAcc emptyEnvPack (S.Unit (S.EConst (I 33)))
 t5_ :: Acc (Scalar Int)
@@ -1194,8 +1216,13 @@ bug2_ = downcastA $ convertProg$ phase1$ phase0 bug2
 
 -- Current problems: p2c, p2g
 
-bug :: Acc (Scalar Int)
-bug = downcastA (convertProg (simpleProg (allProgsMap # "p12e")))
+bug :: Acc (Array DIM2 (Int,Int))
+-- bug = downcastA (convertProg (simpleProg (allProgsMap # "p2g")))
+bug = downcastA (convertProg$ phase1$ phase0 p2g')
+
+-- | Similar to p2c, except now simply return indices:
+p2g' :: Acc (Array DIM2 (Int,Int))
+p2g' = generate (constant (Z :. (3::Int) :. (2::Int))) unindex2
 
 roundTrip :: TestEntry -> IO ()
 roundTrip TestEntry{name, simpleProg, origProg= AccProg (acc :: Acc aty) } = do 
@@ -1203,8 +1230,8 @@ roundTrip TestEntry{name, simpleProg, origProg= AccProg (acc :: Acc aty) } = do
       cvt = downcastA $ convertProg simpleProg
   dbgtrace ("RoundTripping:\n" ++ show acc) $ 
    H.assertEqual ("roundTrip "++name)
-                 (show$ I.run cvt)
                  (show$ I.run acc)
+                 (show$ I.run cvt)
 
 --------------------------------------------------
 -- Aggregate tests:
