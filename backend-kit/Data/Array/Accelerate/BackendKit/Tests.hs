@@ -18,7 +18,7 @@ module Data.Array.Accelerate.BackendKit.Tests
 
     -- * Individual tests:
     p1a, p1aa, p1ab, p1ac, p1ba,
-    p2aa, p2a, p2f, p4, p4b, p4c, p5, p0, p1, p1b, p1bb, p1c, p1d, p1e, p1f,
+    p2aa, p2a, p2f, p4, p4b, p4c, p5, p0, p1, p1b, p1bb, p1c, p1d, p1e, p1f, p1g,
     p2, p2b, p2bb, p2c, p2cc, p2cd, p2ce, p2d, p2e, p2g, p2h, p2i, 
     p3,
     p6, p6b,
@@ -122,7 +122,7 @@ otherProgs =
   go "p0" p0,                
   go "p1" p1, 
   go "p1b" p1b,  go "p1bb" p1bb,
-  go "p1c" p1c, go "p1d" p1d, go "p1e" p1e, go "p1f" p1f,
+  go "p1c" p1c, go "p1d" p1d, go "p1e" p1e, go "p1f" p1f, go "p1g" p1g,
   go "p2" p2, go "p2aa" p2aa, go "p2b" p2b, go "p2bb" p2bb,
   go "p2c" p2c, go "p2cc" p2cc, go "p2cd" p2cd, go "p2ce" p2ce,
   go "p2d" p2d, go "p2e" p2e, go "p2g" p2g, go "p2h" p2h,  go "p2i" p2i,
@@ -283,6 +283,34 @@ p1e = A.unit (constant (3::Int,4::Int64))
 -- | The same as `p1e` but with a different way to form the tuple constant.
 p1f :: Acc (Scalar (Int,Int64))
 p1f = A.unit ((lift (constant (3::Int),constant (4::Int64))) :: Exp (Int,Int64))
+
+-- | This will spoof any attempt to recover the surface tuple rep
+-- during conversion of the Accelerate AST.
+p1g :: Acc (Scalar ((Int,Int32),Int64))
+p1g = A.unit (lift (constant (3::Int,4::Int32), constant (5::Int64)))
+
+    -- gatherLets, output was:
+    -- ================================================================================
+    -- ([(tmp_0,
+    --    TArray 0 (TTuple [TInt,TInt32,TInt64]),
+    --    Unit (TArray 0 (TTuple [TInt,TInt32,TInt64]))
+    --         (ETuple [EConst (Tup [I 3,I32 4]),EConst (I64 5)]))],
+    --  Vr (TArray 0 (TTuple [TInt,TInt32,TInt64])) tmp_0)
+
+    -- removeArrayTuple, output was:
+    -- ================================================================================
+    -- Prog {progBinds = [ProgBind tmp_0
+    --                             (TArray 0 (TTuple [TInt,TInt32,TInt64]))
+    --                             ()
+    --                             (Right Unit (ETuple [EConst (Tup [I 3,I32 4]),EConst (I64 5)]))],
+    --       progResults = WithoutShapes [tmp_0],
+    --       progType = TArray 0 (TTuple [TInt,TInt32,TInt64]),
+    --       uniqueCounter = 0,
+    --       typeEnv = [(tmp_0, TArray 0 (TTuple [TInt,TInt32,TInt64]))]}
+    --  [dbg] engaging optional typecheck pass, AST size 4
+    -- *** Exception: Typecheck pass failed: Unit input expression does not match expected.
+    -- Got:      TTuple [TTuple [TInt,TInt32],TInt64]
+    -- Expected: TTuple [TInt,TInt32,TInt64]
 
 ----------------------------------------
 

@@ -486,7 +486,7 @@ tupleNumLeaves _             = 1
 
 convertType :: TupleType a -> S.Type
 convertType origty = 
---  tracePrint ("CONVERTTYPE of "++show ty++":  ") $
+  trace ("CONVERTTYPE of "++show origty++":  ") $
   tupleTy $ flattenTupTy $ 
   loop origty
  where   
@@ -556,7 +556,7 @@ convertArrayType origty =
                                                  
        Sug.ArraysRpair t0 t1 -> S.TTuple [loop t0, loop t1]
 
--- Flatten the snoc-list representation of tuples, at the array as well as scalar level
+-- | Flatten the snoc-list representation of tuples, at the array as well as scalar level
 flattenTupTy :: S.Type -> [S.Type]
 flattenTupTy ty = 
 #ifdef SURFACE_TUPLES
@@ -596,7 +596,7 @@ tupleTy ls = S.TTuple ls
 -- | Convert a constant to the simplified, explicit format.
 convertConst :: TupleType a -> a -> S.Const
 convertConst ty c =
-  trace ("Converting tuple const: "++show ty) $
+--  trace ("Converting tuple const: "++show ty) $
   case ty of 
     UnitTuple -> S.Tup []
 #ifdef SURFACE_TUPLES    
