@@ -1,6 +1,7 @@
 {-# LANGUAGE RankNTypes, ScopedTypeVariables, GADTs #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE FlexibleContexts, FlexibleInstances #-}
 {-# LANGUAGE DeriveDataTypeable #-}
@@ -53,7 +54,7 @@ import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
                   Prim(..), NumPrim(..), IntPrim(..), FloatPrim(..))
 import           Data.Array.Accelerate.BackendKit.Tests
                     (allProgs, allProgsMap, TestEntry(..), AccProg(..), makeTestEntry, 
-                     p1a, p12e, p2g)
+                     p1a, p12e, p2c, p2g)
 import           Data.Array.Accelerate.BackendKit.SimpleArray (payloadsFromList1)
 import Data.Array.Accelerate.Interpreter as I
 -- import           Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone (repackAcc)
@@ -322,15 +323,17 @@ generateD indSealed bodfn outArrTy =
           let
             rawfn :: Exp shp -> Exp outT
             rawfn x =
-              dbgtrace (" ** Inside generate scalar fun, downcasting bod "++
+              dbgtrace (" **   Inside generate scalar fun, downcasting bod "++
                      show (bodfn (sealExp x))++" to "++ show (typeOf (undefined::outT))) $
               downcastE (bodfn (sealExp x))
             dimE :: Exp shp
-            dimE = dbgtrace (" ** Generate: downcasting dim "++show indSealed++" Expecting Z-based index of dims "++show dims) $
+            dimE = dbgtrace (" **   Generate: downcasting dim "++show indSealed++
+                             " Expecting Z-based index of dims "++show dims
+                             ++", type "++ show(typeOf(undefined::shp))) $
                    downcastE indSealed
             acc = A.generate dimE rawfn
           in
-           dbgtrace (" ** .. Body of generateD: raw acc: "++show acc) $
+           dbgtrace (" **   .. Body of generateD: raw acc: "++show acc) $
            sealAcc acc
 
 
@@ -424,40 +427,30 @@ type AENV0 = ()
 -- | Reseal as a real Acceelerate tuple, but still use the internal
 -- tuple representation.  This function takes tuple components in the
 -- same order as ETuple.
-resealTup [] = sealExp$ A.constant ()
+resealTup :: [(SealedEltTuple, SealedExp)] -> (SealedEltTuple,SealedExp)
+resealTup [] = (SealedEltTuple UnitTuple, sealExp$ A.constant ())
+resealTup [one] = one
 
-resealTup [(_,sing)] = sing
+resealTup (et1@(SealedEltTuple (et1' :: EltTuple aty), a') : rst) =
+    let (et2,rst') = resealTup rst in
+    case et2 of
+      SealedEltTuple (et2' :: EltTuple rstTy) -> 
+       (SealedEltTuple (PairTuple et2' et1'),
+        sealExp$ Sm.tup2 (downcastE rst' :: Exp rstTy,
+                          downcastE a'   :: Exp aty))
 
-resealTup [(SealedEltTuple (_ :: EltTuple aty), a'),
-           (SealedEltTuple (_ :: EltTuple bty), b')] =
-    sealExp$ Sm.tup2 (downcastE a' :: Exp bty,
-                      downcastE b' :: Exp aty)
-
-resealTup [(SealedEltTuple (_ :: EltTuple aty), a),
-           (SealedEltTuple (_ :: EltTuple bty), b),
-           (SealedEltTuple (_ :: EltTuple cty), c)] =
-    let tup1 = Sm.tup2 (downcastE a :: Exp aty, downcastE b :: Exp bty)
-        tup2 = Sm.tup2 (tup1, downcastE c :: Exp cty)
-    in sealExp tup2
-
+-- resealTup [(SealedEltTuple (_ :: EltTuple aty), a'),
+--            (SealedEltTuple (_ :: EltTuple bty), b')] =
+--     sealExp$ Sm.tup2 (downcastE a' :: Exp bty,
+--                       downcastE b' :: Exp aty)
 -- resealTup [(SealedEltTuple (_ :: EltTuple aty), a),
 --            (SealedEltTuple (_ :: EltTuple bty), b),
 --            (SealedEltTuple (_ :: EltTuple cty), c)] =
---     sealExp$ Sm.tup3 (downcastE a :: Exp aty,
---                       downcastE b :: Exp bty,
---                       downcastE c :: Exp cty)
-
--- resealTup [(SealedEltTuple (_ :: EltTuple aty), a),
---            (SealedEltTuple (_ :: EltTuple bty), b),
---            (SealedEltTuple (_ :: EltTuple cty), c),
---            (SealedEltTuple (_ :: EltTuple dty), d)] =
---     sealExp$ Sm.tup4 (downcastE a :: Exp aty,
---                       downcastE b :: Exp bty,
---                       downcastE c :: Exp cty,
---                       downcastE d :: Exp dty)
-
-resealTup components =  
-  error$ "resealTup: mismatched or unhandled tuple: "++show components
+--     let tup1 = Sm.tup2 (downcastE a :: Exp aty, downcastE b :: Exp bty)
+--         tup2 = Sm.tup2 (tup1, downcastE c :: Exp cty)
+--     in sealExp tup2
+-- resealTup components =  
+--   error$ "resealTup: mismatched or unhandled tuple: "++show components
 
 -- | Convert an entire `SimpleAcc` expression into a fully-typed (but sealed) Accelerate one.
 --   Requires a type environments for the (open) `SimpleAcc` expression:    
@@ -466,7 +459,7 @@ resealTup components =
 convertExp :: EnvPack -> S.Exp -> SealedExp
 convertExp ep@(EnvPack envE envA mp) ex =
   dbgtrace(" @ Converting exp "++show ex++" with env "++show (M.map P.snd mp)) $
-  dbgtrace(" @-> converted exp result: "++show result) $
+  dbgtrace(" @-> converted exp, result: "++show result) $
   result
  where 
   cE = convertExp ep
@@ -500,40 +493,45 @@ convertExp ep@(EnvPack envE envA mp) ex =
                res = (A.!) (downcastA sa :: Acc (Array sh elt))
                            (downcastE indEx' :: Exp sh) in 
            sealExp res
-    
-    S.ETupProject {S.indexFromRight=ind, S.projlen=len, S.tupexpr=tex} ->
-      let tup = convertExp ep tex
-          tty  = S.recoverExpType typeEnv tex
-      in       
-       case scalarTypeD tty of
-         SealedEltTuple (et1 :: EltTuple tupT) ->
-           case et1 of
-             UnitTuple -> error "Tup projection from unit."
-             PairTuple (etA :: EltTuple aa) (etB@SingleTuple{} :: EltTuple bb) ->
-               let (a,b) = unlift (downcastE tup :: Exp (aa,bb))
-               in resealTup $ 
-                P.reverse $ P.take len $ P.drop ind $ P.reverse $
-                P.zip [SealedEltTuple etA, SealedEltTuple etB]
-                      [sealExp a, sealExp b]
 
-             PairTuple (ta :: EltTuple aa)
-               (PairTuple (tb :: EltTuple bb)
-                (tc@SingleTuple{} :: EltTuple cc)) ->
-               let a :: Exp aa
-                   b :: Exp bb
-                   c :: Exp cc
-                   bc :: Exp (bb,cc)
-                   (a,bc) = unlift (downcastE tup :: Exp (aa,(bb,cc)))
-                   (b,c) = unlift bc
-               in resealTup $ 
-                P.reverse $ P.take len $ P.drop ind $ P.reverse $
-                P.zip [SealedEltTuple ta, SealedEltTuple tb, SealedEltTuple tc]
-                      [sealExp a, sealExp b, sealExp c]
-         --------------------------------------------------------------------------------                
-         -- FIXME: recursive case.
-         --------------------------------------------------------------------------------
-             _ -> error ("ETupProject got unhandled tuple type: "++show et1)                
-    
+    -- This is tricky because we are projecting a slice from the
+    -- in-order traversal of a binary-tree of tuples.
+
+    S.ETupProject {S.projlen=0} -> error "convertE: ETupProject of zero length!"
+
+    -- TEMPORARY: for now we assume the input tuples have been
+    -- FLATTENED.  That means that we end up with a left-nested
+    -- snoc-tuple tree, not an arbitrary binary tree.
+    S.ETupProject {S.indexFromRight=origind, S.projlen=len, S.tupexpr=tex} ->
+      let                  
+          -- Scan to the point where we begin the slice:
+          loop1 0 et tup = loop2 len et tup []
+          loop1 ind (SealedEltTuple et1) tup =
+           case et1 of
+             UnitTuple -> notEnough
+             SingleTuple (_ :: T.ScalarType s) -> notEnough 
+             PairTuple (etA :: EltTuple aa) (_ :: EltTuple bb) ->
+               let a :: Exp aa;  b :: Exp bb; 
+                   (a,b) = unlift (downcastE tup :: Exp (aa,bb))
+               in loop1 (ind-1) (SealedEltTuple etA) (sealExp a)
+          loop2 0 _ _ !acc = P.snd$ resealTup acc
+          loop2 remain (SealedEltTuple et1) tup !acc =
+            case et1 of
+             UnitTuple -> notEnough
+             SingleTuple (_ :: T.ScalarType s) ->
+               if remain == 1
+               then P.snd$ resealTup ((SealedEltTuple et1,tup) : acc)
+               else notEnough
+             PairTuple (etA :: EltTuple aa) (etB :: EltTuple bb) ->
+               let a :: Exp aa;  b :: Exp bb;
+                   (a,b) = unlift (downcastE tup :: Exp (aa,bb))
+               in loop2 (remain-1) (SealedEltTuple etA) (sealExp a)
+                        ((SealedEltTuple etB, sealExp b) : acc)
+          notEnough = error$ "convertExp/ETupProject: not enough elements: "++show ex
+          tty  = S.recoverExpType typeEnv tex
+          origtup = convertExp ep tex      
+      in loop1 origind (scalarTypeD tty) origtup
+       
     S.ETuple []    -> constantE (Tup [])
     S.ETuple [ex]  -> convertExp ep ex
 
@@ -766,7 +764,7 @@ convertExp ep@(EnvPack envE envA mp) ex =
 indexToTup :: S.Type -> SealedExp -> SealedExp
 indexToTup ty ex =
   dbgtrace (" -- starting indexToTup... ")$ 
-  dbgtrace (" -- indexTo tup, converting "++show (ty,ex)++" to "++ show res)
+  dbgtrace (" -- indexTo tup, converted "++show (ty,ex)++" to "++ show res)
    res
   where
     res = 
@@ -777,18 +775,14 @@ indexToTup ty ex =
          let a,b :: Exp Int
              (Z :. a :. b) = unlift (downcastE ex :: Exp (Z :. Int :. Int))
              tup :: Exp (Int, Int)
-#ifdef HACK
-             tup = lift (b,a)
-#else
              tup = lift (a, b)
-#endif
          in sealExp tup
 
        TTuple [TInt,TInt,TInt] -> 
          let a,b,c :: Exp Int
              (Z :. a :. b :. c) = unlift (downcastE ex :: Exp (Z :. Int :. Int :. Int))
-             tup :: Exp (Int, (Int, Int))
-             tup = lift (a,(b,c))
+             tup :: Exp ((Int, Int),Int)
+             tup = lift ((a,b),c)
          in sealExp tup
 
 -- FINISHME: Go up to tuple size 9.
@@ -813,7 +807,7 @@ liftScons a b = lift (a :. b)
 tupToIndex :: S.Type -> SealedExp -> SealedExp
 tupToIndex ty ex0 =
     dbgtrace (" ~~ starting tupToIndex... ")$ 
-    dbgtrace (" ~~ tupToIndex tup, converting "++show (ty,ex0)++" to "++ show res) res
+    dbgtrace (" ~~ tupToIndex tup, converted "++show (ty,ex0)++" to "++ show res) res
  where
  res =  
   case ty of
@@ -821,24 +815,20 @@ tupToIndex ty ex0 =
     TTuple [a] -> error$ "tupToIndex: internal error, singleton tuple: "++show (ty,ex0)
 
     TTuple [TInt,TInt] -> 
-      dbgtrace ("Converting tuple type to index type... "++show ty) $
+      dbgtrace (" ~~   Converting pair tuple type to index type... "++show ty) $
           let a,b :: Exp Int
               (a,b) = unlift (downcastE ex0 :: Exp (Int,Int))
               ind' :: Exp (Z :. Int :. Int)
-#ifdef HACK
-              ind' = lift (Z :. b :. a)
-#else
               ind' = lift (Z :. a :. b)
-#endif
           in sealExp ind'
 
     TTuple [TInt,TInt,TInt] -> 
-      dbgtrace ("Converting tuple type to index type... "++show ty) $
+      dbgtrace (" ~~  Converting triplet tuple type to index type... "++show ty) $
           -- On the Acc side we're ONLY using pairs:
           let a,b,c :: Exp Int
-              bc :: Exp (Int,Int)
-              (a,bc) = unlift (downcastE ex0 :: Exp (Int,(Int,Int)))
-              (b,c) = unlift bc
+              ab :: Exp (Int,Int)
+              (ab,c) = unlift (downcastE ex0 :: Exp ((Int,Int),Int))
+              (a,b) = unlift ab
               ind' :: Exp (Z :. Int :. Int :. Int)
               ind' = lift (Z :. a :. b :. c)
           in sealExp ind'
@@ -1084,16 +1074,16 @@ case_generate2D = H.assertEqual "generate2" (show $ I.run$ t11_)
 -- | This test exercises only tuples on the input side, plus tuple field projection.
 t12 = convertAcc emptyEnvPack $
       S.Generate (S.ETuple [S.EConst (I 3), S.EConst (I 2)]) -- (S.EIndex [S.EConst (I 10)])
-                 (S.Lam1 (v, TTuple [TInt,TInt]) (S.ETupProject 0 1 (S.EVr v)))
+                 (S.Lam1 (v, TTuple [TInt,TInt]) (S.ETupProject 1 1 (S.EVr v)))
   where v   = S.var "v"
 t12_ :: Acc (Array DIM2 Int)
 t12_ = downcastA t12
 case_generatePrj = H.assertEqual "generate3"
                    (show$ I.run$ t12_)
-                   (show$ I.run t12A)
+                   (show$ I.run ref12)
 --                   "Array (Z :. 3 :. 2) [0,0,1,1,2,2]"
 -- Manually translated version:
-t12A = A.generate (constant (Z :. (3::Int) :. (2 :: Int)))
+ref12 = A.generate (constant (Z :. (3::Int) :. (2 :: Int)))
                   (\x0 -> indexHead (indexTail x0))
 
 v = S.var "v"
@@ -1108,28 +1098,28 @@ t13_ :: Acc (Array DIM3 (Int,Int))
 t13_ = downcastA t13
 case_generatePrj2 = H.assertEqual "generate4"
                    (show$ I.run$ t13_)
-                   "Array (Z :. 3 :. 2 :. 1) [(0,0),(1,0),(0,0),(1,0),(0,0),(1,0)]"
-                   -- (show$ I.run t12A)
+                   -- "Array (Z :. 3 :. 2 :. 1) [(0,0),(1,0),(0,0),(1,0),(0,0),(1,0)]"
+                   (show$ I.run ref13)
 
 -- This is the program that matches t13_.  Whether that is correct we should audit.
 ref13 = A.generate (constant (Z :. (3::Int) :. (2 :: Int) :. (1 :: Int)))
           (\x -> let a,b,c :: Exp Int
                      (Z :. a :. b :. c) = unlift x
-                 in lift (b,c))
+                 in lift (a,b))
 
 t14 = convertAcc emptyEnvPack $
       S.Generate (S.ETuple [S.EConst (I 3), S.EConst (I 2), S.EConst (I 1)]) 
                  (S.Lam1 (v, TTuple [TInt,TInt,TInt]) (S.EVr v))
-t14_ :: Acc (Array DIM3 (Int,(Int,Int)))
+t14_ :: Acc (Array DIM3 ((Int,Int),Int))
 t14_ = downcastA t14
 case_t14_generate = H.assertEqual "generate5"
+                   (show$ I.run$ ref14)
                    (show$ I.run$ t14_)
-                   "Array (Z :. 3 :. 2 :. 1) [(0,(0,0)),(0,(1,0)),(1,(0,0)),(1,(1,0)),(2,(0,0)),(2,(1,0))]"
 
 ref14 = A.generate (constant (Z :. (3::Int) :. (2 :: Int) :. (1 :: Int)))
           (\x -> let a,b,c :: Exp Int
                      (Z :. a :. b :. c) = unlift x
-                 in lift (a,(b,c)))
+                 in lift ((a,b),c))
 
 i15 = convertAcc emptyEnvPack $
       S.Generate (S.ETuple [S.EConst (I 3), S.EConst (I 2), S.EConst (I 1)]) 
@@ -1138,12 +1128,12 @@ i15 = convertAcc emptyEnvPack $
                                        (S.ETupProject 1 1 (S.EVr v))],
                              (S.ETupProject 2 1 (S.EVr v)) ])
                  )
-  where v   = S.var "v"
+
 i15_ :: Acc (Array DIM3 ((Int,Int),Int))
 i15_ = downcastA i15
 case_generateTupLeftNest = H.assertEqual "generate6"
                            (show$ I.run$ i15_)
-                           "Array (Z :. 3 :. 2 :. 1) [((0,0),0),((0,1),0),((1,0),0),((1,1),0),((2,0),0),((2,1),0)]"
+                           "Array (Z :. 3 :. 2 :. 1) [((0,0),0),((0,1),0),((0,0),1),((0,1),1),((0,0),2),((0,1),2)]"
 
 t16 :: SealedExp
 t16 = convertExp (extendA avr (TArray 0 TInt) t5 emptyEnvPack)
