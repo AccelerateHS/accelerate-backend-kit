@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE NamedFieldPuns  #-}
+{-# LANGUAGE ForeignFunctionInterface  #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | A JIT to compile and run programs via Cilk.  This constitutes a full Accelerate
@@ -118,8 +119,8 @@ rawRunIO pm name prog = do
         case lookup "CC" env of
           Just cc -> do dbgPrint 1$"[JIT] using CC environment variable = "++show cc
                         if cc == "icc" || cc == "icpc"
-                        then return$ cc ++ icc_args   
-                        else return$ cc ++" "++ cOptLvl
+                         then return$ cc ++ icc_args   
+                         else return$ cc ++" "++ cOptLvl
           Nothing -> do 
             code <- system "which icc" 
             case code of

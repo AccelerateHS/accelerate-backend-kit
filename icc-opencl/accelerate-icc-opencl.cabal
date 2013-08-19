@@ -6,7 +6,7 @@ Homepage:            https://github.com/AccelerateHS/accelerate-cpu/
 License:             BSD3
 Author:              Ryan R. Newton
 Maintainer:          rrnewton@gmail.com
-
+Default-Language:    Haskell2010
 Category:            Language
 
 Build-type:          Simple

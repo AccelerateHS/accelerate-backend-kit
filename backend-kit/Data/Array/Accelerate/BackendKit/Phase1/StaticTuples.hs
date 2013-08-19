@@ -161,10 +161,10 @@ retrieveTy tenv e =
     T.EIndexHeadDynamic ex    -> error "EIndexHeadDynamic should have been desugared before calling retrieveTy"
     T.EIndexTailDynamic ex    -> error "EIndexTailDynamic should have been desugared before calling retrieveTy"
 
--- Create an ETupProject but avoid creating spurious ones.
+-- | Create an ETupProject but avoid creating spurious ones.
 mkProject :: Int -> Int -> T.Exp -> Type -> T.Exp
 mkProject ind len ex (S.TTuple ty) = T.ETupProject ind len ex
-mkProject 0 1 ex oth = ex  -- Eliminate silly ETupProject.
+mkProject 0 1 ex _othTy = ex  -- Eliminate silly ETupProject.
 mkProject ind len ex ty = error$"internal error: should not have this project on non-tuple type: "++show ty
 
 mkTupleTy [one] = one

@@ -133,6 +133,10 @@ newtype SealedAcc     = SealedAcc     Dynamic deriving Show
 sealExp :: Typeable a => A.Exp a -> SealedExp
 sealExp = SealedExp . toDyn
 
+sealExp' :: (Elt a, Typeable a) => A.Exp a -> SealedExp
+sealExp' exp =
+  trace (" !SEALING Exp: "++show exp) (sealExp exp)
+
 sealAcc :: Typeable a => Acc a -> SealedAcc
 sealAcc = SealedAcc . toDyn
 
@@ -883,7 +887,7 @@ convertAcc env@(EnvPack _ _ mp) ae =
       in unitD (scalarTypeD ty) ex'
 
     S.Generate initE (S.Lam1 (vr,ty) bod) ->
-      let 
+      let -- Expose the index coming in as a plain tuple:
           bodfn ex  = let env'@(EnvPack _ _ m2) = extendE vr ty (indexToTup ty ex) env in
                       dbgtrace ("Generate/bodyfun called: extended environment to: "++show (M.map P.snd m2))$
                       convertExp env' bod
@@ -1015,6 +1019,16 @@ case_tupB = t3B_
 t4 = makeTestEntry "t4" (A.unit (constant (Z :. (3::Int) :. (4::Int))))
 t4_ = roundTrip t4
 case_tupInd = t4_
+
+itt :: Exp (Int,Int)
+itt = downcastE$ indexToTup (TTuple [TInt,TInt]) (sealExp$ constant (Z :. (3::Int) :. (4::Int)))
+case_indToTup = H.assertEqual "indexToTup" "Array (Z) [(3,4)]" (show$ I.run$ A.unit itt)
+
+tti :: Exp (Z :. Int :. Int)
+tti = downcastE$ tupToIndex (TTuple [TInt,TInt]) (sealExp$ constant (3::Int, 4::Int))
+case_tupToInd = H.assertEqual "tupToIndex" "Array (Z) [(Z :. 3) :. 4]" (show$ I.run$ A.unit tti)
+
+
 
 t5 = convertAcc emptyEnvPack (S.Unit (S.EConst (I 33)))
 t5_ :: Acc (Scalar Int)
@@ -1191,6 +1205,7 @@ case_const1 = H.assertEqual "tuple repr 1"
 case_const2 = H.assertEqual "tuple repr 2"
             (show c2) "Sealed:((Int,Int32),Int64)"
 
+
 --------------------------------------------------
 -- Complete program unit tests
 
@@ -1240,3 +1255,6 @@ unitTests =
     $(testGroupGenerator),
     allProg_tests
   ]
+
+
+    
