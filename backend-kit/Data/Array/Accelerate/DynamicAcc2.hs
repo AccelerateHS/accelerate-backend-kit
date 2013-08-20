@@ -816,6 +816,15 @@ tupToIndex ty ex0 =
  res =  
   case ty of
     TTuple []  -> sealExp (constant Z)
+    TInt -> 
+      dbgtrace (" ~~   Converting TInt to index type... "++show ty) $
+          let a :: Exp Int
+              a = downcastE ex0
+              ind' :: Exp (Z :. Int)
+              ind' = lift (Z :. a)
+          in sealExp ind'
+    
+#if 0     
     TTuple [a] -> error$ "tupToIndex: internal error, singleton tuple: "++show (ty,ex0)
 
     TTuple [TInt,TInt] -> 
@@ -836,6 +845,36 @@ tupToIndex ty ex0 =
               ind' :: Exp (Z :. Int :. Int :. Int)
               ind' = lift (Z :. a :. b :. c)
           in sealExp ind'
+#else
+    -- TTuple [TTuple [], TInt] -> 
+    --   dbgtrace (" ~~   Converting SINGLETON (!?) tuple type to index type... "++show ty) $
+    --       let a :: Exp Int
+    --           unt :: Exp ()
+    --           (unt,a) = unlift (downcastE ex0 :: Exp ((),Int))
+    --           ind' :: Exp (Z :. Int)
+    --           ind' = lift (Z :. a)
+    --       in sealExp ind'
+
+    TTuple [TTuple [TTuple [], TInt],TInt] -> 
+      dbgtrace (" ~~   Converting pair tuple type to index type... "++show ty) $
+          let a,b :: Exp Int
+              (a,b) = unlift (downcastE ex0 :: Exp (Int,Int))
+              ind' :: Exp (Z :. Int :. Int)
+              ind' = lift (Z :. a :. b)
+          in sealExp ind'
+
+    TTuple [TTuple [TTuple [TTuple [],TInt],TInt],TInt] -> 
+      dbgtrace (" ~~  Converting triplet tuple type to index type... "++show ty) $
+          -- On the Acc side we're ONLY using pairs:
+          let a,b,c :: Exp Int
+              ab :: Exp (Int,Int)
+              (ab,c) = unlift (downcastE ex0 :: Exp ((Int,Int),Int))
+              (a,b) = unlift ab
+              ind' :: Exp (Z :. Int :. Int :. Int)
+              ind' = lift (Z :. a :. b :. c)
+          in sealExp ind'
+#endif
+
 
  -- PROBLEM: Doing this in general requires knowing (Slice rstElt):
  -- We could conceivable do something like SealedEltTuple that stores the Slice instance...
@@ -1236,14 +1275,29 @@ bug = downcastA (convertProg$ phase1$ phase0 p2g')
 p2g' :: Acc (Array DIM2 (Int,Int))
 p2g' = generate (constant (Z :. (3::Int) :. (2::Int))) unindex2
 
+-- | The trickiness here is that we convert a program to its tuple-converted "Repr".
+-- 
+--   But there's no available type-level function for surface->repr of
+--   at BOTH the array level and the Elt level, that is, a combination of toArr and toTuple.
 roundTrip :: TestEntry -> IO ()
-roundTrip TestEntry{name, simpleProg, origProg= AccProg (acc :: Acc aty) } = do 
-  let cvt :: Acc aty
-      cvt = downcastA $ convertProg simpleProg
+roundTrip TestEntry{name, simpleProg, origProg= AccProg (acc :: Acc aty) } = do
+  -- This is a bit odd because we RUN it in its internal "Repr" mode:
+  let
+#if 0
+      ar0 :: Acc (Sug.ArrRepr aty)
+      ar0 = downcastA $ convertProg simpleProg
+      ar1 :: Sug.ArrRepr aty
+      ar1 = I.run ar0
+      ar2 :: aty
+      ar2 = Sug.toArr ar1
+#else
+      ar0 :: Acc aty
+      ar0 = downcastA $ convertProg simpleProg
+#endif
   dbgtrace ("RoundTripping:\n" ++ show acc) $ 
    H.assertEqual ("roundTrip "++name)
                  (show$ I.run acc)
-                 (show$ I.run cvt)
+                 (show$ I.run ar0)
 
 --------------------------------------------------
 -- Aggregate tests:

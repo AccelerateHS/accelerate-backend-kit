@@ -1,5 +1,6 @@
 {-# LANGUAGE TypeOperators, NamedFieldPuns, ExistentialQuantification #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | A battery of simple tests for any new SimpleAST-based  backend.
@@ -60,6 +61,9 @@ import Test.Framework.Providers.HUnit
 import Test.HUnit      ((~=?), (~?))
 import Text.PrettyPrint.GenericPretty (doc)
 
+import Data.Array.Accelerate.Tuple (TupleRepr)
+import Data.Dynamic (Typeable)
+
 
 -- | A tuple containing name, AST, and the printed result produced by evaluating under
 --   the reference Accelerate interpreter, and THEN flattened/printed as an S.AccArray.
@@ -73,7 +77,9 @@ data TestEntry = TestEntry {
   origProg :: AccProg }
  deriving (Show, Ord, Eq)
 
-data AccProg = forall a . (Arrays a, Show a) => AccProg (Acc a)
+-- data AccProg = forall a . (Arrays a, Show a, Typeable (TupleRepr a)) => AccProg (Acc a)
+-- data AccProg = forall a . (Arrays a, Show a) => AccProg (Acc a)
+data AccProg = forall a . (Arrays a, Show a, Arrays (Sug.ArrRepr a)) => AccProg (Acc a)
 
 instance Show AccProg where
   show (AccProg acc) = show acc
@@ -146,11 +152,12 @@ otherProgs =
   go "p20a" p20a, go "p20b" p20b, go "p20c" p20c
   ]
 
-makeTestEntry :: forall a . (Show a, Arrays a) => String -> Acc a -> TestEntry
-makeTestEntry = go
+-- makeTestEntry :: forall a . (Show a, Arrays a) => String -> Acc a -> TestEntry
+makeTestEntry x y = go x y 
 
 -- | A shorthand name.
-go :: forall a . (Show a, Arrays a) => String -> Acc a -> TestEntry
+-- 
+go :: forall a . (Show a, Arrays a, Arrays (Sug.ArrRepr a)) => String -> Acc a -> TestEntry
 go name p =
   let arr = run p -- Run through the official Accelerate interpreter.
       -- Then we unpack the results into our plainer format. 
@@ -159,7 +166,19 @@ go name p =
       payloads = S.arrPayloads arr2
       -- Compare the *flat* list of payloads only for now; we record the printed payload:
   in TestEntry name (convertToSimpleProg p) (show payloads) (AccProg p)
-       
+
+go1 :: forall sh elt . (Shape sh, Show elt, Elt elt, Arrays (Array sh elt), Typeable (TupleRepr elt)) =>
+      String -> Acc (Array sh elt) -> TestEntry
+go1 name p =
+  let arr = run p -- Run through the official Accelerate interpreter.
+      -- Then we unpack the results into our plainer format. 
+      (repr :: Sug.ArrRepr (Array sh elt)) = Sug.fromArr arr  -- Array typing nonsense.
+      (_ty, arr2, _phantom :: Phantom (Array sh elt)) = unpackArray repr
+      payloads = S.arrPayloads arr2
+      -- Compare the *flat* list of payloads only for now; we record the printed payload:
+  in TestEntry name (convertToSimpleProg p) (show payloads) (AccProg p)
+
+
 ----------------------------------------------------------------------------------------------------
 -- Extra categories that are orthogonal to the above:
 

@@ -11,7 +11,7 @@
 
 -- Toggle this to try to match the source tuple format rather than the
 -- Snoc-list accelerate internal format.
-#define SURFACE_TUPLES
+-- define SURFACE_TUPLES
 
 -- | PHASE1 :  Accelerate -> SimpleAcc
 --
@@ -485,15 +485,19 @@ tupleNumLeaves _             = 1
 -------------------------------------------------------------------------------
 
 convertType :: TupleType a -> S.Type
-convertType origty = 
-  -- trace ("CONVERTTYPE of "++show origty++":  ") $
-  tupleTy $ flattenTupTy $ 
-  loop origty
- where   
+convertType origty =
+    trace ("CONVERTTYPE of "++show origty++", result = "++show res) $
+    res
+ where
+  res = tupleTy $ flattenTupTy $  
+         case loop origty of
+           -- Accelerate is a bit inconsistent with respect to scalar types like "TupleRepr Int":
+           S.TTuple [S.TTuple [], x] -> x
+           oth                       -> oth
   loop :: TupleType a -> S.Type
   loop ty =  
    case ty of 
-     UnitTuple          -> S.TTuple []
+     UnitTuple          -> S.TTuple []     
      PairTuple ty1 ty0  -> S.TTuple [loop ty1, loop ty0] -- First, just extract the binary tree.
      SingleTuple scalar -> 
       case scalar of 
@@ -556,6 +560,9 @@ convertArrayType origty =
                                                  
        Sug.ArraysRpair t0 t1 -> S.TTuple [loop t0, loop t1]
 
+removeOuterEndcap (S.TTuple [S.TTuple [], ty]) = ty
+removeOuterEndcap oth                          = oth
+
 -- | Flatten the snoc-list representation of tuples, at the array as well as scalar level
 flattenTupTy :: S.Type -> [S.Type]
 flattenTupTy ty = 
@@ -594,9 +601,19 @@ tupleTy ls = S.TTuple ls
 -------------------------------------------------------------------------------
 
 -- | Convert a constant to the simplified, explicit format.
-convertConst :: TupleType a -> a -> S.Const
-convertConst ty c =
---  trace ("Converting tuple const: "++show ty) $
+convertConst :: forall a . TupleType a -> a -> S.Const
+convertConst oty oc =
+  trace ("Converting tuple const: "++show oty++" result = "++show res) $
+  res
+ where
+ res =
+   -- Nix singleton tuples:
+   case loop oty oc of
+     S.Tup [S.Tup [], x] -> x
+     oth                 -> oth
+       
+ loop :: forall a . TupleType a -> a -> S.Const
+ loop ty c = 
   case ty of 
     UnitTuple -> S.Tup []
 #ifdef SURFACE_TUPLES    
@@ -609,13 +626,8 @@ convertConst ty c =
                            S.Tup ls -> S.Tup (ls ++ [c1'])
                            singl    -> S.Tup [singl, c1']
 #else
-    PairTuple ty1 ty0 -> let (c1,c0) = c 
-                             c0' = convertConst ty0 c0
-                         in 
-                         case convertConst ty1 c1 of
-                           S.Tup [] -> c0'
-                           S.Tup ls -> S.Tup (c0' : ls)
-                           singl -> S.Tup [c0', singl]
+    PairTuple ty0 ty1 -> S.Tup [loop ty0 (fst c),
+                                loop ty1 (snd c)]
 #endif
 --                           oth -> error$ "mal constructed tuple on RHS of PairTuple: "++ show oth
     SingleTuple scalar -> 
