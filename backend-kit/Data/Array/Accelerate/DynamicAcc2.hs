@@ -56,6 +56,8 @@ import           Data.Array.Accelerate.BackendKit.Tests
                     (allProgs, allProgsMap, TestEntry(..), AccProg(..), makeTestEntry, 
                      p1a, p12e, p2c, p2g)
 import           Data.Array.Accelerate.BackendKit.SimpleArray (payloadsFromList1)
+import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter as IS
+
 import Data.Array.Accelerate.Interpreter as I
 -- import           Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone (repackAcc)
 import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc)
@@ -1284,20 +1286,22 @@ roundTrip TestEntry{name, simpleProg, origProg= AccProg (acc :: Acc aty) } = do
   -- This is a bit odd because we RUN it in its internal "Repr" mode:
   let
 #if 0
-      ar0 :: Acc (Sug.ArrRepr aty)
+      ar0 :: Acc (Sug.ArrReprDeep aty)
       ar0 = downcastA $ convertProg simpleProg
-      ar1 :: Sug.ArrRepr aty
+      ar1 :: Sug.ArrReprDeep aty
       ar1 = I.run ar0
       ar2 :: aty
       ar2 = Sug.toArr ar1
+      res = ar2
 #else
       ar0 :: Acc aty
       ar0 = downcastA $ convertProg simpleProg
+      res = I.run ar0
 #endif
   dbgtrace ("RoundTripping:\n" ++ show acc) $ 
    H.assertEqual ("roundTrip "++name)
                  (show$ I.run acc)
-                 (show$ I.run ar0)
+                 (show res)
 
 --------------------------------------------------
 -- Aggregate tests:

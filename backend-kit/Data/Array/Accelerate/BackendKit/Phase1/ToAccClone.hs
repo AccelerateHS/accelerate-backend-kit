@@ -11,7 +11,7 @@
 
 -- Toggle this to try to match the source tuple format rather than the
 -- Snoc-list accelerate internal format.
--- define SURFACE_TUPLES
+#define SURFACE_TUPLES
 
 -- | PHASE1 :  Accelerate -> SimpleAcc
 --
@@ -130,16 +130,17 @@ envLookupArray i =
 --------------------------------------------------------------------------------
 
 getAccType :: forall aenv ans . Sug.Arrays ans => OpenAcc aenv ans -> S.Type
-getAccType _ = convertArrayType ty2 
-  where 
-      ty2 = Sug.arrays (typeOnlyErr "getAccType" :: ans) :: Sug.ArraysR (Sug.ArrRepr ans)
+getAccType _ = convertArrayType (Sug.reifyArrTupTree unused) ty2 
+  where
+    unused = typeOnlyErr "getAccType" :: ans
+    ty2 = Sug.arrays unused :: Sug.ArraysR (Sug.ArrRepr ans)
 
 getAccTypePre :: Sug.Arrays ans => PreOpenAcc OpenAcc aenv ans -> S.Type
 getAccTypePre acc = getAccType (OpenAcc acc)
 
 getExpType :: forall env aenv ans . Sug.Elt ans => OpenExp env aenv ans -> S.Type
-getExpType _ = convertType ty 
-  where  ty  = Sug.eltType ((typeOnlyErr"getExpType")::ans) 
+getExpType _ = convertType (Sug.reifyTupTree unused) (Sug.eltType unused)
+  where unused = ((typeOnlyErr"getExpType")::ans) 
 
 {-# INLINE typeOnlyErr #-}
 typeOnlyErr msg = error$ msg++ ": This is a value that should never be evaluated.  It carries type information only."
@@ -484,16 +485,25 @@ tupleNumLeaves _             = 1
 -- Convert types
 -------------------------------------------------------------------------------
 
-convertType :: TupleType a -> S.Type
-convertType origty =
-    trace ("CONVERTTYPE of "++show origty++", result = "++show res) $
+-- | Convert from a reified representation of an Accelerate scalar
+-- type into the simpler representation.
+convertType :: (Sug.EltKind,Sug.TupTree) -> TupleType a -> S.Type
+convertType (eltKind, tre) origty =
+    trace ("CONVERTTYPE of "++show origty++", surface= "++show tre++", result = "++show res) $
     res
  where
-  res = tupleTy $ flattenTupTy $  
+  res = alterKind $ tupleTy $ flattenTupTy tre $ 
          case loop origty of
            -- Accelerate is a bit inconsistent with respect to scalar types like "TupleRepr Int":
            S.TTuple [S.TTuple [], x] -> x
            oth                       -> oth
+
+  alterKind ty =
+    case (eltKind, ty) of
+      (Sug.TupKind, x) -> x
+      (Sug.ZKind, x)   -> error "ToAccClone/convertType: Need to add shape/index (Z) kinds to the language."
+      -- (AllKind, 
+         
   loop :: TupleType a -> S.Type
   loop ty =  
    case ty of 
@@ -541,12 +551,12 @@ convertType origty =
 --           
 --   That is, an array of ints will come out as just an array of ints
 --   with no extra fuss.
-convertArrayType :: forall arrs . Sug.ArraysR arrs -> S.Type
-convertArrayType origty = 
+convertArrayType :: forall arrs . Sug.TupTree -> Sug.ArraysR arrs -> S.Type
+convertArrayType tre origty = 
 #ifndef SURFACE_TUPLES
-     removeOuterEndcap $ 
+--     removeOuterEndcap $ 
 #endif
-     tupleTy $ flattenTupTy $ loop origty
+     tupleTy $ flattenTupTy tre $ loop origty
   where 
     loop :: forall ar . Sug.ArraysR ar -> S.Type
     loop ty = 
@@ -555,8 +565,10 @@ convertArrayType origty =
        -- Again, here we reify information from types (phantom type
        -- parameters) into a concrete data-representation:
        Sug.ArraysRarray | (_ :: Sug.ArraysR (Sug.Array sh e)) <- ty -> 
-          let ety = Sug.eltType ((error"This shouldn't happen (3)")::e) in
-          S.TArray (Sug.dim (Sug.ignore :: sh)) (convertType ety)          
+          let unused = ((error"This shouldn't happen (3)")::e)
+              ety = Sug.eltType unused
+              tre = Sug.reifyTupTree unused 
+          in S.TArray (Sug.dim (Sug.ignore :: sh)) (convertType tre ety)
                                                  
        Sug.ArraysRpair t0 t1 -> S.TTuple [loop t0, loop t1]
 
@@ -564,14 +576,15 @@ removeOuterEndcap (S.TTuple [S.TTuple [], ty]) = ty
 removeOuterEndcap oth                          = oth
 
 -- | Flatten the snoc-list representation of tuples, at the array as well as scalar level
-flattenTupTy :: S.Type -> [S.Type]
-flattenTupTy ty = 
+flattenTupTy :: Sug.TupTree -> S.Type -> [S.Type]
+flattenTupTy tre ty =
 #ifdef SURFACE_TUPLES
-  -- reverse $ 
-  loop ty 
- where 
+  trace ("Flattening to match tree structure: "++show (tre,ty)++" result = "++show res) $
+  res
+ where
+  res = loop2 tre ty
   -- When using the surface representation we reverse (cons instead of snoc):
-  mkTup = S.TTuple -- . reverse
+  mkTup = S.TTuple 
 #else
   -- DISABLE flattening  
   case ty of
@@ -580,20 +593,61 @@ flattenTupTy ty =
  where 
   mkTup = S.TTuple 
 #endif
-  isClosed (S.TTuple [S.TTuple [],_r]) = True
-  isClosed (S.TTuple [l,_r]) = isClosed l       
-  isClosed _                = False
-  loop (S.TTuple [])        = []
-  -- isClosed means 'left' is a standalone tuple and 'right' does not extend it:
-  loop (S.TTuple [left,right]) | isClosed right = [mkTup [tupleTy (loop left), tupleTy (loop right)]]
---                               | otherwise      =  tupleTy (loop right) : loop left
-                               | otherwise      =  loop left ++ [tupleTy (loop right)]
-  loop (S.TTuple ls) = error$"flattenTupTy: expecting binary-tree tuples as input, recieved: "++show(S.TTuple ls)
-  loop oth           = [oth]
+--   isClosed (S.TTuple [S.TTuple [],_r]) = True
+--   isClosed (S.TTuple [l,_r]) = isClosed l       
+--   isClosed _                = False
+                              
+--   loop (S.TTuple [])        = []
+--   -- isClosed means 'left' is a standalone tuple and 'right' does not extend it:
+--   loop (S.TTuple [left,right]) | isClosed right = [mkTup [tupleTy (loop left), tupleTy (loop right)]]
+-- --                               | otherwise      =  tupleTy (loop right) : loop left
+--                                | otherwise      =  loop left ++ [tupleTy (loop right)]
+--   loop (S.TTuple ls) = error$"flattenTupTy: expecting binary-tree tuples as input, recieved: "++show(S.TTuple ls)
+--   loop oth           = [oth]
+
+  loop2 Sug.TupLeaf ty =
+    case ty of 
+      (S.TTuple [S.TTuple [], ty]) -> [ty]
+      oth                          -> [oth]
+  loop2 (Sug.TupTree []) ty =
+    case ty of
+      S.TTuple [] -> [S.TTuple []]
+      oth         -> error$"ToAccClone/flattenTupTy: mismatched TupTree and Type, expected unit: "++show oth
+  loop2 (Sug.TupTree [lst]) ty = [tupleTy$ flattenTupTy lst ty]
+  loop2 (Sug.TupTree tt@(_:_)) (S.TTuple tls) =
+    let (last,rest) = splitLast tt in
+    case tls of
+      [ia,ib] -> loop2 (Sug.TupTree rest) ia
+                 ++ [tupleTy (loop2 last ib)]
+      ls -> error$"ToAccClone/flattenTupTy: expecting input TTuple to be a binary tree: "++show (S.TTuple ls)
 
 
+
+  -- loop2 Sug.TupLeaf ty                 = [ty]
+  -- loop2 (Sug.TupTree []) ty =
+  --   case ty of
+  --     S.TTuple [] -> [S.TTuple []]
+  --     oth         -> error$"ToAccClone/flattenTupTy: mismatched TupTree and Type, expected unit: "++show oth
+  -- loop2 (Sug.TupTree tt) (S.TTuple tls) =
+  --   let (last,rest) = splitLast tt in 
+  --   case tls of
+  --     [ia,ib] ->
+  --       loop2 (Sug.TupTree rest) ia
+  --        ++ [tupleTy (loop2 last ib)]
+  --     ls -> error$"ToAccClone/flattenTupTy: expecting input TTuple to be a binary tree: "++show (S.TTuple ls)
+
+
+-- | Simple helper for constructing tuple types.
 tupleTy [ty] = ty
 tupleTy ls = S.TTuple ls
+
+
+splitLast []                 =  error "splitLast: cannot take empty list"
+splitLast (x:xs)             =  go x xs
+  where go lst []   = (lst,[])
+        go y (z:zs) =
+          let (lst,zs') = go z zs in
+          (lst, y:zs')
 
 
 --------------------------------------------------------------------------------
@@ -778,9 +832,10 @@ convertFun =  loop []
    -- In this case we use quite a few scoped type variables:
    loop acc orig@(Lam f2) | (_:: OpenFun env aenv (arg -> res)) <- orig 
                           = do 
-                               let (_:: OpenFun (env, arg) aenv res) = f2 
-                                   ety = Sug.eltType ((error"This shouldn't happen (4)") :: arg)
-                                   sty = convertType ety
+                               let (_:: OpenFun (env, arg) aenv res) = f2
+                                   unused = ((error"This shouldn't happen (4)") :: arg)
+                                   sty = convertType (Sug.reifyTupTree unused)
+                                                     (Sug.eltType unused)
                                (_,x) <- withExtendedScalarEnv "v" $ do
                                           v <- envLookupScalar 0
                                           loop ((v,sty) : acc) f2
@@ -825,7 +880,7 @@ unpackArray arrrepr = (ty, S.AccArray shp payloads,
            ls -> error$"Use: corrupt Accelerate array -- arrays components did not have identical shape:"
                  ++ show (concat ls)
    (shps, payloads)  = cvt2 repOf actualArr
-   ty        = convertArrayType repOf
+   ty        = convertArrayType (Sug.reifyArrTupTree actualArr) repOf
    repOf     = Sug.arrays actualArr  :: Sug.ArraysR (Sug.ArrRepr a)
    actualArr = Sug.toArr  arrrepr    :: a   
 
