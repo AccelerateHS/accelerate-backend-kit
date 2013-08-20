@@ -489,7 +489,7 @@ tupleNumLeaves _             = 1
 -- type into the simpler representation.
 convertType :: (Sug.EltKind,Sug.TupTree) -> TupleType a -> S.Type
 convertType (eltKind, tre) origty =
-    trace ("CONVERTTYPE of "++show origty++", surface= "++show tre++", result = "++show res) $
+--    trace ("CONVERTTYPE of "++show origty++", surface= "++show tre++", result = "++show res) $
     res
  where
   res = alterKind $ tupleTy $ flattenTupTy tre $ 
@@ -579,7 +579,7 @@ removeOuterEndcap oth                          = oth
 flattenTupTy :: Sug.TupTree -> S.Type -> [S.Type]
 flattenTupTy tre ty =
 #ifdef SURFACE_TUPLES
-  trace ("Flattening to match tree structure: "++show (tre,ty)++" result = "++show res) $
+--  trace ("Flattening to match tree structure: "++show (tre,ty)++" result = "++show res) $
   res
  where
   res = loop2 tre ty
@@ -656,9 +656,7 @@ splitLast (x:xs)             =  go x xs
 
 -- | Convert a constant to the simplified, explicit format.
 convertConst :: forall a . TupleType a -> a -> S.Const
-convertConst oty oc =
-  trace ("Converting tuple const: "++show oty++" result = "++show res) $
-  res
+convertConst oty oc = res
  where
  res =
    -- Nix singleton tuples:
