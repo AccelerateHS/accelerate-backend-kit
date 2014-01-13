@@ -437,6 +437,7 @@ resealTup :: [(SealedEltTuple, SealedExp)] -> (SealedEltTuple,SealedExp)
 resealTup [] = (SealedEltTuple UnitTuple, sealExp$ A.constant ())
 resealTup [one] = one
 
+#ifdef NESTED_TUPS
 resealTup (et1@(SealedEltTuple (et1' :: EltTuple aty), a') : rst) =
     let (et2,rst') = resealTup rst in
     case et2 of
@@ -444,19 +445,21 @@ resealTup (et1@(SealedEltTuple (et1' :: EltTuple aty), a') : rst) =
        (SealedEltTuple (PairTuple et2' et1'),
         sealExp$ Sm.tup2 (downcastE rst' :: Exp rstTy,
                           downcastE a'   :: Exp aty))
+#else
+resealTup [(SealedEltTuple (_ :: EltTuple aty), a'),
+           (SealedEltTuple (_ :: EltTuple bty), b')] =
+    sealExp$ Sm.tup2 (downcastE a' :: Exp bty,
+                      downcastE b' :: Exp aty)
+resealTup [(SealedEltTuple (_ :: EltTuple aty), a),
+           (SealedEltTuple (_ :: EltTuple bty), b),
+           (SealedEltTuple (_ :: EltTuple cty), c)] =
+    let tup1 = Sm.tup2 (downcastE a :: Exp aty, downcastE b :: Exp bty)
+        tup2 = Sm.tup2 (tup1, downcastE c :: Exp cty)
+    in sealExp tup2
+resealTup components =  
+  error$ "resealTup: mismatched or unhandled tuple: "++show components
+#endif
 
--- resealTup [(SealedEltTuple (_ :: EltTuple aty), a'),
---            (SealedEltTuple (_ :: EltTuple bty), b')] =
---     sealExp$ Sm.tup2 (downcastE a' :: Exp bty,
---                       downcastE b' :: Exp aty)
--- resealTup [(SealedEltTuple (_ :: EltTuple aty), a),
---            (SealedEltTuple (_ :: EltTuple bty), b),
---            (SealedEltTuple (_ :: EltTuple cty), c)] =
---     let tup1 = Sm.tup2 (downcastE a :: Exp aty, downcastE b :: Exp bty)
---         tup2 = Sm.tup2 (tup1, downcastE c :: Exp cty)
---     in sealExp tup2
--- resealTup components =  
---   error$ "resealTup: mismatched or unhandled tuple: "++show components
 
 -- | Convert an entire `SimpleAcc` expression into a fully-typed (but sealed) Accelerate one.
 --   Requires a type environments for the (open) `SimpleAcc` expression:    
@@ -509,7 +512,7 @@ convertExp ep@(EnvPack envE envA mp) ex =
     -- respect to natural tuple elements, NOT count in terms of total
     -- scalar leaves.
     S.ETupProject {S.indexFromRight=ind, S.projlen=len, S.tupexpr=tex} ->
-      trace ("ETUPPROJECT: "++show (ind,len,tex)) $ 
+--      trace ("ETUPPROJECT: "++show (ind,len,tex)) $ 
       let tup = convertExp ep tex
           tty  = S.recoverExpType typeEnv tex
       in
