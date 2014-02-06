@@ -6,7 +6,6 @@ Homepage:            https://github.com/AccelerateHS/accelerate-cpu/
 License:             BSD3
 Author:              Ryan R. Newton
 Maintainer:          rrnewton@gmail.com
-
 Category:            Language
 
 Build-type:          Simple
@@ -56,6 +55,7 @@ Library
 
 Test-Suite test-accelerate-cpu
     type:       exitcode-stdio-1.0
+    Default-Language:    Haskell2010
     main-is:    Test.hs
     build-depends: base >= 4, containers, process, unix, array, directory
                  , deepseq         >= 1.3
