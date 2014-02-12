@@ -94,6 +94,7 @@ instance EmitBackend CEmitter where
     case e of
       CEmitter Sequential   _ -> return ()
       CEmitter CilkParallel _ -> do include "cilk/cilk.h"
+                                    include "cilk/cilk_api_linux.h"
                                     include "cilk/reducer.h"
     mapM_ (emitLine . strToSyn) $ P.lines headerCode 
 
@@ -247,7 +248,7 @@ mainBody isCMain e prog@GPUProg{progBinds, progResults, sizeEnv} = do
         allResults = standardResultOrder (progResults)
         allArrays  = map P.fst allResults
         allUses    = S.fromList $ map (\(a,b,c) -> a) useBinds
-        body       = do            
+        body0      = do
            comm "First we EXECUTE the program by executing each array op in order:"
            mapM_ (execBind e prog) (L.zip [0..] progBinds)
 
@@ -274,6 +275,14 @@ mainBody isCMain e prog@GPUProg{progBinds, progResults, sizeEnv} = do
                if S.member vr allUses P.|| elem vr allArrays
                then return ()
                else freeCStorage ty (varSyn vr)
+
+        -- [2014.02.12] For debugging purposes let's bring Cilk up and down explicitly each time:
+        body = 
+         case e of
+           CEmitter Sequential   _ -> body0
+           CEmitter CilkParallel _ -> do emitStmt$ function "__cilkrts_init" []
+                                         body0
+                                         emitStmt$ function "__cilkrts_end_cilk" []
     _ <- if isCMain
          then rawFunDef "int" "main" [] (do body; return_ 0)
          else rawFunDef "void" "MainProg" [("struct ArgRecord*",globalArgs), ("struct ResultRecord*",globalResults)] body

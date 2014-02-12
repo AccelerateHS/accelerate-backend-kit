@@ -59,6 +59,16 @@ like ICC cannot fail gracefully in this case.  In this case would be
 perfectly happy if I could have a __declspec(vector) fail to vectorize
 but still compile.
 
+[2014.02.12] {Segfaults may actually be a Cilk bug}
+----------------------------------------------------
+
+I doubt Cilk gets used much in this repeated-dlopen-mode.  I started
+seeing this error:
+
+   "Cilk runtime error: thread creation (3) failed: 11" #4 
+
+For which I filed issue #4:
+   
+   https://github.com/AccelerateHS/accelerate-backend-kit/issues/4
 
 
- 

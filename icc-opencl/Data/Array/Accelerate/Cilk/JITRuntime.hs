@@ -9,8 +9,6 @@ module Data.Array.Accelerate.Cilk.JITRuntime (run, runNamed, rawRunIO) where
 
 import           Data.Array.Accelerate (Acc)
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
-import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc   as S
-import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Type(..), Const(..))
 import qualified Data.Array.Accelerate.BackendKit.SimpleArray     as SA
 import           Data.Array.Accelerate.BackendKit.Utils.Helpers (maybtrace, dbg)
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1, phase2, repackAcc)
@@ -46,6 +44,8 @@ import Data.Array.Accelerate.BackendKit.Phase3.ToGPUIR           (convertToGPUIR
 import Data.Array.Accelerate.BackendKit.Phase3.DesugarGenerate   (desugarGenerate)
 import Data.Array.Accelerate.BackendKit.Phase3.FuseGenReduce     (fuseGenReduce)
 import Data.Array.Accelerate.BackendKit.CompilerPipeline         (runPass)
+import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc   as S
+import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Type(..), Const(..))
 import qualified Data.Array.Accelerate.BackendKit.IRs.CLike     as C
 import qualified Data.Array.Accelerate.BackendKit.IRs.GPUIR     as G
 import           Data.Array.Accelerate.BackendKit.IRs.Metadata   (ArraySizeEstimate, FreeVars)
@@ -136,7 +136,12 @@ rawRunIO pm name prog = do
          CilkParallel -> pickCC (error "ICC not found!  Need it for Cilk backend.")
 
   let suppress = if dbg>0 then " -g " else " -w " -- No warnings leaking through to the user.
+-- #define EXE_OUTPUT
+#ifdef EXE_OUTPUT
+      ccCmd = cc++suppress++" -lcilkrts -std=c99 "++thisprog++".c -o "++thisprog++".exe"
+#else
       ccCmd = cc++suppress++" -shared -fPIC -std=c99 "++thisprog++".c -o "++thisprog++".so"
+#endif
   dbgPrint 2 $ "[JIT]   Compiling with: "++ ccCmd
 
   t1 <- getCurrentTime 
@@ -148,10 +153,10 @@ rawRunIO pm name prog = do
     ExitSuccess -> return ()
     ExitFailure c -> error$"C Compiler failed with code "++show c
   -- Run the program and capture its output:
-#if 0     
+#ifdef EXE_OUTPUT
   dbgPrint 1$ "[JIT] Invoking external executable: "++ thisprog++".exe"  
   result <- readProcess ("./"++thisprog++".exe") [] ""
-  let elts = tyToElts (S.progType prog)
+  let elts = tyToElts (C.progType prog)
   dbgPrint 1$ "[JIT] Executable completed, parsing results, element types "++
      show elts++", "++show (length result)++" characters:\n "++take 80 result
   return$ parseMultiple result elts
