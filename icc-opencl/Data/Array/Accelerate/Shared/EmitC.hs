@@ -37,8 +37,8 @@ import Data.Array.Accelerate.BackendKit.Utils.Helpers (dbg)
 
 -- | Here is a new type just to create a new instance and implement the type class methods:
 --   We also keep around an environment that we extract from the top level program.
-data CEmitter = CEmitter ParMode Env
-data ParMode = CilkParallel | Sequential
+data CEmitter = CEmitter ParMode Env                  deriving (P.Show,P.Eq,P.Read,P.Ord)
+data ParMode = CilkParallel | Sequential              deriving (P.Show,P.Eq,P.Read,P.Ord)
 type Env = M.Map Var Type
 
 --------------------------------------------------------------------------------

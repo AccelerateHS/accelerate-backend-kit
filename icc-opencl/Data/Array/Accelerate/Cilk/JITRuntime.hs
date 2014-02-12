@@ -105,7 +105,7 @@ rawRunIO pm name prog = do
   -----------
 
   let emitted  = emitC pm prog2
-      thisprog = ".plainC_"++ stripFileName name
+      thisprog = ".genC_"++show pm++"_"++ stripFileName name
   b     <- doesFileExist (thisprog++".c")
   when b $ removeFile    (thisprog++".c") -- Remove file for safety
   writeFile  (thisprog++".c") emitted
