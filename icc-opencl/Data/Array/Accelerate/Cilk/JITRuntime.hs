@@ -5,7 +5,7 @@
 
 -- | A JIT to compile and run programs via Cilk.  This constitutes a full Accelerate
 -- backend.
-module Data.Array.Accelerate.Cilk.JITRuntime (run, rawRunIO) where 
+module Data.Array.Accelerate.Cilk.JITRuntime (run, runNamed, rawRunIO) where 
 
 import           Data.Array.Accelerate (Acc)
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
@@ -78,7 +78,12 @@ stripOptFlag = unwords . filter (not . (`elem` ["-O0","-O1","-O2","-O3"])) . wor
 -- | Run an Accelerate computation using a C backend in the given
 --   parallelism mode.
 run :: forall a . Sug.Arrays a => ParMode -> Acc a -> a
-run pm acc =
+run = runNamed "" 
+
+-- | Identical to `run` but provide an identifying name for this program for
+-- debugging purposes.
+runNamed :: forall a . Sug.Arrays a => String -> ParMode -> Acc a -> a
+runNamed name pm acc =
   maybtrace ("[CilkJIT] Repacking AccArray(s): "++show arrays) $ 
   repackAcc acc arrays
  where
@@ -87,9 +92,9 @@ run pm acc =
    -- track the final shape.
    simple = phase2 $ phase1 $ phase0 acc
    arrays = unsafePerformIO $
-            rawRunIO pm "" simple
+            rawRunIO pm name simple
 
--- Takes a program for which "phase2" has already been run.
+-- | (Internal) Takes a program for which "phase2" has already been run.
 rawRunIO :: ParMode -> String -> C.LLProg () -> IO [S.AccArray]
 rawRunIO pm name prog = do
   -----------

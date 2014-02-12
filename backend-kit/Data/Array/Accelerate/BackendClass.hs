@@ -148,6 +148,8 @@ class Backend b where
 --  forceToDisk :: Blob b r -> IO (Blob b r)
 
 
+-- | An optional name for the program being run that may help for debugging purpopes.
+type DebugName = Maybe String
 
 class SimpleBackend b where
 
@@ -200,6 +202,7 @@ class SimpleBackend b where
   -- to avoid compilation, but this is backend-dependent.
   --
   simpleRunRaw :: b
+               -> DebugName
                -> SACC.Prog ()
                -> Maybe (SimpleBlob b)
                -> IO [SimpleRemote b]

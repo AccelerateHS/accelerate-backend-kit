@@ -15,7 +15,7 @@
 #endif
 
 -- | An entrypoint to an Accelerate backend based on generating C code.
-module MODNAME (run, BKEND, mkCBackend) where
+module MODNAME (run, runNamed, BKEND, mkCBackend) where
 
 import qualified Data.ByteString.Lazy as B
 import           System.IO.Unsafe (unsafePerformIO)
@@ -46,7 +46,10 @@ run acc = unsafePerformIO $ do
 #else 
 -- Alternatively we can lift up from the `SimpleBackend` interface:
 run :: forall a . (Sug.Arrays a) => Acc a -> a
-run acc = unsafePerformIO $ do
+run = runNamed ""
+
+runNamed :: forall a . (Sug.Arrays a) => String -> Acc a -> a
+runNamed name acc = unsafePerformIO $ do
            t0 <- getCurrentTime
            p  <- evaluateAccClone$ phase0 acc
            t1 <- getCurrentTime           
@@ -54,9 +57,10 @@ run acc = unsafePerformIO $ do
            t2 <- getCurrentTime
            dbgPrint 1 $"COMPILETIME_phase0: "++show(diffUTCTime t1 t0)
            dbgPrint 1 $"COMPILETIME_phase1: "++show(diffUTCTime t2 t1)
-           remts <- (simpleRunRaw BKEND p' Nothing)
+           remts <- (simpleRunRaw BKEND (Just name) p' Nothing)
            arrs  <- mapM (simpleCopyToHost BKEND) remts
            return (repackAcc (undefined :: Acc a) arrs)
+
 #endif
 
 
@@ -145,7 +149,7 @@ instance SimpleBackend BKEND where
   -- simpleCompile
   -- simpleCompileFun1
 
-  simpleRunRaw _ prog _blob =
+  simpleRunRaw _ (Just name) prog _blob =
     do
        t1 <- getCurrentTime           
        p  <- evaluateSimpleAcc$ phase2 prog
@@ -153,7 +157,7 @@ instance SimpleBackend BKEND where
        dbgPrint 1 $"COMPILETIME_phase2: "++show(diffUTCTime t2 t1)
        -- TODO: need to pass these times around if we want to account for all the
        -- stuff inbetween the big pieces.
-       arrs <- J.rawRunIO PARMODE "" p
+       arrs <- J.rawRunIO PARMODE name p
        return$ [ CRemote [arr] | arr <- arrs ]
 
   -- simpleRunRawFun1
