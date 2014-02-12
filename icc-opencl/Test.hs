@@ -14,21 +14,20 @@
 module Main where 
 
 import qualified Data.Array.Accelerate             as A
-import qualified Data.Array.Accelerate.Interpreter as I
-import           Data.Array.Accelerate.BackendKit.Tests (allProgs, allProgsMap,p1aa,testCompiler,TestEntry(..),AccProg(AccProg),makeTestEntry)
+-- import qualified Data.Array.Accelerate.Interpreter as I
+import           Data.Array.Accelerate.BackendKit.Tests (allProgsMap,testCompiler,TestEntry(..),AccProg(AccProg),makeTestEntry)
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1, phase2, repackAcc)
 -- import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase1)
 import           Data.Map           as M
 import           Data.List          as L
 import           Data.Char          (toLower)
-import           Test.Framework     (defaultMain, buildTest, testGroup, Test)
+import           Test.Framework     (defaultMain, buildTest, testGroup, Test, optionsDescription)
 import           Test.Framework.Providers.HUnit (hUnitTestToTests)
 import           Test.HUnit         ((~?))
 import           System.IO.Unsafe   (unsafePerformIO)
 import           Control.Exception  (evaluate)
-import           System.Environment (getEnvironment)
-import           System.Posix.Env   (getEnv)
-
+import           System.Environment (getEnvironment, getArgs, withArgs)
+import           System.Console.GetOpt
 
 import GHC.Conc (threadDelay)
 import Debug.Trace        (trace)
@@ -42,115 +41,131 @@ import qualified Data.Array.Accelerate.OpenCL.JITRuntime as OpenCL (run,rawRunIO
 #endif
 --------------------------------------------------------------------------------  
 
+defaultMode :: RunMode
+#ifdef ENABLE_OPENCL
+defaultMode = SequentialC
+#elif defined(SEQUENTIAL_DEFAULT)
+defaultMode = SequentialC
+#else
+defaultMode = Cilk
+#endif
+
+
+#ifdef ENABLE_OPENCL
+rawRunOpenCL name test = do 
+   x <- OpenCL.rawRunIO name test
+   -- HACK: sleep to let opencl shut down.
+   -- threadDelay 1000000
+   return x
+
+runOpenCL = OpenCL.run
+
+#else 
+rawRunOpenCL name test = error "Not compiled with OpenCL support"
+runOpenCL = error "Not compiled with OpenCL support"
+#endif
+
+--------------------------------------------------------------------------------
+
+data Flag = Help | SetMode RunMode | NoRepack     deriving (Eq,Ord,Show,Read)
+data RunMode = SequentialC | Cilk | OpenCL        deriving (Eq,Ord,Show,Read)
+
+options :: [OptDescr Flag]
+options =
+     [ Option ['h'] ["help"] (NoArg Help)              "report this help message"
+     , Option [] ["cilk"]    (NoArg (SetMode Cilk))    "use parallel Cilk C backend"
+     , Option [] ["seq"]     (NoArg (SetMode SequentialC)) "use sequential C backend"
+     , Option [] ["opencl"]  (NoArg (SetMode OpenCL))  "use OpenCL backend, if compiled with support"
+     , Option [] ["norepack"]  (NoArg NoRepack)  "do NOT run tests through the full accelerate wrapper, repacking the results"
+     ]
+
 main :: IO ()
 main = do
-  putStrLn "Note: this tests either the OpenCL backend by default."
-  putStrLn "      EMITC can be set to C or Cilk to test those backends."
-  
-  useCBackend <- getEnv "EMITC"
-  let backend = case useCBackend of 
-                  Just cilk | L.map toLower cilk == "cilk" -> "Cilk"
-                  Just x | trueishStr x -> "C"
-#ifdef ENABLE_OPENCL
-                  Nothing             -> "OpenCL"
-                  _                   -> "OpenCL"
-#else
-                  _                   -> "C"
-#endif
 
-  putStrLn$ " [!] Testing backend: "++ backend
-  ----------------------------------------  
-  putStrLn "[main] First checking that all requested tests can be found within 'allProgs'..."
-  supportedTestNames <- chooseTests
-  let manualExamples = [example] -- Demonstration: we manually put in additional programs to test.
-  let supportedTests = 
-        manualExamples ++
-        L.map (\ t -> case M.lookup t allProgsMap of 
-                        Nothing -> error$"Test not found: "++ show t
-                        -- HACK: appending ":" as an end-marker to all test names.  This 
-                        -- makes it possible to use the -t pattern matching for all tests.
-                        Just te -> nameHackTE te)
-              supportedTestNames
-        
-  -- Force any error messages in spite of lazy data structure:
-  if supportedTests == [] then error$ "supportedTestNames should not be null" else return ()
-  evaluate (L.foldl1 seq $ L.map (\(TestEntry _ _ _ _) -> ()) supportedTests)
-  putStrLn$"[main] Yep, all "++show (length supportedTests)++" tests are there."
-  ----------------------------------------  
+ args <- getArgs
+ let (opts,nonopts,unrecog,errs) = getOpt' Permute options args
+ -- The first arg is a kind of mode:
 
-  let testsPlain = 
-       testCompiler (\ name test -> unsafePerformIO$ do
-                         let name' = unNameHack name
-                         case backend of
-#ifdef ENABLE_OPENCL
-                           "OpenCL" -> do
-                             x <- OpenCL.rawRunIO name test
-                             -- HACK: sleep to let opencl shut down.
-                             -- threadDelay 1000000
-                             return x
-#endif
-                           "Cilk" -> Cilk.rawRunIO CilkParallel name (phase2 test)
-                           "C"    -> Cilk.rawRunIO Sequential   name (phase2 test)
-                       )
-             supportedTests
-  let testsRepack = 
-        L.zipWith (\ i (TestEntry name _ _ (AccProg prg)) ->
+ let help1 = usageInfo ("USAGE: test-accelerate-cpu-* [options]\n"++
+                       "\nFirst, specific options for test harness are:\n"++
+                       "---------------------------------------------\n")
+               options
+     help2 = usageInfo (help1++"\nAlso use the generic test-framework options below:\n"++
+                       "--------------------------------------------------\n")
+                       optionsDescription
 
-                    let runit = case backend of
-#ifdef ENABLE_OPENCL
-                                 "OpenCL" -> OpenCL.run
-#endif
-                                 "Cilk"   -> CilkRun.run
-                                 "C"      -> CRun.run
-                        str = show (runit prg)
-                        iotest :: IO Bool
-                        iotest = do evaluate str
-                                    return (length str > 0)
-                    in testGroup ("run test "++show i++" "++name) $
-                       hUnitTestToTests (iotest ~? "non-empty result string")
-                  )
-        [1..] supportedTests
-  repack <- getEnv "REPACK"
-  case repack of
-    Just x | not (trueishStr x) -> defaultMain testsPlain 
-    _                           -> defaultMain testsRepack -- DEFAULT:
+     themode = L.foldl fn defaultMode opts
+     fn _ (SetMode m) = m
+     fn acc _         = acc
+ 
+ if Help `elem` opts || errs /= [] then error help2
+  else do
+   let passthru = nonopts ++ unrecog
+   putStrLn$ "  [Note: passing through options to test-framework]: "++unwords passthru
+   withArgs passthru $ do 
+    ------------------------------------------------------------  
+    putStrLn$ " [!] Testing backend: "++ show themode
+    ----------------------------------------  
+    putStrLn "[main] First checking that all requested tests can be found within 'allProgs'..."
+    -- A tuple of the descriptive name and simple name for each test:
+    let supportedTestNames =
+          [ ("oneDim_"++x,x)   | x <- oneDimOrLessTests ] ++
+          [ ("useTest_"++x,x)  | x <- useTests ] ++
+          [ ("multiDim_"++x,x) | x <- multiDimTests ] ++
+          [ ("highDim_"++x,x)  | x <- highDimTests ]
+    let manualExamples = [example] 
+         -- Demonstration: we manually put in additional programs to test.
+         -- You may add more tests here as well.
+    let supportedTests :: [TestEntry]
+        supportedTests = 
+          manualExamples ++
+          L.map (\ (nm,t) -> case M.lookup t allProgsMap of 
+                          Nothing -> error$"Test not found: "++ show t
+                          -- HACK: appending ":" as an end-marker to all test names.  This 
+                          -- makes it possible to use the -t pattern matching for all tests:
+                          Just te -> (nameHackTE nm te))
+                supportedTestNames
+    if supportedTests == [] then error$ "supportedTestNames should not be null" else return ()
+    evaluate (L.foldl1 seq $ L.map (\(TestEntry _ _ _ _) -> ()) supportedTests)
+    putStrLn$"[main] Yep, all "++show (length supportedTests)++" tests are there."
+    ----------------------------------------  
 
--- | Is an environment variable encoding something representing true.
-trueishStr ""  = False
-trueishStr "0" = False
-trueishStr str | L.map toLower str == "false" = False
-trueishStr _   = True
+    let testsPlain = 
+         testCompiler (\ name test -> unsafePerformIO$ do
+                           let name' = unNameHack name
+                           case themode of
+                             Cilk        -> Cilk.rawRunIO CilkParallel name (phase2 test)
+                             SequentialC -> Cilk.rawRunIO Sequential   name (phase2 test)
+                             OpenCL      -> rawRunOpenCL name test )
+               supportedTests
+    let testsRepack = 
+          L.zipWith (\ i (TestEntry name _ _ (AccProg prg)) ->
+                      let runit = case themode of
+                                   OpenCL      -> runOpenCL
+                                   Cilk        -> CilkRun.runNamed name
+                                   SequentialC -> CRun.runNamed name
+                          str = show (runit prg)
+                          iotest :: IO Bool
+                          iotest = do evaluate str
+                                      return (length str > 0)
+                      in testGroup ("run test "++show i++" "++name) $
+                         hUnitTestToTests (iotest ~? "non-empty result string")
+                    )
+          [1::Int ..] supportedTests
+    if NoRepack `elem` opts 
+     then defaultMain testsPlain 
+     else defaultMain testsRepack -- DEFAULT
 
+-- Add an extra terminating character to make the "-t" command line option more
+-- useful for selecting tests.
 nameHack :: String -> String
 nameHack = (++":")
 
-nameHackTE :: TestEntry -> TestEntry
-nameHackTE (TestEntry nm prg ans orig) = (TestEntry (nameHack nm) prg ans orig)
+nameHackTE :: String -> TestEntry -> TestEntry
+nameHackTE nm (TestEntry _ prg ans orig) = (TestEntry (nameHack nm) prg ans orig)
 
 unNameHack :: String -> String
 unNameHack = init 
-
--- | Use the environment to decide which set of tests we are running:
-chooseTests :: IO [String]
-chooseTests = do
-  env <- getEnvironment
-  let tests1 = case L.lookup "ONEDIMTESTS" env of
-                 Nothing               -> oneDimOrLessTests -- Default ON
-                 Just x | trueishStr x -> oneDimOrLessTests
-                 _                   -> []
-  let tests2 = case L.lookup "USETESTS" env of
-                 Just x | trueishStr x -> useTests
-                 _                     -> []
-  let tests3 = case L.lookup "MULTIDIMTESTS" env of
-                 Just x | trueishStr x -> multiDimTests
-                 _                     -> []
-  let allRegistered = oneDimOrLessTests ++ useTests ++ multiDimTests ++ highDimTests 
-  case L.lookup "UNREGISTERED" env of -- New backdoor option to run *absolutely* everything...
-   Just x | trueishStr x ->
-     return$ L.map name allProgs L.\\ allRegistered
-   _ -> case L.lookup "ALLTESTS" env of
-         Just x | trueishStr x -> return$ allRegistered
-         _                     -> return$ tests1 ++ tests2 ++ tests3
 
 
 example :: TestEntry
@@ -213,5 +228,3 @@ highDimTests = words$
 ------------------------------------------------------------
 -- Tests we can't handle yet:
 ------------------------------------------------------------
-
-
