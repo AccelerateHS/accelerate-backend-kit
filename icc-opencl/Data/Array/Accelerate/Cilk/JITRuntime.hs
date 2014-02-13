@@ -22,7 +22,7 @@ import           Data.Char        (isAlphaNum)
 import           Control.Monad    (when, forM_, forM)
 import           Control.Exception (evaluate)
 import           System.IO.Unsafe (unsafePerformIO)
-import           System.Process   (readProcess, system)
+import           System.Process   (readProcess, readProcessWithExitCode)
 import           System.Exit      (ExitCode(..))
 import           System.Directory (removeFile, doesFileExist)
 import           System.IO        (stdout, hFlush)
@@ -66,12 +66,13 @@ phase3_ltd prog =
   runPass    "kernFreeVars"      kernFreeVars      $     -- (freevars)
   prog
 
-cOptLvl = if (dbg>0) then " -O0 " else " -O3 "
+-- | This list may contain other, more specific optimization flags than "-ON".
+cOptLvl = if (dbg>0) then ["-O0"] else ["-O3"]
 
 --  "-march=pentium-m -msse3 -O{0|1|2|3|s} -pipe".
 -- | For ICC we actually strip out the vanilla opt level and use other flags:
-stripOptFlag :: String -> String
-stripOptFlag = unwords . filter (not . (`elem` ["-O0","-O1","-O2","-O3"])) . words
+stripOptFlag :: [String] -> [String]
+stripOptFlag = filter (not . (`elem` ["-O0","-O1","-O2","-O3"]))
 
 --------------------------------------------------------------------------------
 
@@ -119,42 +120,44 @@ rawRunIO pm name prog = do
   -- TODO, obey the $CC environment variable:
   let pickCC onfail = do
         -- UPDATE: -ww13397 to downgrade to warning, and -wd13397 to disable entirely.  NICE!        
-        let icc_args = " -fast -ww13397 -vec-report2 "++ stripOptFlag cOptLvl
+        let icc_args = ["-fast","-ww13397","-vec-report2"] ++ stripOptFlag cOptLvl
         env <- getEnvironment
         case lookup "CC" env of
           Just cc -> do dbgPrint 1$"[JIT] using CC environment variable = "++show cc
                         if cc == "icc" || cc == "icpc"
-                        then return$ cc ++ icc_args   
-                        else return$ cc ++" "++ cOptLvl
+                        then return (cc,icc_args)
+                        else return (cc,cOptLvl)
           Nothing -> do 
-            code <- system "which icc" 
+            (code,out,err) <- readProcessWithExitCode "which" ["icc"] ""
             case code of
               ExitFailure _  -> onfail
-              ExitSuccess    -> do dbgPrint 2 $"[JIT] Found ICC. Using it."
-                                   return$ "icc" ++ icc_args
-  cc <- case pm of
-         Sequential   -> pickCC (return$ "gcc "++cOptLvl)
+              ExitSuccess    -> 
+                 case words out of 
+                   []  -> onfail
+                   hd:_ -> do dbgPrint 2 $"[JIT] Found ICC ("++hd++") Using it."
+                              return$ (hd,icc_args)
+  (cc,ccFlags0) <- case pm of
+         Sequential   -> pickCC (return ("gcc ",cOptLvl))
          CilkParallel -> pickCC (error "ICC not found!  Need it for Cilk backend.")
 
-  let suppress = if dbg>0 then " -g " else " -w " -- No warnings leaking through to the user.
-
+  let suppress = if dbg>0 then "-g" else "-w" -- No warnings leaking through to the user.
       sharedLib = case System.Info.os of
                     "darwin" -> "-dynamiclib"
                     "linux"  -> "-shared"
 -- #define EXE_OUTPUT
 #ifdef EXE_OUTPUT
-      ccCmd = cc++suppress++" -lcilkrts -std=c99 "++thisprog++".c -o "++thisprog++".exe"
+      ccArgs = ccFlags0++[suppress,"-lcilkrts","-std=c99",thisprog++".c","-o",thisprog++".exe"]
 #else
-      ccCmd = cc++suppress++" "++sharedLib++" -fPIC -std=c99 "++thisprog++".c -o "++thisprog++".so"
+      ccArgs = ccFlags0++[suppress,"-lcilkrts","-std=c99",sharedLib,"-fPIC", thisprog++".c", "-o", thisprog++".so"]
 #endif
-  dbgPrint 2 $ "[JIT]   Compiling with: "++ ccCmd
-
+  dbgPrint 2 $ "[JIT]   Compiling with: "++ (cc++unwords ccArgs)
   t1 <- getCurrentTime 
-  cd <- system$ ccCmd
+  (code,out,err) <- readProcessWithExitCode cc ccArgs ""
   t2 <- getCurrentTime    
   dbgPrint 1 $"COMPILETIME_C: "++show (diffUTCTime t2 t1)
-
-  case cd of
+  mapM_ (dbgPrint 1) (lines out)
+  mapM_ (dbgPrint 1) (lines err)
+  case code of
     ExitSuccess -> return ()
     ExitFailure c -> error$"C Compiler failed with code "++show c
   -- Run the program and capture its output:
