@@ -33,6 +33,7 @@ import           GHC.Ptr            (Ptr(Ptr), castPtr)
 import           Data.Array.Base    (UArray(UArray))
 import           Foreign.Ptr        (FunPtr)
 -- import           Foreign.C.Types    (CInt)
+import qualified System.Info 
 import           System.Posix.DynamicLinker (withDL, RTLDFlags(..), dlsym)
 -- import Foreign.Ptr        (Ptr)
 --import Data.Array.Unboxed (UArray)
@@ -136,11 +137,15 @@ rawRunIO pm name prog = do
          CilkParallel -> pickCC (error "ICC not found!  Need it for Cilk backend.")
 
   let suppress = if dbg>0 then " -g " else " -w " -- No warnings leaking through to the user.
+
+      sharedLib = case System.Info.os of
+                    "darwin" -> "-dynamiclib"
+                    "linux"  -> "-shared"
 -- #define EXE_OUTPUT
 #ifdef EXE_OUTPUT
       ccCmd = cc++suppress++" -lcilkrts -std=c99 "++thisprog++".c -o "++thisprog++".exe"
 #else
-      ccCmd = cc++suppress++" -shared -fPIC -std=c99 "++thisprog++".c -o "++thisprog++".so"
+      ccCmd = cc++suppress++" "++sharedLib++" -fPIC -std=c99 "++thisprog++".c -o "++thisprog++".so"
 #endif
   dbgPrint 2 $ "[JIT]   Compiling with: "++ ccCmd
 
