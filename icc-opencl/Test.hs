@@ -31,7 +31,7 @@ import           System.Console.GetOpt
 
 import GHC.Conc (threadDelay)
 import Debug.Trace        (trace)
-import qualified Data.Array.Accelerate.Cilk.JITRuntime   as Cilk   (run,rawRunIO)
+import qualified Data.Array.Accelerate.Cilk.JITRuntime   as JIT (run,rawRunIO)
 import qualified Data.Array.Accelerate.Cilk as CilkRun
 import qualified Data.Array.Accelerate.C    as CRun
 import           Data.Array.Accelerate.Shared.EmitC (ParMode(..))
@@ -84,8 +84,7 @@ main = do
 
  args <- getArgs
  let (opts,nonopts,unrecog,errs) = getOpt' Permute options args
- -- The first arg is a kind of mode:
-
+ -- let (opts,nonopts,errs) = getOpt Permute options args 
  let help1 = usageInfo ("USAGE: test-accelerate-cpu-* [options]\n"++
                        "\nFirst, specific options for test harness are:\n"++
                        "---------------------------------------------\n")
@@ -100,7 +99,8 @@ main = do
  
  if Help `elem` opts || errs /= [] then error help2
   else do
-   let passthru = nonopts ++ unrecog
+   -- let passthru = nonopts ++ unrecog
+   let passthru = args
    putStrLn$ "  [Note: passing through options to test-framework]: "++unwords passthru
    withArgs passthru $ do 
     ------------------------------------------------------------  
@@ -134,16 +134,17 @@ main = do
          testCompiler (\ name test -> unsafePerformIO$ do
                            let name' = unNameHack name
                            case themode of
-                             Cilk        -> Cilk.rawRunIO CilkParallel name (phase2 test)
-                             SequentialC -> Cilk.rawRunIO Sequential   name (phase2 test)
+                             Cilk        -> JIT.rawRunIO CilkParallel name (phase2 test)
+                             SequentialC -> JIT.rawRunIO Sequential   name (phase2 test)
                              OpenCL      -> rawRunOpenCL name test )
                supportedTests
     let testsRepack = 
           L.zipWith (\ i (TestEntry name _ _ (AccProg prg)) ->
-                      let runit = case themode of
+                      let conf = CRun.defaultConf {CRun.dbgName = Just name}
+                          runit = case themode of
                                    OpenCL      -> runOpenCL
-                                   Cilk        -> CilkRun.runNamed name
-                                   SequentialC -> CRun.runNamed name
+                                   Cilk        -> CilkRun.runDetailed conf
+                                   SequentialC -> CRun.runDetailed conf
                           str = show (runit prg)
                           iotest :: IO Bool
                           iotest = do evaluate str
@@ -155,6 +156,7 @@ main = do
     if NoRepack `elem` opts 
      then defaultMain testsPlain 
      else defaultMain testsRepack -- DEFAULT
+    putStrLn " [Test.hs] You will never see this message, because test-framework defaultMain exits the process."
 
 -- Add an extra terminating character to make the "-t" command line option more
 -- useful for selecting tests.

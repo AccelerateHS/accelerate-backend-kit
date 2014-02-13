@@ -13,7 +13,8 @@
 -- See `emitC` below and `emitOpenCL` for details.
 
 module Data.Array.Accelerate.Shared.EmitC
-       (emitC, ParMode(..), getUseBinds, standardResultOrder) where
+       (emitC, ParMode(..), getUseBinds, standardResultOrder,
+        DbgConf(..), defaultConf) where
 
 import           Control.Monad (forM_, when)
 import qualified Control.Exception as CE 
@@ -40,6 +41,20 @@ import Data.Array.Accelerate.BackendKit.Utils.Helpers (dbg)
 data CEmitter = CEmitter ParMode Env                  deriving (P.Show,P.Eq,P.Read,P.Ord)
 data ParMode = CilkParallel | Sequential              deriving (P.Show,P.Eq,P.Read,P.Ord)
 type Env = M.Map Var Type
+
+
+-- | Additional knobs that control execution using the C/Cilk backends.
+--   This includes debugging-related configuration options.
+data DbgConf = DbgConf { dbgName    :: P.Maybe String -- ^ A meaningful name for the program being run.
+                       , useProcess :: P.Bool -- ^ Fork a separate process to dynamically load C code.
+                                              --   This insulates the calling Haskell process.
+                       -- , useDevSHM :: Bool
+                       }
+
+-- | A default configuration for running the generated C code backend.
+defaultConf :: DbgConf
+defaultConf = DbgConf { dbgName = P.Nothing, useProcess = P.False }
+
 
 --------------------------------------------------------------------------------
 

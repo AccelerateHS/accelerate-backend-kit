@@ -1,8 +1,8 @@
-
--- DUPLICATED CODE (from Cilk.hs) -- TODO: GENERATE AUTOMATICALLY.
-
 {-# LANGUAGE TypeFamilies, CPP #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+
+-- CODE used here AND in Cilk.hs... hence all this CPP garbage:
 
 #ifndef MODNAME
 #define MODNAME Data.Array.Accelerate.C
@@ -15,7 +15,8 @@
 #endif
 
 -- | An entrypoint to an Accelerate backend based on generating C code.
-module MODNAME (run, runNamed, BKEND, mkCBackend) where
+module MODNAME (run, runDetailed, BKEND, mkCBackend,
+                DbgConf(..), defaultConf) where
 
 import qualified Data.ByteString.Lazy as B
 import           System.IO.Unsafe (unsafePerformIO)
@@ -24,7 +25,7 @@ import           Data.Array.Accelerate (Acc)
 import qualified Data.Array.Accelerate.AST as AST
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import qualified Data.Array.Accelerate.Cilk.JITRuntime as J
-import           Data.Array.Accelerate.Shared.EmitC (ParMode(..))
+import           Data.Array.Accelerate.Shared.EmitC (ParMode(..), DbgConf(..), defaultConf)
 
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc   as S
 import qualified Data.Array.Accelerate.BackendKit.SimpleArray     as SA
@@ -46,10 +47,11 @@ run acc = unsafePerformIO $ do
 #else 
 -- Alternatively we can lift up from the `SimpleBackend` interface:
 run :: forall a . (Sug.Arrays a) => Acc a -> a
-run = runNamed ""
+run = runDetailed defaultConf
 
-runNamed :: forall a . (Sug.Arrays a) => String -> Acc a -> a
-runNamed name acc = unsafePerformIO $ do
+-- | Run with additional debugging configuration options.
+runDetailed :: forall a . (Sug.Arrays a) => DbgConf -> Acc a -> a
+runDetailed DbgConf{dbgName, useProcess} acc = unsafePerformIO $ do
            t0 <- getCurrentTime
            p  <- evaluateAccClone$ phase0 acc
            t1 <- getCurrentTime           
@@ -57,7 +59,7 @@ runNamed name acc = unsafePerformIO $ do
            t2 <- getCurrentTime
            dbgPrint 1 $"COMPILETIME_phase0: "++show(diffUTCTime t1 t0)
            dbgPrint 1 $"COMPILETIME_phase1: "++show(diffUTCTime t2 t1)
-           remts <- (simpleRunRaw BKEND (Just name) p' Nothing)
+           remts <- (simpleRunRaw BKEND dbgName p' Nothing)
            arrs  <- mapM (simpleCopyToHost BKEND) remts
            return (repackAcc (undefined :: Acc a) arrs)
 
@@ -78,10 +80,11 @@ mkCBackend = return BKEND
 -- data CConfig = CConfig {}
 -- defaultCConfig = ...
 
-
+-- | Arrays returned by the generated code.
+newtype CRemote a = CRemote [SA.AccArray]
 -- FIXME: This should really be left in the ForeignPtr state and should only come
 -- back to Haskell when the copyToHost is performed...
-newtype CRemote a = CRemote [SA.AccArray]
+
 
 -- Nothing here at the moment, needs to cache the file:
 data CBlob a = CBlob 
