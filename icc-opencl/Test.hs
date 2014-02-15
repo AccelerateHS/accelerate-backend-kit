@@ -169,10 +169,12 @@ main = do
                       HU.TestCase $ assertException [""] $ do
                         x <- rawComp nm simpleProg
                         let str = show$ concatMap SimpleAcc.arrPayloads x
-                        when (str == result) $ 
+                        if (str == result) then
                           putStrLn $ "WARNING: supposedly unhandled test case got the right answer: "++show nm
-                        -- putStrLn $ "Bad test completed: "++str
-                        -- putStrLn $ "Expected: "++result
+                         else do
+                           putStrLn $ "WARNING: unsupported test case fails with a wrong answer rather than exception: "++show nm
+                           putStrLn $ "Received "++str
+                           putStrLn $ "Expected: "++result
                         assertEqual "answer for unhandled test" result str
                     | nm <- notMentioned
                     , let TestEntry{simpleProg,result} = allProgsMap M.! nm ]
@@ -220,8 +222,13 @@ oneDimOrLessTests = words$
 -- These tests are waiting on arrays of tuples:
 
   -- DUMPING these in, go through them:
-  ++ "p5 p8 p9a p9b  p14d p14c  "
+  ++ "p5 p8 p9a p9b  p14d p14c "
   -- p9c p13 p14e
+
+  -- Scalar tuples and projection:
+  -- KNOWN problems with tuple packing presently:
+  -- ++ "p13 p13b p13c p13d p13e p13f p14 p14b p14e "
+  -- ++ "p9c"
 
 useTests :: [String]
 useTests = words$ 
