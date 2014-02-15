@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP, NamedFieldPuns #-}
 
 -- | The program defined by this module responds to the following ENVIRONMENT VARIABLES:
 --  
@@ -13,21 +13,26 @@
 
 module Main where 
 
+import           Control.Exception
+import           Control.Monad (when)
 import qualified Data.Array.Accelerate             as A
 -- import qualified Data.Array.Accelerate.Interpreter as I
-import           Data.Array.Accelerate.BackendKit.Tests (allProgsMap,testCompiler,TestEntry(..),AccProg(AccProg),makeTestEntry)
+import           Data.Array.Accelerate.BackendKit.Tests (allProgs,allProgsMap,testCompiler,TestEntry(..),AccProg(AccProg),makeTestEntry)
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1, phase2, repackAcc)
 -- import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase1)
 import           Data.Map           as M
+import           Data.Set           as S
 import           Data.List          as L
 import           Data.Char          (toLower)
 import           Test.Framework     (defaultMain, buildTest, testGroup, Test, optionsDescription)
 import           Test.Framework.Providers.HUnit (hUnitTestToTests)
 import           Test.HUnit         ((~?))
+import           Test.HUnit as HU
 import           System.IO.Unsafe   (unsafePerformIO)
-import           Control.Exception  (evaluate)
 import           System.Environment (getEnvironment, getArgs, withArgs)
 import           System.Console.GetOpt
+
+import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as SimpleAcc
 
 import GHC.Conc (threadDelay)
 import Debug.Trace        (trace)
@@ -113,6 +118,10 @@ main = do
           [ ("useTest_"++x,x)  | x <- useTests ] ++
           [ ("multiDim_"++x,x) | x <- multiDimTests ] ++
           [ ("highDim_"++x,x)  | x <- highDimTests ]
+
+    let allMentioned = S.fromList $ oneDimOrLessTests ++ useTests ++ multiDimTests ++ highDimTests
+    let notMentioned = S.toList$ S.difference (M.keysSet allProgsMap) allMentioned
+
     let manualExamples = [example] 
          -- Demonstration: we manually put in additional programs to test.
          -- You may add more tests here as well.
@@ -130,14 +139,12 @@ main = do
     putStrLn$"[main] Yep, all "++show (length supportedTests)++" tests are there."
     ----------------------------------------  
 
-    let testsPlain = 
-         testCompiler (\ name test -> unsafePerformIO$ do
-                           let name' = unNameHack name
-                           case themode of
-                             Cilk        -> JIT.rawRunIO CilkParallel name (phase2 test)
-                             SequentialC -> JIT.rawRunIO Sequential   name (phase2 test)
-                             OpenCL      -> rawRunOpenCL name test )
-               supportedTests
+    let rawComp name test = 
+          case themode of
+            Cilk        -> JIT.rawRunIO CilkParallel name (phase2 test)
+            SequentialC -> JIT.rawRunIO Sequential   name (phase2 test)
+            OpenCL      -> rawRunOpenCL name test 
+    let testsPlain = testCompiler (\ name test -> unsafePerformIO$ rawComp name test) supportedTests
     let testsRepack = 
           L.zipWith (\ i (TestEntry name _ _ (AccProg prg)) ->
                       let conf = CRun.defaultConf {CRun.dbgName = Just name}
@@ -153,9 +160,24 @@ main = do
                          hUnitTestToTests (iotest ~? "non-empty result string")
                     )
           [1::Int ..] supportedTests
-    if NoRepack `elem` opts 
-     then defaultMain testsPlain 
-     else defaultMain testsRepack -- DEFAULT
+
+    let goodTests = if NoRepack `elem` opts 
+                    then testsPlain 
+                    else testsRepack  -- DEFAULT
+    let badTests =  concat 
+                    [ hUnitTestToTests $ HU.TestLabel ("unhandled_"++nm) $ 
+                      HU.TestCase $ assertException [""] $ do
+                        x <- rawComp nm simpleProg
+                        let str = show$ concatMap SimpleAcc.arrPayloads x
+                        when (str == result) $ 
+                          putStrLn $ "WARNING: supposedly unhandled test case got the right answer: "++show nm
+                        -- putStrLn $ "Bad test completed: "++str
+                        -- putStrLn $ "Expected: "++result
+                        assertEqual "answer for unhandled test" result str
+                    | nm <- notMentioned
+                    , let TestEntry{simpleProg,result} = allProgsMap M.! nm ]
+
+    defaultMain (goodTests ++ badTests)
     putStrLn " [Test.hs] You will never see this message, because test-framework defaultMain exits the process."
 
 -- Add an extra terminating character to make the "-t" command line option more
@@ -230,3 +252,27 @@ highDimTests = words$
 ------------------------------------------------------------
 -- Tests we can't handle yet:
 ------------------------------------------------------------
+
+known_problems :: [String]
+known_problems = []
+
+
+------------------------------------------------------------
+-- Helpers copied from elsewhere:
+------------------------------------------------------------
+
+-- | Ensure that executing an action returns an exception
+-- containing one of the expected messages.
+assertException  :: [String] -> IO a -> IO ()
+assertException msgs action = do
+ x <- catch (do action; return Nothing) 
+            (\e -> do putStrLn $ "Good.  Caught exception: " ++ show (e :: SomeException)
+                      return (Just $ show e))
+ case x of 
+  Nothing -> HU.assertFailure "Failed to get an exception!"
+  Just s -> 
+   if  any (`isInfixOf` s) msgs
+   then return () 
+   else HU.assertFailure $ "Got the wrong exception, expected one of the strings: "++ show msgs
+        ++ "\nInstead got this exception:\n  " ++ show s
+
