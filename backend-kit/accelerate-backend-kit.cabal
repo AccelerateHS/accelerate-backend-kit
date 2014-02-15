@@ -25,6 +25,7 @@ Cabal-version:       >=1.10
 Library
   Exposed-modules:
                      Data.Array.Accelerate.BackendKit.Tests
+                     Data.Array.Accelerate.BackendKit.ConsoleTester
                      Data.Array.Accelerate.BackendKit.CompilerPipeline
                      Data.Array.Accelerate.BackendKit.IRs.GPUIR
                      Data.Array.Accelerate.BackendKit.IRs.GPUIR.Interpreter

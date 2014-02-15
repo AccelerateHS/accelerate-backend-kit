@@ -66,13 +66,15 @@ import Text.PrettyPrint.GenericPretty (doc)
 -- 
 --   The TestEntry also provides access to the original Accelerate
 --   program, but it is trickier to consume.
-data TestEntry = TestEntry {
-  name :: String, 
-  simpleProg :: S.Prog (), 
-  result :: String, 
-  origProg :: AccProg }
+data TestEntry = TestEntry { name :: String  -- ^ Name of this particular test. 
+                           , simpleProg :: S.Prog () -- ^ Converted SimpleAcc AST
+                           , simpleResult :: String  -- ^ Result printed as simplified array payload type.
+                           , interpResult :: String  -- ^ Result as printed by Accelerate.Interpreter
+                           , origProg :: AccProg     -- ^ Original, fully typed Accelerate program 
+                           }
  deriving (Show, Ord, Eq)
 
+-- | A simple way to encapsulate an Accelerate program of an arbitrary type.
 data AccProg = forall a . (Arrays a, Show a) => AccProg (Acc a)
 
 instance Show AccProg where
@@ -149,7 +151,7 @@ otherProgs =
 makeTestEntry :: forall a . (Show a, Arrays a) => String -> Acc a -> TestEntry
 makeTestEntry = go
 
--- | A shorthand name.
+-- | The function that builds TestEntries.
 go :: forall a . (Show a, Arrays a) => String -> Acc a -> TestEntry
 go name p =
   let arr = run p -- Run through the official Accelerate interpreter.
@@ -158,7 +160,11 @@ go name p =
       (_ty, arr2, _phantom :: Phantom a) = unpackArray repr
       payloads = S.arrPayloads arr2
       -- Compare the *flat* list of payloads only for now; we record the printed payload:
-  in TestEntry name (convertToSimpleProg p) (show payloads) (AccProg p)
+  in TestEntry { name
+               , simpleProg = convertToSimpleProg p
+               , simpleResult = show payloads 
+               , interpResult = show arr
+               , origProg = AccProg p }
        
 ----------------------------------------------------------------------------------------------------
 -- Extra categories that are orthogonal to the above:
@@ -187,13 +193,11 @@ noSliceProgs = Set.toList$
 testCompiler :: (String -> S.Prog () -> [S.AccArray]) -> [TestEntry] -> [Test]
 testCompiler eval progs = P.map mk (P.zip [(0::Int)..] progs)
  where 
-   mk (i, TestEntry name prg ans _) = 
-     let payloads = concatMap S.arrPayloads (eval name prg) in 
-     -- let [t] = hUnitTestToTests $ (show (eval prg)) ~=? ans in
-     -- testCase ("run test "++show i) t 
+   mk (i, TestEntry {name, simpleProg, simpleResult}) = 
+     let payloads = concatMap S.arrPayloads (eval name simpleProg) in 
      testGroup ("run test "++show i++" "++name) $
      hUnitTestToTests $ 
-     ans ~=? (show payloads) -- EXPECTED goes on the left.
+     simpleResult ~=? (show payloads) -- EXPECTED goes on the left.
 
 -- | Test a compiler which does some passes but doesn't compute a
 -- final answer.  This requires an oracle function to determine
@@ -201,13 +205,13 @@ testCompiler eval progs = P.map mk (P.zip [(0::Int)..] progs)
 testPartialCompiler :: Show a => (S.Prog () -> a -> Bool) -> (String -> S.Prog () -> a) -> [TestEntry] -> [Test]
 testPartialCompiler oracle eval tests = P.map mk (P.zip [0..] tests)
   where
-   mk (i, TestEntry name prg ans _) =
+   mk (i, TestEntry { name, simpleProg } ) =
      testGroup ("run test "++show i++" "++name) $
      hUnitTestToTests $ 
      (True ~=?) $ 
-      let evaled = eval name prg in
+      let evaled = eval name simpleProg in
       seq (forceEval evaled) $
-      oracle prg evaled
+      oracle simpleProg evaled
 
    -- HACK: We don't want to require NFData (yet).  So we just print to force Eval:
    forceEval prog = length (show prog)

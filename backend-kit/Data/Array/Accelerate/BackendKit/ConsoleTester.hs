@@ -1,0 +1,162 @@
+{-# LANGUAGE CPP, ExistentialQuantification #-}
+{-# LANGUAGE NamedFieldPuns #-}
+
+-- | Build a console test runner for any instance of the Backend class.
+
+module Data.Array.Accelerate.BackendKit.ConsoleTester 
+       (  BackendTestConf(..), KnownTests(..), 
+          makeMain
+       )
+       where 
+
+import           Control.Exception
+import           Control.Monad (when, unless)
+import qualified Data.Array.Accelerate             as A
+-- import qualified Data.Array.Accelerate.Interpreter as I
+import           Data.Array.Accelerate.BackendKit.Tests (allProgs,allProgsMap,testCompiler,TestEntry(..),
+                                                         AccProg(AccProg),makeTestEntry)
+import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1, phase2, repackAcc)
+-- import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase1)
+import qualified Data.Array.Accelerate.BackendClass as BC
+
+import           Data.Map           as M
+import           Data.Set           as S
+import           Data.List          as L
+import           Data.Char          (toLower)
+import           Test.Framework     (defaultMain, buildTest, testGroup, Test, optionsDescription)
+import           Test.Framework.Providers.HUnit (hUnitTestToTests, testCase)
+import           Test.HUnit         ((~?))
+import           Test.HUnit as HU
+import           System.IO.Unsafe   (unsafePerformIO)
+import           System.Environment (getEnvironment, getArgs, withArgs)
+import           System.Console.GetOpt
+
+import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as SimpleAcc
+
+import GHC.Conc (threadDelay)
+import Debug.Trace        (trace)
+--------------------------------------------------------------------------------  
+
+data BackendTestConf =
+     forall b . BC.Backend b => BackendTestConf 
+     { backend :: b
+     , knownTests :: KnownTests  -- ^ Which of the standard tests (Tests.allProgs) should this backend pass?
+     , extraTests :: [TestEntry] -- ^ Additional tests for this backend.
+     -- modes
+     }
+
+-- | We describe the current expected level of functionality from a given backend by
+-- listing either the known-good or known-bad tests by name.  All /unlisted/ tests are
+-- assumed to fall into the opposite bucket.
+data KnownTests = KnownGood [String]
+                | KnownBad [String]
+
+knownNames (KnownGood ls) = ls
+knownNames (KnownBad ls) = ls
+
+data Flag = Help | NoRepack     deriving (Eq,Ord,Show,Read)
+
+options :: [OptDescr Flag]
+options =
+     [ Option ['h'] ["help"] (NoArg Help)              "report this help message"
+     , Option [] ["norepack"]  (NoArg NoRepack)  "do NOT run tests through the full accelerate wrapper, repacking the results"
+     ]
+
+makeMain :: BackendTestConf -> IO ()
+makeMain BackendTestConf{backend,knownTests,extraTests} = do
+ args <- getArgs
+ let (opts,nonopts,unrecog,errs) = getOpt' Permute options args
+ -- let (opts,nonopts,errs) = getOpt Permute options args 
+ let help1 = usageInfo ("USAGE: test-accelerate-cpu-* [options]\n"++
+                       "\nFirst, specific options for test harness are:\n"++
+                       "---------------------------------------------\n")
+               options
+     help2 = usageInfo (help1++"\nAlso use the generic test-framework options below:\n"++
+                       "--------------------------------------------------\n")
+                       optionsDescription 
+ if Help `elem` opts || errs /= [] then error help2
+  else do
+   let passthru = nonopts ++ unrecog
+   -- let passthru = args
+   putStrLn$ "  [Note: passing through options to test-framework]: "++unwords passthru
+   withArgs passthru $ do 
+    ------------------------------------------------------------  
+    putStrLn$ " [!] Testing backend: "++ show backend
+    ----------------------------------------  
+    putStrLn "[main] First checking that all named tests can be found within 'allProgs'..."
+    let allMentioned = S.fromList $ knownNames knownTests
+    let notFound     = S.difference allMentioned (M.keysSet allProgsMap)
+    let notMentioned = S.toList$ S.difference (M.keysSet allProgsMap) allMentioned                                              
+    unless (S.null notFound) $ 
+      error $ "Referred to test cases not found (by name) in allProgs: "++show (S.toList notFound)
+    let goods, bads :: [String]
+        (goods,bads) = case knownTests of 
+                        KnownGood ls -> (ls, notMentioned)
+                        KnownBad  ls -> (notMentioned, ls)
+    let goodEntries = L.map (nameHackTE . (allProgsMap M.!)) goods
+        badEntries  = L.map (nameHackTE . (allProgsMap M.!)) bads
+    -- Laziness...
+    evaluate (L.foldl1 seq $ L.map (\(TestEntry {}) -> ()) goodEntries)
+    evaluate (L.foldl1 seq $ L.map (\(TestEntry {}) -> ()) badEntries)
+    putStrLn$"[main] Yep, all mentioned tests are there."
+    ----------------------------------------  
+    -- let rawComp name test = 
+    --       case themode of
+    --         Cilk        -> JIT.rawRunIO CilkParallel name (phase2 test)
+    --         SequentialC -> JIT.rawRunIO Sequential   name (phase2 test)
+    --         OpenCL      -> rawRunOpenCL name test 
+    -- let testsPlain = testCompiler (\ name test -> unsafePerformIO$ rawComp name test) supportedTests
+
+    let testsRepack = 
+          L.zipWith (\ i (TestEntry { name, origProg=(AccProg prg), interpResult }) ->
+                      let str = show (BC.runWith backend (Just name) prg)
+                      in testCase ("run test "++show i++" "++name) $ 
+                         assertEqual "Printed Accelerate result should match expected" 
+                                               interpResult str
+                    )
+          [1::Int ..] goodEntries
+
+    let testsRepack2 = 
+          L.zipWith (\ i (TestEntry { name, origProg=(AccProg prg), interpResult }) ->
+                      testCase ("expected-to-fail test "++show i++" "++name) $
+                      assertException [""] $ 
+                       let str = show (BC.runWith backend (Just name) prg) 
+                       in unless (interpResult == str) $ 
+                           error $ "Printed Accelerate result should match expected:\n Expected: "
+                                   ++interpResult++"\n Got: "++str++"\n"
+                    )
+          [1::Int ..] badEntries
+
+    defaultMain (testsRepack ++ testsRepack2)
+    putStrLn " [Test.hs] You will never see this message, because test-framework defaultMain exits the process."
+
+-- Add an extra terminating character to make the "-t" command line option more
+-- useful for selecting tests.
+nameHack :: String -> String
+nameHack = (++":")
+
+nameHackTE :: TestEntry -> TestEntry
+nameHackTE (te@TestEntry{name}) = te { name = nameHack name }
+
+unNameHack :: String -> String
+unNameHack = init 
+
+------------------------------------------------------------
+-- Helpers copied from elsewhere:
+------------------------------------------------------------
+
+-- | Ensure that executing an action returns an exception
+-- containing one of the expected messages.
+assertException  :: [String] -> IO a -> IO ()
+assertException msgs action = do
+ x <- catch (do action; return Nothing) 
+            (\e -> do putStrLn $ "Good.  Caught exception: " ++ show (e :: SomeException)
+                      return (Just $ show e))
+ case x of 
+  Nothing -> HU.assertFailure "Failed to get an exception!"
+  Just s -> 
+   if  any (`isInfixOf` s) msgs
+   then return () 
+   else HU.assertFailure $ "Got the wrong exception, expected one of the strings: "++ show msgs
+        ++ "\nInstead got this exception:\n  " ++ show s
+

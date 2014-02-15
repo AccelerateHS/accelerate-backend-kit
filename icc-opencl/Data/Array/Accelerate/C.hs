@@ -15,7 +15,7 @@
 #endif
 
 -- | An entrypoint to an Accelerate backend based on generating C code.
-module MODNAME (run, runDetailed, BKEND, mkCBackend,
+module MODNAME (run, runDetailed, BKEND(..), mkCBackend,
                 DbgConf(..), defaultConf) where
 
 import qualified Data.ByteString.Lazy as B

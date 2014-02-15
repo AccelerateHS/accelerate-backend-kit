@@ -3,8 +3,8 @@
 {-# LANGUAGE TypeFamilies #-}
 
 module Data.Array.Accelerate.BackendClass (
-
-  Backend(..), SimpleBackend(..)
+  Backend(..), SimpleBackend(..),
+  runWith
 
   -- Not ready for primetime yet:
   -- PortableBackend(..), CLibraryBackend(..)
@@ -15,6 +15,9 @@ module Data.Array.Accelerate.BackendClass (
 import           Data.Array.Accelerate
 import qualified Data.Array.Accelerate.AST                      as AST
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as SACC
+import           Data.Array.Accelerate.Trafo.Sharing (convertAcc)
+
+import System.IO.Unsafe (unsafePerformIO)
 
 -- standard libraries
 import           Data.ByteString.Lazy                   as B
@@ -31,11 +34,19 @@ import           Data.ByteString.Lazy                   as B
 -- need a new AST node, but it's also backend-specific.
 
 
--- | A low-level interface that abstracts over Accelerate backend code
--- generators and expression evaluation. In particular, we may want to process
--- already converted and transformed/optimised programs.
---
-class Backend b where
+-- | Run a complete Accelerate program through the front-end, and the given backend.
+--   Optionally takes a name associated with the program.
+runWith :: (Backend b, Arrays a) => b -> DebugName -> Acc a -> a
+runWith bkend nm prog = unsafePerformIO $ do 
+  let cvtd = convertAcc True True True prog
+  remote <- runRaw bkend cvtd Nothing 
+  copyToHost bkend remote
+
+-- | A low-level interface that abstracts over Accelerate backend code generators and
+-- expression evaluation. This takes the internal Accelerate AST representation
+-- rather than the surface, HOAS one.  The reason for this is that we may want to
+-- process already converted and transformed/optimised programs.
+class Show b => Backend b where
 
   -- | The type of a remote handle on device memory. This is class-associated
   -- because different backends may represent device pointers differently.
@@ -151,7 +162,12 @@ class Backend b where
 -- | An optional name for the program being run that may help for debugging purpopes.
 type DebugName = Maybe String
 
+
+
+-- | An alternative class to Backend which represents a backend that has the ability
+-- to handle the simplified AST (SimpleAcc) directly.
 class SimpleBackend b where
+-- TODO: Make a subclass of Backend?
 
   -- | The type of a remote handle on device memory. This is class-associated
   -- because different backends may represent device pointers differently.
