@@ -27,18 +27,18 @@ doBinds n mp (ProgBind arOut ty (size, _) (Right ae) : rest) = this : doBinds (n
    mp' = case size of 
            UnknownSize -> mp
            KnownSize ls -> M.insert arOut ls mp
-   this =   
+   this = 
      -- The output array is the same size and type, but generated in a different way:
      ProgBind arOut ty size $ Right $ 
      case ae of 
        Map (Lam1 (evr, ety) bod) arIn ->
-         Generate (EVr (shapeName arOut)) -- (mkETuple shapels)
+         Generate theshape
           (Lam1 (ind, indty)
            (ELet (evr, ety, EIndexScalar arIn (EVr ind))
                  bod))
 
        ZipWith (Lam2 (evr1, ety1) (evr2, ety2) bod) arIn1 arIn2 ->
-         Generate (EVr (shapeName arOut)) -- (mkETuple shapels)
+         Generate theshape
           (Lam1 (ind, indty)
            (ELet (evr1,ety1, EIndexScalar arIn1 (EVr ind)) $
             ELet (evr2,ety2, EIndexScalar arIn2 (EVr ind)) $ 
@@ -54,24 +54,13 @@ doBinds n mp (ProgBind arOut ty (size, _) (Right ae) : rest) = this : doBinds (n
    ind = var$"indG_"++show n
    indty = case ty of
             TArray n _ -> mkTTuple$ replicate n TInt
---   indty = mkTTuple$ map (\_ -> TInt) shapels
 
-   -- -- A list of expressions *which will compute the shape at runtime*:
-   -- shapels :: [Exp]
-   -- shapels = 
-   --   case size of               
-   --     KnownSize ls -> map (EConst . I) ls 
-   --     UnknownSize -> 
-   --       (error$"DesugarToGenerate: not handling Map/ZipWith of UnknownSize yet...")$ 
-   --       -- TEMP: This is there for later:
-   --       let numDims = error "desguToGenerate: UNFINISHED -- need numDims" in
-   --       createShapeIntersection numDims $         
-   --         map (\v -> case M.lookup v mp of
-   --                      Nothing -> Left v
-   --                      Just ls -> Right ls
-   --                     )
-   --             [] -- <- all of the input array-vars go here
-
+   theshape :: Exp
+   theshape = 
+     case size of               
+       KnownSize ls -> mkETuple $ map (EConst . I) ls 
+       -- Any unknown-sized arrays will have explicit variables tracking their shape at this point:
+       UnknownSize  -> EVr (shapeName arOut)
 
 -- TODO FIXME: Handle unknown sizes and intersections:
 createShapeIntersection :: Int -> [Either Var [Int]] -> [Exp]

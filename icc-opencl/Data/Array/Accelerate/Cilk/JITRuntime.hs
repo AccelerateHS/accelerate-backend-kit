@@ -155,8 +155,8 @@ rawRunIO pm name prog = do
   (code,out,err) <- readProcessWithExitCode cc ccArgs ""
   t2 <- getCurrentTime    
   dbgPrint 1 $"COMPILETIME_C: "++show (diffUTCTime t2 t1)
-  mapM_ (dbgPrint 1) (lines out)
-  mapM_ (dbgPrint 1) (lines err)
+  mapM_ (dbgPrint 1 . ("[CC] "++)) (lines out)
+  mapM_ (dbgPrint 1 . ("[CC] "++)) (lines err)
   case code of
     ExitSuccess -> return ()
     ExitFailure c -> error$"C Compiler failed with code "++show c
