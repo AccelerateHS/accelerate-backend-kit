@@ -99,8 +99,8 @@ main = do
  
  if Help `elem` opts || errs /= [] then error help2
   else do
-   -- let passthru = nonopts ++ unrecog
-   let passthru = args
+   let passthru = nonopts ++ unrecog
+   -- let passthru = args
    putStrLn$ "  [Note: passing through options to test-framework]: "++unwords passthru
    withArgs passthru $ do 
     ------------------------------------------------------------  
