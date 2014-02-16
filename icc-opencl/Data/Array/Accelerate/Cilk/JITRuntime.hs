@@ -19,6 +19,7 @@ import           Data.Array.Accelerate.Shared.EmitHelpers ((#))
 import           Data.Time.Clock  (getCurrentTime,diffUTCTime)
 import qualified Data.Map         as M
 import           Data.Char        (isAlphaNum)
+import           Data.Word        (Word64)
 import           Control.Monad    (when, forM_, forM)
 import           Control.Exception (evaluate)
 import           System.IO.Unsafe (unsafePerformIO)
@@ -26,6 +27,7 @@ import           System.Process   (readProcess, readProcessWithExitCode)
 import           System.Exit      (ExitCode(..))
 import           System.Directory (removeFile, doesFileExist)
 import           System.IO        (stdout, hFlush)
+import           System.Random    (randomIO)
 import           System.Environment (getEnvironment)
 
 import           GHC.Prim           (byteArrayContents#)
@@ -106,8 +108,12 @@ rawRunIO pm name prog = do
   dbgPrint 1 $"COMPILETIME_phase3: "++show (diffUTCTime t1 t0)
   -----------
 
+  -- TODO: we should really store a hash of the AST and reproduce the caching layer
+  -- here.  Having not done that yet we just pick a random number to avoid collissions.
+  (rand::Word64) <- randomIO
+
   let emitted  = emitC pm prog2
-      thisprog = ".genC_"++show pm++"_"++ stripFileName name
+      thisprog = ".genC_"++show pm++"_"++ stripFileName name++"_"++show rand
   b     <- doesFileExist (thisprog++".c")
   when b $ removeFile    (thisprog++".c") -- Remove file for safety
   writeFile  (thisprog++".c") emitted

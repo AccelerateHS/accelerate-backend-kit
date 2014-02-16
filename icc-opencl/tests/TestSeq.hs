@@ -7,11 +7,24 @@
 module Main where 
 
 import           Data.Array.Accelerate.BackendKit.ConsoleTester 
+import           Data.Array.Accelerate.BackendClass (SomeSimpleBackend(..))
+import           System.Process(system)
+import qualified Data.Array.Accelerate.Cilk as Cilk
 import qualified Data.Array.Accelerate.C    as C
 
-main = makeMain $ BackendTestConf { 
-         backend  = C.CBackend,
-         sbackend = Just (SomeSimpleBackend C.CBackend),
+#ifdef USECILK
+bkend = Cilk.CilkBackend
+#else
+bkend = C.CBackend
+#endif
+
+
+main :: IO ()
+main = do 
+       system "rm -rf .genC_*" -- Remove remaining output from last time, if any
+       makeMain $ BackendTestConf { 
+         backend  = bkend,
+         sbackend = Just (SomeSimpleBackend bkend),
 --         knownTests = KnownGood allTests,
          knownTests = KnownBad knownProblems,
          extraTests = []
