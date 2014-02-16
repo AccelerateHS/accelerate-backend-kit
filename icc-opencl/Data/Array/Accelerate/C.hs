@@ -152,8 +152,11 @@ instance SimpleBackend BKEND where
   -- simpleCompile
   -- simpleCompileFun1
 
-  simpleRunRaw _ (Just name) prog _blob =
+  simpleRunRaw _ mname prog _blob =
     do
+       let name = case mname of
+                   Just n -> n
+                   Nothing -> "unknown_prog"
        t1 <- getCurrentTime           
        p  <- evaluateSimpleAcc$ phase2 prog
        t2 <- getCurrentTime
