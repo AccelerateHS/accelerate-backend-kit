@@ -21,7 +21,7 @@ bkend = C.CBackend
 
 main :: IO ()
 main = do 
-       system "rm -rf .genC_*" -- Remove remaining output from last time, if any
+       -- system "rm -rf .genC_*" -- Remove remaining output from last time, if any
        makeMain $ BackendTestConf { 
          backend  = bkend,
          sbackend = Just (SomeSimpleBackend bkend),
