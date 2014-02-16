@@ -4,7 +4,7 @@
 -- | Build a console test runner for any instance of the Backend class.
 
 module Data.Array.Accelerate.BackendKit.ConsoleTester 
-       (  BackendTestConf(..), KnownTests(..), 
+       (  BackendTestConf(..), SomeSimpleBackend(..), KnownTests(..), 
           makeMain
        )
        where 
@@ -20,7 +20,7 @@ import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phas
 import qualified Data.Array.Accelerate.BackendClass as BC
 
 import           Data.Map           as M
-import           Data.Set           as S
+import           Data.Set           as Set
 import           Data.List          as L
 import           Data.Char          (toLower)
 import           Test.Framework     (defaultMain, buildTest, testGroup, Test, optionsDescription)
@@ -37,13 +37,19 @@ import GHC.Conc (threadDelay)
 import Debug.Trace        (trace)
 --------------------------------------------------------------------------------  
 
+-- | Everything needed to run tests for a given backend.
 data BackendTestConf =
-     forall b . BC.Backend b => BackendTestConf 
+     forall b . (BC.Backend b) => BackendTestConf 
      { backend :: b
+     , sbackend :: Maybe (SomeSimpleBackend) -- ^ Optional SimpleBackend alternative instance, for use when --usesimple is passed.
      , knownTests :: KnownTests  -- ^ Which of the standard tests (Tests.allProgs) should this backend pass?
      , extraTests :: [TestEntry] -- ^ Additional tests for this backend.
-     -- modes
      }
+
+-- data SomeBackend = forall b . BC.Backend b => SomeBackend b
+
+-- | An encapsulated SimpleBackend about which we know nothing else.  (Like SomeException.)
+data SomeSimpleBackend = forall b . BC.SimpleBackend b => SomeSimpleBackend b
 
 -- | We describe the current expected level of functionality from a given backend by
 -- listing either the known-good or known-bad tests by name.  All /unlisted/ tests are
@@ -54,16 +60,17 @@ data KnownTests = KnownGood [String]
 knownNames (KnownGood ls) = ls
 knownNames (KnownBad ls) = ls
 
-data Flag = Help | NoRepack     deriving (Eq,Ord,Show,Read)
+data Flag = Help | UseSimple     deriving (Eq,Ord,Show,Read)
 
 options :: [OptDescr Flag]
 options =
      [ Option ['h'] ["help"] (NoArg Help)              "report this help message"
-     , Option [] ["norepack"]  (NoArg NoRepack)  "do NOT run tests through the full accelerate wrapper, repacking the results"
+--     , Option [] ["norepack"]  (NoArg UseSimple)  "do NOT run tests through the full accelerate wrapper, repacking the results"
+     , Option [] ["simple"]  (NoArg UseSimple) "do not repack results as full Accelerate arrays, rather use the SimpleAcc and AccArray representations only"
      ]
 
 makeMain :: BackendTestConf -> IO ()
-makeMain BackendTestConf{backend,knownTests,extraTests} = do
+makeMain BackendTestConf{backend,sbackend,knownTests,extraTests} = do
  args <- getArgs
  let (opts,nonopts,unrecog,errs) = getOpt' Permute options args
  -- let (opts,nonopts,errs) = getOpt Permute options args 
@@ -84,11 +91,11 @@ makeMain BackendTestConf{backend,knownTests,extraTests} = do
     putStrLn$ " [!] Testing backend: "++ show backend
     ----------------------------------------  
     putStrLn "[main] First checking that all named tests can be found within 'allProgs'..."
-    let allMentioned = S.fromList $ knownNames knownTests
-    let notFound     = S.difference allMentioned (M.keysSet allProgsMap)
-    let notMentioned = S.toList$ S.difference (M.keysSet allProgsMap) allMentioned                                              
-    unless (S.null notFound) $ 
-      error $ "Referred to test cases not found (by name) in allProgs: "++show (S.toList notFound)
+    let allMentioned = Set.fromList $ knownNames knownTests
+    let notFound     = Set.difference allMentioned (M.keysSet allProgsMap)
+    let notMentioned = Set.toList$ Set.difference (M.keysSet allProgsMap) allMentioned                                              
+    unless (Set.null notFound) $ 
+      error $ "Referred to test cases not found (by name) in allProgs: "++show (Set.toList notFound)
     let goods, bads :: [String]
         (goods,bads) = case knownTests of 
                         KnownGood ls -> (ls, notMentioned)
@@ -96,8 +103,8 @@ makeMain BackendTestConf{backend,knownTests,extraTests} = do
     let goodEntries = L.map (nameHackTE . (allProgsMap M.!)) goods
         badEntries  = L.map (nameHackTE . (allProgsMap M.!)) bads
     -- Laziness...
-    evaluate (L.foldl1 seq $ L.map (\(TestEntry {}) -> ()) goodEntries)
-    evaluate (L.foldl1 seq $ L.map (\(TestEntry {}) -> ()) badEntries)
+    mapM_ evaluate goodEntries
+    mapM_ evaluate badEntries
     putStrLn$"[main] Yep, all mentioned tests are there."
     ----------------------------------------  
     -- let rawComp name test = 
@@ -110,15 +117,15 @@ makeMain BackendTestConf{backend,knownTests,extraTests} = do
     let testsRepack = 
           L.zipWith (\ i (TestEntry { name, origProg=(AccProg prg), interpResult }) ->
                       let str = show (BC.runWith backend (Just name) prg)
-                      in testCase ("run test "++show i++" "++name) $ 
+                      in testCase ("run test "++show i++"/"++show (length goodEntries)++" "++name) $ 
                          assertEqual "Printed Accelerate result should match expected" 
                                                interpResult str
                     )
           [1::Int ..] goodEntries
 
-    let testsRepack2 = 
+    let testsRepackBad = 
           L.zipWith (\ i (TestEntry { name, origProg=(AccProg prg), interpResult }) ->
-                      testCase ("expected-to-fail test "++show i++" "++name) $
+                      testCase ("expected-to-fail test "++show i++"/"++show (length badEntries)++" "++name) $
                       assertException [""] $ 
                        let str = show (BC.runWith backend (Just name) prg) 
                        in unless (interpResult == str) $ 
@@ -127,7 +134,38 @@ makeMain BackendTestConf{backend,knownTests,extraTests} = do
                     )
           [1::Int ..] badEntries
 
-    defaultMain (testsRepack ++ testsRepack2)
+    let testsSimple = 
+          L.zipWith (\ ix (TestEntry { name, simpleProg, simpleResult }) -> 
+                      case sbackend of
+                        Nothing -> error "Cannot run in --simple mode without BackendTestConf.sbackend provided!"
+                        Just (SomeSimpleBackend sback) -> 
+                         testCase ("run test [simple mode] "++show ix++"/"++show (length goodEntries)++" "++name) $ do 
+                           ls <- BC.simpleRunRaw sback (Just name) simpleProg Nothing
+                           ls2 <- mapM (BC.simpleCopyToHost sback) ls 
+                           let str = show $ concat $ L.map SimpleAcc.arrPayloads ls2
+                           assertEqual "[simple] Printed Accelerate result should match expected" 
+                                       simpleResult str
+                    )
+          [1::Int ..] goodEntries
+    let testsSimpleBad = 
+          L.zipWith (\ ix (TestEntry { name, simpleProg, simpleResult }) -> 
+                      case sbackend of
+                        Nothing -> error "Cannot run in --simple mode without BackendTestConf.sbackend provided!"
+                        Just (SomeSimpleBackend sback) -> 
+                         testCase ("expected-to-fail test [simple mode] "++show ix++"/"++show (length badEntries)++" "++name) $ 
+                         assertException [""] $ do
+                           ls <- BC.simpleRunRaw sback (Just name) simpleProg Nothing
+                           ls2 <- mapM (BC.simpleCopyToHost sback) ls 
+                           let str = show $ concat $ L.map SimpleAcc.arrPayloads ls2
+                           unless (simpleResult == str) $
+                             error$ "[simple] Printed Accelerate result should match expected.\nExpected: "
+                                    ++simpleResult++"\nGot: "++str++"\n"
+                    )
+          [1::Int ..] badEntries
+
+    if UseSimple `elem` opts 
+     then defaultMain (testsSimple ++ testsSimpleBad)
+     else defaultMain (testsRepack ++ testsRepackBad)
     putStrLn " [Test.hs] You will never see this message, because test-framework defaultMain exits the process."
 
 -- Add an extra terminating character to make the "-t" command line option more

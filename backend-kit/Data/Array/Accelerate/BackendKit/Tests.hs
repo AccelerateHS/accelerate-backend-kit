@@ -47,7 +47,8 @@ import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import Data.Array.Accelerate as A 
 import Data.Array.Accelerate.Interpreter (run)
 import Data.Int
-import Data.List       (intersperse)
+import Data.List (intersperse)
+import qualified Data.List as L
 import Data.List.Split (chunksOf)
 --import Control.DeepSeq (deepseq)
 import qualified Data.Map as M
@@ -68,7 +69,7 @@ import Text.PrettyPrint.GenericPretty (doc)
 --   program, but it is trickier to consume.
 data TestEntry = TestEntry { name :: String  -- ^ Name of this particular test. 
                            , simpleProg :: S.Prog () -- ^ Converted SimpleAcc AST
-                           , simpleResult :: String  -- ^ Result printed as simplified array payload type.
+                           , simpleResult :: String  -- ^ Result printed as a simplified, flattened list of payloads, [ArrayPayload].
                            , interpResult :: String  -- ^ Result as printed by Accelerate.Interpreter
                            , origProg :: AccProg     -- ^ Original, fully typed Accelerate program 
                            }
@@ -162,7 +163,7 @@ go name p =
       -- Compare the *flat* list of payloads only for now; we record the printed payload:
   in TestEntry { name
                , simpleProg = convertToSimpleProg p
-               , simpleResult = show payloads 
+               , simpleResult = show payloads -- accArrays
                , interpResult = show arr
                , origProg = AccProg p }
        

@@ -9,15 +9,38 @@ module Main where
 import           Data.Array.Accelerate.BackendKit.ConsoleTester 
 import qualified Data.Array.Accelerate.C    as C
 
-allTests = oneDimOrLessTests ++ useTests ++ multiDimTests ++ highDimTests
-
 main = makeMain $ BackendTestConf { 
-         backend = C.CBackend,
-         knownTests = KnownGood allTests,
+         backend  = C.CBackend,
+         sbackend = Just (SomeSimpleBackend C.CBackend),
+--         knownTests = KnownGood allTests,
+         knownTests = KnownBad knownProblems,
          extraTests = []
        }
 
+knownProblems :: [String]
+knownProblems = words $ "" 
+  -- These pass in --simple mode, but are having a problem in the repacking phase:
+  ----------------------------------------
+  ++ "p13 p13b p13c p13d p13e p13f p14 p14b p14e "
+  ++ "p9c "
+  ++ "p1d p2d p2g p2h p9a p9b " -- Tuple components flipped during repack!! [2014.02.16]
+
+  -- Wrong answers, even in --simple:
+  ----------------------------------------
+  ++ " p12 " -- Bad answer, number 40 turned to 0 or 2!  Egad, nondeterministic!  Sometimes works.
+  ++ " p8 " -- Bad result even in --simple!  Returns 2*pi instead of pi. [2014.02.16]
+
+  -- UNFINISHED, not bugs:
+  ----------------------------------------
+  ++ " p20a p20b p20c " -- UNFINISHED error printed, strides for foldsegs [2014.02.16]
+
+
+
 --------------------------------------------------------------------------------  
+-- OLD: switching away from enumerating working cases
+--------------------------------------------------------------------------------  
+
+knownGood = oneDimOrLessTests ++ useTests ++ multiDimTests ++ highDimTests
 
 oneDimOrLessTests :: [String]
 oneDimOrLessTests = words$ 

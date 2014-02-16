@@ -3,7 +3,8 @@
 {-# LANGUAGE TypeFamilies #-}
 
 module Data.Array.Accelerate.BackendClass (
-  Backend(..), SimpleBackend(..),
+  Backend(..), 
+  SimpleBackend(..),
   runWith
 
   -- Not ready for primetime yet:
@@ -163,11 +164,12 @@ class Show b => Backend b where
 type DebugName = Maybe String
 
 
-
 -- | An alternative class to Backend which represents a backend that has the ability
--- to handle the simplified AST (SimpleAcc) directly.
-class SimpleBackend b where
--- TODO: Make a subclass of Backend?
+-- to handle the simplified AST (SimpleAcc) directly.  
+--
+-- All methods here are substantially different because in this case we do /not/ have
+-- type-level information about the inputs and results of Accelerate computations.
+class Show b => SimpleBackend b where
 
   -- | The type of a remote handle on device memory. This is class-associated
   -- because different backends may represent device pointers differently.
@@ -283,6 +285,16 @@ class SimpleBackend b where
   --
 --  simpleForceToDisk :: SimpleBlob b -> IO (SimpleBlob b)
 
+
+-- | A type wrapper that "casts" a SimpleBackend into a Backend.
+-- 
+--   Discarding type information is easy, so we have a subtyping relation in this
+--   direction but not the other.
+newtype LiftBackend b = LiftBackend b
+  deriving Show
+
+instance SimpleBackend b => Backend (LiftBackend b) where
+-- FINISHME
 
 {--
 -- | A bag of bits that can be serialised to disk
