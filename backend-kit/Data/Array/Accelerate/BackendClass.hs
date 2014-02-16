@@ -1,10 +1,12 @@
 {-# LANGUAGE CPP          #-}
 {-# LANGUAGE Rank2Types   #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE GADTs #-}
 
 module Data.Array.Accelerate.BackendClass (
-  Backend(..), 
-  SimpleBackend(..),
+  Backend(..), MinimalBackend(..),
+  SimpleBackend(..), 
+  LiftSimpleBackend(LiftSimpleBackend), SomeSimpleBackend(SomeSimpleBackend), 
   runWith
 
   -- Not ready for primetime yet:
@@ -13,10 +15,13 @@ module Data.Array.Accelerate.BackendClass (
 ) where
 
 -- friends
-import           Data.Array.Accelerate
+import           Data.Array.Accelerate                          as A
 import qualified Data.Array.Accelerate.AST                      as AST
+import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as SACC
-import           Data.Array.Accelerate.Trafo.Sharing (convertAcc)
+-- import           Data.Array.Accelerate.Trafo.Sharing (convertAcc)
+import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0)
+
 
 import System.IO.Unsafe (unsafePerformIO)
 
@@ -39,9 +44,11 @@ import           Data.ByteString.Lazy                   as B
 --   Optionally takes a name associated with the program.
 runWith :: (Backend b, Arrays a) => b -> DebugName -> Acc a -> a
 runWith bkend nm prog = unsafePerformIO $ do 
-  let cvtd = convertAcc True True True prog
+--  let cvtd = convertAcc True True True prog
+  let cvtd = phase0 prog
   remote <- runRaw bkend cvtd Nothing 
   copyToHost bkend remote
+
 
 -- | A low-level interface that abstracts over Accelerate backend code generators and
 -- expression evaluation. This takes the internal Accelerate AST representation
@@ -111,6 +118,13 @@ class Show b => Backend b where
              -> Remote b x
              -> IO (Remote b y)
 
+  -- The default implementation is inefficient, because it potentially issues a new
+  -- compile every time the function is invoked.  It throws away the input blob.
+  runRawFun1 b afun mblob rem = do 
+    inp <- useRemote b rem
+    let applied = AST.Apply afun inp
+    runRaw b (AST.OpenAcc applied) Nothing
+
   -------------------------- Copying and Waiting  -------------------------------
 
   -- | Take a copy action immediately if the data is available.  This implies
@@ -139,7 +153,7 @@ class Show b => Backend b where
   --
   waitRemote :: b -> Remote b a -> IO ()
 
-  -- | Inject a remote array into an AST node
+  -- | Inject an (already) remote array into an AST node
   --
   useRemote :: Arrays a => b -> Remote b a -> IO (AST.Acc a)
 
@@ -285,16 +299,26 @@ class Show b => SimpleBackend b where
   --
 --  simpleForceToDisk :: SimpleBlob b -> IO (SimpleBlob b)
 
+--------------------------------------------------------------------------------------------
+
+-- | An encapsulated SimpleBackend about which we know nothing else.  (Like SomeException.)
+data SomeSimpleBackend = forall b . SimpleBackend b => SomeSimpleBackend b
+
+instance Show SomeSimpleBackend where
+  show (SomeSimpleBackend b) = show b
+
 
 -- | A type wrapper that "casts" a SimpleBackend into a Backend.
 -- 
 --   Discarding type information is easy, so we have a subtyping relation in this
 --   direction but not the other.
-newtype LiftBackend b = LiftBackend b
-  deriving Show
+newtype LiftSimpleBackend b = LiftSimpleBackend b deriving (Show, Eq)
 
-instance SimpleBackend b => Backend (LiftBackend b) where
+instance SimpleBackend b => Backend (LiftSimpleBackend b) where
 -- FINISHME
+
+
+
 
 {--
 -- | A bag of bits that can be serialised to disk
@@ -368,3 +392,30 @@ class Backend b => CLibraryBackend b where
 -}
 
 
+-- | Takes a basic "run" function and promotes it to a minimal backend.
+--   This provides much less control over decisions, like when to copy, than would a proper
+--   instance of the backend class.
+-- 
+--   Unfortunately this is NOT the same run function that complete Accelerate
+--   backends (e.g. Data.Array.Accelerate.Interpreter) will export, because that one
+--   expects the HOAS representation, not the converted one (AST.Acc).
+newtype MinimalBackend = MinimalBackend (forall a . (Arrays a) => AST.Acc a -> a)
+
+instance Show MinimalBackend where
+  show _ = "<MinimalBackend based on run function>"
+
+instance Backend MinimalBackend where
+  type Remote MinimalBackend r = r
+  type Blob MinimalBackend r   = ()
+  compile _ _ _ = return ()
+  compileFun1 _ _ _ = return ()
+  runRaw (MinimalBackend runner) acc _mblob = 
+    return $! runner acc
+
+  copyToHost _ rem = return $! rem
+  copyToDevice _ a = return $! a
+  copyToPeer _ rem = return $! rem
+
+  waitRemote _ _ = return ()
+  useRemote _ r = return $! phase0 (A.use r)
+  separateMemorySpace _ = False  -- This is pretty bogus.

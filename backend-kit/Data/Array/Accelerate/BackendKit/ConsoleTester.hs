@@ -4,7 +4,7 @@
 -- | Build a console test runner for any instance of the Backend class.
 
 module Data.Array.Accelerate.BackendKit.ConsoleTester 
-       (  BackendTestConf(..), SomeSimpleBackend(..), KnownTests(..), 
+       (  BackendTestConf(..), KnownTests(..), 
           makeMain
        )
        where 
@@ -41,15 +41,10 @@ import Debug.Trace        (trace)
 data BackendTestConf =
      forall b . (BC.Backend b) => BackendTestConf 
      { backend :: b
-     , sbackend :: Maybe (SomeSimpleBackend) -- ^ Optional SimpleBackend alternative instance, for use when --usesimple is passed.
+     , sbackend :: Maybe (BC.SomeSimpleBackend) -- ^ Optional SimpleBackend alternative instance, for use when --simple is passed.
      , knownTests :: KnownTests  -- ^ Which of the standard tests (Tests.allProgs) should this backend pass?
      , extraTests :: [TestEntry] -- ^ Additional tests for this backend.
      }
-
--- data SomeBackend = forall b . BC.Backend b => SomeBackend b
-
--- | An encapsulated SimpleBackend about which we know nothing else.  (Like SomeException.)
-data SomeSimpleBackend = forall b . BC.SimpleBackend b => SomeSimpleBackend b
 
 -- | We describe the current expected level of functionality from a given backend by
 -- listing either the known-good or known-bad tests by name.  All /unlisted/ tests are
@@ -138,7 +133,7 @@ makeMain BackendTestConf{backend,sbackend,knownTests,extraTests} = do
           L.zipWith (\ ix (TestEntry { name, simpleProg, simpleResult }) -> 
                       case sbackend of
                         Nothing -> error "Cannot run in --simple mode without BackendTestConf.sbackend provided!"
-                        Just (SomeSimpleBackend sback) -> 
+                        Just (BC.SomeSimpleBackend sback) -> 
                          testCase ("run test [simple mode] "++show ix++"/"++show (length goodEntries)++" "++name) $ do 
                            ls <- BC.simpleRunRaw sback (Just name) simpleProg Nothing
                            ls2 <- mapM (BC.simpleCopyToHost sback) ls 
@@ -151,7 +146,7 @@ makeMain BackendTestConf{backend,sbackend,knownTests,extraTests} = do
           L.zipWith (\ ix (TestEntry { name, simpleProg, simpleResult }) -> 
                       case sbackend of
                         Nothing -> error "Cannot run in --simple mode without BackendTestConf.sbackend provided!"
-                        Just (SomeSimpleBackend sback) -> 
+                        Just (BC.SomeSimpleBackend sback) -> 
                          testCase ("expected-to-fail test [simple mode] "++show ix++"/"++show (length badEntries)++" "++name) $ 
                          assertException [""] $ do
                            ls <- BC.simpleRunRaw sback (Just name) simpleProg Nothing
