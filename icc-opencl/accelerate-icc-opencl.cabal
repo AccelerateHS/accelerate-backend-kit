@@ -83,7 +83,8 @@ Test-Suite test-accelerate-cpu-sequential
                  , test-framework, test-framework-hunit, HUnit
                  , split >= 0.2
                  , mtl, pretty, prettyclass, GenericPretty
-                 , accelerate-backend-kit, accelerate >= 0.13 
+                 , accelerate-backend-kit >= 0.13.0.99
+                 , accelerate >= 0.13.0.99
                  , bytestring, ghc-prim, time
 
 -- Test-Suite test-accelerate-cpu-opencl
