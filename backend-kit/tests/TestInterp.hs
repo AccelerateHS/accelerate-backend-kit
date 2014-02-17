@@ -22,6 +22,6 @@ main = do
        makeMain $ BackendTestConf {
          backend  = bkend,
          sbackend = Nothing,
-         knownTests = KnownBad "",
+         knownTests = KnownBad [],
          extraTests = []
        }
