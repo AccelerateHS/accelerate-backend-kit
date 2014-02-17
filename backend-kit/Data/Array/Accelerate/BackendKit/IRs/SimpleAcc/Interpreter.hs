@@ -9,6 +9,7 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter
        (
          -- * Main module entrypoints  
          run, evalSimpleAcc,
+         interpBackend,
          
          -- * Smaller pieces that may be useful
          evalPrim, 
@@ -23,11 +24,16 @@ import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as T
 import           Data.Array.Accelerate.BackendKit.SimpleArray   as SA
 import qualified Data.Array.Accelerate.Array.Sugar              as Sug
+import qualified Data.Array.Accelerate.AST                      as AST
 import           Data.Array.Accelerate.Smart           (Acc)
 import qualified Data.List as L
 import qualified Data.Map  as M
 import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
 
+import Data.Array.Accelerate.BackendClass
+
+interpBackend :: MinimalBackend
+interpBackend = MinimalBackend run'
 
 --------------------------------------------------------------------------------
 -- Exposing a standard Accelerate `run` interface.
@@ -35,10 +41,14 @@ import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
 -- | Run an Accelerate computation using a simple (and very
 --   inefficient) interpreter.
 run :: forall a . Sug.Arrays a => Acc a -> a
-run acc = 
+run = run' . phase0 
+
+-- | Version that works on post-converted Accelerate programs.
+run' :: forall a . Sug.Arrays a => AST.Acc a -> a
+run' acc = 
           maybtrace ("[dbg] Repacking AccArray(s): "++show arrays) $ 
-          repackAcc acc arrays
- where arrays = evalSimpleAcc (phase1 (phase0 acc))
+          repackAcc (undefined :: Acc a) arrays
+ where arrays = evalSimpleAcc (phase1 acc)
 
 --------------------------------------------------------------------------------
 -- Values and Environments:
