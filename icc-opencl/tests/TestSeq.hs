@@ -27,7 +27,8 @@ main = do
          sbackend = Just (SomeSimpleBackend bkend),
 --         knownTests = KnownGood allTests,
          knownTests = KnownBad knownProblems,
-         extraTests = []
+         extraTests = [],
+         frontEndFusion = False
        }
 
 knownProblems :: [String]

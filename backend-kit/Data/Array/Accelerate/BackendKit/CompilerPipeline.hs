@@ -142,8 +142,11 @@ config =  Phase
   { recoverAccSharing      = True
   , recoverExpSharing      = True
   , floatOutAccFromExp     = True
-  , enableAccFusion        = True
-  , convertOffsetOfSegment = True
+--  , enableAccFusion        = True
+  , enableAccFusion        = False
+  -- Turning this one on causes the D.A.A.Interpreter to fail three tests:
+--  , convertOffsetOfSegment = True
+  , convertOffsetOfSegment = False
   }
 
 

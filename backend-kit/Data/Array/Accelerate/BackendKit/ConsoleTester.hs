@@ -12,7 +12,8 @@ module Data.Array.Accelerate.BackendKit.ConsoleTester
 import           Control.Exception
 import           Control.Monad (when, unless)
 import qualified Data.Array.Accelerate             as A
--- import qualified Data.Array.Accelerate.Interpreter as I
+import           Data.Array.Accelerate.Trafo.Sharing (convertAcc)
+import           Data.Array.Accelerate.Trafo (convertAccWith, Phase(..))
 import           Data.Array.Accelerate.BackendKit.Tests (allProgs,allProgsMap,testCompiler,TestEntry(..),
                                                          AccProg(AccProg),makeTestEntry)
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1, phase2, repackAcc)
@@ -44,6 +45,7 @@ data BackendTestConf =
      , sbackend :: Maybe (BC.SomeSimpleBackend) -- ^ Optional SimpleBackend alternative instance, for use when --simple is passed.
      , knownTests :: KnownTests  -- ^ Which of the standard tests (Tests.allProgs) should this backend pass?
      , extraTests :: [TestEntry] -- ^ Additional tests for this backend.
+     , frontEndFusion :: Bool    -- ^ Allow the Accelerate front-end to perform fusion optimizations
      }
 
 -- | We describe the current expected level of functionality from a given backend by
@@ -65,7 +67,7 @@ options =
      ]
 
 makeMain :: BackendTestConf -> IO ()
-makeMain BackendTestConf{backend,sbackend,knownTests,extraTests} = do
+makeMain BackendTestConf{backend,sbackend,knownTests,extraTests,frontEndFusion} = do
  args <- getArgs
  let (opts,nonopts,unrecog,errs) = getOpt' Permute options args
  -- let (opts,nonopts,errs) = getOpt Permute options args 
@@ -111,7 +113,7 @@ makeMain BackendTestConf{backend,sbackend,knownTests,extraTests} = do
 
     let testsRepack = 
           L.zipWith (\ i (TestEntry { name, origProg=(AccProg prg), interpResult }) ->
-                      let str = show (BC.runWith backend (Just name) prg)
+                      let str = show (runWith backend frontEndFusion  (Just name) prg)
                       in testCase ("run test "++show i++"/"++show (length goodEntries)++" "++name) $ 
                          assertEqual "Printed Accelerate result should match expected" 
                                                interpResult str
@@ -122,7 +124,7 @@ makeMain BackendTestConf{backend,sbackend,knownTests,extraTests} = do
           L.zipWith (\ i (TestEntry { name, origProg=(AccProg prg), interpResult }) ->
                       testCase ("expected-to-fail test "++show i++"/"++show (length badEntries)++" "++name) $
                       assertException [""] $ 
-                       let str = show (BC.runWith backend (Just name) prg) 
+                       let str = show (runWith backend frontEndFusion  (Just name) prg) 
                        in unless (interpResult == str) $ 
                            error $ "Printed Accelerate result should match expected:\n Expected: "
                                    ++interpResult++"\n Got: "++str++"\n"
@@ -162,6 +164,25 @@ makeMain BackendTestConf{backend,sbackend,knownTests,extraTests} = do
      then defaultMain (testsSimple ++ testsSimpleBad)
      else defaultMain (testsRepack ++ testsRepackBad)
     putStrLn " [Test.hs] You will never see this message, because test-framework defaultMain exits the process."
+
+
+-- | Run a complete Accelerate program through the front-end, and the given backend.
+--   Optionally takes a name associated with the program.
+runWith :: (BC.Backend b, A.Arrays a) => b -> Bool -> Maybe String -> A.Acc a -> a
+runWith bkend frontEndFusion nm prog = unsafePerformIO $ do 
+--  let cvtd = convertAcc True True True prog
+  let cvtd = phase0 prog
+--  let cvtd = convertAccWith config prog
+      -- config = Phase
+      --          { recoverAccSharing      = True
+      --          , recoverExpSharing      = True
+      --          , floatOutAccFromExp     = True
+      --          , enableAccFusion        = frontEndFusion
+      --          , convertOffsetOfSegment = True
+      --          }
+  remote <- BC.runRaw bkend cvtd Nothing 
+  BC.copyToHost bkend remote
+
 
 -- Add an extra terminating character to make the "-t" command line option more
 -- useful for selecting tests.

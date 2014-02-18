@@ -26,7 +26,8 @@ main = do
          sbackend = Nothing,
 --         sbackend = Just (SomeSimpleBackend bkend),
          knownTests = KnownBad knownProblems,
-         extraTests = []
+         extraTests = [],
+         frontEndFusion = False
        }
 
 
@@ -44,4 +45,11 @@ knownProblems = words $ ""
   ++" p10d p10e p10f p10g p10h p10i "   -- Index
   ++" p16e p17a p17b p18b p18c p18d p18e p1bb p7 " -- Backpermute/Reshape, other shapes support
   ++" p20a p20b p20c  " -- Unifinished, fold segs
+
+  -- NOTE! If the debug level is cranked up, four tests fail intermediate typechecks:
+  -- ++ " p13c p13d p13f p14e "
+  -- For example: 
+     -- ERROR: Typecheck pass failed: Unit input expression does not match expected.
+     -- Got:      TTuple [TTuple [TInt8,TInt16],TInt32]
+     -- Expected: TTuple [TInt8,TInt16,TInt32]
 

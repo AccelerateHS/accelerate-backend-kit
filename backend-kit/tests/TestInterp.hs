@@ -23,5 +23,6 @@ main = do
          backend  = bkend,
          sbackend = Nothing,
          knownTests = KnownBad [],
-         extraTests = []
+         extraTests = [],
+         frontEndFusion = True
        }
