@@ -105,7 +105,7 @@ instance EmitBackend CEmitter where
     include "stdio.h"
     include "stdint.h"
     include "stdbool.h"
-    -- include "math.h"    
+    include "math.h" -- Why was this formerly disabled? [2014.02.20]
     case e of
       CEmitter Sequential   _ -> return ()
       CEmitter CilkParallel _ -> do include "cilk/cilk.h"
