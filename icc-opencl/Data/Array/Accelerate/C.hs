@@ -15,7 +15,7 @@
 #endif
 
 -- | An entrypoint to an Accelerate backend based on generating C code.
-module MODNAME (run, runDetailed, BKEND(..), mkCBackend,
+module MODNAME (run, runDetailed, BKEND(..), defaultBackend,
                 DbgConf(..), defaultConf) where
 
 import qualified Data.ByteString.Lazy as B
@@ -79,6 +79,11 @@ mkCBackend = return BKEND
 -- Likewise there could be configuration parameters:
 -- data CConfig = CConfig {}
 -- defaultCConfig = ...
+
+-- | A default configuration of the backend, expected from every Accelerate
+-- implementation, like the "run" method.
+defaultBackend :: BKEND
+defaultBackend = BKEND
 
 -- | Arrays returned by the generated code.
 newtype CRemote a = CRemote [SA.AccArray]

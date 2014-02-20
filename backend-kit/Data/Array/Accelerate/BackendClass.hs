@@ -55,12 +55,12 @@ runWith bkend nm prog = unsafePerformIO $ do
   copyToHost bkend remote
 
 -- | A version of `runWith` that also returns timing information.
-runTimed :: (Backend b, Arrays a) => b -> DebugName -> Acc a -> (AccTiming, a)
-runTimed bkend nm prog = unsafePerformIO $ do
+runTimed :: (Backend b, Arrays a) => b -> DebugName -> Acc a -> IO (AccTiming, a)
+runTimed bkend nm prog = do
   (rand::Word64) <- randomIO
+  t0     <- getCurrentTime
   let cvtd = phase0 prog      
       path = ".blob_"++fromMaybe "" nm++"_"++show rand
-  t0     <- getCurrentTime
   blob   <- compile bkend path cvtd
   t1     <- getCurrentTime
   remote <- runRaw bkend cvtd (Just blob)
