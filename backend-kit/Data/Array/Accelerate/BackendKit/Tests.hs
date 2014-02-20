@@ -137,7 +137,8 @@ otherProgs =
   go "p10" p10, go "p10b" p10b, go "p10c" p10c, go "p10d" p10d, go "p10e" p10e, go "p10f" p10f, 
   go "p10g" p10g, go "p10h" p10h, go "p10i" p10i, 
   go "p11" p11, go "p11b" p11b, go "p11c" p11c,
-  go "p12" p12, go "p12b" p12b, go "p12c" p12c, go "p12d" p12d, go "p12e" p12e, 
+  -- go "p12" p12,  -- [2014.02.20] Temporarily disabled.  This one is nondeterministic (issue #8).  Returning to it later.
+  go "p12b" p12b, go "p12c" p12c, go "p12d" p12d, go "p12e" p12e, 
   go "p13" p13, go "p13b" p13b, go "p13c" p13c, go "p13d" p13d, go "p13e" p13e, go "p13f" p13f,
   go "p14" p14, go "p14b" p14b, 
   go "p14c" p14c, go "p14d" p14d, go "p14e" p14e,
