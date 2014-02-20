@@ -15,7 +15,7 @@
 #endif
 
 -- | An entrypoint to an Accelerate backend based on generating C code.
-module MODNAME (run, runDetailed, BKEND(..), defaultBackend,
+module MODNAME (run, runDetailed, BKEND(..), defaultBackend, defaultTrafoConfig,
                 DbgConf(..), defaultConf) where
 
 import qualified Data.ByteString.Lazy as B
@@ -25,6 +25,8 @@ import           System.IO.Unsafe (unsafePerformIO)
 import           Data.Array.Accelerate (Acc)
 import qualified Data.Array.Accelerate.AST as AST
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
+import           Data.Array.Accelerate.Trafo (convertAccWith, Phase(..))
+
 import qualified Data.Array.Accelerate.Cilk.JITRuntime as J
 import           Data.Array.Accelerate.Shared.EmitC (ParMode(..), DbgConf(..), defaultConf)
 
@@ -33,7 +35,7 @@ import qualified Data.Array.Accelerate.BackendKit.SimpleArray     as SA
 import           Data.Array.Accelerate.BackendClass
 import           Data.Array.Accelerate.BackendKit.Utils.Helpers (dbgPrint)
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline
-                  (phase0, phase1, phase2, repackAcc, unpackArray, Phantom(..))
+                  (phase0, phase1, phase2, repackAcc, unpackArray, Phantom(..), defaultTrafoConfig)
 
 import Data.Time.Clock  (getCurrentTime,diffUTCTime)
 import Control.Exception  (evaluate)

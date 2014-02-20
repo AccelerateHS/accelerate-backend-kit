@@ -19,6 +19,7 @@ module Data.Array.Accelerate.BackendClass (
 import           Data.Array.Accelerate                          as A
 import qualified Data.Array.Accelerate.AST                      as AST
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
+import           Data.Array.Accelerate.Trafo (convertAccWith, Phase(..))
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as SACC
 -- import           Data.Array.Accelerate.Trafo.Sharing (convertAcc)
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0)
@@ -55,11 +56,12 @@ runWith bkend nm prog = unsafePerformIO $ do
   copyToHost bkend remote
 
 -- | A version of `runWith` that also returns timing information.
-runTimed :: (Backend b, Arrays a) => b -> DebugName -> Acc a -> IO (AccTiming, a)
-runTimed bkend nm prog = do
+runTimed :: (Backend b, Arrays a) => b -> DebugName -> Phase -> Acc a -> IO (AccTiming, a)
+runTimed bkend nm config prog = do
   (rand::Word64) <- randomIO
   t0     <- getCurrentTime
-  let cvtd = phase0 prog      
+--  let cvtd = phase0 prog
+  let cvtd = convertAccWith config prog
       path = ".blob_"++fromMaybe "" nm++"_"++show rand
   blob   <- compile bkend path cvtd
   t1     <- getCurrentTime
