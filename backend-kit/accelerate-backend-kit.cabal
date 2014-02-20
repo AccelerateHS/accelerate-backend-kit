@@ -88,6 +88,8 @@ Library
 --                        ghc             >= 7.2
                         vector          >= 0.9,
                         deepseq         >= 1.3,
+                        random          >= 1.0,
+                        time            >= 1.4,
                         test-framework, test-framework-hunit, HUnit,
                         split >= 0.2,
                         bytestring, primitive

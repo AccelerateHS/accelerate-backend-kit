@@ -2,12 +2,13 @@
 {-# LANGUAGE Rank2Types   #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Data.Array.Accelerate.BackendClass (
   Backend(..), MinimalBackend(..),
   SimpleBackend(..), 
   LiftSimpleBackend(LiftSimpleBackend), SomeSimpleBackend(SomeSimpleBackend), 
-  runWith
+  runWith, runTimed, AccTiming(..)
 
   -- Not ready for primetime yet:
   -- PortableBackend(..), CLibraryBackend(..)
@@ -22,8 +23,12 @@ import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as SACC
 -- import           Data.Array.Accelerate.Trafo.Sharing (convertAcc)
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0)
 
-
+import Data.Time.Clock (getCurrentTime, diffUTCTime)
+import Data.Char (isAlphaNum)
+import Data.Word
+import Data.Maybe (fromMaybe)
 import System.IO.Unsafe (unsafePerformIO)
+import System.Random (randomIO)
 
 -- standard libraries
 import           Data.ByteString.Lazy                   as B
@@ -49,6 +54,34 @@ runWith bkend nm prog = unsafePerformIO $ do
   remote <- runRaw bkend cvtd Nothing 
   copyToHost bkend remote
 
+-- | A version of `runWith` that also returns timing information.
+runTimed :: (Backend b, Arrays a) => b -> DebugName -> Acc a -> (AccTiming, a)
+runTimed bkend nm prog = unsafePerformIO $ do
+  (rand::Word64) <- randomIO
+  let cvtd = phase0 prog      
+      path = ".blob_"++fromMaybe "" nm++"_"++show rand
+  t0     <- getCurrentTime
+  blob   <- compile bkend path cvtd
+  t1     <- getCurrentTime
+  remote <- runRaw bkend cvtd (Just blob)
+  t2     <- getCurrentTime
+  res    <- copyToHost bkend remote
+  t3     <- getCurrentTime
+  let d1 = fromRational$ toRational$ diffUTCTime t1 t0
+      d2 = fromRational$ toRational$ diffUTCTime t2 t1
+      d3 = fromRational$ toRational$ diffUTCTime t3 t2
+  return $! (AccTiming d1 d2 d3, res)
+
+-- | Remove exotic characters to yield a filename
+stripFileName :: String -> String
+stripFileName name = Prelude.filter isAlphaNum name
+
+-- | A timed run includes compile time, runtime, and copying time.  Both compile time
+-- and copying time may be zero if these were not needed.  All times are in seconds.
+data AccTiming = AccTiming { compileTime :: !Double
+                           , runTime     :: !Double
+                           , copyTime    :: !Double
+                           }
 
 -- | A low-level interface that abstracts over Accelerate backend code generators and
 -- expression evaluation. This takes the internal Accelerate AST representation
