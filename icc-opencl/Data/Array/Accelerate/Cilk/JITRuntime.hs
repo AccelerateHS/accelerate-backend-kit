@@ -97,10 +97,14 @@ runNamed name pm acc =
    simple = phase2 $ phase1 $ phase0 acc
    arrays = unsafePerformIO $
             rawRunIO pm name simple
+   
+-- | For the C backends, a blob is the name of a shared library file (plus a copy of
+-- the final IR to provide some type information).
+data Blob = Blob (G.GPUProg FreeVars) FilePath
 
--- | (Internal) Takes a program for which "phase2" has already been run.
-rawRunIO :: ParMode -> String -> C.LLProg () -> IO [S.AccArray]
-rawRunIO pm name prog = do
+-- | Runs phase 3 only.
+compileToFile :: ParMode -> String -> C.LLProg () -> IO Blob
+compileToFile pm name prog = do
   -----------
   t0 <- getCurrentTime 
   prog2 <- evaluateGPUIR (phase3_ltd prog) -- $ phase2 prog  
@@ -119,8 +123,7 @@ rawRunIO pm name prog = do
   writeFile  (thisprog++".c") emitted
   t2 <- getCurrentTime
   dbgPrint 1 $"COMPILETIME_emit: "++show (diffUTCTime t2 t1)
-  -----------
-  
+  -----------  
   dbgPrint 2 $ "[JIT] Invoking C compiler on: "++ thisprog++".c"
 
   -- TODO, obey the $CC environment variable:
@@ -152,9 +155,11 @@ rawRunIO pm name prog = do
                     "linux"  -> "-shared"
 -- #define EXE_OUTPUT
 #ifdef EXE_OUTPUT
-      ccArgs = ccFlags0++[suppress,"-lcilkrts","-std=c99",thisprog++".c","-o",thisprog++".exe"]
+      output = thisprog++".exe"
+      ccArgs = ccFlags0++[suppress,"-lcilkrts","-std=c99",thisprog++".c","-o",output]
 #else
-      ccArgs = ccFlags0++[suppress,"-lcilkrts","-std=c99",sharedLib,"-fPIC", thisprog++".c", "-o", thisprog++".so"]
+      output = thisprog++".so"
+      ccArgs = ccFlags0++[suppress,"-lcilkrts","-std=c99",sharedLib,"-fPIC", thisprog++".c", "-o", output]
 #endif
   dbgPrint 2 $ "[JIT]   Compiling with: "++ (cc++unwords ccArgs)
   t1 <- getCurrentTime 
@@ -164,11 +169,17 @@ rawRunIO pm name prog = do
   mapM_ (dbgPrint 1 . ("[CC] "++)) (lines out)
   mapM_ (dbgPrint 1 . ("[CC] "++)) (lines err)
   case code of
-    ExitSuccess -> return ()
+    ExitSuccess -> return $! Blob prog2 ("./" ++ output)
     ExitFailure c -> error$"C Compiler failed with code "++show c
-  -- Run the program and capture its output:
+
+
+-- | (Internal) Takes a program for which "phase2" has already been run.
+rawRunIO :: ParMode -> String -> C.LLProg () -> IO [S.AccArray]
+rawRunIO pm name prog = do
+  Blob prog2 path <- compileToFile  pm name prog
 #ifdef EXE_OUTPUT
-  dbgPrint 1$ "[JIT] Invoking external executable: "++ thisprog++".exe"  
+-- First (WIP) design.  Run the program and capture its output:
+  dbgPrint 1$ "[JIT] Invoking external executable: "++ path
   result <- readProcess ("./"++thisprog++".exe") [] ""
   let elts = tyToElts (C.progType prog)
   dbgPrint 1$ "[JIT] Executable completed, parsing results, element types "++
@@ -176,7 +187,7 @@ rawRunIO pm name prog = do
   return$ parseMultiple result elts
 #else
   dbgPrint 2 $ "[JIT]: Working directory: " ++ (unsafePerformIO $ readProcess "pwd" [] [])
-  loadAndRunSharedObj prog2 ("./" ++ thisprog++".so")
+  loadAndRunSharedObj prog2 path -- ("./" ++ thisprog++".so")
 #endif
  where
    parseMultiple _ [] = []

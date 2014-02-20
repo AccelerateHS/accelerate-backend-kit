@@ -91,8 +91,8 @@ newtype CRemote a = CRemote [SA.AccArray]
 -- back to Haskell when the copyToHost is performed...
 
 
--- Nothing here at the moment, needs to cache the file:
-data CBlob a = CBlob 
+-- | For the C backends, a blob is the name of a shared library file.
+data CBlob a = CBlob FilePath
 
 -- | Create a new C backend based on the configuration information.
 
@@ -102,10 +102,11 @@ instance Backend BKEND where
   type Remote BKEND a = CRemote a
   type Blob BKEND a = CBlob a 
 
-  compile _ path acc = error "C/Cilk backend: separate compile stage not implemented."
+  compile _ path acc =
+    error "C/Cilk backend: separate compile stage not implemented."
 --    return (InMemory path (return$ B.empty))
 
-  compileFun1 = error "C/Cilk backend: compileFun not implemented yet."
+  compileFun1 = error "C/Cilk backend: compileFun1 not implemented yet."
 
   runRaw _ acc _blob =
     do arrs <- J.rawRunIO PARMODE "" (phase2$ phase1 acc)
