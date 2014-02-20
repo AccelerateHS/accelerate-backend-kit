@@ -324,7 +324,8 @@ emitPrimApp e outTy prim args = E.parens$
                          TDouble -> unary "sqrt"
               Log   -> binop "log" -- natural log
               FDiv    -> binop "/"
-              FPow    -> binfun "expt"
+--              FPow    -> binfun "expt"
+              FPow    -> binfun "pow"
               LogBase -> binop "log"
               Atan2   -> unary "atan2"
               Round   -> unary "round"
