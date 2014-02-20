@@ -5,7 +5,9 @@
 
 -- | A JIT to compile and run programs via Cilk.  This constitutes a full Accelerate
 -- backend.
-module Data.Array.Accelerate.Cilk.JITRuntime (run, runNamed, rawRunIO) where 
+module Data.Array.Accelerate.Cilk.JITRuntime
+       (run, runNamed,
+        compileToFile, rawRunIO, CBlob(..)) where 
 
 import           Data.Array.Accelerate (Acc)
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
@@ -69,6 +71,7 @@ phase3_ltd prog =
   prog
 
 -- | This list may contain other, more specific optimization flags than "-ON".
+cOptLvl :: [String]
 cOptLvl = if (dbg>0) then ["-O0"] else ["-O3"]
 
 --  "-march=pentium-m -msse3 -O{0|1|2|3|s} -pipe".
@@ -95,15 +98,16 @@ runNamed name pm acc =
    -- full "run" interface to work properly.  The LLIR should probably
    -- track the final shape.
    simple = phase2 $ phase1 $ phase0 acc
-   arrays = unsafePerformIO $
-            rawRunIO pm name simple
+   arrays = unsafePerformIO $ do
+            blob <- compileToFile pm name simple
+            rawRunIO blob
    
 -- | For the C backends, a blob is the name of a shared library file (plus a copy of
 -- the final IR to provide some type information).
-data Blob = Blob (G.GPUProg FreeVars) FilePath
+data CBlob = CBlob !(G.GPUProg FreeVars) !FilePath
 
 -- | Runs phase 3 only.
-compileToFile :: ParMode -> String -> C.LLProg () -> IO Blob
+compileToFile :: ParMode -> String -> C.LLProg () -> IO CBlob
 compileToFile pm name prog = do
   -----------
   t0 <- getCurrentTime 
@@ -169,14 +173,13 @@ compileToFile pm name prog = do
   mapM_ (dbgPrint 1 . ("[CC] "++)) (lines out)
   mapM_ (dbgPrint 1 . ("[CC] "++)) (lines err)
   case code of
-    ExitSuccess -> return $! Blob prog2 ("./" ++ output)
+    ExitSuccess -> return $! CBlob prog2 ("./" ++ output)
     ExitFailure c -> error$"C Compiler failed with code "++show c
 
 
 -- | (Internal) Takes a program for which "phase2" has already been run.
-rawRunIO :: ParMode -> String -> C.LLProg () -> IO [S.AccArray]
-rawRunIO pm name prog = do
-  Blob prog2 path <- compileToFile  pm name prog
+rawRunIO :: CBlob -> IO [S.AccArray]
+rawRunIO (CBlob prog2 path) = do
 #ifdef EXE_OUTPUT
 -- First (WIP) design.  Run the program and capture its output:
   dbgPrint 1$ "[JIT] Invoking external executable: "++ path

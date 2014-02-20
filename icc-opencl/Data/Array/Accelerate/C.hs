@@ -19,6 +19,7 @@ module MODNAME (run, runDetailed, BKEND(..), defaultBackend,
                 DbgConf(..), defaultConf) where
 
 import qualified Data.ByteString.Lazy as B
+import           Data.Maybe (fromMaybe)
 import           System.IO.Unsafe (unsafePerformIO)
 
 import           Data.Array.Accelerate (Acc)
@@ -90,26 +91,23 @@ newtype CRemote a = CRemote [SA.AccArray]
 -- FIXME: This should really be left in the ForeignPtr state and should only come
 -- back to Haskell when the copyToHost is performed...
 
-
--- | For the C backends, a blob is the name of a shared library file.
-data CBlob a = CBlob FilePath
-
 -- | Create a new C backend based on the configuration information.
 
 -- | C data is not really very "remote", it just lives on the C heap.
 -- newtype CRemote a = ForeignPtr a 
 instance Backend BKEND where
   type Remote BKEND a = CRemote a
-  type Blob BKEND a = CBlob a 
+  type Blob BKEND a = J.CBlob 
 
-  compile _ path acc =
-    error "C/Cilk backend: separate compile stage not implemented."
---    return (InMemory path (return$ B.empty))
+  compile _ path acc = J.compileToFile PARMODE path (phase2$ phase1 acc)
 
   compileFun1 = error "C/Cilk backend: compileFun1 not implemented yet."
 
-  runRaw _ acc _blob =
-    do arrs <- J.rawRunIO PARMODE "" (phase2$ phase1 acc)
+  runRaw b acc Nothing = do
+    blob <- compile b "NAMEGOESHERE" acc
+    runRaw b acc (Just blob)
+  runRaw b acc (Just blob) =
+    do arrs <- J.rawRunIO blob
        return$ CRemote arrs
 
 --  runFun = error "CBackend: runFun not implemented yet."
@@ -153,23 +151,23 @@ useRem rem@(CRemote arrays) =
 -- | An instance for the less-typed AST backend interface.
 instance SimpleBackend BKEND where
   type SimpleRemote BKEND = CRemote SA.AccArray
-  type SimpleBlob BKEND = CBlob ()
+  type SimpleBlob BKEND = J.CBlob 
   
-  -- simpleCompile
+  simpleCompile _ path prog = J.compileToFile PARMODE path (phase2 prog)
   -- simpleCompileFun1
 
-  simpleRunRaw _ mname prog _blob =
+  simpleRunRaw b mname prog Nothing = do
+    blob <- simpleCompile b (fromMaybe "unknown_prog" mname) prog
+    simpleRunRaw b mname prog (Just blob)
+  simpleRunRaw _ mname prog (Just blob) =
     do
-       let name = case mname of
-                   Just n -> n
-                   Nothing -> "unknown_prog"
        t1 <- getCurrentTime           
        p  <- evaluateSimpleAcc$ phase2 prog
        t2 <- getCurrentTime
        dbgPrint 1 $"COMPILETIME_phase2: "++show(diffUTCTime t2 t1)
        -- TODO: need to pass these times around if we want to account for all the
        -- stuff inbetween the big pieces.
-       arrs <- J.rawRunIO PARMODE name p
+       arrs <- J.rawRunIO blob
        return$ [ CRemote [arr] | arr <- arrs ]
 
   -- simpleRunRawFun1
