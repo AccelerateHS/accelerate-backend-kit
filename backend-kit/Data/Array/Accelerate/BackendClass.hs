@@ -82,6 +82,7 @@ data AccTiming = AccTiming { compileTime :: !Double
                            , runTime     :: !Double
                            , copyTime    :: !Double
                            }
+  deriving (Show,Eq,Ord,Read)
 
 -- | A low-level interface that abstracts over Accelerate backend code generators and
 -- expression evaluation. This takes the internal Accelerate AST representation
