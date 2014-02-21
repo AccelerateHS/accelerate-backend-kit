@@ -2,7 +2,7 @@
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 -- | A pass to get rid of EShape and Reshape and track unknown shapes
--- as explicit variable bindings routed through the program.
+-- as explicit (scalar) variable bindings routed through the program.
 
 module Data.Array.Accelerate.BackendKit.Phase2.ExplicitShapes where 
 
@@ -14,12 +14,13 @@ import           Data.List as L
 import qualified Data.Map as M
 
 import Data.Array.Accelerate.BackendKit.IRs.Metadata (ArraySizeEstimate(..))
-import Data.Array.Accelerate.BackendKit.Utils.Helpers (mkIndTy, mkPrj, mulI, genUnique, GensymM,
+import Data.Array.Accelerate.BackendKit.Utils.Helpers (mkIndTy, mkPrj, mulI, genUnique, genUniqueWith, GensymM,
                                                        (#), mkIndExp, maybtrace, shapeName)
 import Text.PrettyPrint.GenericPretty (Out(doc))
 
 
--- A monad to use just for this pass
+-- | A monad to use just for this pass.  Allows us to both generate symbols and read
+-- the original (complete) input program to the pass.
 type MyM a = ReaderT (Prog ArraySizeEstimate) GensymM a
 
 --------------------------------------------------------------------------------
@@ -29,12 +30,12 @@ type MyM a = ReaderT (Prog ArraySizeEstimate) GensymM a
 --   introduced which carries a tuple describing the shape of A.
 --   Thus `(EShape A)` becomes simply `A_shape`.
 --
---   GRAMMAR CHANGE: AST forms parameterized by a shape expression
---   (Generate,BackPermute,Replicate) have only a variable reference in that context
---   after this pass.
+--   GRAMMAR CHANGE: syntax forms parameterized by a shape expression
+--   (Generate,BackPermute,Replicate) instead have only a variable reference in that
+--   context after this pass.
 --
 --   NEW CONVENTION: This pass replaces the [arrV,arrV...] list of progResults with
---   an alternating [expV,arrV,expV,arrV...] list containing the results AND their
+--   pairs [(arrV,expV),(arrV,expV)...] list containing the results AND their
 --   corresponding shapes.
 explicitShapes :: Prog ArraySizeEstimate -> Prog ArraySizeEstimate
 explicitShapes prog@Prog{progBinds, uniqueCounter, progResults } =
@@ -80,17 +81,17 @@ doBinds (ProgBind vo voty sz (Right ae) : rest) = do
     --   (1) a list of new binds
     --   (2) an expression describing the shape of the resulting array
     --   (3) a new AExp
-    handleUnknownSize = do
+    handleUnknownSize = (do
       prog@Prog{typeEnv} <- ask
       let getSizeE = mkSizeE prog
           -- Remove the inner dimension:
-          knockOne v = maybtrace ("TEMPMSG - KNOCKING "++show v++" dow to "++show (ndims-1)++" = "++ show x ++" sizeE "++show (getSizeE v))
+          knockOne v = maybtrace ("TEMPMSG - KNOCKING "++show v++" down to "++show (ndims-1)++" = "++ show x ++" sizeE "++show (getSizeE v))
                        x
             where
               TArray ndims _ = typeEnv # v
               x = [ mkPrj i 1 ndims (getSizeE v)
                   | i <- reverse [0..ndims-2]]
---                  | i <- reverse [1..ndims-1] ]
+--                  | i <- reverse [1..ndims-1] 
                     
           -- RRN [2013.02.09] - This looks HIGHLY suspect ^^
 
@@ -113,8 +114,8 @@ doBinds (ProgBind vo voty sz (Right ae) : rest) = do
                             in EPrimApp TInt (SP Min) [a,b]
                           | i <- reverse [0 .. v1Dims-1]]
       case ae of
-        -- Desugaring reshape is as easy as pie.  Keep the array, change the shape.
-        -- FIXME -- insert dynamic error checking here:
+        -- Desugaring reshape is as easy as pie.  Keep the array; change the shape.
+        -- FIXME -- insert dynamic error checking here!!!
         Vr avr                            -> return ([], getSizeE avr, ae)
         Cond a bvr cvr                    -> do a'  <- doE a
                                                 tmp <- lift genUnique
@@ -163,9 +164,10 @@ doBinds (ProgBind vo voty sz (Right ae) : rest) = do
                                                 return ([], getSizeE v, 
                                                         Permute (Lam2 a1 a2 bod1') v
                                                                 (Lam1 a3    bod2') w)
+        -- Replicate is tricky because we need to read
         Replicate template ex upV ->
-          do gensym   <- lift genUnique
-             prg <- ask
+          do gensym <- lift $ genUniqueWith "replicshp" -- The new shape bidning.
+             prg    <- ask
              let exTy = topLevelExpType prg ex
                  -- How many entries to be expect to be in 'ex' given the weird encoding:
                  numWithoutTrailing = length template - length (takeWhile (==All) (reverse template))
@@ -204,13 +206,13 @@ doBinds (ProgBind vo voty sz (Right ae) : rest) = do
         Scanr'   _ _ _     -> error$ "ExplicitShapes: cannot handle Scanr' because of its tuple return type"
         Use _  -> error$"ExplicitShapes: it should not be possible to find a Use with Unknown size: "++ show vo
         Unit _ -> error$"ExplicitShapes: it should not be possible to find a Unit with Unknown size: "++ show vo
-        
-    
+      ) -- End handleUnknownSize
+
 doE :: Exp -> MyM Exp
 doE ex = do
   prog <- ask
   case ex of
-    -- Here's the action:
+    -- Here's the important bit:
     EShape avr  -> return$ mkSizeE prog avr
 
     -- EShapeSize (EShape vr) -> -- We can optimize this in the future if we like.
@@ -218,7 +220,7 @@ doE ex = do
          case topLevelExpType prog ex1 of
            TInt      -> doE ex1
            TTuple [] -> return$ EConst (I 0)
-           TTuple ls -> do tmp <- lift genUnique
+           TTuple ls -> do tmp <- lift $ genUniqueWith "eshpsz"
                            ex2 <- doE ex1
                            let ndims = length ls
                            maybtrace (" TEMPMSG ESHAPESIZE of "++ show ex1 ++" - we think it has ndims = "++show ndims) $ return() 
@@ -242,11 +244,11 @@ doE ex = do
     EIndex _            -> doerr ex
 
        
--- -- This handles the case where we are NOT adding a _shape binding.
+-- | This handles the boring case where we are NOT adding a `_shape` binding.
 doAE :: AExp -> MyM AExp
 doAE ae =
   case ae of
-    -- Reshape is likewise eliminated here:
+    -- Reshape is eliminated here; it is a shape-only operation:
     Reshape _shE v                    -> return (Vr v)
     
     -- EVERYTHING BELOW IS BOILERPLATE:
@@ -282,7 +284,8 @@ doAE ae =
 doerr :: Out a => a -> t
 doerr e = error$ "ExplicitShapes: the following should be desugared before this pass is called:\n   "++ show (doc e)
 
--- Create an expression representing the size of array avr:
+-- | Create an expression representing the size of array avr.  This depends on
+-- whether or not the shape is known.
 mkSizeE :: Prog ArraySizeEstimate -> Var -> Exp
 mkSizeE prog avr = 
   let (Just(ProgBind _ _ dec _)) = lookupProgBind avr (progBinds prog) in

@@ -20,8 +20,7 @@ import Prelude as P hiding (or)
 -- | It would be difficult to capture all the changing grammars/invarinats between
 -- passes, but we do parameterize this pass by some choices:
 data VerifierConfig =
-  VerifierConfig {
-    -- ^ If False, all Array dimensions should be 1 
+  VerifierConfig {    
     dimMode :: DimCheckMode
   }
 

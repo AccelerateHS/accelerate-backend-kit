@@ -145,7 +145,7 @@ doE mp ex = -- doEWith (repeat Fixed) []
     -- This one won't happen because top-level varrefs are ONLY
     -- created by us (and that's for boolean bindings for array level
     -- conditionals only):
-    EVr _ -> error "SizeAnalysis: this case should be impossible.  We should never use a top-level scalar variable for a shape."    
+    EVr vr -> error$ "SizeAnalysis: this case should be impossible.  We should never use a top-level scalar variable for a shape: "++show vr
     EShapeSize _      -> error "SizeAnalysis: this case should be impossible (EShapeSize)"
     EIndex _          -> error "SizeAnalysis: this shouldn't happen (EIndex) because of normalizeEConst"
 

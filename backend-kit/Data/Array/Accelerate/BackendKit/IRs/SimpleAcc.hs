@@ -9,6 +9,7 @@
 --   simplified Accelerate backend-kit.  These datatypes are the
 --   /starting point/ for any subsequent code generation performed by
 --   a concrete backend.
+
 module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
    ( 
      -- * The types making up Accelerate ASTs:
@@ -21,6 +22,13 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
           
      -- * Runtime Array data representation.
      AccArray(..), ArrayPayload(..), 
+
+     -- * Shape representation:
+     -- | Shapes are represented at runtime by tuples of integers.  For example:
+     --    1D shape: (I 5)
+     --    2D shape: Tup [I 2, I 3]
+     --    3D shape: Tup [I 2, I 3, I 4]
+     --   etc.
      
      -- * Slice representation
      SliceType(..), SliceComponent(..),
@@ -216,38 +224,41 @@ lookupProgBind v (pb@(ProgBind v2 _ _ _) : rst)
 -- others can reduce headaches when consuming the AST for constructs
 -- like Replicate that change the type.
 data AExp = 
-    Vr Var                           -- Array variable bound by a Let.
-  | Unit Exp                         -- Turn an element into a singleton array
-  | Cond Exp Var Var                 -- Array-level if statements
-  | Use       AccArray               -- A real live ARRAY goes here!
-  | Generate  Exp (Fun1 Exp)         -- Generate an array by applying a function to every index in shape
-  | Replicate SliceType Exp Var      -- Replicate array across one or more dimensions.
-  | Index     SliceType Var Exp      -- Index a sub-array (slice): Index sliceIndex Array SlicePosition.
-  | Map      (Fun1 Exp) Var          -- Map Function Array
-  | ZipWith  (Fun2 Exp) Var Var      -- ZipWith Function Array1 Array2
-  | Fold     (Fun2 Exp) Exp Var      -- Fold Function Default Array
-  | Fold1    (Fun2 Exp)     Var      -- Fold1 Function Array
-  | FoldSeg  (Fun2 Exp) Exp Var Var  -- FoldSeg Function Default InArray SegmentDescriptor
-  | Fold1Seg (Fun2 Exp)     Var Var  -- FoldSeg Function         InArray SegmentDescriptor
-  | Scanl    (Fun2 Exp) Exp Var      -- Scanl  Function InitialValue LinearArray
-  | Scanl'   (Fun2 Exp) Exp Var      -- Scanl' Function InitialValue LinearArray
-  | Scanl1   (Fun2 Exp)     Var      -- Scanl  Function              LinearArray
-  | Scanr    (Fun2 Exp) Exp Var      -- Scanr  Function InitialValue LinearArray
-  | Scanr'   (Fun2 Exp) Exp Var      -- Scanr' Function InitialValue LinearArray
-  | Scanr1   (Fun2 Exp)     Var      -- Scanr  Function              LinearArray
-  | Permute  (Fun2 Exp) Var (Fun1 Exp) Var -- Permute CombineFun DefaultArr PermFun SourceArray
-  | Backpermute Exp (Fun1 Exp) Var   -- Backpermute ResultDimension   PermFun SourceArrayu
-  | Reshape     Exp      Var         -- Reshape Shape Array
+    Vr Var                           -- ^ Array variable bound by a Let.
+  | Unit Exp                         -- ^ Turn an element into a singleton array
+  | Cond Exp Var Var                 -- ^ Array-level if statements
+  | Use       AccArray               -- ^ A real live ARRAY goes here!
+  | Generate  Exp (Fun1 Exp)         -- ^ Generate an array by applying a function to every index in shape
+  | Replicate SliceType Exp Var      -- ^ Replicate array across one or more dimensions.  
+                                     --     Exp must return a shape value matching up with the to the SliceType.
+  | Index     SliceType Var Exp      -- ^ Generalized indexing that can project a slice from an array.
+                                     --     Var names the array.
+                                     --     Exp must return a shape value matching up with the to the SliceType.
+  | Map      (Fun1 Exp) Var          -- ^ Map Function Array
+  | ZipWith  (Fun2 Exp) Var Var      -- ^ ZipWith Function Array1 Array2
+  | Fold     (Fun2 Exp) Exp Var      -- ^ Fold Function Default Array
+  | Fold1    (Fun2 Exp)     Var      -- ^ Fold1 Function Array
+  | FoldSeg  (Fun2 Exp) Exp Var Var  -- ^ FoldSeg Function Default InArray SegmentDescriptor
+  | Fold1Seg (Fun2 Exp)     Var Var  -- ^ FoldSeg Function         InArray SegmentDescriptor
+  | Scanl    (Fun2 Exp) Exp Var      -- ^ Scanl  Function InitialValue LinearArray
+  | Scanl'   (Fun2 Exp) Exp Var      -- ^ Scanl' Function InitialValue LinearArray
+  | Scanl1   (Fun2 Exp)     Var      -- ^ Scanl  Function              LinearArray
+  | Scanr    (Fun2 Exp) Exp Var      -- ^ Scanr  Function InitialValue LinearArray
+  | Scanr'   (Fun2 Exp) Exp Var      -- ^ Scanr' Function InitialValue LinearArray
+  | Scanr1   (Fun2 Exp)     Var      -- ^ Scanr  Function              LinearArray
+  | Permute  (Fun2 Exp) Var (Fun1 Exp) Var -- ^ Permute CombineFun DefaultArr PermFun SourceArray
+  | Backpermute Exp (Fun1 Exp) Var   -- ^ Backpermute ResultDimension   PermFun SourceArrayu
+  | Reshape     Exp      Var         -- ^ Reshape Shape Array
   | Stencil  (Fun1 Exp) Boundary Var
-  | Stencil2 (Fun2 Exp) Boundary Var Boundary Var -- Two source arrays/boundaries
+  | Stencil2 (Fun2 Exp) Boundary Var Boundary Var -- ^ Two source arrays/boundaries
  deriving (Read,Show,Eq,Ord,Generic)
 
 
 -- | Boundary condition specification for stencil operations.
-data Boundary = Clamp               -- ^clamp coordinates to the extent of the array
-              | Mirror              -- ^mirror coordinates beyond the array extent
-              | Wrap                -- ^wrap coordinates around on each dimension
-              | Constant Const      -- ^use a constant value for outlying coordinates 
+data Boundary = Clamp               -- ^ clamp coordinates to the extent of the array
+              | Mirror              -- ^ mirror coordinates beyond the array extent
+              | Wrap                -- ^ wrap coordinates around on each dimension
+              | Constant Const      -- ^ use a constant value for outlying coordinates 
  deriving (Read,Show,Eq,Ord,Generic)
           
           
@@ -265,21 +276,22 @@ data Fun2 a = Lam2 (Var,Type) (Var,Type) a
 
 -- | Scalar expressions
 data Exp = 
-    EConst Const              -- Constant.        
-  | EVr Var                   -- Variable bound by a Let.
-  | ELet (Var,Type,Exp) Exp   -- @ELet var type rhs body@,
-                              -- used for common subexpression elimination
-  | EPrimApp Type Prim [Exp]  -- /Any/ primitive scalar function, including type of return value.
-  | ECond Exp Exp Exp         -- Conditional expression (non-strict in 2nd and 3rd argument).
-  | EIndexScalar Var Exp      -- Project a single scalar from an array [variable].
-  | EShape Var                -- Get the shape of an Array [variable].
-  | EShapeSize Exp            -- Number of elements of a shape
-  | EIndex [Exp]              -- An index into a multi-dimensional array.
-  | ETuple [Exp]              -- Build a tuple.  They are store in REVERSE of textual order in the IR.
-  | ETupProject {             -- Project a consecutive series of fields from a tuple.
-      indexFromRight :: Int , --  * where to start the slice
-      projlen        :: Int , --  * how many scalars to extract
-      tupexpr        :: Exp }
+    EConst Const              -- ^ Constant.        
+  | EVr Var                   -- ^ Variable bound by a Let.
+  | ELet (Var,Type,Exp) Exp   -- ^ @ELet var type rhs body@,
+                              --   used for common subexpression elimination
+  | EPrimApp Type Prim [Exp]  -- ^ /Any/ primitive scalar function, including type of return value.
+  | ECond Exp Exp Exp         -- ^ Conditional expression (non-strict in 2nd and 3rd argument).
+  | EIndexScalar Var Exp      -- ^ Project a single scalar from an array [variable].
+  | EShape Var                -- ^ Get the shape of an Array [variable].
+  | EShapeSize Exp            -- ^ Number of elements of a shape
+  | EIndex [Exp]              -- ^ An index into a multi-dimensional array.
+  | ETuple [Exp]              -- ^ Build a tuple.  They are store in REVERSE of textual order in the IR.
+  | ETupProject               
+    { indexFromRight :: Int,  -- ^ where to start the slice
+      projlen        :: Int,  -- ^ how many scalars to extract
+      tupexpr        :: Exp   -- ^ tuple value to extract from
+    } -- ^ Project a consecutive series of fields from a tuple.
  deriving (Read,Show,Eq,Ord,Generic)
 
 -- | Trivial expressions.
@@ -389,15 +401,21 @@ data Type = TTuple [Type]
 type Dims = Int
 
 
--- | Slices of arrays.  These have a length matching the
--- dimensionality of the slice.  
+-- | Slices of arrays.  These have a length matching the dimensionality of the slice.
+-- The SliceType is only part of the story; it says what to do with each dimension
+-- but not how BIG that dimension is.  Slicing-related operations also take a runtime
+-- value specifying the sizes, which will contain a list of the same length as the
+-- SliceType list.  The rule for these is that fixed dimensions must have a Int size,
+-- and "All" dimensions don't require extra information, so they will match up with a
+-- unit () value.
 -- 
 -- The resulting lists read right-to-left, in the OPPOSITE
 -- order that one would write `(Z :. 3 :. 4 :. All)` in the source code;
 -- i.e. that particular example would translate to `[All, Fixed, Fixed]`.
 --
--- The result is that the "fastest varying" dimension is on the left
--- in this representation.
+-- The result is that the "fastest varying" dimension is on the head of the list in
+-- this representation.
+-- 
 type SliceType      = [SliceComponent]
 data SliceComponent = Fixed | All 
   deriving (Eq,Show,Read,Ord,Generic)
@@ -416,7 +434,7 @@ data SliceComponent = Fixed | All
 --   payloads).  
 --  
 --   Note, this is a different presentation of the same data as
---   contained in a `Data.Array.Accelerate.Array`.  Going with the
+--   contained in a "Data.Array.Accelerate.Array".  Going with the
 --   theme of "SimpleAST", the idea is to provide access in a form
 --   that doesn't require complex types.  However, while simple in
 --   that respect, this representation is also a pain to work with
@@ -427,7 +445,8 @@ data SliceComponent = Fixed | All
 --   represented as a simple list of integers.  For example, [2,3,4]
 --   would be dimensions for a three dimensional array.
 -- 
---   Invariant -- all payload arrays should be the same length, and:
+--   Invariant: all payload arrays should be the same length, and:
+-- 
 --   > sum (arrDim a) == length (arrPayloads a !! i)
 data AccArray = AccArray { arrDim :: [Int], arrPayloads :: [ArrayPayload] }
  deriving (Eq, Ord)
@@ -511,16 +530,6 @@ payloadToType p =
     ArrayPayloadDouble arr -> TDouble
     ArrayPayloadChar   arr -> TChar
     ArrayPayloadBool   arr -> TBool
-
--------------------------------------------------------------------------------
--- Shape representation:
---------------------------------------------------------------------------------
-
--- Shapes are represented at runtime by tuples of integers.  For example:
---   1D shape: (I 5)
---   2D shape: Tup [I 2, I 3]
---   3D shape: Tup [I 2, I 3, I 4]
--- etc.
 
 
 --------------------------------------------------------------------------------

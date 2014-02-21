@@ -440,6 +440,8 @@ newtype MinimalBackend = MinimalBackend (forall a . (Arrays a) => AST.Acc a -> a
 instance Show MinimalBackend where
   show _ = "<MinimalBackend based on run function>"
 
+-- | A Backend class instance based on MinimalBackend is limited.  It cannot separate
+-- out compile and copy time, and it cannot store "Blob" objects on disk.
 instance Backend MinimalBackend where
   type Remote MinimalBackend r = r
   type Blob MinimalBackend r   = ()
