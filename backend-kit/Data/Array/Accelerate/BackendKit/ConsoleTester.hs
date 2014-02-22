@@ -80,7 +80,7 @@ makeMain BackendTestConf{backend,sbackend,knownTests,extraTests,frontEndFusion} 
                        optionsDescription 
  if Help `elem` opts || errs /= [] then error help2
   else do
-   let passthru = nonopts ++ unrecog
+   let passthru = unrecog ++ nonopts 
    -- let passthru = args
    putStrLn$ "  [Note: passing through options to test-framework]: "++unwords passthru
    withArgs passthru $ do 

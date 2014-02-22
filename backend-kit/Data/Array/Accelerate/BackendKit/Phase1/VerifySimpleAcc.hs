@@ -56,7 +56,7 @@ verifySimpleAcc cfg@(VerifierConfig{dimMode}) prog@Prog{progBinds, progResults, 
     topBinds = []
 
 
-verifyUnique = error "verifyUnique"
+-- verifyUnique = error "verifyUnique"
 
 mismatchErr :: (Show a, Show a1) => String -> a -> a1 -> String
 mismatchErr msg got expected = msg++" does not match expected. "++
@@ -267,6 +267,7 @@ doE _ _ = Nothing
 
 -------------------------------------------------------------------------------
 
+-- Concatenate error messages:
 or :: Maybe ErrorMessage -> Maybe ErrorMessage -> Maybe ErrorMessage 
 or (Just x) (Just y) = Just (x++"\n"++y)
 or (Just x) Nothing = Just x

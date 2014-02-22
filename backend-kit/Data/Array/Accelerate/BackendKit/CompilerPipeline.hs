@@ -175,12 +175,13 @@ typecheckPass dimMode prog =
 -- | Pass composition:
 runPass :: Out a => String -> (t -> a) -> t -> a
 runPass msg pass input =
+  let output = pass input in
   if dbg>=4 then
-    trace ("\n" ++ msg ++ ", output was:\n"++
-           "================================================================================\n"
-           ++ show (doc x)) x
-  else x
- where x = pass input              
+    input `seq` 
+    (trace ("\n" ++ msg ++ ", output was:\n"++
+           "================================================================================\n")
+     (trace (show (doc output)) output))
+  else output
 
 -- An [optional] optimization pass:
 runOptPass :: Out a => String -> (t -> a) -> (t -> a) -> t -> a

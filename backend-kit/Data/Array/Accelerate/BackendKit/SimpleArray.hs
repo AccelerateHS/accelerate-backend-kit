@@ -498,12 +498,12 @@ tuple ls  = Tup ls
 
 -- | Take a list of arrays of equal shape and concat them into a single AccArray.  
 concatAccArrays :: [S.AccArray] -> S.AccArray
-concatAccArrays [] = error "zipAccArrays: Cannot zip an empty list of AccArrays (don't know dimension)"
+concatAccArrays [] = error "concatAccArrays: Cannot zip an empty list of AccArrays (don't know dimension)"
 concatAccArrays origls = 
   if not (allSame lens)
-  then error$"zipAccArrays: mismatch in lengths: "++show lens
+  then error$"concatAccArrays: mismatch in lengths: "++show lens
   else if not (allSame dims)
-       then error$"zipAccArrays: mismatch in dims: "++show dims
+       then error$"concatAccArrays: mismatch in dims: "++show dims
        else S.AccArray (head dims) payls
  where 
   lens = L.map payloadLength payls

@@ -9,10 +9,6 @@
 --   * Add type info to some language forms... 
 --   * Convert boundary
 
--- Toggle this to try to match the source tuple format rather than the
--- Snoc-list accelerate internal format.
-#define SURFACE_TUPLES
-
 -- | PHASE1 :  Accelerate -> SimpleAcc
 --
 -- This module provides a function to convert from Accelerate's
@@ -61,8 +57,16 @@ accToAccClone :: Sug.Arrays a => AST.Acc a -> TAExp
 accToAccClone = runEnvM . convertAcc 
 
 -- | Must take a closed expression.
-expToExpClone :: forall env aenv ans . OpenExp env aenv ans -> T.Exp
-expToExpClone = runEnvM . convertExp
+-- expToExpClone :: forall env aenv ans . OpenExp env aenv ans -> T.Exp
+expToExpClone :: AST.Exp () ans -> T.Exp
+expToExpClone x = runEnvM (convertExp x)
+
+
+ 
+-- type OpenExp = PreOpenExp OpenAcc
+-- type Exp = OpenExp () = PreOpenExp OpenAcc () 
+-- data PreOpenExp (acc :: * -> * -> *) env aenv t where
+
 
 type TAExp = T.AExp S.Type
 
@@ -321,6 +325,9 @@ convertBoundary = error "convertBoundary: implement me" -- FIXME TODO
 -- Takes a closed expression
 convertExp :: forall env aenv ans . OpenExp env aenv ans -> EnvM T.Exp
 convertExp e = 
+  -- (\x -> do x' <- x
+  --           trace ("CONVERTING EXP "++show e ++ " -> "++show x') 
+  --             (return x')) $ 
   case e of 
     Let exp1 exp2 -> 
       do e1     <- convertExp exp1
@@ -456,24 +463,15 @@ convertExp e =
 
 -- | Convert a tuple expression to our simpler Tuple representation (containing a list):
 --   ASSUMES that the target expression is in fact a tuple construct.
-#ifdef SURFACE_TUPLES                     
 convertTuple :: Tuple (PreOpenExp OpenAcc env aenv) t' -> EnvM T.Exp
 convertTuple NilTup = return$ T.ETuple []
 convertTuple (SnocTup tup e) = 
-    do e' <- convertExp e
+    -- trace ("CONVERTING TUPLE "++show (e))$ 
+    do e'   <- convertExp e
        tup' <- convertTuple tup
        case tup' of 
          T.ETuple ls -> return$ T.ETuple$ ls ++ [e'] -- Snoc!
          se -> error$ "convertTuple: expected a tuple expression, received:\n  "++ show se
-#else
--- Option 2: use a tupling that preservers the Acc-internal snoc-tree representation:
-convertTuple :: Tuple (PreOpenExp OpenAcc env aenv) t' -> EnvM T.Exp
-convertTuple NilTup = return$ T.ETuple []
-convertTuple (SnocTup tup e) = 
-    do e' <- convertExp e
-       tup' <- convertTuple tup
-       return (T.ETuple [tup', e'])
-#endif
 
 
 tupleNumLeaves :: S.Type -> Int
@@ -539,9 +537,6 @@ convertType origty =
 --   with no extra fuss.
 convertArrayType :: forall arrs . Sug.ArraysR arrs -> S.Type
 convertArrayType origty = 
-#ifndef SURFACE_TUPLES
-     removeOuterEndcap $ 
-#endif
      tupleTy $ flattenTupTy $ loop origty
   where 
     loop :: forall ar . Sug.ArraysR ar -> S.Type
@@ -556,23 +551,12 @@ convertArrayType origty =
                                                  
        Sug.ArraysRpair t0 t1 -> S.TTuple [loop t0, loop t1]
 
--- Flatten the snoc-list representation of tuples, at the array as well as scalar level
+-- | Flatten the snoc-list representation of tuples, at the array as well as scalar level
 flattenTupTy :: S.Type -> [S.Type]
-flattenTupTy ty = 
-#ifdef SURFACE_TUPLES
-  -- reverse $ 
-  loop ty 
+flattenTupTy ty = loop ty 
  where 
   -- When using the surface representation we reverse (cons instead of snoc):
   mkTup = S.TTuple -- . reverse
-#else
-  -- DISABLE flattening  
-  case ty of
-    S.TTuple ls -> ls
-    oth         -> [oth]
- where 
-  mkTup = S.TTuple 
-#endif
   isClosed (S.TTuple [S.TTuple [],_r]) = True
   isClosed (S.TTuple [l,_r]) = isClosed l       
   isClosed _                = False
@@ -585,6 +569,7 @@ flattenTupTy ty =
   loop oth           = [oth]
 
 
+-- | Constructor that refuses to make singleton tuple types.
 tupleTy [ty] = ty
 tupleTy ls = S.TTuple ls
 
@@ -595,18 +580,33 @@ tupleTy ls = S.TTuple ls
 
 -- convertConst :: Sug.Elt t => Sug.EltRepr t -> S.Const
 convertConst :: TupleType a -> a -> S.Const
-convertConst ty c = 
---  trace ("Converting tuple const: "++show ty) $
+convertConst ty0 c0 = 
+  (\x -> x `seq` trace ("Converting tuple const: "++show ty0++" -> "++show x) x) $
+  branch ty0 c0
+ where
+ -- Follow the leftmost side 
+ spine :: TupleType a -> a -> [S.Const]
+ spine ty c = 
+  (\x -> x `seq` trace (" *: Spine "++show ty++" -> "++show x) x) $
+  case ty of 
+    UnitTuple -> []
+    PairTuple ty1 ty0 -> let (c1,c0) = c 
+                             c0' = branch ty0 c0
+                         in c0' : spine ty1 c1
+    SingleTuple scalar -> error $ "convertConst: bad tuple, should not see a scalar on the leftmost path."
+
+ branch :: TupleType a -> a -> S.Const
+ branch ty c = 
+  (\x -> x `seq` trace (" *: Branch "++show ty++" -> "++show x) x) $
   case ty of 
     UnitTuple -> S.Tup []
+    -- This begins a new tuple:
     PairTuple ty1 ty0 -> let (c1,c0) = c 
-                             c0' = convertConst ty0 c0
+                             c0' = branch ty0 c0
                          in 
-                         case convertConst ty1 c1 of
-                           S.Tup [] -> c0' 
-                           S.Tup ls -> S.Tup (c0' : ls)
-                           singl -> S.Tup [c0', singl]
---                           oth -> error$ "mal constructed tuple on RHS of PairTuple: "++ show oth
+                         case spine ty1 c1 of
+                           [] -> c0' 
+                           ls -> S.Tup (c0' : ls)
     SingleTuple scalar -> 
       case scalar of 
         NumScalarType (IntegralNumType typ) -> 
@@ -953,8 +953,8 @@ packArray orig@(S.AccArray dims origPayloads) =
 --   of an Acc computation, i.e. a real Accelerate array.
 repackAcc :: forall a . Sug.Arrays a => Sug.Acc a -> [S.AccArray] -> a
 repackAcc dummy simpls = 
-      -- maybtrace (" [repackAcc] ... "++show rep++", given "++show (length simpls)++" arrs:\n"
-      --         ++ unlines(L.map (("   "++) . show) simpls)) $ 
+      maybtrace (" [repackAcc] ... "++show rep++", given "++show (length simpls)++" arrs:\n"
+              ++ unlines(L.map (("   "++) . show) simpls)) $ 
       Sug.toArr converted
   where
    converted :: Sug.ArrRepr a = fst$ cvt rep (reverse simpls)
