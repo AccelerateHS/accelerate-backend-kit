@@ -12,10 +12,11 @@ import           Control.Applicative ((<$>), (<*>))
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
 import           Data.List as L
 import qualified Data.Map as M
+import           Data.Maybe (fromJust)
 
 import Data.Array.Accelerate.BackendKit.IRs.Metadata (ArraySizeEstimate(..))
 import Data.Array.Accelerate.BackendKit.Utils.Helpers (mkIndTy, mkPrj, mulI, genUnique, genUniqueWith, GensymM,
-                                                       (#), mkIndExp, maybtrace, shapeName)
+                                                       (#), mkIndExp, maybtrace, shapeName, fragileZip3)
 import Text.PrettyPrint.GenericPretty (Out(doc))
 
 
@@ -164,26 +165,30 @@ doBinds (ProgBind vo voty sz (Right ae) : rest) = do
                                                 return ([], getSizeE v, 
                                                         Permute (Lam2 a1 a2 bod1') v
                                                                 (Lam1 a3    bod2') w)
-        -- Replicate is tricky because we need to read
+
         Replicate template ex upV ->
-          do gensym <- lift $ genUniqueWith "replicshp" -- The new shape bidning.
+          do gensym <- lift $ genUniqueWith "replicTemplate" -- The new shape binding.
              prg    <- ask
-             let exTy = topLevelExpType prg ex
+             let -- Type of the new "template expression":
+                 exTy = topLevelExpType prg ex
                  -- How many entries to be expect to be in 'ex' given the weird encoding:
                  numWithoutTrailing = length template - length (takeWhile (==All) (reverse template))
                  TArray upDims _ = typeEnv # upV
+                 -- Build up the individual components of the shape of Replicate's output:
                  ls = [ case pr of 
                           -- The 'ex' expression will retain slots for the Alls that are ():
-                          (Fixed,_,i) -> mkPrj i 1 numWithoutTrailing (EVr gensym)
+                          (Fixed,_indA,indF) -> mkPrj indF 1 numWithoutTrailing (EVr gensym)
                           -- The shape of the upstream will be pure numbers, no 'All' business:
-                          (All,  i,_) -> mkPrj i 1 upDims (getSizeE upV)
-                      | pr <- zip3 template indsA indsF]
+                          (All,  indA,_indF) -> mkPrj indA 1 upDims (getSizeE upV)
+                      | pr <- fromJust $ fragileZip3 template indsA indsF ]
                  -- Sum up the number of Alls seen so far to get the index into the original shape:
                  indsA = tail$reverse$scanl (\ ind x -> if x==All   then ind+1 else ind) 0 (reverse template)
                  indsF = tail$reverse$scanl (\ ind x -> if x==Fixed then ind+1 else ind) 0 (reverse template)
-             ex' <- doE ex
+             ex' <- doE ex   -- The new shape template.
+             -- Here we produce both a shape
              return ([ProgBind gensym exTy UnknownSize (Left ex')],
-                     mkETuple ls, Replicate template (EVr gensym) upV)
+                     mkETuple ls, 
+                     Replicate template (EVr gensym) upV)
 
         -- Later we can optimize the trivial case of all All's if we like:
         Index template vr ex   ->
