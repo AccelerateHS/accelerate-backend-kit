@@ -78,7 +78,8 @@ emitCType ty = toSyntax$ text$
     TCDouble    -> "double"
     TChar       -> "char"
     TBool       -> "bool"
-    TTuple [] -> "void"
+--    TTuple [] -> "void"
+    TTuple [] -> "int" -- [2014.02.22] Putting in real arrays of unit
     TTuple _  -> error "emitCType: cannot handle tuples presently"
 
 -- | Convert a type to the equivalent OpenCL type.  Note that unlike

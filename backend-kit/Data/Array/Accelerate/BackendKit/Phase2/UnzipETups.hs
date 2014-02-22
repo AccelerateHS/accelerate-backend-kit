@@ -10,7 +10,7 @@
 -- ELet's are lifted so that they will never be passed as an argument
 -- to a primitive.
 
-module Data.Array.Accelerate.BackendKit.Phase2.UnzipETups (unzipETups) where
+module Data.Array.Accelerate.BackendKit.Phase2.UnzipETups (unzipETups, flattenEither) where
 import Control.Monad.State.Strict
 import Control.Applicative ((<$>),(<*>))
 import qualified Data.Map              as M
@@ -22,6 +22,7 @@ import Data.Array.Accelerate.BackendKit.IRs.Metadata (ArraySizeEstimate(..), Sub
 import Data.Array.Accelerate.BackendKit.Utils.Helpers
        (GensymM, genUnique, genUniqueWith, mkPrj, mapMAEWithGEnv, isTupleTy, fragileZip, fragileZip3, (#),
         isTrivialE, sizeName)
+import Debug.Trace
 ----------------------------------------------------------------------------------------------------
 
 -- | Map the original possibly-tuple-valued variable names to the
@@ -78,7 +79,9 @@ unzipETups prog@Prog{progBinds, uniqueCounter, typeEnv, progResults} =
                 -- After this pass we keep type entries for BOTH tupled and detupled versions:
                 typeEnv = M.union typeEnv $
                           M.fromList$
-                          concatMap (\(v,t) -> fragileZip (lkup v) (flattenEither t)) $
+                          concatMap (\(v,t) -> 
+                                      trace ("TEMP FLATTENED TYPE: "++show t++" -> "++show (flattenEither t)++" names "++show(lkup v))$ 
+                                      fragileZip (lkup v) (flattenEither t)) $
                           M.toList typeEnv
                 }
 
@@ -111,7 +114,8 @@ unzipETups prog@Prog{progBinds, uniqueCounter, typeEnv, progResults} =
   fn (vr,ty) | S.countTyScalars ty == 1 = return (vr,[vr])
              | otherwise = do tmps <- sequence$ replicate (S.countTyScalars ty)
                                                           (genUniqueWith$ show vr)
-                              return (vr,tmps)
+                              trace ("UNZIPETUPS: Returning subnames "++show tmps++" based on count of scalars: "++show (S.countTyScalars ty)) $
+                               return (vr,tmps)
   nextenv :: M.Map Var [Var]
   (nextenv, newCounter1)  = runState envM uniqueCounter
   -- Map old names onto detupled names:  
@@ -272,19 +276,24 @@ doProject env i l e =
 --------------------------------------------------------------------------------
 
 flattenConst :: Const -> [Const]
+-- flattenConst (Tup []) = [Tup []]
 flattenConst (Tup ls) = concatMap flattenConst ls
 flattenConst c        = [c]
 
 -- Flatting that handles either array or scalar types.
 flattenEither :: Type -> [Type]
 flattenEither ty@(TArray _ _) = S.flattenArrTy ty
+-- flattenEither (TTuple [])     = [TTuple []]
+flattenEither (TTuple ls)     = concatMap flattenEither ls
 flattenEither ty              = S.flattenTy ty
 
--- Restrictive version that verifies we don't hit an array type:
+-- Restrictive version that verifies we don't hit an array type, but is otherwise the
+-- same as flattenTy.
 flattenOnlyScalar :: Type -> [Type]
-flattenOnlyScalar (TTuple ls)  = concatMap flattenTy ls
+-- flattenOnlyScalar (TTuple ls)  = concatMap flattenTy ls
 flattenOnlyScalar ty@(TArray _ _) = error$"flattenOnlyScalar: shouldn't get a TArray: "++show ty
-flattenOnlyScalar          ty  = [ty]
+-- flattenOnlyScalar          ty  = [ty]
+flattenOnlyScalar ty = S.flattenTy ty
 
 
 err :: Show a => a -> t

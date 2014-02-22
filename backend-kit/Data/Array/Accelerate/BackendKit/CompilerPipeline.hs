@@ -177,6 +177,11 @@ runPass :: Out a => String -> (t -> a) -> t -> a
 runPass msg pass input =
   let output = pass input in
   if dbg>=4 then
+    -- (trace ("\n" ++ msg ++ ", output was:\n"++
+    --        "================================================================================\n"
+    --        ++show (doc output))
+    --  output)
+
     input `seq` 
     (trace ("\n" ++ msg ++ ", output was:\n"++
            "================================================================================\n")

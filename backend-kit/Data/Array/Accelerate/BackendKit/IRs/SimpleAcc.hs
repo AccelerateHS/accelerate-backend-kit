@@ -160,8 +160,9 @@ data Prog decor = Prog {
 --  tuples-of-arrays-of-tuples.  Also, the shape of the output
 --  array(s) is an implicit output of the program.
 data ProgResults = WithoutShapes [AVar]
-                 | WithShapes [(AVar,Var)] -- Later in the compiler.
-                 | WithShapesUnzipped [(AVar,[Var])] -- Even later, unzipETups
+                 | WithShapes [(AVar,Var)] -- ^ Later in the compiler.
+                 | WithShapesUnzipped [(AVar,[Var])] 
+                   -- ^ Even later, the shapes themselves have been unzipped.
   deriving (Read,Show,Eq,Generic, Ord)
 
 -- | Report the names of the final result bindings from a program.  (Irrespective of
@@ -303,7 +304,7 @@ data TrivialExp = TrivConst Int | TrivVarref Var
 data Const = I Int  | I8 Int8  | I16 Int16  | I32 Int32  | I64 Int64
            | W Word | W8 Word8 | W16 Word16 | W32 Word32 | W64 Word64
            | F Float | D Double | C Char | B Bool
-           | Tup [Const] -- NOTE!  Tuples are stored in the REVERSE order from textual order in the source.
+           | Tup [Const] 
             -- C types, rather annoying:
            | CF CFloat   | CD CDouble 
            | CS  CShort  | CI  CInt  | CL  CLong  | CLL  CLLong
@@ -472,6 +473,7 @@ instance Show AccArray where
          ArrayPayloadDouble arr -> show$ U.elems arr
          ArrayPayloadChar   arr -> show$ U.elems arr
          ArrayPayloadBool   arr -> show$ U.elems arr
+         ArrayPayloadUnit   len -> show$ replicate len ()
 
 instance Read AccArray where
 --  read str = error "FIXME: Read instance for AccArray is unfinished."
@@ -493,7 +495,7 @@ data ArrayPayload =
   | ArrayPayloadDouble (RawData Double)
   | ArrayPayloadChar   (RawData Char)
   | ArrayPayloadBool   (RawData Word8) -- Word8's represent bools.
---  | ArrayPayloadUnit -- Dummy placeholder value.
+  | ArrayPayloadUnit   Int -- Dummy placeholder value, length only.
 --  
 -- TODO -- Add C-types.  But as of this date [2012.05.21], Accelerate
 -- support for these types is incomplete, so we omit them here as well.
@@ -530,7 +532,7 @@ payloadToType p =
     ArrayPayloadDouble arr -> TDouble
     ArrayPayloadChar   arr -> TChar
     ArrayPayloadBool   arr -> TBool
-
+    ArrayPayloadUnit   _   -> TTuple []
 
 --------------------------------------------------------------------------------
 -- Convenience functions for dealing with large sum types.
@@ -835,7 +837,9 @@ recoverExpType env exp =
 
 
 -- | Flatten any outer layers of tupling from a type.
+--   This will NOT go under `TArray`s.
 flattenTy :: Type -> [Type]
+-- flattenTy (TTuple [])  = [TTuple []]
 flattenTy (TTuple ls)  = concatMap flattenTy ls
 flattenTy         ty  = [ty]
 
@@ -850,15 +854,33 @@ flattenTy         ty  = [ty]
 -- | Only accept Array types.  Recursively concatenate tuple types into a flat list,
 -- and split the array into separate (unzipped) arrays.
 flattenArrTy :: Type -> [Type]
-flattenArrTy (TArray d elt) = map (TArray d) (flattenTy elt)
+flattenArrTy (TArray d elt) = map (TArray d) (loop elt)
+  where
+  loop (TTuple [])  = [TTuple []]
+  loop (TTuple ls)  = concatMap loop ls
+  loop oth          = [oth]
 flattenArrTy ty = error$"flattenArrTy should only take an array type: "++show ty
 
 -- | Count the number of values when the type is flattened.  This counts through BOTH
 -- arrays and tuples, so a tuple-of-arrays-of-tuples will be handled.
 countTyScalars :: Type -> Int
-countTyScalars (TArray _ elt) = countTyScalars elt
-countTyScalars (TTuple ls) = sum$ map countTyScalars ls
-countTyScalars _           = 1 
+countTyScalars = loop1
+ where
+  -- loop1 (TArray _ elt) = loop1 elt
+  -- loop1 (TTuple [])    = 1
+  -- loop1 (TTuple ls)    = sum$ map loop1 ls
+  -- loop1 _              = 1 
+
+  loop1 (TArray _ elt) = loop2 elt
+  loop1 (TTuple ls)    = sum$ map loop1 ls
+  loop1 _              = 1 
+  -- Inside an array we must count an array of units as a value:
+  loop2 (TArray _ elt) = loop2 elt
+  loop2 (TTuple [])    = 1
+  loop2 (TTuple ls)    = sum$ map loop2 ls
+  loop2 _              = 1 
+
+
 
 
 ----------------------------------------------------------------------------------------------------

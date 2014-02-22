@@ -410,6 +410,7 @@ printfFlag ty =
     TCUChar -> "%hhu"
     TCSChar -> "%hhd"
     TBool   -> "%hhu"
+    TTuple [] -> "%d"
     TTuple _ -> error$ "EmitCommon.hs/printfFlag cannot handle tuple types: "++show ty
     TArray _ _ -> error$ "EmitCommon.hs/printfFlag cannot handle array types: "++show ty
 

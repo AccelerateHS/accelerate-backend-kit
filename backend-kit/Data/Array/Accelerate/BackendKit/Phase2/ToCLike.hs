@@ -24,6 +24,8 @@ import           Data.Array.Accelerate.BackendKit.IRs.Metadata
 import           Data.Array.Accelerate.BackendKit.Utils.Helpers
                    (genUnique, genUniqueWith, GensymM, isTupleTy, (#), fragileZip)
 
+import           Data.Array.Accelerate.BackendKit.Phase2.UnzipETups (flattenEither)
+
 import Debug.Trace (trace)
 
 ----------------------------------------------------------------------------------------------------
@@ -80,11 +82,18 @@ convertToCLike Prog{progBinds,progResults,progType,uniqueCounter,typeEnv} =
     sizeEnv = L.foldl red M.empty progBinds
     -- FIXME: Scanl' breaks the assumption about TArray for array ops:
     red acc (ProgBind _ (TArray _ elt) (_,(SubBinds vrs szE,_)) _) =
+      trace("REDUCING - "++show (vrs, szE)) $ 
       let Just triv = szE in
-      M.union (M.fromList$ zip vrs$ zip (S.flattenTy elt) (repeat triv))
+      M.union (M.fromList [ (vr,(ty,triv)) 
+                          | (vr,ty) <- fragileZip vrs (gentlyFlatten elt) ])
               acc
     red acc _ = acc
       
+gentlyFlatten :: Type -> [Type]
+gentlyFlatten (TTuple [])  = [TTuple []]
+gentlyFlatten (TTuple ls)  = concatMap gentlyFlatten ls
+gentlyFlatten         ty  = [ty]
+
 
 doBlock :: Env -> Exp -> GensymM LL.ScalarBlock
 doBlock env ex = do
@@ -305,9 +314,4 @@ mkTup ls  = Tup ls
 insertAll []         mp = mp
 insertAll ((k,v):tl) mp = M.insert k v (insertAll tl mp)
 -- Need to test whether this is faster than fromList + union.
-
--- Flatting that handles either array or scalar types.
-flattenEither :: Type -> [Type]
-flattenEither ty@(TArray _ _) = S.flattenArrTy ty
-flattenEither ty              = S.flattenTy ty
 

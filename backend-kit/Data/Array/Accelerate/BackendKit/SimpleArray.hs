@@ -91,6 +91,7 @@ payloadLength payl =
     ArrayPayloadDouble arr -> arrLen arr
     ArrayPayloadChar   arr -> arrLen arr
     ArrayPayloadBool   arr -> arrLen arr
+    ArrayPayloadUnit   len -> len
  
 
 -- | Dereference an element within a payload.  Payload is indexed in
@@ -112,6 +113,10 @@ indexPayload payl i =
     ArrayPayloadDouble arr -> D   (arr U.! i)
     ArrayPayloadChar   arr -> C   (arr U.! i)
     ArrayPayloadBool   arr -> toBool (arr U.! i) 
+    ArrayPayloadUnit   len -> if i < len && i >= 0
+                              then Tup []
+                              else error $ "indexPayload: out of bounds index ("
+                                           ++show i++") into ArrayPayloadUnit of len "++show len
 
 -- | Apply a generic transformation to the Array Payload irrespective
 --   of element type.  This is useful for rearranging or removing
@@ -123,7 +128,8 @@ applyToPayload fn payl = applyToPayload2 (\ a _ -> fn a) payl
 -- | This is similar to `applyToPayload`, but also provides the ability for
 --   the function passed in to inspect elements in the input array in a
 --   generic fashion (as Const type).
-applyToPayload2 :: (forall a . UArray Int a -> (Int -> Const) -> UArray Int a) -> ArrayPayload -> ArrayPayload
+applyToPayload2 :: (forall a . UArray Int a -> (Int -> Const) -> UArray Int a)
+                -> ArrayPayload -> ArrayPayload
 applyToPayload2 fn payl = 
   case payl of 
 --    ArrayPayloadUnit       -> ArrayPayloadUnit
@@ -144,6 +150,11 @@ applyToPayload2 fn payl =
                               (fn arr (\i -> case arr U.! i of
                                                0 -> B False 
                                                _ -> B True))
+    -- No values can actually change here.  WARNING: this plays fast and loose
+    -- with error conditions.  In particular we should have to expose out-of-bounds access:
+    ArrayPayloadUnit   len -> ArrayPayloadUnit len
+
+
 
 -- | This version allows the payload to be rebuilt as a list of Const,
 --   which must all be the same type as the input.
@@ -166,6 +177,7 @@ applyToPayload3 fn payl =
     ArrayPayloadDouble arr -> ArrayPayloadDouble (fromL (map unD  $ fn len (\i -> D   (arr U.! i))))
     ArrayPayloadChar   arr -> ArrayPayloadChar   (fromL (map unC  $ fn len (\i -> C   (arr U.! i))))
     ArrayPayloadBool   arr -> ArrayPayloadBool   (fromL (map fromBool$ fn len (\i -> toBool (arr U.! i))))
+    ArrayPayloadUnit   len -> ArrayPayloadUnit len
   where 
    len = payloadLength payl
 
@@ -243,6 +255,8 @@ mapPayload fn payl =
     ArrayPayloadDouble arr -> rebuild (fn . D  $ arr U.! 0) (fn . D) arr
     ArrayPayloadChar   arr -> rebuild (fn . C  $ arr U.! 0) (fn . C) arr
     ArrayPayloadBool   arr -> rebuild (fn . W8 $ arr U.! 0) (fn . W8) arr
+    ArrayPayloadUnit   len -> [ArrayPayloadUnit len]
+
     
 {-# INLINE rebuild #-}
 rebuild :: IArray UArray e' => Const -> (e' -> Const) -> UArray Int e' -> [ArrayPayload]
@@ -262,6 +276,7 @@ rebuild first fn arr =
     D   _ -> [ArrayPayloadDouble $ amap (unD   . fn) arr]
     C   _ -> [ArrayPayloadChar   $ amap (unC   . fn) arr]
     B   _ -> [ArrayPayloadBool   $ amap (unW8  . fn) arr]
+    Tup [] -> [ArrayPayloadUnit $ arrLen arr]
     Tup ls -> concatMap (\ (i,x) -> rebuild x (\ x -> tupref (fn x) i) arr) $ 
               zip [0..] ls              
     oth -> error$"This constant should not be found inside an ArrayPayload: "++show oth
@@ -295,13 +310,14 @@ payloadsFromList ty ls =
     TDouble -> [ArrayPayloadDouble $ fromL $ map unD   ls]
     TChar   -> [ArrayPayloadChar   $ fromL $ map unC   ls]
     TBool   -> [ArrayPayloadBool   $ fromL $ map fromBool ls]
+    TTuple [] -> [ArrayPayloadUnit $ length ls]
     TTuple tys -> concatMap (uncurry payloadsFromList)                 
                             (zip tys (L.transpose $ map unTup ls))
     oth -> error$"payloadsFromList: This constant should not be found inside an ArrayPayload: "++show oth
 
 
--- | Same as `payloadsFromList` but requires that the list be
---   non-empty.  The type is inferred from the type of the contained
+-- | Same as `payloadsFromList` but requires that the list be non-empty and all
+--   elements be the same type.  The type is inferred from the type of the contained
 --   `Const`s.
 payloadsFromList1 :: [Const] -> [ArrayPayload]
 payloadsFromList1 [] = error "payloadFromList1: cannot convert empty list -- what are the type of its contents?"
@@ -321,6 +337,7 @@ payloadsFromList1 ls@(hd:_) =
     D   _ -> [ArrayPayloadDouble $ fromL $ map unD   ls]
     C   _ -> [ArrayPayloadChar   $ fromL $ map unC   ls]
     B   _ -> [ArrayPayloadBool   $ fromL $ map fromBool ls]
+    Tup [] -> [ArrayPayloadUnit $ length ls] -- FIXME: check the type of the whole list.
     Tup _ -> concatMap payloadsFromList1 $ 
              L.transpose $ map unTup ls
     oth -> error$"payloadsFromList1: This constant should not be found inside an ArrayPayload: "++show oth      
@@ -343,6 +360,7 @@ payloadToList payl =
     ArrayPayloadDouble arr -> map D  $ U.elems arr
     ArrayPayloadChar   arr -> map C  $ U.elems arr
     ArrayPayloadBool   arr -> map toBool $ U.elems arr
+    ArrayPayloadUnit   len -> L.replicate len (Tup [])
 
 -- | Get a `ForeignPtr` to the raw storage of an array.
 --
@@ -364,7 +382,7 @@ payloadToPtr payl =
     ArrayPayloadDouble arr -> castPtr$uArrayPtr arr
     ArrayPayloadChar   arr -> castPtr$uArrayPtr arr
     ArrayPayloadBool   arr -> castPtr$uArrayPtr arr
-
+    ArrayPayloadUnit   _   -> error "payloadToPtr: cannot work for an ArrayPayloadUnit"
 
 -- | Copy from foreign memory (O(N)) to reconstruct a payload with the given type and
 -- number of *elements* (not bytes).  The bytesize is determined based on the type
@@ -389,9 +407,10 @@ payloadFromPtr ty len srcPtr =
     TDouble -> ArrayPayloadDouble <$> uarr
     TChar   -> ArrayPayloadChar   <$> uarr
     TBool   -> ArrayPayloadBool   <$> uarr
+    TTuple [] -> return (ArrayPayloadUnit len)
     -- TTuple tys -> concatMap (uncurry payloadsFromList)                 
     --                         (zip tys (L.transpose $ map unTup ls))
-    _ -> error$"payloadsFromPtr: Unexpected array type: "++show ty
+    _ -> error$"payloadFromPtr: Unexpected array type: "++show ty
   where
     uarr :: forall elt . Storable elt => IO (UArray Int elt)
     uarr = do let bytes = len * sizeOf (undefined::elt)
@@ -439,6 +458,7 @@ replicate dims const = AccArray dims (payload const)
        D x -> [ArrayPayloadDouble (fromL$ Prelude.replicate len x)]
        C x -> [ArrayPayloadChar   (fromL$ Prelude.replicate len x)]
        B x -> [ArrayPayloadBool   (fromL$ Prelude.replicate len (fromBool const))]
+       Tup [] -> [ArrayPayloadUnit len]
        Tup ls -> concatMap payload ls 
 -- TODO -- add all C array types to the ArrayPayload type:
 --            | CF CFloat   | CD CDouble 
