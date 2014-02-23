@@ -965,19 +965,27 @@ repackAcc dummy simpls =
    -- In additon to a result, returns unused input arrays:
    cvt :: forall a' . Sug.ArraysR a' -> [S.AccArray] -> (a',[S.AccArray])
    cvt arrR simpls = 
+     trace ("  repackAcc/cvt: simplls "++show simpls) $
      case arrR of 
-       Sug.ArraysRunit       -> ((),simpls)
+       -- This means ZERO arrays in the tuple-of-arrays:
+       Sug.ArraysRunit -> 
+         trace (" In ArraysRunit case..." ) $
+         ((),simpls)
+
        -- We don't explicitly represent this extra capstone-unit in the AccArray:
        Sug.ArraysRpair Sug.ArraysRunit r -> 
+         trace (" In ArraysRpair/UNIT case..." ) $ 
            let (res,rst) = cvt r simpls in
            (((), res), rst)
        Sug.ArraysRpair r1 r2 -> 
+         trace (" In ArraysRpair case..." ) $ 
            -- Dole out the available input arrays to cover the
            -- leaves, filling in the right first:
            let (res2,rst)  = cvt r2 simpls 
                (res1,rst') = cvt r1 rst
            in ((res1,res2), rst')
-       Sug.ArraysRarray | (_ :: Sug.ArraysR (Sug.Array sh elt)) <- arrR ->
+       Sug.ArraysRarray | (rep :: Sug.ArraysR (Sug.Array sh elt)) <- arrR ->
+         trace (" In ArraysRarray case..." ) $ 
          case simpls of 
            [] -> error$"repackAcc2: ran out of input arrays.\n"
            ls -> 
@@ -986,15 +994,23 @@ repackAcc dummy simpls =
                    elWid  = eltWidth elTy 
                    zipped = SA.concatAccArrays$ take elWid ls
                in 
+                 trace (" ... about to zip "++show (elTy, elWid, rep)) $ 
                  ((packArray zipped) :: (Sug.Array sh elt), 
                    drop elWid ls)
 
    -- How many scalar components are there in an element type?
    eltWidth :: forall a . TupleType a -> Int
-   -- FIXME: consolidate this policy by using flattenTy here explicitly:
-   eltWidth UnitTuple       = 1 -- [2014.02.23] Changing this policy, not getting RID of unit.s
-   eltWidth (PairTuple a b) = eltWidth a + eltWidth b
+   eltWidth UnitTuple       = 1   
    eltWidth (SingleTuple _) = 1
+   eltWidth x@(PairTuple _ _) = tupLoop x
+
+
+   -- Once we start at tuple, we expect the eltType representation MUST bottom out to ((),_).
+   tupLoop :: forall a . TupleType a -> Int
+   tupLoop (PairTuple UnitTuple b) = eltWidth b
+   tupLoop (PairTuple a b) = tupLoop a + eltWidth b
+   tupLoop (SingleTuple x) = error$"repackAcc/tupLoop: once we start a tuple it must terminate in Unit, not SingleTuple "++show x
+   tupLoop UnitTuple       = error "repackAcc/tupLoop: once we start a tuple it must terminate in (PairTuple Unit _), not a naked UnitTuple."
   
 instance Show (Sug.ArraysR a') where
   show arrR = "ArraysR "++loop arrR

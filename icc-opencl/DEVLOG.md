@@ -72,3 +72,36 @@ For which I filed issue #4:
    https://github.com/AccelerateHS/accelerate-backend-kit/issues/4
 
 
+
+[2014.02.23] {New Policy: keep unit arrays around}
+----------------------------------------
+
+Previously we were trying to just completely git rid of arrays of
+unit, with the idea that they don't need to be represented at runtime.
+(Not quite true... there's still the matter of exception semantics.)
+
+Now, I've backpedaled on that decission and started making unit arrays
+real.  However, there are still places in the code I haven't managed
+to fix yet, and I'm seeing the following 5 new test failures:
+
+    run test 12/67 p11:: [Failed]
+    ERROR: repackAcc2: ran out of input arrays.
+
+    run test 13/67 p11b:: [Failed]
+    ERROR: repackAcc2: ran out of input arrays.
+
+    run test 14/67 p11c:: [Failed]
+    ERROR: repackAcc2: ran out of input arrays.
+
+    run test 23/67 p13j:: [Failed]
+    ERROR: packArray: given a AccArray of the wrong type, expected Int received 2 payloads:
+    ArrayPayloadUnit 1
+    ArrayPayloadInt (array (0,0) [(0,-5764607523034234880)])
+
+     dimension: []
+
+    run test 64/67 p5:: [Failed]
+    ERROR: packArray: given a AccArray of the wrong type, expected Int received 3 payloads:
+    ArrayPayloadUnit 1
+    ArrayPayloadInt (array (0,0) [(0,-6917529027641081856)])
+    ArrayPayloadUnit 1
