@@ -63,7 +63,7 @@ import Test.Framework (testGroup, defaultMain, Test)
 -- import qualified Test.Framework as TF
 import Test.Framework.Providers.HUnit
 import Test.HUnit      ((~=?), (~?))
-import Text.PrettyPrint.GenericPretty (doc)
+import Text.PrettyPrint.GenericPretty (doc, Out())
 
 
 -- | A tuple containing name, AST, and the printed result produced by evaluating under
@@ -77,7 +77,9 @@ data TestEntry = TestEntry { name :: String  -- ^ Name of this particular test.
                            , interpResult :: String  -- ^ Result as printed by Accelerate.Interpreter
                            , origProg :: AccProg     -- ^ Original, fully typed Accelerate program 
                            }
- deriving (Show, Ord, Eq)
+ deriving (Show, Ord, Eq, Generic)
+
+instance Out TestEntry
 
 -- | A simple way to encapsulate an Accelerate program of an arbitrary type.
 data AccProg = forall a . (Arrays a, Show a) => AccProg (Acc a)

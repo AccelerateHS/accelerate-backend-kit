@@ -80,7 +80,7 @@ unzipETups prog@Prog{progBinds, uniqueCounter, typeEnv, progResults} =
                 typeEnv = M.union typeEnv $
                           M.fromList$
                           concatMap (\(v,t) -> 
-                                      trace ("TEMP FLATTENED TYPE: "++show t++" -> "++show (flattenEither t)++" names "++show(lkup v))$ 
+                                      -- trace ("TEMP FLATTENED TYPE: "++show t++" -> "++show (flattenEither t)++" names "++show(lkup v))$ 
                                       fragileZip (lkup v) (flattenEither t)) $
                           M.toList typeEnv
                 }
@@ -114,8 +114,8 @@ unzipETups prog@Prog{progBinds, uniqueCounter, typeEnv, progResults} =
   fn (vr,ty) | S.countTyScalars ty == 1 = return (vr,[vr])
              | otherwise = do tmps <- sequence$ replicate (S.countTyScalars ty)
                                                           (genUniqueWith$ show vr)
-                              trace ("UNZIPETUPS: Returning subnames "++show tmps++" based on count of scalars: "++show (S.countTyScalars ty)) $
-                               return (vr,tmps)
+                              -- trace ("UNZIPETUPS: Returning subnames "++show tmps++" based on count of scalars: "++show (S.countTyScalars ty)) $
+                              return (vr,tmps)
   nextenv :: M.Map Var [Var]
   (nextenv, newCounter1)  = runState envM uniqueCounter
   -- Map old names onto detupled names:  

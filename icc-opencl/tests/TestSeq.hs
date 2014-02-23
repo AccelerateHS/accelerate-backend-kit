@@ -44,9 +44,15 @@ knownProblems = words $ ""
   -- ++ " p12 " -- Bad answer, number 40 turned to 0 or 2!  Egad, nondeterministic!  Sometimes works.
   ++ " p8 " -- Bad result even in --simple!  Returns 2*pi instead of pi. [2014.02.16]
 
+  -- [2014.02.23] New failures having to do with treatment of Unit/Z:
+  -------------------------
+  ++ " p5 p13j " 
+
   -- UNFINISHED, not bugs:
   ----------------------------------------
   ++ " p20a p20b p20c " -- UNFINISHED error printed, strides for foldsegs [2014.02.16]
+
+
 
 
 

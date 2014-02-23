@@ -82,7 +82,6 @@ convertToCLike Prog{progBinds,progResults,progType,uniqueCounter,typeEnv} =
     sizeEnv = L.foldl red M.empty progBinds
     -- FIXME: Scanl' breaks the assumption about TArray for array ops:
     red acc (ProgBind _ (TArray _ elt) (_,(SubBinds vrs szE,_)) _) =
-      trace("REDUCING - "++show (vrs, szE)) $ 
       let Just triv = szE in
       M.union (M.fromList [ (vr,(ty,triv)) 
                           | (vr,ty) <- fragileZip vrs (gentlyFlatten elt) ])

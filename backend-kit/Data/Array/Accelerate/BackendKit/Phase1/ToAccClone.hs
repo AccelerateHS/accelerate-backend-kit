@@ -134,12 +134,15 @@ envLookupArray i =
 --------------------------------------------------------------------------------
 
 getAccType :: forall aenv ans . Sug.Arrays ans => OpenAcc aenv ans -> S.Type
-getAccType _ = convertArrayType ty2 
+getAccType _ = 
+   (\x -> maybtrace ("[ToAccClone] getAccType "++show ty2++" -> "++show x) x) $ 
+   convertArrayType ty2 
   where 
       ty2 = Sug.arrays (typeOnlyErr "getAccType" :: ans) :: Sug.ArraysR (Sug.ArrRepr ans)
 
 getAccTypePre :: Sug.Arrays ans => PreOpenAcc OpenAcc aenv ans -> S.Type
-getAccTypePre acc = getAccType (OpenAcc acc)
+getAccTypePre acc = 
+   getAccType (OpenAcc acc)
 
 getExpType :: forall env aenv ans . Sug.Elt ans => OpenExp env aenv ans -> S.Type
 getExpType _ = convertType ty 
@@ -531,14 +534,18 @@ convertType origty =
 
 -- | Convert a reified representation of an Accelerate (front-end)
 --   array type into the simple representation.  By convention this
---   ignores the extra unit type at the end ((),arr).  
+--   ignores the extra unit type at the end ((),arr), which is produced 
+--   for any non-zero number of arrays by the ArrRepr type function.
 --           
---   That is, an array of ints will come out as just an array of ints
---   with no extra fuss.
+--   After this function, for example, an array of seven ints will come out as just
+--   an array of ints with no extra fuss.
 convertArrayType :: forall arrs . Sug.ArraysR arrs -> S.Type
-convertArrayType origty = 
-     tupleTy $ flattenTupTy $ loop origty
+convertArrayType origty =  
+     maybtrace ("[ToAccClone] convertArrayType "++show origty++" -> "++show cvtd++" -> "++show flat) $ 
+     flat
   where 
+    flat = tupleTy $ flattenTupTy cvtd
+    cvtd = loop origty
     loop :: forall ar . Sug.ArraysR ar -> S.Type
     loop ty = 
       case ty of 
@@ -581,7 +588,7 @@ tupleTy ls = S.TTuple ls
 -- convertConst :: Sug.Elt t => Sug.EltRepr t -> S.Const
 convertConst :: TupleType a -> a -> S.Const
 convertConst ty0 c0 = 
-  (\x -> x `seq` maybtrace ("Converting tuple const: "++show ty0++" -> "++show x) x) $
+  (\x -> x `seq` maybtrace ("[ToAccClone] Converting tuple const: "++show ty0++" -> "++show x) x) $
   branch ty0 c0
  where
  -- Follow the leftmost side 
@@ -593,6 +600,7 @@ convertConst ty0 c0 =
     PairTuple ty1 ty0 -> let (c1,c0) = c 
                              c0' = branch ty0 c0
                          in c0' : spine ty1 c1
+--                         in spine ty1 c1 ++ [c0'] -- Snoc.
     SingleTuple scalar -> error $ "convertConst: bad tuple, should not see a scalar on the leftmost path."
 
  branch :: TupleType a -> a -> S.Const
@@ -607,6 +615,7 @@ convertConst ty0 c0 =
                          case spine ty1 c1 of
                            [] -> c0' 
                            ls -> S.Tup (c0' : ls)
+--                           ls -> S.Tup (ls ++ [c0']) -- Snoc
     SingleTuple scalar -> 
       case scalar of 
         NumScalarType (IntegralNumType typ) -> 
@@ -965,7 +974,7 @@ repackAcc dummy simpls =
    -- In additon to a result, returns unused input arrays:
    cvt :: forall a' . Sug.ArraysR a' -> [S.AccArray] -> (a',[S.AccArray])
    cvt arrR simpls = 
-     trace ("  repackAcc/cvt: simplls "++show simpls) $
+     maybtrace ("  repackAcc/cvt: simplls "++show simpls) $
      case arrR of 
        -- This means ZERO arrays in the tuple-of-arrays:
        Sug.ArraysRunit -> 
@@ -974,18 +983,18 @@ repackAcc dummy simpls =
 
        -- We don't explicitly represent this extra capstone-unit in the AccArray:
        Sug.ArraysRpair Sug.ArraysRunit r -> 
-         trace (" In ArraysRpair/UNIT case..." ) $ 
+         maybtrace (" [repackAcc] In ArraysRpair/UNIT case..." ) $ 
            let (res,rst) = cvt r simpls in
            (((), res), rst)
        Sug.ArraysRpair r1 r2 -> 
-         trace (" In ArraysRpair case..." ) $ 
+         maybtrace (" [repackAcc] In ArraysRpair case..." ) $ 
            -- Dole out the available input arrays to cover the
            -- leaves, filling in the right first:
            let (res2,rst)  = cvt r2 simpls 
                (res1,rst') = cvt r1 rst
            in ((res1,res2), rst')
        Sug.ArraysRarray | (rep :: Sug.ArraysR (Sug.Array sh elt)) <- arrR ->
-         trace (" In ArraysRarray case..." ) $ 
+         maybtrace (" [repackAcc] In ArraysRarray case..." ) $ 
          case simpls of 
            [] -> error$"repackAcc2: ran out of input arrays.\n"
            ls -> 
@@ -994,7 +1003,7 @@ repackAcc dummy simpls =
                    elWid  = eltWidth elTy 
                    zipped = SA.concatAccArrays$ take elWid ls
                in 
-                 trace (" ... about to zip "++show (elTy, elWid, rep)) $ 
+                 maybtrace (" ... about to zip "++show (elTy, elWid, rep)) $ 
                  ((packArray zipped) :: (Sug.Array sh elt), 
                    drop elWid ls)
 
