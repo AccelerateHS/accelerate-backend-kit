@@ -581,13 +581,13 @@ tupleTy ls = S.TTuple ls
 -- convertConst :: Sug.Elt t => Sug.EltRepr t -> S.Const
 convertConst :: TupleType a -> a -> S.Const
 convertConst ty0 c0 = 
-  (\x -> x `seq` trace ("Converting tuple const: "++show ty0++" -> "++show x) x) $
+  (\x -> x `seq` maybtrace ("Converting tuple const: "++show ty0++" -> "++show x) x) $
   branch ty0 c0
  where
  -- Follow the leftmost side 
  spine :: TupleType a -> a -> [S.Const]
  spine ty c = 
-  (\x -> x `seq` trace (" *: Spine "++show ty++" -> "++show x) x) $
+  -- (\x -> x `seq` maybtrace (" *: Spine "++show ty++" -> "++show x) x) $
   case ty of 
     UnitTuple -> []
     PairTuple ty1 ty0 -> let (c1,c0) = c 
@@ -597,7 +597,7 @@ convertConst ty0 c0 =
 
  branch :: TupleType a -> a -> S.Const
  branch ty c = 
-  (\x -> x `seq` trace (" *: Branch "++show ty++" -> "++show x) x) $
+  -- (\x -> x `seq` maybtrace (" *: Branch "++show ty++" -> "++show x) x) $
   case ty of 
     UnitTuple -> S.Tup []
     -- This begins a new tuple:
@@ -979,18 +979,20 @@ repackAcc dummy simpls =
            in ((res1,res2), rst')
        Sug.ArraysRarray | (_ :: Sug.ArraysR (Sug.Array sh elt)) <- arrR ->
          case simpls of 
+           [] -> error$"repackAcc2: ran out of input arrays.\n"
            ls -> 
                -- Once we have peeled off "one" array, we still need to unzip the tupled elements.
                let elTy   = Sug.eltType (undefined::elt) 
                    elWid  = eltWidth elTy 
                    zipped = SA.concatAccArrays$ take elWid ls
-               in ((packArray zipped) :: (Sug.Array sh elt), 
+               in 
+                 ((packArray zipped) :: (Sug.Array sh elt), 
                    drop elWid ls)
-           oth  -> error$"repackAcc2: ran out of input arrays.\n"
 
    -- How many scalar components are there in an element type?
    eltWidth :: forall a . TupleType a -> Int
-   eltWidth UnitTuple = 0
+   -- FIXME: consolidate this policy by using flattenTy here explicitly:
+   eltWidth UnitTuple       = 1 -- [2014.02.23] Changing this policy, not getting RID of unit.s
    eltWidth (PairTuple a b) = eltWidth a + eltWidth b
    eltWidth (SingleTuple _) = 1
   

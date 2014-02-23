@@ -35,7 +35,8 @@ zPacked1 = packArray unitArray
 case_zPacked = assertEqual "zPacked " "Array (Z :. 10) [Z,Z,Z,Z,Z,Z,Z,Z,Z,Z]" (show zPacked1)
 
 zPacked2 :: Array (Z :. Int) Z
-zPacked2 = repackAcc (undefined :: A.Acc (A.Array (Z :. Int) Z)) [unitArray]
+-- zPacked2 = repackAcc (undefined :: A.Acc (A.Array (Z :. Int) Z)) [unitArray]
+zPacked2 = repackAcc (A.use zPacked1) [unitArray]
 
 main :: IO ()
 main = do
@@ -45,4 +46,5 @@ main = do
 
   putStrLn$ "zpacked "++ show zPacked1
 
-  putStrLn$ "zpacked2 "++ show zPacked2
+  putStrLn "zPacked2:"
+  print zPacked2
