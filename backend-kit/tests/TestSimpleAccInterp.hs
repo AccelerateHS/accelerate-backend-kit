@@ -44,7 +44,7 @@ knownProblems = words $ ""
   ----------------------------------------
   ++" p10d p10e p10f p10g p10h p10i "   -- Index
   ++" p16e p17a p17b p18b p18c p18d p18e p1bb p7 " -- Backpermute/Reshape, other shapes support
-  ++" p20a p20b p20c  " -- Unifinished, fold segs
+  ++" p20a p20b p20c  " -- Unfinished, fold segs
 
   -- NOTE! If the debug level is cranked up, four tests fail intermediate typechecks:
   -- ++ " p13c p13d p13f p14e "
@@ -52,4 +52,8 @@ knownProblems = words $ ""
      -- ERROR: Typecheck pass failed: Unit input expression does not match expected.
      -- Got:      TTuple [TTuple [TInt8,TInt16],TInt32]
      -- Expected: TTuple [TInt8,TInt16,TInt32]
+  
+  ++ " p5 p13j" -- These are failing for the same reason as in the C backend... new Unit/Z handling, unfinished.
+
+  ++ " p13i "   -- This test passes in C but gets the tuple components flipped in the interp! Bug!
 

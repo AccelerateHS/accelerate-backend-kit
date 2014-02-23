@@ -1,6 +1,7 @@
 {-# LANGUAGE TypeOperators, NamedFieldPuns, ExistentialQuantification #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 -- | A battery of simple tests for any new SimpleAST-based  backend.
 
@@ -63,8 +64,8 @@ import Test.Framework (testGroup, defaultMain, Test)
 -- import qualified Test.Framework as TF
 import Test.Framework.Providers.HUnit
 import Test.HUnit      ((~=?), (~?))
-import Text.PrettyPrint.GenericPretty (doc, Out())
-
+import Text.PrettyPrint.GenericPretty (doc, Out(doc,docPrec), Generic)
+import Text.PrettyPrint.HughesPJ (text)
 
 -- | A tuple containing name, AST, and the printed result produced by evaluating under
 --   the reference Accelerate interpreter, and THEN flattened/printed as an S.AccArray.
@@ -80,6 +81,7 @@ data TestEntry = TestEntry { name :: String  -- ^ Name of this particular test.
  deriving (Show, Ord, Eq, Generic)
 
 instance Out TestEntry
+instance Out AccProg where docPrec _ = text . show; doc = docPrec 0
 
 -- | A simple way to encapsulate an Accelerate program of an arbitrary type.
 data AccProg = forall a . (Arrays a, Show a) => AccProg (Acc a)
