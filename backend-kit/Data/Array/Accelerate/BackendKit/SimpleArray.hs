@@ -16,8 +16,8 @@ module Data.Array.Accelerate.BackendKit.SimpleArray
      -- * Runtime Array data representation.
      AccArray(..), ArrayPayload(..),  -- Reexported from SimpleAST
 
-     -- * Data invariant validation
-     verifyAccArray,
+     -- * Data invariant validation and recovery
+     verifyAccArray, reglueArrayofTups,
      
      -- * Functions for operating on `AccArray`s
      mapArray,
@@ -570,4 +570,49 @@ verifyAccArray ty (AccArray shp cols) =
                (++"\nAccArray contents: "++
                 unlines (map ((take 70) . show) cols)))
 
+
+-- | Some backends end up with a flatter representation than they want after
+-- flattening out both array level tuples and scalar tuples /inside/ arrays.
+-- 
+-- Given an [overly] flat list of "singleton" AccArrays, this does a type-guided
+-- repackaging to produce a, possibly shorter, list of AccArrays that reassociate the
+-- individual components of an array-of-tuples.
+-- 
+-- The result should match the provided type (or an error is thrown).
+reglueArrayofTups :: S.Type -> [S.AccArray] -> [S.AccArray]
+reglueArrayofTups ty0 ls0 = 
+   trace ("reglueArrayofTups "++show (ty0,ls0)++" -> "++show result) $ 
+   result
+  where 
+   result = case ty0 of 
+             TTuple tys -> loop tys   ls0
+             oth        -> loop [oth] ls0
+   notEnough = error $ "reglueArrayofTups: not enough payloads to fulfill type "++show ty0++": "++show ls0
+   loop [] [] = [] -- Victory
+   loop _  [] = notEnough
+   loop [] _  = error $ "reglueArrayofTups: too many payloads to fulfill type "++show ty0++": "++show ls0
+   loop (TArray dim elt : tys) arrs = 
+      let scalars  = flattenTy elt 
+          expected = length scalars
+          (batch,rest) = splitAt expected arrs 
+      in
+      trace ("reglueArrayofTups: got batch "++show (scalars, (batch,rest))) $ 
+      if expected == 0 
+      then error$"reglueArrayofTups: internal invariant broken, why does this array need zero values?: "++show (TArray dim elt)
+      else if length batch /= expected then notEnough else 
+       case batch of
+         [] -> notEnough
+         (AccArray dims0 [payload0] : rst ) -> 
+          let payloads = reverse $ 
+                     foldl (\ acc (S.AccArray dims1 [payl]) -> 
+                              if dims0 == dims1 
+                              then payl:acc
+                              else error$"reglueArrayofTups: two arrays to be zipped have different dims: "
+                                         ++show dims0++", vs "++show dims1)
+                           [payload0] rst
+          in AccArray dims0 payloads 
+             : loop tys rest
+
+
 type ErrorMsg = String
+

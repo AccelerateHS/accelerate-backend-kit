@@ -1,5 +1,4 @@
-
-
+{-# LANGUAGE TemplateHaskell #-}
 module Main where
 
 import Control.Monad
@@ -12,28 +11,27 @@ import qualified Data.Map as M
 import Test.Framework
 import Test.Framework.Providers.HUnit
 import Test.HUnit (assertEqual)
+import Test.Framework.TH (defaultMainGenerator)
 --------------------------------------------------------------------------------
 
 fromList ls = U.listArray (0, length ls - 1) ls
 
-t1 = do 
+case_t1 = do 
   let bkend = C.defaultBackend
-  let arr = AccArray [3] [ArrayPayloadFloat (fromList [1.1, 2.2, 3.3]),
+  let arr = AccArray [3] [ArrayPayloadWord  (fromList [11, 22, 33]),
                           ArrayPayloadInt   (fromList [4,5,6])]
   let vr  = var "vr"
-      typ = TArray 1 (TTuple [TFloat,TInt])
+      typ = TArray 1 (TTuple [TWord,TInt])
   let prog = S.Prog { progBinds   = [ProgBind vr typ () (Right (S.Use arr))]
                     , progType    = typ
                     , progResults = WithoutShapes [vr]
                     , uniqueCounter = 1000
                     , typeEnv = M.empty }
   remt  <- BC.simpleRunRaw bkend (Just "UnitTests.t1") prog Nothing
-  payloads <- mapM (BC.simpleCopyToHost bkend) remt
+  [arr2] <- mapM (BC.simpleCopyToHost bkend) remt
 
-  putStrLn $ "Round tripped: "++show payloads
---  assertEqual "Round trip copy leaves same array" arr arr2
+  putStrLn $ "Round tripped: "++show arr2
+  assertEqual "Round trip copy leaves same array" arr arr2
   return ()
 
-main = do 
-  t1
-
+main = $(defaultMainGenerator)

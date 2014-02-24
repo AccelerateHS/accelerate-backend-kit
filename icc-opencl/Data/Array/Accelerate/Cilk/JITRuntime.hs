@@ -104,6 +104,9 @@ runNamed name pm acc =
    
 -- | For the C backends, a blob is the name of a shared library file (plus a copy of
 -- the final IR to provide some type information).
+-- 
+-- FIXME: This needs to be serializable, and presently GPUProg's are probably not
+-- show/read invariant.
 data CBlob = CBlob !(G.GPUProg FreeVars) !FilePath
 
 -- | Runs phase 3 only.
@@ -190,9 +193,12 @@ rawRunIO (CBlob prog2 path) = do
   return$ parseMultiple result elts
 #else
   dbgPrint 2 $ "[JIT]: Working directory: " ++ (unsafePerformIO $ readProcess "pwd" [] [])
-  loadAndRunSharedObj prog2 path -- ("./" ++ thisprog++".so")
+  ls <- loadAndRunSharedObj prog2 path -- ("./" ++ thisprog++".so")
+  return $! SA.reglueArrayofTups (G.progType prog2) ls
 #endif
  where
+   
+   -- Hack for actually reading results back from strings, NOT efficient:
    parseMultiple _ [] = []
    parseMultiple str (elt:rst) = 
      let (ls,str2) = readPayload elt str in
@@ -204,9 +210,7 @@ rawRunIO (CBlob prog2 path) = do
    tyToElts oth            = error$"expecting array types only as Accelerate return values, not: "++show oth
 
 
--- *** TODO ***
--- Implement dynamic library loading and copying array data back from ForeignPtrs .
--- 
+
 
 -- | Remove exotic characters to yield a filename
 stripFileName :: String -> String
@@ -256,6 +260,9 @@ dbgPrint lvl str = if dbg < lvl then return () else do
 
 -- | Follow the protocol for creating an argument record (of arrays), running the
 -- program, and retrieving the results (see `emitMain`s docs).
+-- 
+-- This returns only a flat list of array-of-scalar results.  If these originated
+-- from array-of-tuple values, they need to be reassociated by the caller of this function.
 loadAndRunSharedObj :: G.GPUProg a -> FilePath -> IO [S.AccArray]
 loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv, G.progType } soName =
   let useBinds   = getUseBinds prog 
