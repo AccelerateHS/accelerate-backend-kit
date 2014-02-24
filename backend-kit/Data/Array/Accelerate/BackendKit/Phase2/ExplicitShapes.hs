@@ -40,14 +40,21 @@ type MyM a = ReaderT (Prog ArraySizeEstimate) GensymM a
 --   corresponding shapes.
 explicitShapes :: Prog ArraySizeEstimate -> Prog ArraySizeEstimate
 explicitShapes prog@Prog{progBinds, uniqueCounter, progResults } =
-  prog { progBinds    = binds, 
-         uniqueCounter= newCount,
-         progResults  = WithShapes$ map (\v -> (v,shapeName v)) (resultNames progResults),
-         -- Rebuild this cache due to new bindings:
-         typeEnv      = M.fromList$ map (\(ProgBind v t _ _) -> (v,t)) binds
-       }
+  case progResults of 
+    -- If this pass has already run, we don't bother.  Hence this pass is idempotent.
+    WithShapes    _ -> prog
+    WithoutShapes _ -> newprog
+    WithShapesUnzipped _ -> 
+      error "explicitShapes: this pass should not be run so late in the compiler: WithShapesUnzipped" 
   where
-    (binds,newCount) =
+   newprog = 
+     prog { progBinds    = binds, 
+            uniqueCounter= newCount,
+            progResults  = WithShapes$ map (\v -> (v,shapeName v)) (resultNames progResults),
+            -- Rebuild this cache due to new bindings:
+            typeEnv      = M.fromList$ map (\(ProgBind v t _ _) -> (v,t)) binds
+          }
+   (binds,newCount) =
       runState (runReaderT (doBinds progBinds) prog) uniqueCounter
 
 doBinds :: [ProgBind ArraySizeEstimate] -> MyM [ProgBind ArraySizeEstimate]
@@ -99,12 +106,12 @@ doBinds (ProgBind vo voty sz (Right ae) : rest) = do
           -- Replace the inner dimension.
           -- ASSUMPTION: segs is 1D and its shape is a TInt:
           replaceOne v segs =
-            maybtrace ("TEMPMSG - REPLACEONE "++show(v,segs) ++" = "++  show (mkETuple$ (getSizeE segs) : knockOne v )) $
+            maybtrace ("TEMPMSG[ExplicitShapes] - REPLACEONE "++show(v,segs) ++" = "++  show (mkETuple$ (getSizeE segs) : knockOne v )) $
             mkETuple$ (getSizeE segs) : knockOne v 
 
           -- Beware tricky intersection semantics:
           intersectShapes v1 v2 =
-              maybtrace ("TEMPMSG - INTERSECT SHAPES "++show(v1,v2) ++" supposed sizes "++show((getSizeE v1),(getSizeE v2)) ) $            
+              maybtrace ("TEMPMSG[ExplicitShapes] - INTERSECT SHAPES "++show(v1,v2) ++" supposed sizes "++show((getSizeE v1),(getSizeE v2)) ) $            
               let TArray v1Dims _ = typeEnv # v1
                   TArray v2Dims _ = typeEnv # v2 in
               if v1Dims /= v2Dims || v1Dims /= vo_ndims then
@@ -228,7 +235,7 @@ doE ex = do
            TTuple ls -> do tmp <- lift $ genUniqueWith "eshpsz"
                            ex2 <- doE ex1
                            let ndims = length ls
-                           maybtrace (" TEMPMSG ESHAPESIZE of "++ show ex1 ++" - we think it has ndims = "++show ndims) $ return() 
+                           maybtrace (" TEMPMSG[ExplicitShapes] ESHAPESIZE of "++ show ex1 ++" - we think it has ndims = "++show ndims) $ return() 
                            return$ 
                              ELet (tmp, TTuple ls, ex2) $
                               foldl (\ acc i -> mulI acc (mkPrj i 1 ndims (EVr tmp)))

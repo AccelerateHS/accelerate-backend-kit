@@ -7,6 +7,7 @@ import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
 import Data.List as L
 import Data.Map  as M
 import Data.Array.Accelerate.BackendKit.IRs.Metadata (ArraySizeEstimate(..))
+import Debug.Trace 
 
 sizeAnalysis :: Prog () -> Prog ArraySizeEstimate
 sizeAnalysis prog@Prog{progBinds} =
@@ -73,6 +74,7 @@ doAE mp ae =
     Reshape e _       -> doE mp e
     Backpermute e _ _ -> doE mp e
     Replicate template e v ->
+      -- trace ("Sizing Replicate "++ show (template, e, v, mp)) $ 
       case M.lookup v mp of 
         Nothing -> UnknownSize
         Just ls -> doEWith template ls mp e      
@@ -118,6 +120,7 @@ intersectShapes sh1 sh2 = error$"intersectShapes: different rank shapes: " ++ sh
 --   Here we try to STATICALLY EVALUATE such expressions to retrieve a shape.
 doE :: (M.Map Var [Int]) -> Exp -> ArraySizeEstimate
 doE mp ex = -- doEWith (repeat Fixed) []
+  -- (\x -> trace ("[SizeAnalysis] attempting static evaluation of "++show ex++", size map "++ show mp++ " -> "++show x) x) $ 
   case normalizeEConst ex of
     ETuple []                       -> KnownSize [] -- SCALAR!
 
@@ -126,12 +129,21 @@ doE mp ex = -- doEWith (repeat Fixed) []
     
     EConst len |     isIntConst len -> KnownSize [constToNum len]
                |     otherwise      -> UnknownSize
-    ETuple ls  | all isShapeConst ls -> KnownSize (L.map (constToNum . unEConst) (L.filter (not . isUnit) ls))
-               |     otherwise      -> UnknownSize
+    ETuple ls -> doEs mp ls 
+
+-- all isShapeConst ls -> KnownSize (L.map (constToNum . unEConst) (L.filter (not . isUnit) ls))
+--                |     otherwise      -> UnknownSize
+
     -- The following should be common.  Base the shape on the shape of a different array:
     EShape vr -> case M.lookup vr mp of
                    Nothing -> UnknownSize
                    Just ls -> KnownSize ls
+
+    EShapeSize ex -> 
+      case doE mp ex of
+        KnownSize ls -> KnownSize [sum ls]
+        UnknownSize  -> UnknownSize
+
     ETupProject ind len tup -> 
       -- Here we try to press on.  This is silly but it could happen:
       case doE mp tup of 
@@ -145,10 +157,21 @@ doE mp ex = -- doEWith (repeat Fixed) []
     -- This one won't happen because top-level varrefs are ONLY
     -- created by us (and that's for boolean bindings for array level
     -- conditionals only):
-    EVr vr -> error$ "SizeAnalysis: this case should be impossible.  We should never use a top-level scalar variable for a shape: "++show vr
-    EShapeSize _      -> error "SizeAnalysis: this case should be impossible (EShapeSize)"
+    EVr vr -> error$ "SizeAnalysis: this case should be impossible.  We should never use a top-level scalar variable for a shape: "++show vr   
     EIndex _          -> error "SizeAnalysis: this shouldn't happen (EIndex) because of normalizeEConst"
 
+
+-- TEMP: This is a partial solution... we need to integrate with the interpreter and
+-- make this a full simplifier pass.
+doEs :: (M.Map Var [Int]) -> [Exp] -> ArraySizeEstimate
+doEs mp [] = KnownSize []
+doEs mp (hd:tl) = 
+  case doEs mp tl of 
+    UnknownSize -> UnknownSize 
+    KnownSize ls2 -> 
+      case doE mp hd of
+        UnknownSize   -> UnknownSize
+        KnownSize ls1 -> KnownSize $ ls1 ++ ls2
 
 isShapeConst (ETuple []) = True
 isShapeConst e = isIntEConst e 
@@ -159,6 +182,7 @@ isUnit _ = False
 -- | This is the "full version" that accepts a template to know where to fill in "All" holes.
 doEWith :: SliceType -> [Int] -> (M.Map Var [Int]) -> Exp -> ArraySizeEstimate
 doEWith template oldSzs mp ex =   
+  -- trace ("[SizeAnalysis] sizing expression "++show ex++" against slice template "++show (template,oldSzs)++", map "++ show mp) $ 
   case doE mp ex of 
     KnownSize ls -> KnownSize$ injectDims oldSzs template ls
     UnknownSize  -> UnknownSize
