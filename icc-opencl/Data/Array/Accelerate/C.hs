@@ -18,6 +18,7 @@
 module MODNAME (run, runDetailed, BKEND(..), defaultBackend, defaultTrafoConfig,
                 DbgConf(..), defaultConf) where
 
+import           Control.Monad (when)
 import qualified Data.ByteString.Lazy as B
 import           Data.Maybe (fromMaybe)
 import           System.IO.Unsafe (unsafePerformIO)
@@ -33,7 +34,7 @@ import           Data.Array.Accelerate.Shared.EmitC (ParMode(..), DbgConf(..), d
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc   as S
 import qualified Data.Array.Accelerate.BackendKit.SimpleArray     as SA
 import           Data.Array.Accelerate.BackendClass
-import           Data.Array.Accelerate.BackendKit.Utils.Helpers (dbgPrint)
+import           Data.Array.Accelerate.BackendKit.Utils.Helpers (dbgPrint, dbg)
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline
                   (phase0, phase1, phase2, repackAcc, unpackArray, Phantom(..), defaultTrafoConfig)
 
@@ -170,6 +171,9 @@ instance SimpleBackend BKEND where
        -- TODO: need to pass these times around if we want to account for all the
        -- stuff inbetween the big pieces.
        arrs <- J.rawRunIO blob
+       when (dbg >= 1 && length arrs /= length (S.resultNames (S.progResults prog))) $ 
+         error$ "simpleRunRaw, internal error, expected results "++show (S.resultNames (S.progResults prog))
+                ++", but received back "++ show (length arrs)++" arrays."
        return$ [ CRemote [arr] | arr <- arrs ]
 
   -- simpleRunRawFun1
