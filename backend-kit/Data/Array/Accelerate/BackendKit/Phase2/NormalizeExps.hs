@@ -10,7 +10,7 @@ import Control.Monad.State.Strict
 import Data.Map                   as M
 
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
-import Data.Array.Accelerate.BackendKit.Utils.Helpers (mapMAEWithEnv,GensymM, genUnique)
+import Data.Array.Accelerate.BackendKit.Utils.Helpers (mapMAEWithEnv,GensymM, genUnique, genUniqueWith, isTrivialE, dbgPrint)
 --------------------------------------------------------------------------------
 
 -- In the process of handling a binding, more might be generated.  The
@@ -31,7 +31,7 @@ type Env = M.Map Var Type
 --  (3) ECond may not occur in any operand position IF
 --      * either of it's branches contains ELet
 --      * OR its branches return a tuple type.
---  (4) The index expression of EIndexScalar is trivial. TODO FINISHME
+--  (4) The index expression of EIndexScalar is trivial. 
 normalizeExps :: Prog a -> Prog a 
 normalizeExps prog@Prog{progBinds,uniqueCounter} =
   prog{ progBinds= binds, uniqueCounter= newCounter }
@@ -58,7 +58,8 @@ doSpine env ex =
     ETupProject i l e     -> runDischarge (doE env e)       (ETupProject i l)
     --------------------------------------------------------------------------------    
     EConst _c             -> return ex
-    EIndexScalar avr indE -> runDischarge (doE env indE) (EIndexScalar avr)
+    -- EIndexScalar avr indE -> makeTriv env (EIndexScalar avr) indE
+    EIndexScalar avr indE -> makeTriv env (EIndexScalar avr) indE
                      
     -- In tail (or "spine") position this conditional is fine.
     ECond e1 e2 e3        -> do (e1',bnds) <- runWriterT$ doE env e1
@@ -75,6 +76,16 @@ doSpine env ex =
     EShapeSize _ -> err ex
     EIndex     _ -> err ex
 
+makeTriv :: Env -> (Exp -> Exp) -> Exp -> GensymM Exp
+makeTriv env fn indE
+  | isTrivialE indE  = runDischarge (doE env indE) fn
+  | otherwise        = do let indTy = recoverExpType env indE
+                          gensym <- genUniqueWith "liftEIndSclP"
+                          runDischarge (doE env indE) $ \ex -> 
+                            ELet (gensym,indTy,ex)
+                                 (fn (EVr gensym))
+
+
 -- | In non-tail position we cannot discharge let bindings;
 --   we accumulate them using the Writer monad.
 doE :: Env -> Exp -> BindM Exp
@@ -84,7 +95,17 @@ doE env ex =
     EConst _c             -> return ex    
     ETuple els            -> ETuple <$> mapM (doE env) els
     ETupProject i l e     -> ETupProject  i l <$> doE env e
-    EIndexScalar avr indE -> EIndexScalar avr <$> doE env indE 
+
+    -- TODO: Dedup this code:
+    EIndexScalar avr indE 
+      | isTrivialE indE -> EIndexScalar avr <$> doE env indE 
+      | otherwise       -> do let indTy = recoverExpType env indE
+                              gensym <- lift$ genUniqueWith "liftEIndScl"
+                              ex <- doE env indE
+                              tell [(gensym,indTy,ex)]
+                              return $ EIndexScalar avr (EVr gensym)
+
+
     -- We leave let's inside conditionals, but we might need to lift the conditional itself.    
     ECond e1 e2 e3 -> do e1' <- doE env e1
                          -- Here we potentially do the work TWICE because we don't know what category
@@ -118,7 +139,7 @@ doE env ex =
 ----------------------------------------------------------------------------------------------------
 -- Small Helpers:
 
-
+-- | Discharge floated let bindings by introducing ELets:
 runDischarge :: BindM a -> (a -> Exp) -> GensymM Exp
 runDischarge m k = 
   do (x,bnds) <- runWriterT m
