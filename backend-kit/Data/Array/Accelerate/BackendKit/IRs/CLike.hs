@@ -76,10 +76,11 @@ data TopLvlForm =
     ScalarCode ScalarBlock -- A block of Scalar code binding one or more variables.
   | Cond Exp Var Var
   | Use       AccArray
---  | Generate  ScalarBlock (Fun ScalarBlock)
+
+  -- | Generate an array, storing it in memory
   | GenManifest (Generator (Fun ScalarBlock))
 
-  -- | GenReduce is both produces (or fetches) elements and combines them.  It is
+  -- | GenReduce both produces (or fetches) elements and combines them.  It is
   -- parameterized first by a reduce function and second by a generate function.  The
   -- generate function takes an index position via one or more arguments and produces
   -- intermediate reduction value(s).  The reducer function takes two SETS of

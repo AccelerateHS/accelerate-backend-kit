@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
+-- | The lowest-level AST containing a very different ProgBind type.
 
 module Data.Array.Accelerate.BackendKit.IRs.GPUIR
        (

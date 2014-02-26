@@ -225,10 +225,14 @@ runSAPass1D msg pass input =
 
 optionalTC :: (S.Prog a -> S.Prog a) -> S.Prog a -> S.Prog a
 optionalTC tc prog =
-  if dbg>0
-  then trace (" [dbg] engaging optional typecheck pass, AST size "++show(S.progASTSize prog))$
-       tc prog
-  else prog
+  let prog2 = if dbg>0
+              then tc prog
+              else prog
+  in if dbg >= 2
+     then trace (" [dbg] engaging optional typecheck pass, AST size "++show(S.progASTSize prog)
+                 ++", num binds "++show(length (S.progBinds prog)))
+          prog2
+     else prog2
 
 --------------------------------------------------------------------------------
 -- Misc:
