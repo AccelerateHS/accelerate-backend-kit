@@ -38,7 +38,8 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
      isIntType, isFloatType, isNumType, 
      isIntConst, isFloatConst, isNumConst, hasArrayType, flattenTy, flattenArrTy, countTyScalars,
 
-     var, progToEnv, lookupProgBind, expFreeVars, expASTSize, aexpASTSize, progASTSize, 
+     var, progToEnv, lookupProgBind, expFreeVars, expASTSize, 
+     aexpFreeVars, aexpASTSize, progASTSize, 
      resultNames, resultShapeNames,
      
      -- * Building and normalizing pieces of syntax
@@ -930,6 +931,38 @@ expFreeVars ex =
     EPrimApp _ _ els    -> fs els     
     EIndex els          -> fs els 
 
+
+aexpFreeVars :: AExp -> S.Set Var
+aexpFreeVars ae =
+  let g = expFreeVars
+      fn1 (Lam1 (_,_t)   e) = g e
+      fn2 (Lam2 (_,_t) (_,_u) e) = g e
+  in
+  case ae of
+    Vr v             -> S.singleton v
+    Unit e           -> g e
+    Cond e v1 v2     -> S.insert v1 $ S.insert v2 $ g e 
+    Use     _        -> S.empty
+    Generate  e f1   -> g e `S.union` fn1 f1
+    Replicate _ e v  -> S.insert v $ g e 
+    Index    _ v e   -> S.insert v $ g e 
+    Map      f v     -> S.insert v $ fn1 f
+    ZipWith  f v1 v2 -> S.insert v1 $ S.insert v2 $ fn2 f
+    Fold     f e v   -> S.insert v $ S.union (g e) $ fn2 f
+    Fold1    f   v   -> S.insert v $ fn2 f
+    FoldSeg  f e v1 v2 -> S.unions [ fn2 f, g e, S.singleton v1, S.singleton v2 ]
+    Fold1Seg f   v1 v2 -> S.insert v1 $ S.insert v2 $ fn2 f
+    Scanl    f e v     -> S.insert v $ fn2 f `S.union` g e
+    Scanl'   f e v     -> S.insert v $ fn2 f `S.union` g e
+    Scanl1   f   v     -> S.insert v $ fn2 f 
+    Scanr    f e v     -> S.insert v $ fn2 f `S.union` g e
+    Scanr'   f e v     -> S.insert v $ fn2 f `S.union` g e
+    Scanr1   f   v     -> S.insert v $ fn2 f 
+    Permute  f v1 f1 v2 -> S.insert v1 $ S.insert v2 $ fn2 f `S.union` fn1 f1
+    Backpermute e f1 v  -> S.insert v $ fn1 f1 `S.union` g e
+    Reshape     e    v  -> S.insert v $ g e
+    Stencil  f1 _bound v -> S.insert v $ fn1 f1
+    Stencil2 f2 _b1 v1 _b2 v2 -> S.insert v1 $ S.insert v2 $ fn2 f2
 
 -- | Alpha-rename all variables to fresh names.
 freshenExpNames :: Exp -> GensymM Exp
