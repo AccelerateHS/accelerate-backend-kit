@@ -23,6 +23,7 @@ module Data.Array.Accelerate.BackendKit.SimpleArray
      mapArray,
      splitComponent, numComponents,
      indexArray,
+     splitAccArray,
 
      -- * Functions for constructing `AccArray`s
      Data.Array.Accelerate.BackendKit.SimpleArray.replicate,      
@@ -41,7 +42,7 @@ where
   
 
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
-import Data.Array.Accelerate.BackendKit.Utils.Helpers (maybtrace)
+import Data.Array.Accelerate.BackendKit.Utils.Helpers (maybtrace,tracePrint)
 
 import           Control.Applicative ((<$>))
 import           Debug.Trace
@@ -615,4 +616,100 @@ reglueArrayofTups ty0 ls0 =
 
 
 type ErrorMsg = String
+
+
+--------------------------------------------------------------------------------
+-- Partitioning arrays:
+
+-- | Split an AccArray into K pieces along the outermost dimension.  The outermost
+-- dimension corresponds to cutting the actual memory buffers into even (contiguous)
+-- pieces.
+-- 
+-- If the size of the array does not divide evenly, the last parttion gets the extra
+-- data.
+splitAccArray :: Int -> AccArray -> [AccArray]
+splitAccArray pieces (AccArray dims payls) 
+  | pieces < 1 = error $"splitAccArray: Cannot split into less than one piece: "++show pieces
+  | qt < 1 = error$ "AccArray of dimensions "++show dims++" cannot be split into "++show pieces++" pieces along outer (last) dim!"
+  | otherwise = 
+    -- trace ("splitAccArray, "++show (size,qt,rem,rest,outer)) $ 
+    zipWith AccArray allDims $ 
+    L.transpose $ 
+    map (splitPayload size pieces) payls
+ where
+  allDims     = L.replicate (pieces-1) newDims ++ [newDimsLast]
+  newDims     = rest ++ [qt]
+  newDimsLast = rest ++ [qt+rem]
+  size = qt * product rest
+  (qt,rem) = outer `quotRem` pieces
+  (rest,outer) = splitLast dims
+
+splitPayload :: Int -> Int -> ArrayPayload -> [ArrayPayload]
+splitPayload n k payl =   
+  -- tracePrint ("\nsplitPayload of "++show payl++" was : ") $ 
+  case payl of
+    ArrayPayloadInt  arr  -> map ArrayPayloadInt   $ splitArrays n k arr
+    ArrayPayloadInt8  arr -> map ArrayPayloadInt8  $ splitArrays n k arr 
+    ArrayPayloadInt16 arr -> map ArrayPayloadInt16 $ splitArrays n k arr 
+    ArrayPayloadInt32 arr -> map ArrayPayloadInt32 $ splitArrays n k arr 
+    ArrayPayloadInt64 arr -> map ArrayPayloadInt64 $ splitArrays n k arr 
+    ArrayPayloadWord   arr -> map ArrayPayloadWord $ splitArrays n k arr 
+    ArrayPayloadWord8  arr -> map ArrayPayloadWord8 $ splitArrays n k arr 
+    ArrayPayloadWord16 arr -> map ArrayPayloadWord16 $ splitArrays n k arr  
+    ArrayPayloadWord32 arr -> map ArrayPayloadWord32 $ splitArrays n k arr  
+    ArrayPayloadWord64 arr -> map ArrayPayloadWord64 $ splitArrays n k arr  
+    ArrayPayloadFloat  arr -> map ArrayPayloadFloat $ splitArrays n k arr  
+    ArrayPayloadDouble arr -> map ArrayPayloadDouble $ splitArrays n k arr  
+    ArrayPayloadChar   arr -> map ArrayPayloadChar $ splitArrays n k arr 
+    ArrayPayloadBool   arr -> map ArrayPayloadBool $ splitArrays n k arr 
+    ArrayPayloadUnit   len -> let (q,r) = quotRem len n in 
+                              (L.replicate (q-1) (ArrayPayloadUnit n))
+                              ++ [ArrayPayloadUnit (n+r)]
+
+-- | Takes a specific chunksize for the output partitions. 
+--   Any elements left over go in the final array.
+splitArrays :: (U.IArray U.UArray elt) => 
+               Int -> Int -> U.UArray Int elt -> [U.UArray Int elt]
+splitArrays size howmany arr = 
+  -- trace(" CUTTING ARRAY, bounds "++show(low,high)++", size "++show size++", quotRem: "++show (howmany,leftover))$
+  [ U.listArray (0,size-1) 
+    [ arr U.! (i + y*size) | i <- [0 .. size-1]]
+  | y <- [0 .. howmany-2] ] ++ 
+  [ U.listArray (0,size+leftover-1) 
+    [ arr U.! (i + (howmany-1)*size) | i <- [0 .. size+leftover-1]]]
+ where 
+  (low,high) = U.bounds arr
+  leftover = (high - low + 1) - (size * howmany)
+
+
+
+-- Scratch:
+t0 :: U.UArray Int Int
+t0 = U.listArray (0,11) [1..12]
+
+t0b :: AccArray 
+-- t0b = AccArray [3,2,2] [ArrayPayloadInt t0, ArrayPayloadInt t0]
+t0b = AccArray [2,2,3] [ArrayPayloadInt t0, ArrayPayloadInt t0]
+
+p0 = splitAccArray 2 t0b
+v0 = map (verifyAccArray (TArray 3 (TTuple [TInt,TInt]))) p0
+
+t1 :: U.UArray Int Char
+t1 = U.listArray (0,9) ['a'..'j']
+
+p1 = splitArrays 5 2 t1
+
+go :: IO ()
+go = 
+  case t0 of 
+    UArray l u nn ptr -> 
+      putStrLn $ "HMM "++show (l,u,nn)
+
+-- last and init functions together.  I wonder if it's actually faster.
+splitLast :: [a] -> ([a], a)
+splitLast [] = error "splitLast: given null list"
+splitLast [x] = ([],x)
+splitLast (h:tl) = let (r,x) = splitLast tl in (h:r,x)
+
+  
 

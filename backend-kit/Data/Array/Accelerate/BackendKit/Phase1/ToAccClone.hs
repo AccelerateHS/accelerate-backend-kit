@@ -962,8 +962,8 @@ packArray orig@(S.AccArray dims origPayloads) =
 --   of an Acc computation, i.e. a real Accelerate array.
 repackAcc :: forall a . Sug.Arrays a => Sug.Acc a -> [S.AccArray] -> a
 repackAcc dummy simpls = 
-      maybtrace (" [repackAcc] ... "++show rep++", given "++show (length simpls)++" arrs:\n"
-              ++ unlines(L.map (("   "++) . show) simpls)) $ 
+      maybtrace (" [repackAcc] ... "++show rep++", given "++show (length simpls)++" arrs\n") $ 
+--              ++ unlines(L.map (("   "++) . show) simpls)) $  -- This bit prints the whole array
       Sug.toArr converted
   where
    converted :: Sug.ArrRepr a = fst$ cvt rep (reverse simpls)

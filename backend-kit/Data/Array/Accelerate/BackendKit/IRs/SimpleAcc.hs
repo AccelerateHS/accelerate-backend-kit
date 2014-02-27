@@ -450,6 +450,10 @@ data SliceComponent = Fixed | All
 --   Invariant: all payload arrays should be the same length, and:
 -- 
 --   > sum (arrDim a) == length (arrPayloads a !! i)
+--
+--   The array dimensions are stored from the "inner" to the "outer" dimension.
+--   That is, if you do a fold, the first element of the list is the dimension
+--   that gets squished away.
 data AccArray = AccArray { arrDim :: [Int], arrPayloads :: [ArrayPayload] }
  deriving (Eq, Ord)
 
@@ -931,12 +935,13 @@ expFreeVars ex =
     EPrimApp _ _ els    -> fs els     
     EIndex els          -> fs els 
 
-
+-- | Retrieve the set of variables that occur free in an `AExp`, including both
+-- scalar and array variables.
 aexpFreeVars :: AExp -> S.Set Var
 aexpFreeVars ae =
   let g = expFreeVars
-      fn1 (Lam1 (_,_t)   e) = g e
-      fn2 (Lam2 (_,_t) (_,_u) e) = g e
+      fn1 (Lam1 (v,_t)   e)        = S.delete v $ g e
+      fn2 (Lam2 (v1,_t) (v2,_u) e) = S.delete v1 $ S.delete v2 $ g e
   in
   case ae of
     Vr v             -> S.singleton v
