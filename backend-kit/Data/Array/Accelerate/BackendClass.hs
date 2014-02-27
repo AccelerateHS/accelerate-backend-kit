@@ -402,6 +402,30 @@ instance (SimpleBackend b) => Backend (LiftSimpleBackend b) where
   separateMemorySpace (LiftSimpleBackend b) = simpleSeparateMemorySpace b
 
 
+-- Can't use GeneralizedNewtypeDeriving directly here due to associated types:
+instance SimpleBackend b => SimpleBackend (LiftSimpleBackend b) where
+  type SimpleRemote (LiftSimpleBackend b) = SimpleRemote b
+  type SimpleBlob (LiftSimpleBackend b)   = SimpleBlob b 
+  simpleCompile (LiftSimpleBackend b) path acc = simpleCompile b path acc
+  simpleRunRaw (LiftSimpleBackend b) nm acc mb = simpleRunRaw b nm acc mb
+  simpleCopyToHost (LiftSimpleBackend b) r     = simpleCopyToHost b r 
+  simpleCopyToDevice (LiftSimpleBackend b) a   = simpleCopyToDevice b a
+  simpleCopyToPeer (LiftSimpleBackend b) r     = simpleCopyToPeer b r
+  simpleWaitRemote (LiftSimpleBackend b) r     = simpleWaitRemote b r
+  simpleUseRemote (LiftSimpleBackend b) r      = simpleUseRemote b r
+  simpleSeparateMemorySpace (LiftSimpleBackend b) = simpleSeparateMemorySpace b
+
+  -- type Remote (LiftSimpleBackend b) a = Remote b a
+  -- type Blob (LiftSimpleBackend b) a   = Blob b a
+  -- compile (LiftSimpleBackend b) path acc = compile b path acc
+  -- runRaw (LiftSimpleBackend b) acc mb  = runRaw b acc mb
+  -- copyToHost (LiftSimpleBackend b) r   = copyToHost b r 
+  -- copyToDevice (LiftSimpleBackend b) a = copyToDevice b a
+  -- copyToPeer (LiftSimpleBackend b) r   = copyToPeer b r
+  -- waitRemote (LiftSimpleBackend b) r   = waitRemote b r
+  -- useRemote (LiftSimpleBackend b) r    = useRemote b r
+  -- separateMemorySpace (LiftSimpleBackend b) = separateMemorySpace b
+
 
 {--
 -- | A bag of bits that can be serialised to disk
