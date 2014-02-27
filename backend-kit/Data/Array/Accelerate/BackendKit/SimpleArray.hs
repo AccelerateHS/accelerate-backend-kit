@@ -541,7 +541,7 @@ verifyAccArray :: Type -> AccArray -> Maybe ErrorMsg
 verifyAccArray ty (AccArray shp cols) =
   case ty of
     TArray d elt ->
-      let expectedCols = flattenTy elt in      
+      let expectedCols = flattenTy elt in -- FIXME: handling units..
       re$ unlines $ catMaybes $      
       ((if d /= length shp
         then Just$"AccArray shape "++show shp++" doesn't match dimension in type: "++show d
@@ -582,6 +582,7 @@ verifyAccArray ty (AccArray shp cols) =
 -- The result should match the provided type (or an error is thrown).
 reglueArrayofTups :: S.Type -> [S.AccArray] -> [S.AccArray]
 reglueArrayofTups ty0 ls0 = 
+   trace ("reglueArrayofTups "++show (ty0,ls0)) $ 
 --   trace ("reglueArrayofTups "++show (ty0,ls0)++" -> "++show result) $ 
    result
   where 
@@ -589,15 +590,23 @@ reglueArrayofTups ty0 ls0 =
              TTuple tys -> loop tys   ls0
              oth        -> loop [oth] ls0
    notEnough = error $ "reglueArrayofTups: not enough payloads to fulfill type "++show ty0++": "++show ls0
+
+   -- Make sure NOT to squish units...
+   myflatten :: Type -> [Type]
+   myflatten (TTuple [])  = [TTuple []]
+   myflatten (TTuple ls)  = concatMap myflatten ls
+   myflatten         ty  = [ty]
+
    loop [] [] = [] -- Victory
    loop _  [] = notEnough
-   loop [] _  = error $ "reglueArrayofTups: too many payloads to fulfill type "++show ty0++": "++show ls0
+   loop [] _  = error $ "reglueArrayofTups: too many payloads ("++show(length ls0)
+                        ++") to fulfill type "++show ty0++": "++(take 160$ show ls0)
    loop (TArray dim elt : tys) arrs = 
-      let scalars  = flattenTy elt 
+      let scalars  = myflatten elt 
           expected = length scalars
           (batch,rest) = splitAt expected arrs 
       in
-      -- trace ("reglueArrayofTups: got batch "++show (scalars, (batch,rest))) $ 
+      trace ("reglueArrayofTups: got batch "++show (scalars, (batch,rest))) $ 
       if expected == 0 
       then error$"reglueArrayofTups: internal invariant broken, why does this array need zero values?: "++show (TArray dim elt)
       else if length batch /= expected then notEnough else 

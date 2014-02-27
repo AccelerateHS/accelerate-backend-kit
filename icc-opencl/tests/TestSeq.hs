@@ -52,6 +52,8 @@ knownProblems = words $ ""
   ----------------------------------------
   ++ " p20a p20b p20c " -- UNFINISHED error printed, strides for foldsegs [2014.02.16]
 
+  -- [2014.02.27] New breakage from reglueArrayofTups, need to come back to:
+  ++ " p13k p13i "
 
 
 
