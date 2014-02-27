@@ -8,7 +8,9 @@ module Data.Array.Accelerate.BackendClass (
   Backend(..), MinimalBackend(..),
   SimpleBackend(..), 
   LiftSimpleBackend(LiftSimpleBackend), SomeSimpleBackend(SomeSimpleBackend), 
-  runWith, runTimed, AccTiming(..)
+  runWith, 
+  runWithSimple, 
+  runTimed, AccTiming(..)
 
   -- Not ready for primetime yet:
   -- PortableBackend(..), CLibraryBackend(..)
@@ -22,7 +24,8 @@ import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import           Data.Array.Accelerate.Trafo (convertAccWith, Phase(..))
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as SACC
 -- import           Data.Array.Accelerate.Trafo.Sharing (convertAcc)
-import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0)
+import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1)
+import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc, unpackArray, Phantom(..))
 
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import Data.Char (isAlphaNum)
@@ -54,6 +57,14 @@ runWith bkend nm prog = unsafePerformIO $ do
   let cvtd = phase0 prog
   remote <- runRaw bkend cvtd Nothing 
   copyToHost bkend remote
+
+-- | Version of `runWith` that uses a `SimpleBackend` instance instead.
+runWithSimple :: (SimpleBackend b, Arrays a) => b -> DebugName -> Acc a -> a
+runWithSimple bkend nm prog = unsafePerformIO $ do 
+  let cvtd = phase1 $ phase0 prog  
+  rems <- simpleRunRaw bkend Nothing cvtd Nothing 
+  accArrs <- mapM (simpleCopyToHost bkend) rems
+  return $! repackAcc prog accArrs
 
 -- | A version of `runWith` that also returns timing information.
 runTimed :: (Backend b, Arrays a) => b -> DebugName -> Phase -> Acc a -> IO (AccTiming, a)
@@ -244,6 +255,8 @@ class Show b => SimpleBackend b where
   -- blob that can be executed.  Takes a /suggested/ FilePath for where to put
   -- the blob IF it must be written to disk.
   --
+  -- [Internal note: the backend-kit compiler phase1 has already been run on this
+  -- input, but not phase2.]
   simpleCompile :: b
                 -> FilePath
                 -> SACC.Prog ()
@@ -350,9 +363,43 @@ instance Show SomeSimpleBackend where
 --   direction but not the other.
 newtype LiftSimpleBackend b = LiftSimpleBackend b deriving (Show, Eq)
 
-instance SimpleBackend b => Backend (LiftSimpleBackend b) where
--- FINISHME
 
+instance (SimpleBackend b) => Backend (LiftSimpleBackend b) where
+  type Remote (LiftSimpleBackend b) a = [SimpleRemote b]
+  type Blob (LiftSimpleBackend b) a   = (SimpleBlob b, SACC.Prog ())
+  compile (LiftSimpleBackend b) path acc = do
+     let prog = phase1 acc
+     blb <- simpleCompile b path prog
+     return (blb,prog)
+
+  runRaw lb acc Nothing = do  
+     blob <- compile lb "unknown_prog" acc 
+     runRaw lb acc (Just blob)
+     
+  runRaw (LiftSimpleBackend b) origacc (Just (blob,prog)) = do  
+     simpleRunRaw b Nothing prog (Just blob)
+
+  copyToHost (LiftSimpleBackend bk) (rs :: Remote (LiftSimpleBackend b) a) = do 
+     arrs <- mapM (simpleCopyToHost bk) rs
+     return $! repackAcc (undefined::Acc a) arrs
+
+  copyToDevice (LiftSimpleBackend b) (arr :: a) = do
+     let (repr :: Sug.ArrRepr a) = Sug.fromArr arr
+         (ty,accArr,_::Phantom a) = unpackArray repr
+     remt <- simpleCopyToDevice b accArr
+     return [remt]
+     
+  copyToPeer (LiftSimpleBackend b) rs = 
+    mapM (simpleCopyToPeer b) rs
+
+  waitRemote (LiftSimpleBackend b) rs = 
+    mapM_ (simpleWaitRemote b) rs
+
+  useRemote (LiftSimpleBackend b) rs = do
+    aexps <- mapM (simpleUseRemote b) rs
+    error "useRemote/LiftSimpleBackend: this needs to be finished"
+
+  separateMemorySpace (LiftSimpleBackend b) = simpleSeparateMemorySpace b
 
 
 
