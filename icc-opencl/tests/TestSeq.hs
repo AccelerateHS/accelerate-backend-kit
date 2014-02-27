@@ -35,9 +35,9 @@ knownProblems :: [String]
 knownProblems = words $ "" 
   -- These pass in --simple mode, but are having a problem in the repacking phase:
   ----------------------------------------
-  ++ "p13 p13b p13c p13d p13e p13f p14 p14b p14e "
-  ++ "p9c "
-  ++ "p1d p2d p2g p2h p9a p9b " -- Tuple components flipped during repack!! [2014.02.16]
+--  ++ "p13 p13b p13c p13d p13e p13f p14 p14b p14e "
+--  ++ "p9c  "
+--  ++ "p1d p2d p2g p2h p9a p9b " -- Tuple components flipped during repack!! [2014.02.16]
 
   -- Wrong answers, even in --simple:
   ----------------------------------------
