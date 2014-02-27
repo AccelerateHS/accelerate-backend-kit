@@ -582,7 +582,7 @@ verifyAccArray ty (AccArray shp cols) =
 -- The result should match the provided type (or an error is thrown).
 reglueArrayofTups :: S.Type -> [S.AccArray] -> [S.AccArray]
 reglueArrayofTups ty0 ls0 = 
-   -- trace ("reglueArrayofTups "++show (ty0,ls0)++" -> "++show result) $ 
+--   trace ("reglueArrayofTups "++show (ty0,ls0)++" -> "++show result) $ 
    result
   where 
    result = case ty0 of 
@@ -613,6 +613,9 @@ reglueArrayofTups ty0 ls0 =
                            [payload0] rst
           in AccArray dims0 payloads 
              : loop tys rest
+
+   loop (TTuple ls1 : ls2) arrs = loop (ls1++ls2) arrs
+   loop ls arrs = error $ "reglueArrayofTups: got a non-array type in list: " ++show ls
 
 
 type ErrorMsg = String
