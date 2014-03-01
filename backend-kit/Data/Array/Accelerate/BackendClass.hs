@@ -5,16 +5,18 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Data.Array.Accelerate.BackendClass (
-  Backend(..), MinimalBackend(..),
+  Backend(..), SomeBackend(SomeBackend),
+  MinimalBackend(..),
   SimpleBackend(..), 
   LiftSimpleBackend(LiftSimpleBackend), SomeSimpleBackend(SomeSimpleBackend), 
   runWith, 
   runWithSimple, 
-  runTimed, AccTiming(..)
+  runTimed, AccTiming(..),
 
   -- Not ready for primetime yet:
   -- PortableBackend(..), CLibraryBackend(..)
 
+  Phantom(Phantom)
 ) where
 
 -- friends
@@ -97,6 +99,9 @@ data AccTiming = AccTiming { compileTime :: !Double
                            }
   deriving (Show,Eq,Ord,Read)
 
+-- | An encapsulated Backend about which we know nothing else.  (Like SomeException.)
+data SomeBackend = forall b . Backend b => SomeBackend b
+
 -- | A low-level interface that abstracts over Accelerate backend code generators and
 -- expression evaluation. This takes the internal Accelerate AST representation
 -- rather than the surface, HOAS one.  The reason for this is that we may want to
@@ -107,6 +112,7 @@ class Show b => Backend b where
   -- because different backends may represent device pointers differently.
   --
   type Remote b r
+--  type Remote b :: * -> * 
 
   -- | A `Blob` as a thing which /may/ help speed up or skip future
   -- computations. For example, this may represent:
@@ -117,6 +123,7 @@ class Show b => Backend b where
   --     parameters
   --
   type Blob b r
+--  type Blob b :: * -> *
 
   -------------------------- Compiling and Running -------------------------------
 

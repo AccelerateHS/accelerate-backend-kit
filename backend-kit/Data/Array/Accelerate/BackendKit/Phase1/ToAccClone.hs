@@ -18,7 +18,7 @@
 module Data.Array.Accelerate.BackendKit.Phase1.ToAccClone
        ( 
          accToAccClone, expToExpClone,
-         unpackArray, packArray, repackAcc, Phantom
+         unpackArray, packArray, repackAcc, Phantom(Phantom),
        )
        where
 
