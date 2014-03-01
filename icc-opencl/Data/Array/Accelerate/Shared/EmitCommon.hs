@@ -43,7 +43,7 @@ import           Control.Monad
 import           Prelude                        as P
 import           Text.PrettyPrint.GenericPretty (Out(doc))
 import           Text.PrettyPrint.HughesPJ      as PP ((<>), (<+>), semi, parens) 
--- import           Debug.Trace                    (trace)
+import           Debug.Trace                    (trace)
 
 
 ----------------------------------------------------------------------------------------------------
@@ -280,7 +280,9 @@ emitConst e cnst =
 -- | Emit a PrimApp provided that the operands have already been convinced to `Syntax`.
 --   It returns EasyEmit `Syntax` representing a C expression.
 emitPrimApp :: EmitBackend e => e -> Type -> Prim -> [Syntax] -> Syntax
-emitPrimApp e outTy prim args = E.parens$ 
+emitPrimApp e outTy prim args = 
+--  trace ("emitPrimApp: "++ show(outTy, prim, args))$ 
+  E.parens$ 
   case prim of
     NP np -> case np of
               Add -> binop "+"
@@ -318,11 +320,11 @@ emitPrimApp e outTy prim args = E.parens$
               Asinh -> unary "asinh"
               Acosh -> unary "acosh"
               Atanh -> unary "atanh"
-              ExpFloating -> binop ""
+              ExpFloating -> unary "expf"
               Sqrt  -> case outTy of
                          TFloat  -> unary "sqrtf"
                          TDouble -> unary "sqrt"
-              Log   -> binop "log" -- natural log
+              Log   -> unary "log" -- natural log
               FDiv    -> binop "/"
 --              FPow    -> binfun "expt"
               FPow    -> binfun "pow"

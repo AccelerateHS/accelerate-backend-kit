@@ -116,7 +116,7 @@ instance Read Var where
 instance NFData Var where
   rnf (Var s) = rnf s
 #else
-#error "Need to define some symbol representation for SimpleAST.hs"
+#error "Need to define some symbol representation for SimpleAcc.hs"
 #endif
   
 var :: String -> Var
@@ -365,7 +365,7 @@ data OtherPrim = Ord | Chr | BoolToInt | FromIntegral
 primArity :: Prim -> Int 
 -- Note: this would be safer with a normal case expression, but would be rather long:
 primArity p = case M.lookup p mp of
-                Nothing -> error$"SimpleAST.hs/primArity: prim was missing from table: "++show p
+                Nothing -> error$"SimpleAcc.hs/primArity: prim was missing from table: "++show p
                 Just x  -> x
  where 
   mp = M.fromList $ 
@@ -374,7 +374,9 @@ primArity p = case M.lookup p mp of
   binaries = 
     [BP And, BP Or] ++
     [NP Add, NP Sub, NP Mul, IP BNot] ++
-    map IP [Quot, Rem, IDiv, Mod, BOr, BXor, BShiftL, BShiftR, BRotateL, BRotateR] ++
+--    [ BAnd , BOr | BXor | BNot | BShiftL | BShiftR | BRotateL | BRotateR
+    map IP [Quot, Rem, IDiv, Mod, BShiftL, BShiftR, BRotateL, BRotateR, 
+            BOr, BXor, BAnd ] ++
     map FP [FDiv, FPow, LogBase, Atan2, Truncate, Round, Floor, Ceiling] ++
     map SP [Lt, Gt, LtEq, GtEq, Eq, NEq, Max, Min]
   unaries =   
@@ -437,7 +439,7 @@ data SliceComponent = Fixed | All
 --  
 --   Note, this is a different presentation of the same data as
 --   contained in a "Data.Array.Accelerate.Array".  Going with the
---   theme of "SimpleAST", the idea is to provide access in a form
+--   theme of "SimpleAcc", the idea is to provide access in a form
 --   that doesn't require complex types.  However, while simple in
 --   that respect, this representation is also a pain to work with
 --   because `ArrayPayload` is a large sum type.
@@ -694,7 +696,7 @@ constToInteger c =
 -- instance Integral Const where 
 --   toInteger x = 
 
--- | Unwrap a SimpleAST `Const` (satisfying isIntConst) into a raw
+-- | Unwrap a SimpleAcc `Const` (satisfying isIntConst) into a raw
 --   Haskell number.  Note that this function may perform a size
 --   conversion IF the type of the Const does not match the destination
 --   Haskell type.
@@ -743,7 +745,7 @@ mkZeroConst ty =
   }
 
 
--- | Unwrap a SimpleAST `Const` (satisfying isNumConst) into a raw
+-- | Unwrap a SimpleAcc `Const` (satisfying isNumConst) into a raw
 --   Haskell Rational.
 constToRational :: Const -> Rational 
 constToRational c = 
