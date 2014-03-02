@@ -90,6 +90,7 @@ doAE mp ae =
                    L.zip template ls
 
     Unit _ -> error "sizeAnalysis: Unit is not part of the grammar accepted by this pass"
+    oth    -> error $ "sizeAnalysis: not expecting this: "++(take 500$ show oth)
  where
    useSizeof vr =
      case M.lookup vr mp of

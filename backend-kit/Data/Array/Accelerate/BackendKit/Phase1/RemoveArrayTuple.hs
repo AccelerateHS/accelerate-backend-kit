@@ -245,10 +245,12 @@ listOfLeaves :: [a] -> TempTree a
 listOfLeaves = listToTT . L.map TLeaf
 
 -- Index from the right:
-indexTT :: TempTree a -> Int -> TempTree a
+indexTT :: Show a => TempTree a -> Int -> TempTree a
 indexTT _ i | i < 0 = error "indexTT: negative index not allowed"
 indexTT (TLeaf x) 0 = TLeaf x 
-indexTT (TLeaf x) i = error$"cannot index singleton tuple with index: "++show i
+indexTT (TLeaf x) i = error $ "cannot index singleton tuple ("++show x++") with index: "++show i
+ -- trace ("TEMP/HACK/FIXME - temporarily going past this error -- cannot index singleton tuple ("++show x++") with index: "++show i) (TLeaf x)
+-- indexTT (TLeaf x) i = error$"cannot index singleton tuple ("++show x++") with index: "++show i
 indexTT (TT a b rest) i = reverse (a:b:rest) !! i
 
 fromLeaf :: Show t => TempTree t -> t
