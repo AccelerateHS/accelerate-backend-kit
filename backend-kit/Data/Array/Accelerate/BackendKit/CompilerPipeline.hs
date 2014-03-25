@@ -21,12 +21,11 @@ module Data.Array.Accelerate.BackendKit.CompilerPipeline
 import           Text.PrettyPrint.GenericPretty (Out(..))
 import           Text.PrettyPrint.HughesPJ (text)
 import           Debug.Trace (trace)
-
-import qualified Data.Array.Accelerate.AST         as AST
+import qualified Data.Array.Accelerate.AST as AST
 import qualified Data.Array.Accelerate.Smart       as Smt
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
--- import           Data.Array.Accelerate.Trafo.Sharing (convertAcc)
-import           Data.Array.Accelerate.Trafo (convertAccWith, Phase(..))
+import           Data.Array.Accelerate.Trafo.Sharing (convertAcc)
+import           Data.Array.Accelerate.Trafo (Phase(..))
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import qualified Data.Array.Accelerate.BackendKit.IRs.CLike     as C
 import qualified Data.Array.Accelerate.BackendKit.IRs.GPUIR     as G
@@ -129,8 +128,8 @@ phase1 prog =
 -- | This simply calls the Accelerate *front-end* with the default settings for a
 -- backend-kit compiler.
 phase0 :: Sug.Arrays a => Smt.Acc a -> AST.Acc a
--- phase0 = convertAcc True True True
-phase0 = convertAccWith defaultTrafoConfig
+phase0 = convertAcc True True True
+--phase0 = convertAccWith defaultTrafoConfig
 
 -- NOTE: This is the same configuration as used by the CUDA backend:
 --

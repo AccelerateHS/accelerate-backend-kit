@@ -27,8 +27,8 @@ module Data.Array.Accelerate.DynamicAcc
 -}
        where
 
-import           Data.Array.Accelerate as A hiding (Exp)
-import qualified Data.Array.Accelerate as A
+import           Data.Array.Accelerate as A hiding (Exp,(++))
+import qualified Data.Array.Accelerate as A hiding (Exp, (++))
 import qualified Data.Array.Accelerate.Type as T
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc

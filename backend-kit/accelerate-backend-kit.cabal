@@ -1,5 +1,5 @@
 Name:                accelerate-backend-kit
-Version:             0.13.0.100
+Version:             0.15.0.0
 Synopsis:            Simplified AST for Accelerate that makes it easy to build new backends.
 
 -- Description:         
@@ -82,7 +82,7 @@ Library
                         prettyclass,
                         base >= 4, ghc-prim,
                         containers,
-                        accelerate      >= 0.13.0.99 && < 0.14,
+                        accelerate,
                         GenericPretty   >= 1.0,
 --                        symbol          >= 0.1.2,
 --                        ghc             >= 7.2
