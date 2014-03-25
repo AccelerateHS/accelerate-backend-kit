@@ -1,5 +1,5 @@
 Name:                accelerate-icc-opencl
-Version:             0.13.0.99
+Version:             0.15.0.0
 Synopsis:            OpenCL and Cilk/ICC backends for Accelerate.
 
 Homepage:            https://github.com/AccelerateHS/accelerate-cpu/
