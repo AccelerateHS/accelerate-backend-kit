@@ -20,7 +20,7 @@ Cabal-version:       >=1.10
 
 Flag opencl
   Description:          Enable the OpenCL parallel backend
-  Default:              True
+  Default:              False
 
 Library
   Default-Language:    Haskell2010
