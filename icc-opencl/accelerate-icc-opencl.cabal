@@ -20,7 +20,7 @@ Cabal-version:       >=1.10
 
 Flag opencl
   Description:          Enable the OpenCL parallel backend
-  Default:              False
+  Default:              True
 
 Library
   Default-Language:    Haskell2010
@@ -41,7 +41,7 @@ Library
   Build-depends:     base  == 4.*, random, containers >= 0.3, array, directory,  split,
                      test-framework, process, unix, 
                      mtl, pretty, prettyclass, GenericPretty,
-                     accelerate >= 0.13.0.99 && < 0.14,
+                     accelerate >= 0.14,
                      accelerate-backend-kit >= 0.13.0.99,
                      bytestring, ghc-prim, time
 
