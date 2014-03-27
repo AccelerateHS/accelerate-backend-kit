@@ -56,7 +56,6 @@ import           Data.ByteString.Lazy                   as B
 runWith :: (Backend b, Arrays a) => b -> DebugName -> Acc a -> a
 runWith bkend nm prog = unsafePerformIO $ do 
   let cvtd = convertAcc True True True prog
-  --let cvtd = phase0 prog
   remote <- runRaw bkend cvtd Nothing 
   copyToHost bkend remote
 
@@ -74,7 +73,6 @@ runTimed bkend nm config prog = do
   (rand::Word64) <- randomIO
   t0     <- getCurrentTime
   let cvtd = phase0 prog
-  --let cvtd = convertAccWith config prog
       path = ".blob_"++fromMaybe "" nm++"_"++show rand
   blob   <- compile bkend path cvtd
   t1     <- getCurrentTime

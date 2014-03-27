@@ -129,7 +129,6 @@ phase1 prog =
 -- backend-kit compiler.
 phase0 :: Sug.Arrays a => Smt.Acc a -> AST.Acc a
 phase0 = convertAcc True True True
---phase0 = convertAccWith defaultTrafoConfig
 
 -- NOTE: This is the same configuration as used by the CUDA backend:
 --
