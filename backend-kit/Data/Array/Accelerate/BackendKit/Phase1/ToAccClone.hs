@@ -175,16 +175,16 @@ convertAcc (OpenAcc cacc) =
     dummyty = S.TTuple []
   in
   case eacc of
-    _ -> error "FINISHME -- fix a GHC 7.8 only type error"
-{-                               
-    
+--     _ -> error "FINISHME -- fix a GHC 7.8 only type error"
+
+     
     Alet acc1 acc2 -> 
        do a1     <- convertAcc acc1
           (v,a2) <- withExtendedArrayEnv "aLt"$ 
                     convertAcc acc2 
           let sty = getAccType acc1
           return$ T.Let (getAccTypePre eacc) (v,sty,a1) a2
-
+ 
     Avar idx -> 
       do var <- envLookupArray (idxToInt idx)
          return$ T.Vr (getAccTypePre eacc) var
@@ -220,7 +220,7 @@ convertAcc (OpenAcc cacc) =
 
     Apply _afun _acc -> error "convertAcc: This case is impossible"
 
-    Atuple (atup :: Atuple (OpenAcc aenv) b ) -> 
+    Atuple (atup :: Atuple (OpenAcc aenv) (TupleRepr a) ) -> 
       let loop :: Atuple (OpenAcc aenv') a' -> EnvM [TAExp] 
           loop NilAtup = return [] 
           loop (SnocAtup t a) = do first <- convertAcc a
@@ -297,21 +297,24 @@ convertAcc (OpenAcc cacc) =
                                         <*> convertAcc  dft
                                         <*> convertFun1 pfn
                                         <*> convertAcc  acc
+
     Backpermute e pfn acc -> T.Backpermute (getAccTypePre eacc)
                                         <$> convertExp  e 
                                         <*> convertFun1 pfn
                                         <*> convertAcc  acc 
+
     Stencil  sten bndy acc -> T.Stencil (getAccTypePre eacc)
                                         <$> convertFun1 sten
                                         <*> return (convertBoundary bndy)
                                         <*> convertAcc acc
+
     Stencil2 sten bndy1 acc1 bndy2 acc2 -> 
       T.Stencil2 (getAccTypePre eacc)
                  <$> convertFun2 sten 
                  <*> return (convertBoundary bndy1) <*> convertAcc acc1
                  <*> return (convertBoundary bndy2) <*> convertAcc acc2
 
--}
+
     -- TODO: Transform
 
 
