@@ -744,6 +744,8 @@ p14d :: Acc (Scalar Int16)
 p14d = A.map prj1_3 p13b
 -- Surface : TTuple [TTuple [TTuple [TTuple [],TInt8],TInt16],TInt32]
 
+-- Fails when DEBUG > 0 
+-- success otherwise 
 p14e :: Acc (Scalar (Int8,Int16))
 p14e = A.map prj1_2 p13c
 -- Surface : TTuple [TTuple [TTuple [TTuple [],TInt8],TInt16],TInt32]
