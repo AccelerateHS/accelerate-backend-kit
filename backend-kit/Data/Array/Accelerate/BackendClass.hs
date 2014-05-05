@@ -4,10 +4,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
--- TEMP/FIXME!! --
-{-# LANGUAGE AllowAmbiguousTypes #-}
-
-module Data.Array.Accelerate.BackendClass (
+module Data.Array.Accelerate.BackendClass {-(
   Backend(..), SomeBackend(SomeBackend),
   MinimalBackend(..),
   SimpleBackend(..), 
@@ -20,7 +17,7 @@ module Data.Array.Accelerate.BackendClass (
   -- PortableBackend(..), CLibraryBackend(..)
 
   Phantom(Phantom)
-) where
+)-} where
 
 -- friends
 import           Data.Array.Accelerate                          as A hiding ((++))
@@ -112,8 +109,7 @@ class Show b => Backend b where
   -- | The type of a remote handle on device memory. This is class-associated
   -- because different backends may represent device pointers differently.
   --
-  type Remote b r
---  type Remote b :: * -> * 
+  data Remote b :: * -> * 
 
   -- | A `Blob` as a thing which /may/ help speed up or skip future
   -- computations. For example, this may represent:
@@ -123,8 +119,7 @@ class Show b => Backend b where
   --   - an optimised and/or annotated AST containing backend-specific execution
   --     parameters
   --
-  type Blob b r
---  type Blob b :: * -> *
+  data Blob b :: * -> *
 
   -------------------------- Compiling and Running -------------------------------
 
@@ -371,23 +366,29 @@ instance Show SomeSimpleBackend where
 --   direction but not the other.
 newtype LiftSimpleBackend b = LiftSimpleBackend b deriving (Show, Eq)
 
+-- newtype SimpleRemotesList b _a = SimpleRemotesList [SimpleRemote b]
+-- data SimpleBlobPair    b _a = SimpleBlobPair !(SimpleBlob b) !(SACC.Prog ())
+--  type Remote (LiftSimpleBackend b) = (SimpleRemotesList b)
+--  type Blob (LiftSimpleBackend b)   = (SimpleBlobPair b)
 
 instance (SimpleBackend b) => Backend (LiftSimpleBackend b) where
-  type Remote (LiftSimpleBackend b) a = [SimpleRemote b]
-  type Blob (LiftSimpleBackend b) a   = (SimpleBlob b, SACC.Prog ())
+  data Remote (LiftSimpleBackend b) _r = LSB_Remote ![SimpleRemote b]
+  data Blob   (LiftSimpleBackend b) _r = LSB_Blob !(SimpleBlob b) !(SACC.Prog ())
+
   compile (LiftSimpleBackend b) path acc = do
      let prog = phase1 acc
      blb <- simpleCompile b path prog
-     return (blb,prog)
+     return $! LSB_Blob blb prog
 
   runRaw lb acc Nothing = do  
      blob <- compile lb "unknown_prog" acc 
      runRaw lb acc (Just blob)
-     
-  runRaw (LiftSimpleBackend b) origacc (Just (blob,prog)) = do  
-     simpleRunRaw b Nothing prog (Just blob)
 
-  copyToHost (LiftSimpleBackend bk) (rs :: Remote (LiftSimpleBackend b) a) = do 
+  runRaw (LiftSimpleBackend b) origacc (Just (LSB_Blob blob prog)) = do 
+     x <- simpleRunRaw b Nothing prog (Just blob)
+     return $! LSB_Remote x
+
+  copyToHost (LiftSimpleBackend bk) (LSB_Remote rs :: Remote (LiftSimpleBackend b) a) = do 
      arrs <- mapM (simpleCopyToHost bk) rs
      return $! repackAcc (undefined::Acc a) arrs
 
@@ -395,15 +396,15 @@ instance (SimpleBackend b) => Backend (LiftSimpleBackend b) where
      let (repr :: Sug.ArrRepr a) = Sug.fromArr arr
          (ty,accArr,_::Phantom a) = unpackArray repr
      remt <- simpleCopyToDevice b accArr
-     return [remt]
-     
-  copyToPeer (LiftSimpleBackend b) rs = 
-    mapM (simpleCopyToPeer b) rs
+     return $! LSB_Remote [remt]
 
-  waitRemote (LiftSimpleBackend b) rs = 
+  copyToPeer (LiftSimpleBackend b) (LSB_Remote rs) = 
+    fmap LSB_Remote $ mapM (simpleCopyToPeer b) rs
+
+  waitRemote (LiftSimpleBackend b) (LSB_Remote rs) = 
     mapM_ (simpleWaitRemote b) rs
 
-  useRemote (LiftSimpleBackend b) rs = do
+  useRemote (LiftSimpleBackend b) (LSB_Remote rs) = do
     aexps <- mapM (simpleUseRemote b) rs
     error "useRemote/LiftSimpleBackend: this needs to be finished"
 
@@ -522,17 +523,19 @@ instance Show MinimalBackend where
 -- | A Backend class instance based on MinimalBackend is limited.  It cannot separate
 -- out compile and copy time, and it cannot store "Blob" objects on disk.
 instance Backend MinimalBackend where
-  type Remote MinimalBackend r = r
-  type Blob MinimalBackend r   = ()
-  compile _ _ _ = return ()
-  compileFun1 _ _ _ = return ()
-  runRaw (MinimalBackend runner) acc _mblob = 
-    return $! runner acc
+  data Remote MinimalBackend r = MB_Remote !r
+  data Blob MinimalBackend  _r = MB_Blob
 
-  copyToHost _ rem = return $! rem
-  copyToDevice _ a = return $! a
+  compile _ _ _     = return MB_Blob
+  compileFun1 _ _ _ = return MB_Blob
+
+  runRaw (MinimalBackend runner) acc _mblob = 
+    return $! MB_Remote (runner acc)
+
+  copyToHost _ (MB_Remote rem) = return $! rem
+  copyToDevice _ a = return $! MB_Remote a
   copyToPeer _ rem = return $! rem
 
   waitRemote _ _ = return ()
-  useRemote _ r = return $! phase0 (A.use r)
-  separateMemorySpace _ = False  -- This is pretty bogus.
+  useRemote _ (MB_Remote r) = return $! phase0 (A.use r)
+  separateMemorySpace _ = False -- This is pretty bogus, we have no idea.
