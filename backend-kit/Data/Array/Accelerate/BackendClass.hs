@@ -7,7 +7,7 @@
 -- TEMP/FIXME!! --
 {-# LANGUAGE AllowAmbiguousTypes #-}
 
-module Data.Array.Accelerate.BackendClass (
+module Data.Array.Accelerate.BackendClass {-(
   Backend(..), SomeBackend(SomeBackend),
   MinimalBackend(..),
   SimpleBackend(..), 
@@ -20,7 +20,7 @@ module Data.Array.Accelerate.BackendClass (
   -- PortableBackend(..), CLibraryBackend(..)
 
   Phantom(Phantom)
-) where
+)-} where
 
 -- friends
 import           Data.Array.Accelerate                          as A hiding ((++))
@@ -103,28 +103,32 @@ data AccTiming = AccTiming { compileTime :: !Double
 -- | An encapsulated Backend about which we know nothing else.  (Like SomeException.)
 data SomeBackend = forall b . Backend b => SomeBackend b
 
+-- | The type of a remote handle on device memory.  This is specific to each
+--   backend because different backends may represent device pointers differently.
+--   Thus it is a type function indexed on the backend argument, `b`.
+newtype Remote b a = Remote (InternalRemote b)
+-- type Remote b a = InternalRemote b
+
+-- | A `Blob` as a thing which /may/ help speed up or skip future
+-- computations. For example, this may represent:
+--
+--   - compiled object code for an expression
+--
+--   - an optimised and/or annotated AST containing backend-specific execution
+--     parameters
+--
+newtype Blob b a = Blob (InternalBlob b)
+
 -- | A low-level interface that abstracts over Accelerate backend code generators and
 -- expression evaluation. This takes the internal Accelerate AST representation
 -- rather than the surface, HOAS one.  The reason for this is that we may want to
 -- process already converted and transformed/optimised programs.
 class Show b => Backend b where
 
-  -- | The type of a remote handle on device memory. This is class-associated
-  -- because different backends may represent device pointers differently.
-  --
-  type Remote b r
---  type Remote b :: * -> * 
-
-  -- | A `Blob` as a thing which /may/ help speed up or skip future
-  -- computations. For example, this may represent:
-  --
-  --   - compiled object code for an expression
-  --
-  --   - an optimised and/or annotated AST containing backend-specific execution
-  --     parameters
-  --
-  type Blob b r
---  type Blob b :: * -> *
+  -- | The internal representation for `Remote`.  End users will see `Remote` instead.
+  type InternalRemote b
+  -- | The internal representation for `Blob`.  End users will see `Blob` instead.
+  type InternalBlob b
 
   -------------------------- Compiling and Running -------------------------------
 
@@ -373,21 +377,22 @@ newtype LiftSimpleBackend b = LiftSimpleBackend b deriving (Show, Eq)
 
 
 instance (SimpleBackend b) => Backend (LiftSimpleBackend b) where
-  type Remote (LiftSimpleBackend b) a = [SimpleRemote b]
-  type Blob (LiftSimpleBackend b) a   = (SimpleBlob b, SACC.Prog ())
+  type InternalRemote (LiftSimpleBackend b) = [SimpleRemote b]
+  type InternalBlob   (LiftSimpleBackend b) = (SimpleBlob b, SACC.Prog ())
   compile (LiftSimpleBackend b) path acc = do
      let prog = phase1 acc
      blb <- simpleCompile b path prog
-     return (blb,prog)
+     return $! Blob (blb,prog)
 
   runRaw lb acc Nothing = do  
      blob <- compile lb "unknown_prog" acc 
      runRaw lb acc (Just blob)
-     
-  runRaw (LiftSimpleBackend b) origacc (Just (blob,prog)) = do  
-     simpleRunRaw b Nothing prog (Just blob)
 
-  copyToHost (LiftSimpleBackend bk) (rs :: Remote (LiftSimpleBackend b) a) = do 
+  runRaw (LiftSimpleBackend b) origacc (Just (Blob (blob,prog))) = do  
+     ls <- simpleRunRaw b Nothing prog (Just blob)
+     return $! Remote ls
+
+  copyToHost (LiftSimpleBackend bk) (Remote rs :: Remote (LiftSimpleBackend b) a) = do 
      arrs <- mapM (simpleCopyToHost bk) rs
      return $! repackAcc (undefined::Acc a) arrs
 
@@ -395,20 +400,20 @@ instance (SimpleBackend b) => Backend (LiftSimpleBackend b) where
      let (repr :: Sug.ArrRepr a) = Sug.fromArr arr
          (ty,accArr,_::Phantom a) = unpackArray repr
      remt <- simpleCopyToDevice b accArr
-     return [remt]
-     
-  copyToPeer (LiftSimpleBackend b) rs = 
-    mapM (simpleCopyToPeer b) rs
+     return $! Remote [remt]
 
-  waitRemote (LiftSimpleBackend b) rs = 
+  copyToPeer (LiftSimpleBackend b) (Remote rs) = do
+    ls <- mapM (simpleCopyToPeer b) rs
+    return $! Remote ls
+
+  waitRemote (LiftSimpleBackend b) (Remote rs) = 
     mapM_ (simpleWaitRemote b) rs
-
-  useRemote (LiftSimpleBackend b) rs = do
+  
+  useRemote (LiftSimpleBackend b) (Remote rs) = do
     aexps <- mapM (simpleUseRemote b) rs
     error "useRemote/LiftSimpleBackend: this needs to be finished"
 
   separateMemorySpace (LiftSimpleBackend b) = simpleSeparateMemorySpace b
-
 
 -- Can't use GeneralizedNewtypeDeriving directly here due to associated types:
 instance SimpleBackend b => SimpleBackend (LiftSimpleBackend b) where
@@ -433,7 +438,6 @@ instance SimpleBackend b => SimpleBackend (LiftSimpleBackend b) where
   -- waitRemote (LiftSimpleBackend b) r   = waitRemote b r
   -- useRemote (LiftSimpleBackend b) r    = useRemote b r
   -- separateMemorySpace (LiftSimpleBackend b) = separateMemorySpace b
-
 
 {--
 -- | A bag of bits that can be serialised to disk
@@ -464,7 +468,6 @@ flushToDisk (InMemory path gen) = do
 ----------------------------------------------------------------------------------------------------
 
 -- Brainstorming other interfaces:
-
 
 -- | A portable backend is one that can compile programs to portable binaries,
 -- which can be loaded and run without reference to the original `Acc` code.
@@ -519,20 +522,30 @@ newtype MinimalBackend = MinimalBackend (forall a . (Arrays a) => AST.Acc a -> a
 instance Show MinimalBackend where
   show _ = "<MinimalBackend based on run function>"
 
+data SomeArrays = forall a . Arrays a => SomeArrays a
+
 -- | A Backend class instance based on MinimalBackend is limited.  It cannot separate
 -- out compile and copy time, and it cannot store "Blob" objects on disk.
 instance Backend MinimalBackend where
-  type Remote MinimalBackend r = r
-  type Blob MinimalBackend r   = ()
-  compile _ _ _ = return ()
-  compileFun1 _ _ _ = return ()
-  runRaw (MinimalBackend runner) acc _mblob = 
-    return $! runner acc
+--  type InternalRemote MinimalBackend = SomeArrays
+  type InternalRemote MinimalBackend = MinimalBackend
+  type InternalBlob   MinimalBackend = ()
+  compile _ _ _ = return (Blob ())
+  compileFun1 _ _ _ = return (Blob ())
+
+-- WORK IN PROGRESS:
+{-    
+  -- runRaw (MinimalBackend runner) acc _mblob =  do
+  --   let x = runner acc
+  --   return $! Remote (SomeArrays x)
+  runRaw mb acc _mblob =  do
+    return $! Remote mb
 
   copyToHost _ rem = return $! rem
   copyToDevice _ a = return $! a
   copyToPeer _ rem = return $! rem
 
   waitRemote _ _ = return ()
-  useRemote _ r = return $! phase0 (A.use r)
   separateMemorySpace _ = False  -- This is pretty bogus.
+-}
+--  useRemote _ (Remote (MinimalBackend runner)) = return $! phase0 (A.use arr)
