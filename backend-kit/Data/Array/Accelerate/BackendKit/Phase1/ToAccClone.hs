@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns, GADTs, ScopedTypeVariables, CPP, TupleSections, PatternGuards #-}
+{-# LANGUAGE ImpredicativeTypes #-}
 
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 -- {-# ANN module "HLint: ignore Eta reduce" #-}
@@ -173,7 +174,10 @@ convertAcc (OpenAcc cacc) =
 --    resty = getAccTypePre eacc 
     dummyty = S.TTuple []
   in
-  case eacc of 
+  case eacc of
+    _ -> error "FINISHME -- fix a GHC 7.8 only type error"
+{-                               
+    
     Alet acc1 acc2 -> 
        do a1     <- convertAcc acc1
           (v,a2) <- withExtendedArrayEnv "aLt"$ 
@@ -259,6 +263,7 @@ convertAcc (OpenAcc cacc) =
                                <$> convertFun2 f
                                <*> convertExp  e 
                                <*> convertAcc  acc
+
     Scanl' f e acc -> T.Scanl' (getAccTypePre eacc)
                                <$> convertFun2 f
                                <*> convertExp  e 
@@ -306,7 +311,7 @@ convertAcc (OpenAcc cacc) =
                  <*> return (convertBoundary bndy1) <*> convertAcc acc1
                  <*> return (convertBoundary bndy2) <*> convertAcc acc2
 
-
+-}
     -- TODO: Transform
 
 
@@ -681,9 +686,10 @@ convertPrimApp p arg =
                else error$"SimpleConverter.convertPrimApp: wrong number of arguments to prim "
                     ++show newprim++": "++ show ls
    arity   = S.primArity newprim
-   newprim = op p 
+   newprim = op p
+   op :: PrimFun (a -> b) -> S.Prim 
    op pr   = 
-    case pr of 
+    case pr of
       PrimAdd _ty -> S.NP S.Add
       PrimSub _ty -> S.NP S.Sub
       PrimMul _ty -> S.NP S.Mul
@@ -741,7 +747,6 @@ convertPrimApp p arg =
 
       PrimOrd   -> S.OP S.Ord
       PrimChr   -> S.OP S.Chr
-
       PrimBoolToInt      -> S.OP S.BoolToInt
       PrimFromIntegral _ _ -> S.OP S.FromIntegral
 
