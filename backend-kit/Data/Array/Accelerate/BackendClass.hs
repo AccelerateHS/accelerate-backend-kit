@@ -4,6 +4,9 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+-- TEMP/FIXME!! --
+{-# LANGUAGE AllowAmbiguousTypes #-}
+
 module Data.Array.Accelerate.BackendClass (
   Backend(..), SomeBackend(SomeBackend),
   MinimalBackend(..),
