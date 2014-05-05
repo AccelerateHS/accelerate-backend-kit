@@ -20,12 +20,12 @@ module Data.Array.Accelerate.BackendClass (
 ) where
 
 -- friends
-import           Data.Array.Accelerate                          as A
+import           Data.Array.Accelerate                          as A hiding ((++))
 import qualified Data.Array.Accelerate.AST                      as AST
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import           Data.Array.Accelerate.Trafo (convertAccWith, Phase(..))
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as SACC
--- import           Data.Array.Accelerate.Trafo.Sharing (convertAcc)
+import           Data.Array.Accelerate.Trafo.Sharing (convertAcc)
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1)
 import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc, unpackArray, Phantom(..))
 
@@ -55,8 +55,7 @@ import           Data.ByteString.Lazy                   as B
 --   Optionally takes a name associated with the program.
 runWith :: (Backend b, Arrays a) => b -> DebugName -> Acc a -> a
 runWith bkend nm prog = unsafePerformIO $ do 
---  let cvtd = convertAcc True True True prog
-  let cvtd = phase0 prog
+  let cvtd = convertAcc True True True prog
   remote <- runRaw bkend cvtd Nothing 
   copyToHost bkend remote
 
@@ -73,8 +72,7 @@ runTimed :: (Backend b, Arrays a) => b -> DebugName -> Phase -> Acc a -> IO (Acc
 runTimed bkend nm config prog = do
   (rand::Word64) <- randomIO
   t0     <- getCurrentTime
---  let cvtd = phase0 prog
-  let cvtd = convertAccWith config prog
+  let cvtd = phase0 prog
       path = ".blob_"++fromMaybe "" nm++"_"++show rand
   blob   <- compile bkend path cvtd
   t1     <- getCurrentTime
