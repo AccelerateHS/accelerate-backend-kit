@@ -992,7 +992,7 @@ aexpFreeVars ae =
     Stencil  f1 _bound v -> S.insert v $ fn1 f1
     Stencil2 f2 _b1 v1 _b2 v2 -> S.insert v1 $ S.insert v2 $ fn2 f2
 
--- | Alpha-rename all variables to fresh names.
+-- | Alpha-rename all bound variables to fresh names.
 freshenExpNames :: Exp -> GensymM Exp
 freshenExpNames = lp M.empty
   where
@@ -1019,10 +1019,27 @@ freshenExpNames = lp M.empty
       -----------------------------------
       -- Added by JS (6 may 2014) 
       -- Figure out what this should do with the c,b functions ... 
-      EWhile c b e        -> undefined -- EIndex 
+      -- What is the purpose of this function? 
+      -- I assume this provides globally unique identifiers, as opposed 
+      -- to potentially only locally unique. This is preparation to future transformations 
+      -- that may for example turn lets into varaiable declarations in a larger scope. 
+      -- In this case, I should make sure to rename all variables in While as well. 
+      EWhile (Lam1 (v1,t1) c)  
+             (Lam1 (v2,t2) b) e -> 
+               do v1' <- genUniqueWith (show v1) 
+                  let env1 = M.insert v1 v1' env 
+                  c' <- lp env1 c
+                  v2' <- genUniqueWith (show v2)
+                  let env2 = M.insert v1 v1' env1  
+                  b' <- lp env1 b
+                  e' <- lp env2 e
+                  return $ EWhile (Lam1 (v1',t1) c')  
+                                  (Lam1 (v2',t2) b') 
+                                  e'
  
 
--- JS: Is this used for cost estimates ? 
+-- JS: This is only used for printing out information about expressions. 
+--     Some debug info.. 
 -- | How many nodes are contained in an Exp?
 expASTSize :: Exp -> Int
 expASTSize ex =
