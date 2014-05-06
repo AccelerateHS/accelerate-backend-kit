@@ -401,7 +401,16 @@ convertExp e =
     FromIndex {} -> error "ToAccClone.hs: TODO: handle FromIndex"
     LinearIndex {} -> error "ToAccClone.hs: TODO: handle LinearIndex"
     Intersect {} -> error "ToAccClone.hs: TODO: handle Intersect"
---    Iterate {}  -> error "ToAccClone.hs: TODO: handle Iterate"
+    
+    -- Compiles. (I did not expect that) 
+    While c f initial -> do  initial' <- convertExp initial 
+                             c' <- convertFun1 c 
+                             f' <- convertFun1 f 
+                             return $ T.EWhile c' f' initial' 
+    
+   -- JS:  Iterate is nolonger present in Accelerate-0.15 
+   --      Instead there is a while 
+-- Iterate {}  -> error "ToAccClone.hs: TODO: handle Iterate"
 --    ForeignExp {}  -> error "ToAccClone.hs: TODO: handle ForeignExp"
 
     Cond c t ex -> T.ECond <$> convertExp c 

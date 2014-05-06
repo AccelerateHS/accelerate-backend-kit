@@ -107,6 +107,9 @@ data Exp =
   | EIndexScalar (AExp Type) Exp 
   | EShape (AExp Type)
   | EShapeSize Exp 
+  -----------------------------------
+  -- Added by JS (6 may 2014) 
+  | EWhile  (Fun1 Exp) (Fun1 Exp) Exp -- what goes here ? 
  deriving (Read,Show,Eq,Generic)
 
 --------------------------------------------------------------------------------
@@ -148,6 +151,9 @@ convertExps expr =
     EIndexConsDynamic e1 e2 -> error "dynamic index manipulation not permitted in SimpleAcc IR"
     EIndexHeadDynamic ex    -> error "dynamic index manipulation not permitted in SimpleAcc IR"
     EIndexTailDynamic ex    -> error "dynamic index manipulation not permitted in SimpleAcc IR"
+    -----------------------------------
+    -- Added by JS (6 may 2014) 
+    EWhile c b e  -> S.EWhile (convertFun1 c) (convertFun1 b) (f e)    
 
 convertFun1 :: S.Fun1 Exp -> S.Fun1 S.Exp
 convertFun1 (Lam1 bnd bod) = Lam1 bnd $ convertExps bod

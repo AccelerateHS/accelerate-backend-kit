@@ -276,6 +276,9 @@ data Fun1 a = Lam1 (Var,Type) a
 data Fun2 a = Lam2 (Var,Type) (Var,Type) a
  deriving (Read,Show,Eq,Ord,Generic)
 
+-- EVr  is a variable bound by a let, what about those bound by a Lam. 
+--   How do they appear in the Body of a function. (Assume as EVr) 
+
 -- | Scalar expressions
 data Exp = 
     EConst Const              -- ^ Constant.        
@@ -294,6 +297,9 @@ data Exp =
       projlen        :: Int,  -- ^ how many scalars to extract
       tupexpr        :: Exp   -- ^ tuple value to extract from
     } -- ^ Project a consecutive series of fields from a tuple.
+  -----------------------------------
+  -- Added by JS (6 may 2014) 
+  | EWhile (Fun1 Exp) (Fun1 Exp) Exp 
  deriving (Read,Show,Eq,Ord,Generic)
 
 -- | Trivial expressions.
@@ -835,6 +841,12 @@ recoverExpType env exp =
                                    mkTTuple$ reverse $ take len $ drop indR $ reverse ls
         -- Indices are represented as Tuples:
         EIndex es             -> mkTTuple $ map (recoverExpType env) es
+        -----------------------------------
+        -- Added by JS (6 may 2014) 
+        -- Following the lead of ECond case. This is not a type checker, just 
+        -- a 'rediscoverer'. 
+        EWhile c b e          -> recoverExpType env e 
+        
  where 
    arrayType vr = 
      case M.lookup vr env of 
@@ -936,6 +948,15 @@ expFreeVars ex =
     ETuple els          -> fs els    
     EPrimApp _ _ els    -> fs els     
     EIndex els          -> fs els 
+    -----------------------------------
+    -- Added by JS (6 may 2014) 
+    -- I need to learn what this means for the two functions in While 
+    EWhile (Lam1 (v1,_) c) (Lam1 (v2,_) b) e  
+                        -> S.unions [f e, fb v1 c, fb v2 c]  
+  where 
+    -- fb: freeInBody 
+    fb v e = let free_vars_set = expFreeVars e 
+             in  S.delete v free_vars_set 
 
 -- | Retrieve the set of variables that occur free in an `AExp`, including both
 -- scalar and array variables.
@@ -995,8 +1016,13 @@ freshenExpNames = lp M.empty
       ETuple els          -> ETuple       <$> mapM f els
       EPrimApp t p els    -> EPrimApp t p <$> mapM f els
       EIndex els          -> EIndex       <$> mapM f els
+      -----------------------------------
+      -- Added by JS (6 may 2014) 
+      -- Figure out what this should do with the c,b functions ... 
+      EWhile c b e        -> undefined -- EIndex 
+ 
 
-
+-- JS: Is this used for cost estimates ? 
 -- | How many nodes are contained in an Exp?
 expASTSize :: Exp -> Int
 expASTSize ex =
@@ -1013,6 +1039,10 @@ expASTSize ex =
     ETuple els          -> 1 + sum (map f els)
     EPrimApp _ _ els    -> 1 + sum (map f els)
     EIndex els          -> 1 + sum (map f els)
+    -----------------------------------
+    -- Added by JS (6 may 2014)
+    -- Cheating for now. Size of functions are probably also important.  
+    EWhile c b e        -> 1 + f e 
 
 aexpASTSize :: AExp -> Int
 aexpASTSize ae =
@@ -1079,6 +1109,10 @@ substExp old new target = loop target
       ETuple els          -> ETuple       (map loop els)
       EPrimApp t p els    -> EPrimApp t p (map loop els)
       EIndex els          -> EIndex       (map loop els)
+      -----------------------------------
+      -- Added by JS (6 may 2014) 
+      -- Woa! Again. what to do with c b 
+      EWhile c b e        -> EWhile c b (loop e)
 
 
 -- Lifting these here from Helpers.hs to avoid import cycles:
