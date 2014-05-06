@@ -99,7 +99,7 @@ instance Eq AccProg where
   
 -- | ALL test programs.
 allProgs :: [TestEntry]
-allProgs = generateOnlyProgs ++ unitProgs ++ otherProgs
+allProgs = generateOnlyProgs ++ unitProgs ++ otherProgs ++ whileProgs
 
 -- | `allProgs` organized by name for easy lookup.
 allProgsMap :: M.Map String TestEntry
@@ -159,6 +159,14 @@ otherProgs =
   go "p20a" p20a, go "p20b" p20b, go "p20c" p20c
   ]
 
+-- Program that use while 
+whileProgs :: [TestEntry]
+whileProgs = 
+  [
+  go "p30a" p30a
+  ]                
+
+--  
 makeTestEntry :: forall a . (Show a, Arrays a) => String -> Acc a -> TestEntry
 makeTestEntry = go
 
@@ -926,6 +934,15 @@ p20c = let xs   = use$ fromList (Z :. (2::Int) :. (5::Int)) [1..10::Float]
 -- Testing STENCILs:
 
 -- TODO
+
+--------------------------------------------------------------------------------
+-- Added by JS (6 may 2014) 
+-- Testing While 
+p30a :: Acc (Array DIM1 Int) 
+p30a = generate (index1 1) (\_ -> while (\a -> a <* constant 20) 
+                                        (\a -> a + 1) (constant 0)) 
+
+
 
 --------------------------------------------------------------------------------
 -- Let's print matrices nicely.

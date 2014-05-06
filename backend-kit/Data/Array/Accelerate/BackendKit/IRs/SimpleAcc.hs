@@ -1128,8 +1128,11 @@ substExp old new target = loop target
       EIndex els          -> EIndex       (map loop els)
       -----------------------------------
       -- Added by JS (6 may 2014) 
-      -- Woa! Again. what to do with c b 
-      EWhile c b e        -> EWhile c b (loop e)
+      -- Naive attempt
+      EWhile (Lam1 (v1,t1) c) 
+             (Lam1 (v2,t2) b) e 
+               -> EWhile (Lam1 (v1,t1) (loop c)) 
+                         (Lam1 (v1,t1) (loop b)) (loop e)
 
 
 -- Lifting these here from Helpers.hs to avoid import cycles:

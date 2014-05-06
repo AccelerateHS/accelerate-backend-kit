@@ -402,6 +402,8 @@ convertExp e =
     LinearIndex {} -> error "ToAccClone.hs: TODO: handle LinearIndex"
     Intersect {} -> error "ToAccClone.hs: TODO: handle Intersect"
     
+    -----------------------------------
+    -- Added by JS (6 may 2014) 
     -- Compiles. (I did not expect that) 
     While c f initial -> do  initial' <- convertExp initial 
                              c' <- convertFun1 c 
