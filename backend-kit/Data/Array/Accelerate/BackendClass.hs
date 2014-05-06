@@ -240,7 +240,7 @@ class Show b => SimpleBackend b where
   -- 
   -- For `SimpleBackend`, SimpleRemote represents ONE logical array.  It cannot
   -- represent a tuple of arrays (of tuples).
-  type SimpleRemote b
+  data SimpleRemote b :: * 
 
   -- | A `Blob` as a thing which /may/ help speed up or skip future
   -- computations. For example, this may represent:
@@ -250,7 +250,7 @@ class Show b => SimpleBackend b where
   --   - an optimised and/or annotated AST containing backend-specific execution
   --     parameters
   --
-  type SimpleBlob b
+  data SimpleBlob b :: * 
 
   -------------------------- Compiling and Running -------------------------------
 
@@ -370,7 +370,7 @@ newtype LiftSimpleBackend b = LiftSimpleBackend b deriving (Show, Eq)
 -- data SimpleBlobPair    b _a = SimpleBlobPair !(SimpleBlob b) !(SACC.Prog ())
 --  type Remote (LiftSimpleBackend b) = (SimpleRemotesList b)
 --  type Blob (LiftSimpleBackend b)   = (SimpleBlobPair b)
-
+{- 
 instance (SimpleBackend b) => Backend (LiftSimpleBackend b) where
   data Remote (LiftSimpleBackend b) _r = LSB_Remote ![SimpleRemote b]
   data Blob   (LiftSimpleBackend b) _r = LSB_Blob !(SimpleBlob b) !(SACC.Prog ())
@@ -413,8 +413,10 @@ instance (SimpleBackend b) => Backend (LiftSimpleBackend b) where
 
 -- Can't use GeneralizedNewtypeDeriving directly here due to associated types:
 instance SimpleBackend b => SimpleBackend (LiftSimpleBackend b) where
-  type SimpleRemote (LiftSimpleBackend b) = SimpleRemote b
-  type SimpleBlob (LiftSimpleBackend b)   = SimpleBlob b 
+  data SimpleRemote (LiftSimpleBackend b) = SimpleRemote b
+  data SimpleBlob (LiftSimpleBackend b)   = SimpleBlob b 
+  --type SimpleRemote (LiftSimpleBackend b) = SimpleRemote b
+  --type SimpleBlob (LiftSimpleBackend b)   = SimpleBlob b 
   simpleCompile (LiftSimpleBackend b) path acc = simpleCompile b path acc
   simpleRunRaw (LiftSimpleBackend b) nm acc mb = simpleRunRaw b nm acc mb
   simpleCopyToHost (LiftSimpleBackend b) r     = simpleCopyToHost b r 
@@ -434,7 +436,7 @@ instance SimpleBackend b => SimpleBackend (LiftSimpleBackend b) where
   -- waitRemote (LiftSimpleBackend b) r   = waitRemote b r
   -- useRemote (LiftSimpleBackend b) r    = useRemote b r
   -- separateMemorySpace (LiftSimpleBackend b) = separateMemorySpace b
-
+-} 
 
 {--
 -- | A bag of bits that can be serialised to disk

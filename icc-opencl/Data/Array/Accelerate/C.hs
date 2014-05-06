@@ -2,6 +2,8 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+
+
 -- CODE used here AND in Cilk.hs... hence all this CPP garbage:
 
 #ifndef MODNAME
@@ -40,6 +42,9 @@ import           Data.Array.Accelerate.BackendKit.CompilerPipeline
 
 import Data.Time.Clock  (getCurrentTime,diffUTCTime)
 import Control.Exception  (evaluate)
+
+import qualified Data.Array.Accelerate.BackendKit.IRs.GPUIR     as G
+import           Data.Array.Accelerate.BackendKit.IRs.Metadata   (ArraySizeEstimate, FreeVars)
 --------------------------------------------------------------------------------
 
 #if 0 
@@ -90,7 +95,7 @@ defaultBackend :: BKEND
 defaultBackend = BKEND
 
 -- | Arrays returned by the generated code.
-newtype CRemote a = CRemote [SA.AccArray]
+-- newtype CRemote a = CRemote [SA.AccArray]
 -- FIXME: This should really be left in the ForeignPtr state and should only come
 -- back to Haskell when the copyToHost is performed...
 
@@ -99,64 +104,90 @@ newtype CRemote a = CRemote [SA.AccArray]
 -- | C data is not really very "remote", it just lives on the C heap.
 -- newtype CRemote a = ForeignPtr a 
 instance Backend BKEND where
-  type Remote BKEND a = CRemote a
-  type Blob BKEND a = J.CBlob 
+  data Remote BKEND a = CRemote [SA.AccArray]
+  data Blob BKEND a = Blob !(G.GPUProg FreeVars) !FilePath -- J.CBlob 
+  --type Remote BKEND a = CRemote a
+  --type Blob BKEND a = J.CBlob 
 
-  compile _ path acc = J.compileToFile PARMODE path (phase2$ phase1 acc)
-
+  compile _ path acc = jBlobConv =<< J.compileToFile PARMODE path (phase2$ phase1 acc)
+    where 
+     jBlobConv (J.CBlob g f) = return (Blob g f)
   compileFun1 = error "C/Cilk backend: compileFun1 not implemented yet."
 
   runRaw b acc Nothing = do
     blob <- compile b "NAMEGOESHERE" acc
     runRaw b acc (Just blob)
   runRaw b acc (Just blob) =
-    do arrs <- J.rawRunIO blob
+    do arrs <- J.rawRunIO (jBlobConv blob)
        return$ CRemote arrs
+     where
+       jBlobConv (Blob g f) = J.CBlob g f 
 
 --  runFun = error "CBackend: runFun not implemented yet."
 
-  copyToHost = hostCopy
-  copyToDevice _b accA = deviceCopy accA
+  -- copyToHost = hostCopy 
+  copyToHost _ (CRemote arrays) =
+    return$
+      repackAcc (undefined :: Acc a) arrays
+
+  -- copyToDevice _b accA = deviceCopy accA
+  copyToDevice b acc = do
+    let -- repr :: Sug.ArrRepr a
+        repr = Sug.fromArr acc
+    -- FIXME: Seems like unpackArray can't really handle an array of tuples.
+    -- You cannot bind scoped type variable ‘a’ 
+    --let (_,arr,_::Phantom a) = unpackArray repr
+    let (_,arr,_) = unpackArray repr :: (S.Type, S.AccArray, Phantom a)
+        res :: Remote BKEND a
+        res = CRemote [arr]
+    return res 
   copyToPeer _ x = return x
 
   -- No waiting to be done!
   waitRemote _ _ = return ()
-  useRemote _ rem = useRem rem
-  
+  -- useRemote _ rem = useRem rem
+  useRemote _ rem@(CRemote arrays) =
+    --  return (AST.Use$ repackAcc (undefined :: Acc a) arrays)
+    error "useRemote unfinished for C/Cilk backend instance"
+
   separateMemorySpace _ = False
 --  compilesToDisk _ = True
 
 -- For now copying just means repacking
-hostCopy :: (Sug.Arrays a) => BKEND -> CRemote a -> IO a
-hostCopy _ (CRemote arrays) =
-  return$
-    repackAcc (undefined :: Acc a) arrays
+-- hostCopy :: (Sug.Arrays a) => BKEND -> CRemote a -> IO a
+-- hostCopy _ (CRemote arrays) =
+--   return$
+--     repackAcc (undefined :: Acc a) arrays
 
 
-deviceCopy :: forall a . (Sug.Arrays a) => a -> IO (Remote BKEND a)
-deviceCopy acc = do
-  let repr :: Sug.ArrRepr a
-      repr = Sug.fromArr acc
-  -- FIXME: Seems like unpackArray can't really handle an array of tuples.
-  let (_,arr,_::Phantom a) = unpackArray repr
-      res :: Remote BKEND a
-      res = CRemote [arr]
-  return res
+-- deviceCopy :: forall a . (Sug.Arrays a) => a -> IO (Remote BKEND a)
+-- deviceCopy acc = do
+--   let repr :: Sug.ArrRepr a
+--       repr = Sug.fromArr acc
+--   -- FIXME: Seems like unpackArray can't really handle an array of tuples.
+--   let (_,arr,_::Phantom a) = unpackArray repr
+--       res :: Remote BKEND a
+--       res = CRemote [arr]
+--   return res
 
-useRem :: forall a . (Sug.Arrays a) => Remote BKEND a -> IO (AST.Acc a)
-useRem rem@(CRemote arrays) =
---  return (AST.Use$ repackAcc (undefined :: Acc a) arrays)
-  error "useRemote unfinished for C/Cilk backend instance"
+-- useRem :: forall a . (Sug.Arrays a) => Remote BKEND a -> IO (AST.Acc a)
+-- useRem rem@(CRemote arrays) =
+-- --  return (AST.Use$ repackAcc (undefined :: Acc a) arrays)
+--   error "useRemote unfinished for C/Cilk backend instance"
 
 
 --------------------------------------------------------------------------------
 
 -- | An instance for the less-typed AST backend interface.
 instance SimpleBackend BKEND where
-  type SimpleRemote BKEND = CRemote SA.AccArray
-  type SimpleBlob BKEND = J.CBlob 
-  
-  simpleCompile _ path prog = J.compileToFile PARMODE path (phase2 prog)
+  data SimpleRemote BKEND = SCRemote [SA.AccArray]
+  data SimpleBlob BKEND = SBlob !(G.GPUProg FreeVars) !FilePath -- J.CBlob 
+  -- type SimpleRemote BKEND = CRemote SA.AccArray
+  -- type SimpleBlob BKEND = J.CBlob 
+    
+
+  simpleCompile _ path prog = convBlob =<< J.compileToFile PARMODE path (phase2 prog)
+    where convBlob (J.CBlob g f) = return (SBlob g f) 
   -- simpleCompileFun1
 
   simpleRunRaw b mname prog Nothing = do
@@ -170,24 +201,25 @@ instance SimpleBackend BKEND where
        dbgPrint 1 $"COMPILETIME_phase2: "++show(diffUTCTime t2 t1)
        -- TODO: need to pass these times around if we want to account for all the
        -- stuff inbetween the big pieces.
-       arrs <- J.rawRunIO blob
+       arrs <- J.rawRunIO (convBlob blob)
        when (dbg >= 1 && length arrs /= length (S.resultNames (S.progResults prog))) $ 
          error$ "simpleRunRaw, internal error, expected results "++show (S.resultNames (S.progResults prog))
                 ++", but received back "++ show (length arrs)++" arrays."
-       return$ [ CRemote [arr] | arr <- arrs ]
-
+       return$ [ SCRemote [arr] | arr <- arrs ]
+      where 
+        convBlob (SBlob g f) = J.CBlob g f 
   -- simpleRunRawFun1
 
   -- These do EFFECTIVELY NOTHING for now:
-  simpleCopyToHost _b (CRemote [arr]) = return arr
-  simpleCopyToDevice _b arr = return (CRemote [arr])
+  simpleCopyToHost _b (SCRemote [arr]) = return arr
+  simpleCopyToDevice _b arr = return (SCRemote [arr])
   simpleCopyToPeer _ x = return x
 
-  simpleUseRemote _ (CRemote [arr]) = return (S.Use arr)
+  simpleUseRemote _ (SCRemote [arr]) = return (S.Use arr)
   simpleWaitRemote _ _ = return () -- already copied!
   simpleSeparateMemorySpace _ = False
 
-
+ 
 -- TODO: Need to force beyond WHNF probably.
 evaluateAccClone = evaluate
 evaluateSimpleAcc = evaluate
