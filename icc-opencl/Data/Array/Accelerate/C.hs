@@ -90,7 +90,7 @@ defaultBackend :: BKEND
 defaultBackend = BKEND
 
 -- | Arrays returned by the generated code.
-newtype CRemote a = CRemote [SA.AccArray]
+-- newtype CRemote a = CRemote [SA.AccArray]
 -- FIXME: This should really be left in the ForeignPtr state and should only come
 -- back to Haskell when the copyToHost is performed...
 
@@ -99,19 +99,21 @@ newtype CRemote a = CRemote [SA.AccArray]
 -- | C data is not really very "remote", it just lives on the C heap.
 -- newtype CRemote a = ForeignPtr a 
 instance Backend BKEND where
-  type Remote BKEND a = CRemote a
-  type Blob BKEND a = J.CBlob 
+  data Remote BKEND a = CRemote [SA.AccArray]
+  data Blob BKEND a   = CBlob J.CBlob 
 
-  compile _ path acc = J.compileToFile PARMODE path (phase2$ phase1 acc)
+  compile _ path acc = 
+     fmap CBlob $ 
+     J.compileToFile PARMODE path (phase2$ phase1 acc)
 
   compileFun1 = error "C/Cilk backend: compileFun1 not implemented yet."
 
   runRaw b acc Nothing = do
     blob <- compile b "NAMEGOESHERE" acc
     runRaw b acc (Just blob)
-  runRaw b acc (Just blob) =
-    do arrs <- J.rawRunIO blob
-       return$ CRemote arrs
+  runRaw b acc (Just (CBlob blob)) =
+      do arrs <- J.rawRunIO blob
+         return$ CRemote arrs
 
 --  runFun = error "CBackend: runFun not implemented yet."
 
@@ -127,7 +129,7 @@ instance Backend BKEND where
 --  compilesToDisk _ = True
 
 -- For now copying just means repacking
-hostCopy :: (Sug.Arrays a) => BKEND -> CRemote a -> IO a
+hostCopy :: (Sug.Arrays a) => BKEND -> Remote BKEND a -> IO a
 hostCopy _ (CRemote arrays) =
   return$
     repackAcc (undefined :: Acc a) arrays
@@ -151,10 +153,11 @@ useRem rem@(CRemote arrays) =
 
 --------------------------------------------------------------------------------
 
+
 -- | An instance for the less-typed AST backend interface.
 instance SimpleBackend BKEND where
-  type SimpleRemote BKEND = CRemote SA.AccArray
-  type SimpleBlob BKEND = J.CBlob 
+  type SimpleRemote BKEND = [SA.AccArray]
+  type SimpleBlob BKEND   = J.CBlob
   
   simpleCompile _ path prog = J.compileToFile PARMODE path (phase2 prog)
   -- simpleCompileFun1
@@ -174,16 +177,16 @@ instance SimpleBackend BKEND where
        when (dbg >= 1 && length arrs /= length (S.resultNames (S.progResults prog))) $ 
          error$ "simpleRunRaw, internal error, expected results "++show (S.resultNames (S.progResults prog))
                 ++", but received back "++ show (length arrs)++" arrays."
-       return$ [ CRemote [arr] | arr <- arrs ]
+       return$ [ [arr] | arr <- arrs ]
 
-  -- simpleRunRawFun1
+  -- simpleRunRawFun1 -- FIXME/TODO
 
   -- These do EFFECTIVELY NOTHING for now:
-  simpleCopyToHost _b (CRemote [arr]) = return arr
-  simpleCopyToDevice _b arr = return (CRemote [arr])
+  simpleCopyToHost _b [arr] = return arr
+  simpleCopyToDevice _b arr = return [arr]
   simpleCopyToPeer _ x = return x
 
-  simpleUseRemote _ (CRemote [arr]) = return (S.Use arr)
+  simpleUseRemote _ [arr] = return (S.Use arr)
   simpleWaitRemote _ _ = return () -- already copied!
   simpleSeparateMemorySpace _ = False
 
