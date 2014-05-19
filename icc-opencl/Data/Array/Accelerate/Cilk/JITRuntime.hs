@@ -267,8 +267,8 @@ loadAndRunSharedObj :: G.GPUProg a -> FilePath -> IO [S.AccArray]
 loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv, G.progType } soName =
   let useBinds   = getUseBinds prog 
       allResults = standardResultOrder progResults
-  in
-  withDL soName [RTLD_LOCAL,RTLD_LAZY] $ \ dl ->  do
+
+  in withDL soName [RTLD_LOCAL, RTLD_LAZY] $ \ dl ->  do 
     car  <- dlsym dl "CreateArgRecord"
     dar  <- dlsym dl "DestroyArgRecord"
     main <- dlsym dl "MainProg"

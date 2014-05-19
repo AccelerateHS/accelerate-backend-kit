@@ -291,7 +291,8 @@ emitPrimApp e outTy prim args =
               Neg -> unary "-"
               Abs -> unary "abs"
               -- Warning, potential for code duplication here.  Should ensure that args are trivial:
-              Sig ->  arg E.&& (arg E.> 0) E.&& (- (arg E.< 0))
+              Sig -> (arg E.> 0) E..| (- (arg E.< 0))   
+              -- arg E.&& (arg E.> 0) E.&& (- (arg E.< 0))
     IP ip -> case ip of
               -- This uses the stdlib.h div function, not available in OpenCL:
               -- Quot -> (binfun "div") `dot` (constant "quot")
