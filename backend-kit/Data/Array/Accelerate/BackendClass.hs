@@ -132,7 +132,7 @@ class Show b => Backend b where
           -> FilePath
           -> AST.Acc a
           -> IO (Blob b a)
-or functions Once compiled, the functions can
+  -- | For functions Once compiled, the functions can
   -- be invoked repeatedly on the device side without any additional work on the
   -- host.
   --
