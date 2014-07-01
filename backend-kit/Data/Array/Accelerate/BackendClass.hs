@@ -123,7 +123,7 @@ class Show b => Backend b where
 
   -------------------------- Compiling and Running -------------------------------
 
-  -- | Compile an already converted/optimized Accelerate program into a binary
+  -- | Compile an already conerted/optimized Accelerate program into a binary
   -- blob that can be executed.  Takes a /suggested/ FilePath for where to put
   -- the blob IF it must be written to disk.
   --
@@ -132,8 +132,7 @@ class Show b => Backend b where
           -> FilePath
           -> AST.Acc a
           -> IO (Blob b a)
-
-  -- | Similar to `compile` but for functions Once compiled, the functions can
+or functions Once compiled, the functions can
   -- be invoked repeatedly on the device side without any additional work on the
   -- host.
   --
