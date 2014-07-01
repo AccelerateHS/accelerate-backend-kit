@@ -1,0 +1,3 @@
+[submodule "simple-cuda"]
+	path = simple-cuda
+	url = git@github.com:AccelerateHS/accelerate-cuda.git
