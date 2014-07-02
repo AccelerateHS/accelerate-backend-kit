@@ -4,7 +4,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Data.Array.Accelerate.BackendClass {-(
+module Data.Array.Accelerate.BackendClass (
   Backend(..), SomeBackend(SomeBackend),
   MinimalBackend(..),
   SimpleBackend(..), 
@@ -17,22 +17,22 @@ module Data.Array.Accelerate.BackendClass {-(
   -- PortableBackend(..), CLibraryBackend(..)
 
   Phantom(Phantom)
-)-} where
+) where
 
 -- friends
 import           Data.Array.Accelerate                          as A hiding ((++))
 import qualified Data.Array.Accelerate.AST                      as AST
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
-import           Data.Array.Accelerate.Trafo (convertAccWith, Phase(..))
-import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as SACC
-import           Data.Array.Accelerate.Trafo.Sharing (convertAcc)
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1)
+import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as SACC
 import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc, unpackArray, Phantom(..))
+import           Data.Array.Accelerate.Trafo (Phase(..))
+import           Data.Array.Accelerate.Trafo.Sharing (convertAcc)
 
-import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import Data.Char (isAlphaNum)
-import Data.Word
 import Data.Maybe (fromMaybe)
+import Data.Time.Clock (getCurrentTime, diffUTCTime)
+import Prelude hiding (rem)
 import System.IO.Unsafe (unsafePerformIO)
 import System.Random (randomIO)
 
@@ -54,14 +54,14 @@ import           Data.ByteString.Lazy                   as B
 -- | Run a complete Accelerate program through the front-end, and the given backend.
 --   Optionally takes a name associated with the program.
 runWith :: (Backend b, Arrays a) => b -> DebugName -> Acc a -> a
-runWith bkend nm prog = unsafePerformIO $ do 
+runWith bkend _nm prog = unsafePerformIO $ do 
   let cvtd = convertAcc True True True prog
   remote <- runRaw bkend cvtd Nothing 
   copyToHost bkend remote
 
 -- | Version of `runWith` that uses a `SimpleBackend` instance instead.
 runWithSimple :: (SimpleBackend b, Arrays a) => b -> DebugName -> Acc a -> a
-runWithSimple bkend nm prog = unsafePerformIO $ do 
+runWithSimple bkend _nm prog = unsafePerformIO $ do 
   let cvtd = phase1 $ phase0 prog  
   rems <- simpleRunRaw bkend Nothing cvtd Nothing 
   accArrs <- mapM (simpleCopyToHost bkend) rems
@@ -69,7 +69,7 @@ runWithSimple bkend nm prog = unsafePerformIO $ do
 
 -- | A version of `runWith` that also returns timing information.
 runTimed :: (Backend b, Arrays a) => b -> DebugName -> Phase -> Acc a -> IO (AccTiming, a)
-runTimed bkend nm config prog = do
+runTimed bkend nm _config prog = do
   (rand::Word64) <- randomIO
   t0     <- getCurrentTime
   let cvtd = phase0 prog
@@ -169,7 +169,7 @@ class Show b => Backend b where
 
   -- The default implementation is inefficient, because it potentially issues a new
   -- compile every time the function is invoked.  It throws away the input blob.
-  runRawFun1 b afun mblob rem = do 
+  runRawFun1 b afun _mblob rem = do 
     inp <- useRemote b rem
     let applied = AST.Apply afun inp
     runRaw b (AST.OpenAcc applied) Nothing
@@ -370,6 +370,8 @@ newtype LiftSimpleBackend b = LiftSimpleBackend b deriving (Show, Eq)
 --  type Remote (LiftSimpleBackend b) = (SimpleRemotesList b)
 --  type Blob (LiftSimpleBackend b)   = (SimpleBlobPair b)
 
+-- | A `SimpleBackend` makes a perfectly reasonable `Backend`.  The
+-- conversion merely drops information.
 instance (SimpleBackend b) => Backend (LiftSimpleBackend b) where
   data Remote (LiftSimpleBackend b) _r = LSB_Remote ![SimpleRemote b]
   data Blob   (LiftSimpleBackend b) _r = LSB_Blob !(SimpleBlob b) !(SACC.Prog ())
@@ -379,11 +381,18 @@ instance (SimpleBackend b) => Backend (LiftSimpleBackend b) where
      blb <- simpleCompile b path prog
      return $! LSB_Blob blb prog
 
+  compileFun1 (LiftSimpleBackend b) path fn = do
+     case fn of
+       AST.Alam _ -> error "FINSHME"
+     let fn2 = (error "FINISHME") fn
+     sblob <- simpleCompileFun1 b path fn2
+     return $ LSB_Blob sblob undefined
+
   runRaw lb acc Nothing = do  
      blob <- compile lb "unknown_prog" acc 
      runRaw lb acc (Just blob)
 
-  runRaw (LiftSimpleBackend b) origacc (Just (LSB_Blob blob prog)) = do 
+  runRaw (LiftSimpleBackend b) _origacc (Just (LSB_Blob blob prog)) = do 
      x <- simpleRunRaw b Nothing prog (Just blob)
      return $! LSB_Remote x
 
@@ -393,7 +402,7 @@ instance (SimpleBackend b) => Backend (LiftSimpleBackend b) where
 
   copyToDevice (LiftSimpleBackend b) (arr :: a) = do
      let (repr :: Sug.ArrRepr a) = Sug.fromArr arr
-         (ty,accArr,_::Phantom a) = unpackArray repr
+         (_ty,accArr,_::Phantom a) = unpackArray repr
      remt <- simpleCopyToDevice b accArr
      return $! LSB_Remote [remt]
 
@@ -404,8 +413,8 @@ instance (SimpleBackend b) => Backend (LiftSimpleBackend b) where
     mapM_ (simpleWaitRemote b) rs
 
   useRemote (LiftSimpleBackend b) (LSB_Remote rs) = do
-    aexps <- mapM (simpleUseRemote b) rs
-    error "useRemote/LiftSimpleBackend: this needs to be finished"
+    _aexps <- mapM (simpleUseRemote b) rs
+    error "FINISHME: useRemote/LiftSimpleBackend: this needs to be completed"
 
   separateMemorySpace (LiftSimpleBackend b) = simpleSeparateMemorySpace b
 
@@ -422,6 +431,8 @@ instance SimpleBackend b => SimpleBackend (LiftSimpleBackend b) where
   simpleWaitRemote (LiftSimpleBackend b) r     = simpleWaitRemote b r
   simpleUseRemote (LiftSimpleBackend b) r      = simpleUseRemote b r
   simpleSeparateMemorySpace (LiftSimpleBackend b) = simpleSeparateMemorySpace b
+  simpleCompileFun1 (LiftSimpleBackend b) = simpleCompileFun1 b
+  simpleRunRawFun1  (LiftSimpleBackend b) = simpleRunRawFun1 b
 
   -- type Remote (LiftSimpleBackend b) a = Remote b a
   -- type Blob (LiftSimpleBackend b) a   = Blob b a
@@ -463,11 +474,10 @@ flushToDisk (InMemory path gen) = do
 
 ----------------------------------------------------------------------------------------------------
 
--- Brainstorming other interfaces:
+-- UNFINISHED: Brainstorming other interfaces:
 
-
--- | A portable backend is one that can compile programs to portable binaries,
--- which can be loaded and run without reference to the original `Acc` code.
+-- | A portable backend is one that can compile programs to /portable/ binaries.
+-- These can be loaded and run without reference to the original `Acc` code.
 --
 class Backend b => PortableBackend b where
 
@@ -531,9 +541,9 @@ instance Backend MinimalBackend where
   runRaw (MinimalBackend runner) acc _mblob = 
     return $! MB_Remote (runner acc)
 
-  copyToHost _ (MB_Remote rem) = return $! rem
+  copyToHost _ (MB_Remote rm) = return $! rm
   copyToDevice _ a = return $! MB_Remote a
-  copyToPeer _ rem = return $! rem
+  copyToPeer _ rm = return $! rm
 
   waitRemote _ _ = return ()
   useRemote _ (MB_Remote r) = return $! phase0 (A.use r)

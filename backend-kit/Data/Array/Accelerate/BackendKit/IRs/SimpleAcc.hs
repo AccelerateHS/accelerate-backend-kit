@@ -31,7 +31,7 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
      --   etc.
      
      -- * Slice representation
-     SliceType(..), SliceComponent(..),
+     SliceType, SliceComponent(..),
                 
      -- * Helper routines and predicates:
      primArity, constToInteger, constToRational, constToNum, mkZeroConst,
@@ -175,7 +175,7 @@ resultNames (WithShapesUnzipped ls) = L.map fst ls
 
 -- | Returns a list with all shape names (may contain duplicates).
 resultShapeNames :: ProgResults -> [Var]
-resultShapeNames (WithoutShapes ls)      = []
+resultShapeNames (WithoutShapes _ls)     = []
 resultShapeNames (WithShapes ls)         = L.map snd ls  
 resultShapeNames (WithShapesUnzipped ls) = concatMap snd ls  
 
@@ -1223,4 +1223,5 @@ uarrGenerate len fn = unsafePerformIO $
          loop i = do MA.writeArray marr i (fn i)
                      loop (i-1)
      loop (len-1)
+
 
