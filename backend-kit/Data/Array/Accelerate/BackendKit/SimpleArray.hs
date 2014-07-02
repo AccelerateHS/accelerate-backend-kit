@@ -119,12 +119,13 @@ indexPayload payl i =
                               else error $ "indexPayload: out of bounds index ("
                                            ++show i++") into ArrayPayloadUnit of len "++show len
 
+{-
+
 -- | Apply a generic transformation to the Array Payload irrespective
 --   of element type.  This is useful for rearranging or removing
 --   elements of a payload without looking at the contents.
 applyToPayload :: (forall a . UArray Int a -> UArray Int a) -> ArrayPayload -> ArrayPayload
 applyToPayload fn payl = applyToPayload2 (\ a _ -> fn a) payl
-
 
 -- | This is similar to `applyToPayload`, but also provides the ability for
 --   the function passed in to inspect elements in the input array in a
@@ -154,11 +155,11 @@ applyToPayload2 fn payl =
     -- No values can actually change here.  WARNING: this plays fast and loose
     -- with error conditions.  In particular we should have to expose out-of-bounds access:
     ArrayPayloadUnit   len -> ArrayPayloadUnit len
-
-
+-}
 
 -- | This version allows the payload to be rebuilt as a list of Const,
---   which must all be the same type as the input.
+--   which must all be the same type as the input.  
+--   Warning: this is very inefficient.
 applyToPayload3 :: (Int -> (Int -> Const) -> [Const]) -> ArrayPayload -> ArrayPayload
 -- TODO!! The same-type-as-input restriction could be relaxed.
 applyToPayload3 fn payl = 

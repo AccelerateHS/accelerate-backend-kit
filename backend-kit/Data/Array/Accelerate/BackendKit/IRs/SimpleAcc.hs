@@ -56,9 +56,11 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
 import           Control.DeepSeq (NFData(..))
 import           Control.Monad.State.Strict (State, get, put)
 import           Control.Applicative  ((<$>),(<*>))
+import qualified Data.Array        as Arr
 import qualified Data.Array.IO     as IA
 import qualified Data.Array.MArray as MA
-import           Data.Array.Unboxed as U
+import qualified Data.Array.Unboxed as U
+import           Data.Array.Storable as A
 import qualified Data.Array.Unsafe as Un
 import           Data.Int
 import qualified Data.Map          as M
@@ -70,7 +72,7 @@ import           Text.PrettyPrint.HughesPJ (text)
 import           System.IO.Unsafe  (unsafePerformIO)
 import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
 
-import           Foreign.Storable (sizeOf)
+import           Foreign.Storable (sizeOf, Storable)
 -- import           System.Environment(getEnvironment)
 
 --------------------------------------------------------------------------------
@@ -464,22 +466,28 @@ instance Show AccArray where
         "AccArray "++show shape++
         (L.concat$ L.map  ((" "++) . doPayld) payloads)
    where
+     -- We allow an unsafe snapshot here because Accelerate doesn't actually
+     -- allow Accelerate arrays to be mutated by the user.
+     -- Care must be taken though that an array is only released from the accelerate
+     -- runtime system to the user when it is "frozen".
+     toString :: forall t . Show t => IO t -> String
+     toString = show . unsafePerformIO
      doPayld p = 
        case p of 
-         ArrayPayloadInt    arr -> show$ U.elems arr
-         ArrayPayloadInt8   arr -> show$ U.elems arr
-         ArrayPayloadInt16  arr -> show$ U.elems arr
-         ArrayPayloadInt32  arr -> show$ U.elems arr
-         ArrayPayloadInt64  arr -> show$ U.elems arr
-         ArrayPayloadWord   arr -> show$ U.elems arr
-         ArrayPayloadWord8  arr -> show$ U.elems arr
-         ArrayPayloadWord16 arr -> show$ U.elems arr
-         ArrayPayloadWord32 arr -> show$ U.elems arr
-         ArrayPayloadWord64 arr -> show$ U.elems arr
-         ArrayPayloadFloat  arr -> show$ U.elems arr
-         ArrayPayloadDouble arr -> show$ U.elems arr
-         ArrayPayloadChar   arr -> show$ U.elems arr
-         ArrayPayloadBool   arr -> show$ U.elems arr
+         ArrayPayloadInt    arr -> toString$ A.getElems arr
+         ArrayPayloadInt8   arr -> toString$ A.getElems arr
+         ArrayPayloadInt16  arr -> toString$ A.getElems arr
+         ArrayPayloadInt32  arr -> toString$ A.getElems arr
+         ArrayPayloadInt64  arr -> toString$ A.getElems arr
+         ArrayPayloadWord   arr -> toString$ A.getElems arr
+         ArrayPayloadWord8  arr -> toString$ A.getElems arr
+         ArrayPayloadWord16 arr -> toString$ A.getElems arr
+         ArrayPayloadWord32 arr -> toString$ A.getElems arr
+         ArrayPayloadWord64 arr -> toString$ A.getElems arr
+         ArrayPayloadFloat  arr -> toString$ A.getElems arr
+         ArrayPayloadDouble arr -> toString$ A.getElems arr
+         ArrayPayloadChar   arr -> toString$ A.getElems arr
+         ArrayPayloadBool   arr -> toString$ A.getElems arr
          ArrayPayloadUnit   len -> show$ replicate len ()
 
 instance Read AccArray where
@@ -514,7 +522,30 @@ data ArrayPayload =
 -- | This is our Haskell representation of raw, contiguous data (arrays).
 -- It is subject to change in the future depending on what internal
 -- representation the Accelerate front-end uses.
-type RawData e = UArray Int e
+type RawData e = StorableArray Int e
+ -- FIXME: newtype RawData so that the naughty instances below don't leak.
+
+--------------------------------------------------------------------
+-- DANGER DANGER DANGER
+-------------------------------------------------------------------- 
+-- WARNING: we don't explicitly represent the "frozen" status of the
+-- StorableArray in the type system, so this all becomes quite
+-- dangerous.
+instance (Storable a, Ord a) => Ord (StorableArray Int a) where
+  compare a b = compare (unsafePerformIO (freeze a) :: Arr.Array Int a)
+                        (unsafePerformIO (freeze b) :: Arr.Array Int a)
+instance (Storable a, Eq a) => Eq (StorableArray Int a) where
+  a == b = (unsafePerformIO (freeze a) :: Arr.Array Int a) ==
+           (unsafePerformIO (freeze b) :: Arr.Array Int a)
+instance (Storable a, Read a) => Read (StorableArray Int a) where
+  readsPrec num str = map (\ (arr,s) -> (unsafePerformIO (thaw arr), s))
+                       (readsPrec num str :: [(Arr.Array Int a, String)])
+instance (Storable a, Show a) => Show (StorableArray Int a) where
+  show a = show (unsafePerformIO (freeze a) :: Arr.Array Int a)
+--------------------------------------------------------------------
+-- END DANGER
+--------------------------------------------------------------------
+  
 
 -- This will only report a FLAT tuple structure.  It does not keep additional type
 -- information.
@@ -1155,15 +1186,14 @@ instance (Out k, Out v) => Out (M.Map k v) where
   doc         = docPrec 0 
   
 -- Why is this one not included in the array package?:
-instance (Read elt, U.IArray UArray elt) => Read (U.UArray Int elt) where
+instance (Read elt, U.IArray U.UArray elt) => Read (U.UArray Int elt) where
     readsPrec p = readParen (p > 9)
            (\r -> [(U.array b as :: U.UArray Int elt, u) | 
                    ("array",s) <- lex r,
                    (b,t)       <- reads s,
                    (as :: [(Int,elt)],u) <- reads t ])
 
-
-test :: UArray Int Int
+test :: U.UArray Int Int
 test = read "array (1,5) [(1,200),(2,201),(3,202),(4,203),(5,204)]" :: U.UArray Int Int
 
 
@@ -1204,19 +1234,19 @@ instance NFData ProgResults where
 -- be to cast them all to a UArray of bytes.  There is not direct
 -- support for this in the UArray module, but we could accomplish it
 -- with something like the following:
-castUArray :: forall ix a b . (Ix ix, IArray UArray a, IArray UArray b, 
+castUArray :: forall ix a b . (Ix ix, U.IArray U.UArray a, U.IArray U.UArray b, 
                                IA.MArray IA.IOUArray a IO, IA.MArray IA.IOUArray b IO)
-           => UArray ix a -> UArray ix b
+           => U.UArray ix a -> U.UArray ix b
 castUArray uarr = unsafePerformIO $ 
   do thawed :: IA.IOUArray ix a <- Un.unsafeThaw uarr
      cast   :: IA.IOUArray ix b <- Un.castIOUArray thawed
-     froze  :: UArray ix b      <- Un.unsafeFreeze cast
+     froze  :: U.UArray ix b    <- Un.unsafeFreeze cast
      return froze
 
 -- Like Data.Vector.generate, but for `UArray`s.  Unfortunately, this
 -- requires extra class constraints for `IOUArray` as well.
-uarrGenerate :: (IArray UArray a, IA.MArray IA.IOUArray a IO)
-             => Int -> (Int -> a) -> UArray Int a
+uarrGenerate :: (U.IArray U.UArray a, IA.MArray IA.IOUArray a IO)
+             => Int -> (Int -> a) -> U.UArray Int a
 uarrGenerate len fn = unsafePerformIO $ 
   do marr :: IA.IOUArray Int a <- MA.newArray_ (0,len)
      let loop (-1) = Un.unsafeFreeze marr

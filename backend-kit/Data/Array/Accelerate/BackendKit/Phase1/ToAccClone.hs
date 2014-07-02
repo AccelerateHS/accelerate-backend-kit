@@ -27,11 +27,11 @@ module Data.Array.Accelerate.BackendKit.Phase1.ToAccClone
 import           Control.Monad
 import           Control.Applicative        ((<$>),(<*>))
 import           Prelude                    hiding (sum)
-import           Control.Monad.State.Strict (State, evalState, runState, get, put, modify)
+import           Control.Monad.State.Strict (State, evalState, get, put)
 import           Debug.Trace                (trace)
-import           Data.Map  as M
+-- import           Data.Map  as M
 import qualified Data.List as L
-import           Text.PrettyPrint.GenericPretty (Out(doc), Generic)
+-- import           Text.PrettyPrint.GenericPretty (Out(doc), Generic)
 
 -- friends:
 import           Data.Array.Accelerate.Type
@@ -805,7 +805,7 @@ data Phantom a = Phantom
 
 -- | This converts Accelerate Array data to the simplified
 --   representation.  `unpackArray` has an odd return type to avoid
---   type-family related type errors.
+--   type-family related type errors (i.e. it returns a Phantom).
 --
 --   Note that this does NOT need to do a deep copy, because the data
 --   payload representation stays the same.
@@ -1045,5 +1045,6 @@ mkArrayTuple ty ls    = T.ArrayTuple ty ls
 
 --------------------------------------------------------------------------------
 
+foo = 3
 
 
