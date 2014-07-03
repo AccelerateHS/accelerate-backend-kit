@@ -9,6 +9,10 @@
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 -- | A library for the runtime construction of fully typed Accelerate programs.
+-- 
+-- In contrast with DynamicAcc.hs, this version uses the "Smart"
+-- (HOAS) AST representation, rather than going straight to type-level
+-- De-bruijn indices.
 
 module Data.Array.Accelerate.DynamicAcc2
 {-
@@ -31,7 +35,7 @@ module Data.Array.Accelerate.DynamicAcc2
 -}
        where
 
-import           Data.Array.Accelerate as A
+import           Data.Array.Accelerate as A hiding ((++))
 import           Data.Array.Accelerate.Tuple
 import qualified Data.Array.Accelerate as A
 import qualified Data.Array.Accelerate.Smart as Sm
@@ -54,7 +58,7 @@ import Data.Typeable (gcast)
 import Data.Dynamic (Dynamic, fromDyn, fromDynamic, toDyn,
                      Typeable, Typeable3, mkTyConApp, TyCon, mkTyCon3, typeOf3, typeOf)
 import Data.Map as M
-import Prelude as P
+import Prelude as P 
 import Data.Maybe (fromMaybe, fromJust)
 -- import Data.Word
 import Debug.Trace (trace)
@@ -128,6 +132,10 @@ downcastE (SealedExp d) =
       error$"Attempt to unpack SealedExp "++show d
          ++ ", expecting type Exp "++ show (toDyn (unused::a))
 
+unused :: a
+unused = error "This dummy value should not be used"
+
+
 downcastA :: forall a . Typeable a => SealedAcc -> Acc a
 downcastA (SealedAcc d) =
   case fromDynamic d of
@@ -167,7 +175,6 @@ data EltTuple a where
  deriving Typeable
 -- TODO: ^^ Get rid of SingleTuple and possible just use the NilTup/SnocTup rep.
 
-
 -- | This GADT allows monomorphic value to carry a type inside.
 data SealedEltTuple where
   SealedEltTuple :: (Typeable a, Elt a) =>
@@ -195,6 +202,39 @@ data SealedShapeType where
 
 -- | Just a simple signal that the value is not used, only the type.
 data Phantom a = Phantom a deriving Show
+
+-- | Convert the runtime, monomorphic type representation into a sealed container
+-- with the true Haskell type inside.
+scalarTypeD :: Type -> SealedEltTuple
+scalarTypeD ty =
+  case ty of
+    TInt    -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Int)
+    TInt8   -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Int8)
+    TInt16  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Int16)
+    TInt32  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Int32)
+    TInt64  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Int64)    
+    TWord    -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word)
+    TWord8   -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word8)
+    TWord16  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word16)
+    TWord32  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word32)
+    TWord64  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word64)
+    TFloat   -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Float)
+    TDouble  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Double)    
+    TBool    -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Bool)
+    TChar    -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Char)
+
+    INSERT_CTY_ERR_CASES
+
+    -- Here we have a problem... we've lost the surface tuple
+    -- representation.... What canonical tuple representation do we use?
+    TTuple []      -> SealedEltTuple UnitTuple
+    TTuple [sing]  -> scalarTypeD sing
+    TTuple (hd:tl) ->
+      case (scalarTypeD hd, scalarTypeD (TTuple tl)) of
+        (SealedEltTuple (et1 :: EltTuple a),
+         SealedEltTuple (et2 :: EltTuple b)) ->
+          SealedEltTuple$ PairTuple et1 et2
+    TArray {} -> error$"scalarTypeD: expected scalar type, got "++show ty
 
 -- | Almost dependent types!  Dynamically construct a type in a bottle
 -- that is isomorphic to an input value.  It can be opened up and used
@@ -229,39 +269,6 @@ shapeTypeD n =
   case shapeTypeD (n-1) of
     SealedShapeType (Phantom x :: Phantom sh) ->
       SealedShapeType (Phantom (x :. (unused::Int)))
-
--- | Convert the runtime, monomorphic type representation into a sealed container
--- with the true Haskell type inside.
-scalarTypeD :: Type -> SealedEltTuple
-scalarTypeD ty =
-  case ty of
-    TInt    -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Int)
-    TInt8   -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Int8)
-    TInt16  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Int16)
-    TInt32  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Int32)
-    TInt64  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Int64)    
-    TWord    -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word)
-    TWord8   -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word8)
-    TWord16  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word16)
-    TWord32  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word32)
-    TWord64  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word64)
-    TFloat   -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Float)
-    TDouble  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Double)    
-    TBool    -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Bool)
-    TChar    -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Char)
-
-    INSERT_CTY_ERR_CASES
-
-    -- Here we have a problem... we've lost the surface tuple
-    -- representation.... What canonical tuple representation do we use?
-    TTuple []      -> SealedEltTuple UnitTuple
-    TTuple [sing]  -> scalarTypeD sing
-    TTuple (hd:tl) ->
-      case (scalarTypeD hd, scalarTypeD (TTuple tl)) of
-        (SealedEltTuple (et1 :: EltTuple a),
-         SealedEltTuple (et2 :: EltTuple b)) ->
-          SealedEltTuple$ PairTuple et1 et2
-    TArray {} -> error$"scalarTypeD: expected scalar type, got "++show ty
 
 
 --------------------------------------------------------------------------------
@@ -658,15 +665,15 @@ convertExp ep@(EnvPack envE envA mp) ex =
 
 -- <BOILERPLATE abstracted as CPP macros>
 -----------------------------------------------------------------------------------              
-#define REPBOP(numpat, popdict, which, prim, binop) (numpat, which prim) -> popdict (case args of { \
+#define REPBOP(numpat, popdict, which, theprim, binop) (numpat, which theprim) -> popdict (case args of { \
          [a1,a2] -> let a1',a2' :: Exp elt;    \
                         a1' = downcastE a1;     \
                         a2' = downcastE a2;     \
                     in sealExp (binop a1' a2'); \
-         _ -> error$ "Binary operator "++show prim++" expects two args, got "++show args ; })
+         _ -> error$ "Binary operator "++show theprim++" expects two args, got "++show args ; })
 #define REPUOP(numpat, popdict, which, prim, unop) (numpat, which prim) -> popdict (case args of { \
          [a1] -> let a1' :: Exp elt;     \
-                     a1' = downcastE a1;  \
+                     a1' = downcastE a1; \
                  in sealExp (unop a1');  \
          _ -> error$ "Unary operator "++show prim++" expects one arg, got "++show args ; })
 #define POPINT T.NumScalarType (T.IntegralNumType (nty :: T.IntegralType elt))
@@ -697,7 +704,7 @@ convertExp ep@(EnvPack envE envA mp) ex =
           _ -> error$ "Unary operator "++show prim++" expects one arg, got "++show args ;};};};})
 
 -----------------------------------------------------------------------------------
-             (case (styOut,op) of
+             (case (styOut,op) of 
                REPBOP(POPINT, POPIDICT, NP, Add, (+))
                REPBOP(POPINT, POPIDICT, NP, Sub, (-))
                REPBOP(POPINT, POPIDICT, NP, Mul, (*))
@@ -1029,9 +1036,6 @@ instance Show SealedArrayType where
 -- Misc, Tests, and Examples
 --------------------------------------------------------------------------------  
 
-unused :: a
-unused = error "This dummy value should not be used"
-
 -- | For debugging purposes we should really never use Data.Map.!  This is an
 -- alternative with a better error message.
 (#) :: (Ord a1, Show a, Show a1) => M.Map a1 a -> a1 -> a
@@ -1258,3 +1262,5 @@ unitTests =
     $(testGroupGenerator),
     allProg_tests
   ]
+
+

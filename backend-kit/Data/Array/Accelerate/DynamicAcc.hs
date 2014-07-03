@@ -5,6 +5,9 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 
 -- | A library for the runtime construction of fully typed Accelerate programs.
+--
+-- This version attempts to directly construct the Accelerate.AST
+-- (type-level De-bruijn index) representation.
 
 module Data.Array.Accelerate.DynamicAcc
 {-

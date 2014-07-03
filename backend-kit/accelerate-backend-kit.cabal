@@ -67,6 +67,7 @@ Library
                      Data.Array.Accelerate.BackendClass
 -- TEMP/FIXME - disabling now for GHC 7.8. but need to fix it: -RRN                     
 --                     Data.Array.Accelerate.DynamicAcc                 
+                     Data.Array.Accelerate.DynamicAcc2
 
                      -- Temporarily exposed:
                      Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone
