@@ -89,9 +89,11 @@ Library
                         deepseq         >= 1.3,
                         random          >= 1.0,
                         time            >= 1.4,
-                        test-framework, test-framework-hunit, HUnit,
                         split >= 0.2,
-                        bytestring, primitive
+                        bytestring, primitive,
+                        test-framework, test-framework-hunit, HUnit,
+                        -- TEMPORARY:
+                        test-framework-th
 
   Default-Language:     Haskell2010
   ghc-options: -threaded 
@@ -151,3 +153,25 @@ Test-Suite test-accelerate-backend-kit-unittests
                    test-framework, test-framework-hunit, HUnit,
                    split >= 0.2,
                    bytestring, primitive
+
+-- Test-Suite test-dynamic-acc
+--     type:       exitcode-stdio-1.0
+--     main-is:    TestDynamicAcc.hs
+--     hs-source-dirs: tests/ 
+--     ghc-options: -threaded -rtsopts -with-rtsopts=-N
+--     build-depends: accelerate-backend-kit
+--     build-depends: base >= 4, containers, ghc-prim,
+--                    array >= 0.3,
+--                    mtl,
+--                    pretty          >= 1.0 && < 1.2,
+--                    accelerate      >= 0.15,
+--                    GenericPretty   >= 1.0,
+--                    deepseq         >= 1.3,
+--                    random          >= 1.0,
+--                    time            >= 1.4,
+--                    test-framework, 
+--                    test-framework-hunit, 
+--                    test-framework-th, 
+--                    HUnit,          
+--                    split >= 0.2,
+--                    bytestring, primitive
