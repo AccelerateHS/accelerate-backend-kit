@@ -39,33 +39,31 @@ module Data.Array.Accelerate.BackendKit.SimpleArray
    )
    
 where 
-  
 
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
-import Data.Array.Accelerate.BackendKit.Utils.Helpers (maybtrace,tracePrint)
+import Data.Array.Accelerate.BackendKit.Utils.Helpers (maybtrace)
 
 import           Control.Applicative ((<$>))
-import           Debug.Trace
-import           Data.Int
-import           Data.Word
-import           Data.List          as L
-import           Data.Maybe   (catMaybes)
+import           Data.Array.Base  (UArray(UArray))
+import qualified Data.Array.IO     as IA
+import qualified Data.Array.MArray as MA
 import           Data.Array.Unboxed as U
 import qualified Data.Array.Unsafe as Un
-import qualified Data.Array.MArray as MA
-import qualified Data.Array.IO     as IA
-import           Foreign.C.Types
-import           Foreign.Storable      (Storable, sizeOf)
-import           Foreign.Marshal.Array (copyArray)
-import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
-import           System.IO.Unsafe (unsafePerformIO)
+import           Data.Int
+import           Data.List          as L
 import qualified Data.Map          as M
-
-import           GHC.Ptr          (Ptr(Ptr), castPtr)
-import           GHC.Prim         (byteArrayContents#, newPinnedByteArray#)
-import           Data.Array.Base  (UArray(UArray))
+import           Data.Maybe   (catMaybes)
 import qualified Data.Primitive.ByteArray as BA
 import           Data.Primitive.Types (Addr(Addr))
+import           Data.Word
+import           Debug.Trace
+import           Foreign.C.Types
+import           Foreign.Marshal.Array (copyArray)
+import           Foreign.Storable      (Storable, sizeOf)
+import           GHC.Prim         (byteArrayContents#, newPinnedByteArray#)
+import           GHC.Ptr          (Ptr(Ptr), castPtr)
+import           System.IO.Unsafe (unsafePerformIO)
+import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
 -- import GHC.Prim           (newPinnedByteArray#, byteArrayContents#,
 --                            unsafeFreezeByteArray#, Int#, (*#))
 ----------------------------------------------------------------------------------------------------

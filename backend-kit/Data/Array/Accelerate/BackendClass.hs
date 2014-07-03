@@ -123,7 +123,7 @@ class Show b => Backend b where
 
   -------------------------- Compiling and Running -------------------------------
 
-  -- | Compile an already conerted/optimized Accelerate program into a binary
+  -- | Compile an already converted/optimized Accelerate program into a binary
   -- blob that can be executed.  Takes a /suggested/ FilePath for where to put
   -- the blob IF it must be written to disk.
   --
