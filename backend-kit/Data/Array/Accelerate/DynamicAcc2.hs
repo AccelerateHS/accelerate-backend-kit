@@ -13,6 +13,14 @@
 -- In contrast with DynamicAcc.hs, this version uses the "Smart"
 -- (HOAS) AST representation, rather than going straight to type-level
 -- De-bruijn indices.
+--
+-- TODO: If we want to use this seriously, then switch to template
+-- Haskell or some other, better boilerplate elimination mechanism,
+-- not CPP macros.
+--
+-- TODO: We should simply TYPECHECK SimpleAcc expressions to get nice
+-- error messages before putting them into the dynamic casting meat
+-- grinder below.
 
 module Data.Array.Accelerate.DynamicAcc2
 {-
@@ -455,15 +463,41 @@ convertExp ep@(EnvPack envE envA mp) ex =
   result =  
    case ex of
     S.EConst c -> constantE c
-
-    -- This is tricky, because it needs to become a deBruin index ultimately...
-    -- Or we need to stay at the level of HOAS...
     S.EVr vr -> let (_,se) = mp # vr in expectEVar se
 
     S.EShape _          -> error "FINISHME: convertExp needs to handle EShape"
     S.EShapeSize _      -> error "FINISHME: convertExp needs to handle EShapeSize"
     S.EIndex _          -> error "FINISHME: convertExp needs to handle EIndex"
-    S.EIndexScalar _ _  -> error "FINISHME: convertExp needs to handle EIndexScalar"
+
+    -- Here we run straight into our mismatch between Acc and
+    -- SimpleAcc treatment of shape types.
+    S.EIndexScalar avr indEx -> 
+      let indTy = S.recoverExpType typeEnv indEx
+          ind2  = tupToIndex indTy$ convertExp ep indEx
+--          dims1 = shapeTyLen indTy
+          (arrty,sa) = mp # avr
+          TArray dims elt = arrty
+--          ind  = convertShapeExp ep indEx indTy
+--    S.Vr vr   -> let (_,s) = mp # vr in expectAVar s
+      in
+       case (shapeTypeD dims, arrayTypeD arrty, scalarTypeD elt) of
+         (SealedShapeType (_ :: Phantom shp),
+          SealedArrayType (_ :: Phantom aty), 
+          SealedEltTuple  (_ :: EltTuple eT))
+          -> 
+           let ind3 :: Exp shp
+               ind3 = downcastE ind2
+               arr  :: Acc aty
+--               arr  = downcastA sa
+               arr  = undefined
+--               exp  = (A.!) arr ind3
+--               res = sealExp exp
+           in           
+--           trace (" Got index type "++show (doc indTy)++" "++show (sa))$ 
+           error ("FINISHME: convertExp needs to handle EIndexScalar: "++show ind3)
+--           trace ("got res "++show exp) $ 
+--           sealExp exp
+           
     
     S.ETupProject {S.indexFromRight=ind, S.projlen=len, S.tupexpr=tex} ->
       let tup = convertExp ep tex
@@ -894,7 +928,8 @@ indexToTup ty ex =
                  Z :. e' = unlift z
              in sealExp e'
 
--- | The inverse of `indexToTup`
+-- | The inverse of `indexToTup`.  Takes the plain SimpleAcc TTuple of
+-- TInt type as the first argument.
 tupToIndex :: S.Type -> SealedExp -> SealedExp
 tupToIndex ty ex =
     dbgtrace (" ~~ starting tupToIndex... ")$ 
@@ -939,8 +974,9 @@ tupToIndex ty ex =
 
 tupTyToIndex = error "finish me"
 
-tupTyLen (TTuple ls) = length ls
-tupTyLen _           = 1
+shapeTyLen TInt        = 1
+shapeTyLen (TTuple ls) | P.all (==TInt) ls = length ls
+shapeTyLen ty = error $ "shapeTyLen: invalid shape type: "++show ty
 
 -- | Convert a closed `SimpleAcc` expression (no free vars) into a fully-typed (but
 -- sealed) Accelerate one.
@@ -962,7 +998,7 @@ convertAcc env@(EnvPack _ _ mp) ae =
                       convertExp env' bod
           bodty     = S.recoverExpType (M.insert vr ty typeEnv) bod
           -- TODO: Replace this by simply passing in the result type to convertAcc:
-          dims = tupTyLen$ S.recoverExpType typeEnv initE 
+          dims = shapeTyLen$ S.recoverExpType typeEnv initE 
           outArrTy  = TArray dims bodty
           init' = tupToIndex ty$ convertExp env initE 
       in
@@ -1067,6 +1103,7 @@ t2_ :: Exp Int
 t2_ = downcastE t2
 case_const = H.assertEqual "simple const" (show t2_) "33"
 
+t4 = roundTrip (allProgsMap M.! "p4")
 
 t5 = convertAcc emptyEnvPack (S.Unit (S.EConst (I 33)))
 t5_ :: Acc (Scalar Int)
@@ -1158,11 +1195,15 @@ ref13 = A.generate (constant (Z :. (3::Int) :. (2 :: Int) :. (1 :: Int)))
                      (Z :. a :. b :. c) = unlift x
                  in lift (b,c))
 
+-- | Generate an array of shapes -- this is tricky because in
+-- SimpleAcc we represent shapes merely as tuples.
 t14 = convertAcc emptyEnvPack $
+--      S.Generate (S.ETuple [S.EConst (I8 3), S.EConst (I16 2), S.EConst (I32 1)]) -- This should be a typechecking error
       S.Generate (S.ETuple [S.EConst (I 3), S.EConst (I 2), S.EConst (I 1)]) 
                  (S.Lam1 (v, TTuple [TInt,TInt,TInt]) (S.EVr v))
-t14_ :: Acc (Array DIM3 (Int,Int,Int))
 -- t14_ :: Acc (Array DIM3 (Int,(Int,Int)))
+-- t14_ :: Acc (Array DIM3 (Int,Int,Int))
+t14_ :: Acc (Array DIM3 (Z :. Int :. Int :. Int))
 t14_ = downcastA t14
 case_t14_generate = H.assertEqual "generate5"
                    (show$ I.run$ t14_)

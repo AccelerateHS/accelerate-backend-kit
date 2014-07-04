@@ -19,7 +19,7 @@ module Data.Array.Accelerate.BackendKit.Tests
 
     -- * Individual tests:
     p1a, p1aa, p1ab, p1ac, p1ba,
-    p2aa, p2a, p2f, p4, p4b, p4c, p5, p0, p1, p1b, p1bb, p1c, p1d,
+    p2aa, p2a, p2ab, p2f, p4, p4b, p4c, p5, p0, p1, p1b, p1bb, p1c, p1d,
     p2, p2b, p2bb, p2c, p2cc, p2cd, p2ce, p2d, p2e, p2g, p2h, p2i, 
     p3,
     p6, p6b,
@@ -121,7 +121,7 @@ generateOnlyProgs = [
 -- | Programs that use Unit.
 unitProgs :: [TestEntry]
 unitProgs = [
-  go "p2a" p2a, go "p2f" p2f,
+  go "p2a" p2a, go "p2ab" p2ab, go "p2f" p2f,
   go "p4" p4, go "p4b" p4b, go "p4c" p4c,
   go "p5" p5
  ]
@@ -307,6 +307,11 @@ p2aa = let xs = replicate (constant (Z :. (4::Int) :. (3::Int))) (unit 40)
 
 p2a :: Acc (Scalar Word)
 p2a = unit 40
+
+-- | Shapes are valid constants also.
+p2ab :: Acc (Scalar (Z :. Int))
+p2ab = unit (constant (Z :. (4::Int)))
+
 
 -- This is an example of the weird encoding we get where slice expressions with All's
 -- on the outer most dimensions don't have a representation (unit) of those All's.
