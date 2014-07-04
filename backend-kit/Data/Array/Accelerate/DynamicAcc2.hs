@@ -474,29 +474,19 @@ convertExp ep@(EnvPack envE envA mp) ex =
     S.EIndexScalar avr indEx -> 
       let indTy = S.recoverExpType typeEnv indEx
           ind2  = tupToIndex indTy$ convertExp ep indEx
---          dims1 = shapeTyLen indTy
           (arrty,sa) = mp # avr
           TArray dims elt = arrty
---          ind  = convertShapeExp ep indEx indTy
---    S.Vr vr   -> let (_,s) = mp # vr in expectAVar s
       in
-       case (shapeTypeD dims, arrayTypeD arrty, scalarTypeD elt) of
+       case (shapeTypeD dims, scalarTypeD elt) of
          (SealedShapeType (_ :: Phantom shp),
-          SealedArrayType (_ :: Phantom aty), 
-          SealedEltTuple  (_ :: EltTuple eT))
-          -> 
+          SealedEltTuple  (_ :: EltTuple eT)) ->
            let ind3 :: Exp shp
                ind3 = downcastE ind2
-               arr  :: Acc aty
---               arr  = downcastA sa
-               arr  = undefined
---               exp  = (A.!) arr ind3
---               res = sealExp exp
-           in           
---           trace (" Got index type "++show (doc indTy)++" "++show (sa))$ 
-           error ("FINISHME: convertExp needs to handle EIndexScalar: "++show ind3)
---           trace ("got res "++show exp) $ 
---           sealExp exp
+               arr  :: Acc (Array shp eT)
+               arr  = downcastA $ expectAVar sa
+               exp  :: Exp eT
+               exp  = (A.!) arr ind3
+           in sealExp exp              
            
     
     S.ETupProject {S.indexFromRight=ind, S.projlen=len, S.tupexpr=tex} ->
