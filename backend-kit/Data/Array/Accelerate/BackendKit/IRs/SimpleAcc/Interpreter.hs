@@ -1,6 +1,6 @@
 {-# LANGUAGE CPP, ScopedTypeVariables #-}
 {-# LANGUAGE DeriveGeneric #-}
--- {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE NamedFieldPuns #-}
 -- {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
