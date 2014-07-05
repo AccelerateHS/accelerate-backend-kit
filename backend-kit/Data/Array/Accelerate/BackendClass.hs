@@ -275,10 +275,13 @@ class Show b => SimpleBackend b where
                 -> SACC.Prog ()
                 -> IO (SimpleBlob b)
 
-  -- | Similar to `compile` but for functions Once compiled, the functions can
+  -- | Similar to `compile` but for functions.  Once compiled, the functions can
   -- be invoked repeatedly on the device side without any additional work on the
   -- host.
   --
+  -- Without loss of generality the program passed to this function
+  -- takes a single argument.  Of course that argument can be an
+  -- arbitrary tuple of arrays of tuples.
   simpleCompileFun1 :: b
                     -> FilePath
                     -> SACC.Fun1 (SACC.Prog ())
@@ -304,7 +307,7 @@ class Show b => SimpleBackend b where
 
   -- | Execute a function that expects N arrays, repeatedly.  Each time the compiled
   --   function is called, it takes inputs that are already on the device, and
-  --   returns leaves the results on the device as well.
+  --   returns leaving the results on the device as well.
   --
   -- The list of results should be equal in length to the
   -- `progResults` field of the input `Prog`.

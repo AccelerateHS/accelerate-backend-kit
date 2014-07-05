@@ -10,8 +10,7 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter
        (
          -- * Main module entrypoints  
          run, evalSimpleAcc,
-         interpBackend,
-         -- SimpleInterpBackend,
+         SimpleInterpBackend,
          
          -- * Smaller pieces that may be useful
          evalPrim, 
@@ -32,29 +31,28 @@ import           Data.Array.Accelerate.Smart           (Acc)
 import qualified Data.List as L
 import qualified Data.Map  as M
 import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
-
 import Data.Array.Accelerate.BackendClass (Backend(..), SimpleBackend(..), MinimalBackend(..))
 
-interpBackend :: MinimalBackend
-interpBackend = MinimalBackend run'
+--------------------------------------------------------------------------------
 
 -- | A unit type just to carry a `SimpleBackend` and `Backend` instance.
 data SimpleInterpBackend = SimpleInterpBackend 
   deriving (Show,Eq,Ord,Read)
 
 instance SimpleBackend SimpleInterpBackend where
-  type SimpleRemote SimpleInterpBackend = ()
-  type SimpleBlob SimpleInterpBackend   = ()
+  type SimpleRemote SimpleInterpBackend = SA.AccArray
+  type SimpleBlob   SimpleInterpBackend = ()
   simpleCompile SimpleInterpBackend _ _ = return ()
---  simpleRunRaw SimpleInterpBackend nm acc mb = simpleRunRaw b nm acc mb
-  -- simpleCopyToHost SimpleInterpBackend r     = simpleCopyToHost b r 
-  -- simpleCopyToDevice SimpleInterpBackend a   = simpleCopyToDevice b a
-  -- simpleCopyToPeer SimpleInterpBackend r     = simpleCopyToPeer b r
-  -- simpleWaitRemote SimpleInterpBackend r     = simpleWaitRemote b r
-  -- simpleUseRemote SimpleInterpBackend r      = simpleUseRemote b r
-  -- simpleSeparateMemorySpace SimpleInterpBackend = simpleSeparateMemorySpace b
-  -- simpleCompileFun1 SimpleInterpBackend = simpleCompileFun1 b
-  -- simpleRunRawFun1  SimpleInterpBackend = simpleRunRawFun1 b
+  simpleRunRaw SimpleInterpBackend _nm acc _ = return (evalSimpleAcc acc)
+
+  simpleCopyToHost SimpleInterpBackend ls   = return ls
+  simpleCopyToDevice SimpleInterpBackend ar = return ar
+  simpleCopyToPeer SimpleInterpBackend r    = return r
+  simpleWaitRemote SimpleInterpBackend _ = return ()
+  simpleUseRemote SimpleInterpBackend  r = return $ S.Use r
+  simpleSeparateMemorySpace SimpleInterpBackend = False
+  -- simpleCompileFun1 SimpleInterpBackend = 
+  -- simpleRunRawFun1  SimpleInterpBackend = 
 
 instance Backend SimpleInterpBackend where
   data Remote SimpleInterpBackend  r = SIB_Remote !r
@@ -123,9 +121,15 @@ unArrVal   (ArrVal v)   = v
 --------------------------------------------------------------------------------
 -- Evaluation:
 
--- | Evaluating a complete program creates a FLAT list of arrays as a
---   result.  Reimposing a nested structure to the resulting
---   tuple-of-arrays is not the job of this function.
+-- | Evaluating a complete program creates a FLAT list of arrays (of
+-- scalars) as a result.  Reimposing a nested structure to the
+-- resulting tuple-of-arrays is not the job of this function.  
+--
+-- Note that the length of the list will be increased BOTH because of
+-- tuples of arrays, and because of unzipping arrays of tuples.  
+--
+-- The length of the resulting list WILL match the length of the input
+-- `Prog`'s `progResults` field.
 evalSimpleAcc :: S.Prog a -> [AccArray]
 evalSimpleAcc (S.Prog {progBinds, progResults}) = 
 --    concatArrays $ 
