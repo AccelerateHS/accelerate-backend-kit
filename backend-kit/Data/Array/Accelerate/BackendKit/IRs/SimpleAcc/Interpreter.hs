@@ -17,10 +17,10 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter
          evalPrim, 
          evalE,
          Value(..), valToConst, unConstVal, unArrVal, 
-       )
+        )
        where
 
--- import qualified Data.Array.Accelerate as A
+import qualified Data.Array.Accelerate as A
 import           Data.Array.Accelerate.BackendKit.Utils.Helpers    (maybtrace, tracePrint)
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1, repackAcc)
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
@@ -42,7 +42,6 @@ interpBackend = MinimalBackend run'
 data SimpleInterpBackend = SimpleInterpBackend 
   deriving (Show,Eq,Ord,Read)
 
-{-
 instance SimpleBackend SimpleInterpBackend where
   type SimpleRemote SimpleInterpBackend = ()
   type SimpleBlob SimpleInterpBackend   = ()
@@ -74,8 +73,6 @@ instance Backend SimpleInterpBackend where
   waitRemote _ _ = return ()
   useRemote _ (SIB_Remote r) = return $! phase0 (A.use r)
   separateMemorySpace _ = False -- This is pretty bogus, we have no idea.
-
--}
 
 --------------------------------------------------------------------------------
 -- Exposing a standard Accelerate `run` interface.
@@ -346,7 +343,9 @@ evalE env expr =
         (0,1,ConstVal scalar)   -> ConstVal$ scalar 
         (_,_,const) -> error$ "ETupProjectFromRight: could not index "++show len++" elements at position "
                        ++ show ind ++ " in tuple " ++ show const
-      where slice ls = reverse $ take len $ drop ind $ reverse ls
+       where  
+        slice :: forall a . [a] -> [a]
+        slice ls = reverse $ take len $ drop ind $ reverse ls
 
     -- This is our chosen representation for index values:
     T.EIndex indls       -> let ls = map (valToConst . evalE env) indls in
