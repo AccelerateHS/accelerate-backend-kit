@@ -16,7 +16,7 @@ import Data.Array.Accelerate.BackendKit.ConsoleTester
 
 conf :: BackendTestConf
 conf = BackendTestConf { 
-         backend  = I1.interpBackend, 
+         backend  = I1.SimpleInterpBackend, 
          sbackend = Nothing,
 --         sbackend = Just (SomeSimpleBackend bkend),
          knownTests = KnownBad knownProblems,

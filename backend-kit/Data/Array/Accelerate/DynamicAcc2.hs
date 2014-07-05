@@ -447,9 +447,9 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
     S.EConst c -> constantE c
     S.EVr vr -> let (_,se) = mp # vr in expectEVar se
 
-    S.EShape _          -> error "FINISHME: convertOpenExp needs to handle EShape"
-    S.EShapeSize _      -> error "FINISHME: convertOpenExp needs to handle EShapeSize"
-    S.EIndex _          -> error "FINISHME: convertOpenExp needs to handle EIndex"
+    S.EShape _          -> error "FINISHME/DynamicAcc: convertOpenExp needs to handle EShape"
+    S.EShapeSize _      -> error "FINISHME/DynamicAcc: convertOpenExp needs to handle EShapeSize"
+    S.EIndex _          -> error "FINISHME/DynamicAcc: convertOpenExp needs to handle EIndex"
 
     -- Here we run straight into our mismatch between Acc and
     -- SimpleAcc treatment of shape types.
@@ -646,7 +646,7 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
 --                    tup' :: Sm.PreExp acc Exp (??? bty,aty ???)
 --                    tup' = Sm.Tuple tup
                 in
-                error "FINISHME"    
+                error "FINISHME/DynamicAcc"    
                 -- sealExp$ Sm.Exp tup'
 #endif
 
@@ -1001,7 +1001,7 @@ convertOpenAcc env@(EnvPack _ _ mp) ae =
         then error "Mal-formed Fold.  Input types to Lam2 must match eachother and array input."
         else foldD bodfn init' sealedInArr aty
 
-    _ -> error$"FINISHME: convertOpenAcc: unhandled array operation: " ++show ae
+    _ -> error$"FINISHME/DynamicAcc: convertOpenAcc: unhandled array operation: " ++show ae
 
 -- | Convert an entire SimpleAcc `Prog` into a complete, closed, fully
 -- typed Accelerate AST.  To use this AST, however, you will need to
@@ -1022,7 +1022,7 @@ convertProg S.Prog{progBinds,progResults} =
   doBinds (EnvPack _ _ mp) [] =
     case S.resultNames progResults of
       [resVr] -> expectAVar$ P.snd$ mp # resVr
-      _ -> error$ "FINISHME: convertProg with multiple results: "++show progResults
+      _ -> error$ "FINISHME/DynamicAcc: convertProg with multiple results: "++show progResults
   
 
 

@@ -10,7 +10,7 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter
        (
          -- * Main module entrypoints  
          run, evalSimpleAcc,
-         SimpleInterpBackend,
+         SimpleInterpBackend(SimpleInterpBackend),
          
          -- * Smaller pieces that may be useful
          evalPrim, 

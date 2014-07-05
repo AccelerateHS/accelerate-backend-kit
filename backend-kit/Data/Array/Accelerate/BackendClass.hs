@@ -519,15 +519,31 @@ instance Backend b => SimpleBackend (DropBackend b) where
   --        -> Maybe (Blob b a)
   --        -> IO (Remote b a)
 
-  -- simpleCopyToHost (DropBackend b) r     = 
+  simpleCopyToHost (DropBackend b) (SomeRemote _ slc (_::Phantom aty) (rem :: Remote b aty)) = do
+    hsarr <- copyToHost b rem
+    let (repr :: Sug.ArrRepr aty) = Sug.fromArr hsarr
+        (_,accArr,_::Phantom aty) = unpackArray repr
+    return $ accArr
+
   -- simpleCopyToDevice (DropBackend b) a   = 
-  -- simpleCopyToPeer (DropBackend b) r     = 
-  -- simpleWaitRemote (DropBackend b) r     = 
-  -- simpleUseRemote (DropBackend b) r      = 
-  -- simpleSeparateMemorySpace (DropBackend b) = 
+  simpleCopyToPeer (DropBackend b) (SomeRemote _ slc (p::Phantom aty) (rem :: Remote b aty)) = do
+    -- FIXME: this copies ALL the data, even if we only care about a slice of it.
+    -- We should break it down somehow...
+    rem2 <- copyToPeer b rem
+    return $ SomeRemote b slc p rem2
+  simpleWaitRemote (DropBackend b) (SomeRemote _ _ _ (rem :: Remote b aty)) = do
+    waitRemote b rem
+    
+  simpleUseRemote (DropBackend b) (SomeRemote _ slc (p::Phantom aty) (rem :: Remote b aty)) = do
+    acc <- useRemote b rem
+    _ <- return $ phase1 acc
+    error $ "Unfinished:simpleUseRemote/DropBackend: unclear how to finish this, should maybe switch to Prog rather than AExp"
+
+  simpleSeparateMemorySpace (DropBackend b) = separateMemorySpace b
+
+  -- Leaving these off for now:
   -- simpleCompileFun1 (DropBackend b) = 
   -- simpleRunRawFun1  (DropBackend b) = 
-
 
 
 {--
