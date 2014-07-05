@@ -58,7 +58,7 @@ import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
                    (Type(..), Const(..), AVar, Var, Prog(..), 
                     Prim(..), NumPrim(..), IntPrim(..), FloatPrim(..))
 import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc)
--- import           Data.Array.Accelerate.BackendKit.Utils.Helpers (Phantom(Phantom))
+import           Data.Array.Accelerate.BackendKit.Utils.Helpers (Phantom(Phantom))
 
 import Data.Bits as B
 import Data.Dynamic (Typeable, Dynamic, fromDynamic, toDyn, typeOf)
@@ -189,9 +189,6 @@ data SealedShapeType where
   -- Do we care about the ArrayElt class here?
   SealedShapeType :: Shape sh => Phantom sh -> SealedShapeType
 
--- | Just a simple signal that the value is not used, only the type.
-data Phantom a = Phantom a deriving Show
-
 -- | Convert the runtime, monomorphic type representation into a sealed container
 -- with the true Haskell type inside.
 scalarTypeD :: Type -> SealedEltTuple
@@ -233,7 +230,7 @@ arrayTypeD :: Type -> SealedArrayType
 arrayTypeD (TArray ndim elty) =
   case shapeTypeD ndim of
     SealedShapeType (_ :: Phantom sh) ->      
-#define ATY(t1,t2) t1 -> SealedArrayType (Phantom(unused:: Array sh t2));
+#define ATY(t1,t2) t1 -> SealedArrayType (Phantom :: Phantom (Array sh t2));
      case elty of {
        ATY(TInt,Int) ATY(TInt8,Int8) ATY(TInt16,Int16) ATY(TInt32,Int32) ATY(TInt64,Int64) 
        ATY(TWord,Word) ATY(TWord8,Word8) ATY(TWord16,Word16) ATY(TWord32,Word32) ATY(TWord64,Word64) 
@@ -244,7 +241,7 @@ arrayTypeD (TArray ndim elty) =
 
        TTuple ls -> (case scalarTypeD elty of 
                       SealedEltTuple (et :: EltTuple etty) -> 
-                       SealedArrayType (Phantom(unused:: Array sh etty)));
+                       SealedArrayType (Phantom:: Phantom(Array sh etty)));
        TArray _ _ -> error$"arrayTypeD: nested array type, not allowed in Accelerate: "++show(TArray ndim elty)
      }
 arrayTypeD x@(TTuple _) = error$"arrayTypeD: does not handle tuples of arrays yet: "++show x
@@ -252,12 +249,12 @@ arrayTypeD oth = error$"arrayTypeD: expected array type, got "++show oth
 
 -- | Construct a Haskell type from an Int!  Why not?
 shapeTypeD :: Int -> SealedShapeType
-shapeTypeD 0 = SealedShapeType (Phantom Z)
+shapeTypeD 0 = SealedShapeType (Phantom :: Phantom Z)
 shapeTypeD n | n < 0 = error "shapeTypeD: Cannot take a negative number!"
 shapeTypeD n =
   case shapeTypeD (n-1) of
-    SealedShapeType (Phantom x :: Phantom sh) ->
-      SealedShapeType (Phantom (x :. (unused::Int)))
+    SealedShapeType (Phantom :: Phantom sh) ->
+      SealedShapeType (Phantom :: Phantom (sh :. Int))
 
 
 --------------------------------------------------------------------------------
@@ -282,7 +279,7 @@ unitD elt exp =
 useD :: S.AccArray -> SealedAcc
 useD arr =
   case sty of
-    SealedArrayType (Phantom (_ :: aT)) ->
+    SealedArrayType (Phantom :: Phantom aT) ->
       sealAcc$ A.use$
       repackAcc (unused::Acc aT) [arr]
  where
@@ -1037,11 +1034,11 @@ instance Show SealedEltTuple where
   show (SealedEltTuple x) = "Sealed:"++show x
 
 instance Show SealedShapeType where
-  show (SealedShapeType (Phantom (_ :: sh))) =
+  show (SealedShapeType (Phantom :: Phantom sh)) =
     "Sealed:"++show (toDyn (unused::sh))
     
 instance Show SealedArrayType where
-  show (SealedArrayType (Phantom (_ :: sh))) =
+  show (SealedArrayType (Phantom :: Phantom sh)) =
     "Sealed:"++show (toDyn (unused::sh))
 
 --------------------------------------------------------------------------------
