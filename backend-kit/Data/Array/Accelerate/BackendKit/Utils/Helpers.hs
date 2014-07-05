@@ -30,6 +30,9 @@ module Data.Array.Accelerate.BackendKit.Utils.Helpers
          ifCost, derefCost, costPrim, costConst,
          defaultDupThreshold,
 
+         -- * Phantom types: used in various places
+         Phantom(Phantom),
+
          -- * Debugging     
          dbgPrint, maybtrace, tracePrint, dbg -- Flag for debugging output.         
          )
@@ -50,6 +53,11 @@ import Prelude as P
 import System.IO.Unsafe   (unsafePerformIO)
 import System.Environment (getEnvironment)
 import           System.IO        (stdout, hFlush)
+
+
+-- | Used only for communicating type information.
+data Phantom a = Phantom deriving Show
+
 ----------------------------------------------------------------------------------------------------
 -- Compiler Conventions and global constants:
 ----------------------------------------------------------------------------------------------------

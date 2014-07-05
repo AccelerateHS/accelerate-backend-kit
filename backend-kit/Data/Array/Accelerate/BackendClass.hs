@@ -25,9 +25,12 @@ import qualified Data.Array.Accelerate.AST                      as AST
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1)
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as SACC
-import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc, unpackArray, Phantom(..))
+import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc, unpackArray)
+import           Data.Array.Accelerate.BackendKit.Utils.Helpers (Phantom(..))
 import           Data.Array.Accelerate.Trafo (Phase(..))
 import           Data.Array.Accelerate.Trafo.Sharing (convertAcc)
+
+import qualified Data.Array.Accelerate.DynamicAcc2 as Dyn 
 
 import Data.Char (isAlphaNum)
 import Data.Maybe (fromMaybe)
@@ -109,6 +112,7 @@ class Show b => Backend b where
   -- | The type of a remote handle on device memory. This is class-associated
   -- because different backends may represent device pointers differently.
   --
+  -- A value of type `Remote b a` stores data of type `a`, where `(Arrays a)`.
   data Remote b :: * -> * 
 
   -- | A `Blob` as a thing which /may/ help speed up or skip future
@@ -119,6 +123,8 @@ class Show b => Backend b where
   --   - an optimised and/or annotated AST containing backend-specific execution
   --     parameters
   --
+  -- A value of type `Blob b a` represents a program that returns a
+  -- value of type `a`, where `(Arrays a)`.
   data Blob b :: * -> *
 
   -------------------------- Compiling and Running -------------------------------
@@ -364,6 +370,7 @@ instance Show SomeSimpleBackend where
 --   direction but not the other.
 newtype LiftSimpleBackend b = LiftSimpleBackend b deriving (Show, Eq)
 
+
 -- newtype SimpleRemotesList b _a = SimpleRemotesList [SimpleRemote b]
 -- data SimpleBlobPair    b _a = SimpleBlobPair !(SimpleBlob b) !(SACC.Prog ())
 --  type Remote (LiftSimpleBackend b) = (SimpleRemotesList b)
@@ -443,6 +450,39 @@ instance SimpleBackend b => SimpleBackend (LiftSimpleBackend b) where
   -- waitRemote (LiftSimpleBackend b) r   = waitRemote b r
   -- useRemote (LiftSimpleBackend b) r    = useRemote b r
   -- separateMemorySpace (LiftSimpleBackend b) = separateMemorySpace b
+
+
+-- | A type wrapper that "casts" a Backend to a SimpleBackend.  This
+--   is a very tricky business and relies on the `DynamicAcc`
+--   conversion module to provide runtime checks that construct the
+--   full Accelerate AST.
+newtype DropBackend b = DropBackend b deriving (Show, Eq)
+
+data SomeRemote = forall a b . (Backend b, Arrays a) => 
+                  SomeRemote b (Phantom a) (Remote b a)
+
+data SomeBlob   = forall a b . (Backend b, Arrays a) => 
+                  SomeBlob b (Phantom a) (Blob b a)
+
+instance Backend b => SimpleBackend (DropBackend b) where
+  type SimpleRemote (DropBackend b) = SomeRemote
+  type SimpleBlob   (DropBackend b) = SomeBlob
+
+  simpleCompile (DropBackend b) path prg = 
+    let sa  = Dyn.convertProg prg in 
+    case Dyn.arrayTypeD (SACC.progType prg) of 
+      Dyn.SealedArrayType (_ :: Dyn.Phantom aty) ->
+        error "Finishme: DropBackend/simpleCompile"
+    -- let
+    --     ast      = undefined 
+    --     fullblob = compile b "" ast 
+    -- in undefined
+
+  -- simpleCompile :: b
+  --               -> FilePath
+  --               -> SACC.Prog ()
+  --               -> IO (SimpleBlob b)
+
 
 
 {--

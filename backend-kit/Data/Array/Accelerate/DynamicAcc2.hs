@@ -22,71 +22,48 @@
 -- grinder below.
 
 module Data.Array.Accelerate.DynamicAcc2
-{-
-       (-- * Dynamically typed AST pieces
-         SealedExp, SealedAcc,
-         
-         -- * Runtime representation of Types and Constants:
-         Type(..), Const(..),
-
-         -- * Syntax-constructing functions
-         constantD, useD, 
-         unitD, mapD, 
+       (
 
          -- * Functions to convert `SimpleAcc` programs into fully-typed Accelerate
          --   programs.
-         convertExp, convertClosedExp,
+         convertProg, 
 
-         t0, t1, t2  -- TEMP
+         -- * Dynamically typed AST pieces
+         SealedExp, SealedAcc,
+         downcastE, downcastA,
+
+         -- * Computing types at runtime so as to downcast:
+         scalarTypeD, SealedEltTuple(..), 
+         shapeTypeD,  SealedShapeType(..), 
+         arrayTypeD,  SealedArrayType(..),         
+
+         -- * Operating on open array and scalar expressions:
+         convertOpenAcc, convertExp,
+         emptyEnvPack, extendA, extendE, 
+         
+         -- * REEXPORTs: for convenience
+         Type(..), Const(..), Phantom(..),
+
+         -- * INTERNAL: Syntax-constructing functions, operating over
+         -- `Sealed`, dynamic representations.
+         useD, unitD, mapD, generateD, foldD
        )
--}
        where
 
 import           Data.Array.Accelerate as A hiding ((++))
-import           Data.Array.Accelerate.Tuple
-import qualified Data.Array.Accelerate as A
 import qualified Data.Array.Accelerate.Smart as Sm
 import qualified Data.Array.Accelerate.Type as T
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
-                 (Type(..), Const(..), AVar, Var, Prog(..), 
-                  Prim(..), NumPrim(..), IntPrim(..), FloatPrim(..))
-import           Data.Array.Accelerate.BackendKit.Tests
-                    (allProgs, allProgsMap, p1a, TestEntry(..), AccProg(..))
-import           Data.Array.Accelerate.BackendKit.SimpleArray (payloadsFromList1)
-import Data.Array.Accelerate.Interpreter as I
--- import           Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone (repackAcc)
+                   (Type(..), Const(..), AVar, Var, Prog(..), 
+                    Prim(..), NumPrim(..), IntPrim(..), FloatPrim(..))
 import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc)
-import qualified Data.Array.Accelerate.Array.Sugar as Sug
--- import qualified Data.Array.Accelerate.Array.Data  as Dat
+-- import           Data.Array.Accelerate.BackendKit.Utils.Helpers (Phantom(Phantom))
 
 import Data.Bits as B
-import Data.Typeable (gcast)
-import Data.Dynamic (Dynamic, fromDyn, fromDynamic, toDyn,
-                     Typeable, Typeable3, mkTyConApp, TyCon, mkTyCon3, typeOf3, typeOf)
+import Data.Dynamic (Typeable, Dynamic, fromDynamic, toDyn, typeOf)
 import Data.Map as M
 import Prelude as P 
-import Data.Maybe (fromMaybe, fromJust)
--- import Data.Word
-import Debug.Trace (trace)
--- import Control.Exception (bracket)
--- import Control.Monad (when)
-
-import qualified Data.Array.Unboxed as U
-
-----------------------------------------
-
-import qualified Test.HUnit as H
-import qualified Test.Framework as TF
-import Test.Framework.Providers.HUnit (testCase)
--- import Test.Framework.TH (defaultMainGenerator, testGroupGenerator)
-
-----------------
-
--- TEMP:
-import Data.Array.Accelerate.BackendKit.Phase1.ToAccClone as Cvt (accToAccClone, expToExpClone)
-import Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1)
-import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec))
 
 ------------------------------------------------------------------------------------------
 
@@ -131,6 +108,8 @@ sealExp = SealedExp . toDyn
 sealAcc :: Typeable a => Acc a -> SealedAcc
 sealAcc = SealedAcc . toDyn
 
+-- | Cast a sealed expression into a statically typed one.  This may
+-- fail with an exception.
 downcastE :: forall a . Typeable a => SealedExp -> A.Exp a
 downcastE (SealedExp d) =
   case fromDynamic d of
@@ -142,7 +121,8 @@ downcastE (SealedExp d) =
 unused :: a
 unused = error "This dummy value should not be used"
 
-
+-- | Cast a sealed array expression into a statically typed one.  This
+-- may fail with an exception.
 downcastA :: forall a . Typeable a => SealedAcc -> Acc a
 downcastA (SealedAcc d) =
   case fromDynamic d of
@@ -150,6 +130,8 @@ downcastA (SealedAcc d) =
     Nothing ->
        error$"Attempt to unpack SealedAcc "++show d
           ++ ", expecting type Acc "++ show (toDyn (unused::a))
+-- TODO: could expose the Maybe here for the variants we export.
+
 
 -- | Convert a `SimpleAcc` constant into a fully-typed (but sealed) Accelerate one.
 constantE :: Const -> SealedExp
@@ -967,10 +949,13 @@ shapeTyLen TInt        = 1
 shapeTyLen (TTuple ls) | P.all (==TInt) ls = length ls
 shapeTyLen ty = error $ "shapeTyLen: invalid shape type: "++show ty
 
+convertAcc :: S.AExp -> SealedAcc
+convertAcc = convertOpenAcc emptyEnvPack
+
 -- | Convert a closed `SimpleAcc` expression (no free vars) into a fully-typed (but
 -- sealed) Accelerate one.
-convertAcc :: EnvPack -> S.AExp -> SealedAcc
-convertAcc env@(EnvPack _ _ mp) ae =
+convertOpenAcc :: EnvPack -> S.AExp -> SealedAcc
+convertOpenAcc env@(EnvPack _ _ mp) ae =
   let typeEnv = M.map P.fst mp in
   case ae of
     S.Vr vr   -> let (_,s) = mp # vr in expectAVar s
@@ -1014,8 +999,11 @@ convertAcc env@(EnvPack _ _ mp) ae =
         then error "Mal-formed Fold.  Input types to Lam2 must match eachother and array input."
         else foldD bodfn init' sealedInArr aty
 
-    _ -> error$"FINISHME: convertAcc: unhandled array operation: " ++show ae
+    _ -> error$"FINISHME: convertOpenAcc: unhandled array operation: " ++show ae
 
+-- | Convert an entire SimpleAcc `Prog` into a complete, closed, fully
+-- typed Accelerate AST.  To use this AST, however, you will need to
+-- know what type to downcast it to.
 convertProg :: S.Prog () -> SealedAcc
 convertProg S.Prog{progBinds,progResults} =
     doBinds emptyEnvPack progBinds
@@ -1026,7 +1014,7 @@ convertProg S.Prog{progBinds,progResults} =
       Left ex  -> let se = convertExp env ex
                       env' = extendE vr ty se env
                   in doBinds env' rst
-      Right ae -> let sa = convertAcc env ae
+      Right ae -> let sa = convertOpenAcc env ae
                       env' = extendA vr ty sa env
                   in doBinds env' rst
   doBinds (EnvPack _ _ mp) [] =
