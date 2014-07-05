@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP, ScopedTypeVariables #-}
 {-# LANGUAGE DeriveGeneric #-}
+-- {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE NamedFieldPuns #-}
 -- {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
@@ -10,6 +11,7 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter
          -- * Main module entrypoints  
          run, evalSimpleAcc,
          interpBackend,
+         -- SimpleInterpBackend,
          
          -- * Smaller pieces that may be useful
          evalPrim, 
@@ -18,6 +20,7 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter
        )
        where
 
+-- import qualified Data.Array.Accelerate as A
 import           Data.Array.Accelerate.BackendKit.Utils.Helpers    (maybtrace, tracePrint)
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1, repackAcc)
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
@@ -30,10 +33,49 @@ import qualified Data.List as L
 import qualified Data.Map  as M
 import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
 
-import Data.Array.Accelerate.BackendClass
+import Data.Array.Accelerate.BackendClass (Backend(..), SimpleBackend(..), MinimalBackend(..))
 
 interpBackend :: MinimalBackend
 interpBackend = MinimalBackend run'
+
+-- | A unit type just to carry a `SimpleBackend` and `Backend` instance.
+data SimpleInterpBackend = SimpleInterpBackend 
+  deriving (Show,Eq,Ord,Read)
+
+{-
+instance SimpleBackend SimpleInterpBackend where
+  type SimpleRemote SimpleInterpBackend = ()
+  type SimpleBlob SimpleInterpBackend   = ()
+  simpleCompile SimpleInterpBackend _ _ = return ()
+--  simpleRunRaw SimpleInterpBackend nm acc mb = simpleRunRaw b nm acc mb
+  -- simpleCopyToHost SimpleInterpBackend r     = simpleCopyToHost b r 
+  -- simpleCopyToDevice SimpleInterpBackend a   = simpleCopyToDevice b a
+  -- simpleCopyToPeer SimpleInterpBackend r     = simpleCopyToPeer b r
+  -- simpleWaitRemote SimpleInterpBackend r     = simpleWaitRemote b r
+  -- simpleUseRemote SimpleInterpBackend r      = simpleUseRemote b r
+  -- simpleSeparateMemorySpace SimpleInterpBackend = simpleSeparateMemorySpace b
+  -- simpleCompileFun1 SimpleInterpBackend = simpleCompileFun1 b
+  -- simpleRunRawFun1  SimpleInterpBackend = simpleRunRawFun1 b
+
+instance Backend SimpleInterpBackend where
+  data Remote SimpleInterpBackend  r = SIB_Remote !r
+  data Blob   SimpleInterpBackend _r = SIB_Blob
+
+  compile _ _ _     = return SIB_Blob
+  compileFun1 _ _ _ = return SIB_Blob
+
+  runRaw SimpleInterpBackend acc _mblob = 
+    return $! SIB_Remote (run' acc)
+
+  copyToHost _ (SIB_Remote rm) = return $! rm
+  copyToDevice _ a = return $! SIB_Remote a
+  copyToPeer _ rm = return $! rm
+
+  waitRemote _ _ = return ()
+  useRemote _ (SIB_Remote r) = return $! phase0 (A.use r)
+  separateMemorySpace _ = False -- This is pretty bogus, we have no idea.
+
+-}
 
 --------------------------------------------------------------------------------
 -- Exposing a standard Accelerate `run` interface.

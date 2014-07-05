@@ -10,6 +10,7 @@ module Data.Array.Accelerate.BackendClass (
   MinimalBackend(..),
   SimpleBackend(..), 
   LiftSimpleBackend(LiftSimpleBackend), SomeSimpleBackend(SomeSimpleBackend), 
+  DropBackend(DropBackend),
   runWith, 
   runWithSimple, 
   runTimed, AccTiming(..),
@@ -28,6 +29,7 @@ import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phas
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as SACC
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Prog(..))
 import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc, unpackArray)
+import           Data.Array.Accelerate.BackendKit.Utils.Helpers ((#))
 import           Data.Array.Accelerate.Trafo (Phase(..))
 import           Data.Array.Accelerate.Trafo.Sharing (convertAcc)
 
@@ -463,8 +465,14 @@ instance SimpleBackend b => SimpleBackend (LiftSimpleBackend b) where
 --   full Accelerate AST.
 newtype DropBackend b = DropBackend b deriving (Show, Eq)
 
+-- | Bridging between the `Backend` and `SimpleBackend` notion of a
+-- remote is tricky, because the later is more granular.
+-- Specifically, this datatype represents a SLICE of the array leaves
+-- of the full result of an Accelerate computation.
 data SomeRemote b = forall a . (Backend b, Arrays a) => 
-                    SomeRemote b (Phantom a) (Remote b a)
+                    SomeRemote b LeafSlice (Phantom a) (Remote b a)
+
+data LeafSlice = LeafSlice { offsetFromRight :: Int, numLeaves :: Int }
 
 data SomeBlob b = forall a . (Backend b, Arrays a) => 
                   SomeBlob b (AST.Acc a) (Blob b a)
@@ -473,7 +481,7 @@ instance Backend b => SimpleBackend (DropBackend b) where
   type SimpleRemote (DropBackend b) = SomeRemote b
   type SimpleBlob   (DropBackend b) = SomeBlob b
 
-  simpleCompile (DropBackend b) path prg = 
+  simpleCompile (DropBackend b) _path prg = 
     case Dyn.arrayTypeD (SACC.progType prg) of 
       SealedArrayType (_ :: Phantom aty) -> do  
         let acc :: Acc aty
@@ -486,16 +494,20 @@ instance Backend b => SimpleBackend (DropBackend b) where
     sblb <- simpleCompile (DropBackend b) (fromMaybe "" nm) prg
     simpleRunRaw (DropBackend b) nm prg (Just sblb)
 
-  simpleRunRaw (DropBackend (b::bkend)) nm Prog{progResults} (Just sblb) = do
+  simpleRunRaw (DropBackend (b::bkend)) _nm prg@Prog{progResults} (Just sblb) = do
     case sblb of 
-      SomeBlob b (acc::AST.Acc aty) (blb::Blob bkend aty) -> do
+      SomeBlob _b (acc::AST.Acc aty) (blb::Blob bkend aty) -> do
         remt <- runRaw b acc (Just blb)
+        let results = SACC.resultNames progResults
+            env     = SACC.progToEnv prg
+        Prelude.putStrLn $ "Try to simpleRunRaw with progResults " ++ show(doc progResults)
+
         -- Here we need to SUBDIVIDE the resulting arrays...
         -- but only after they are copied back.
-        return $ SomeRemote b (Phantom::Phantom aty) remt
-        
-        error $ "Try to simpleRunRaw with progResults " ++ show(doc progResults)
-        error "Finishme: DropBackend/simpleRunRaw" 
+        case [ (v, env#v) | v <- results ] of
+         [(_nm,TArray _ _)] -> 
+             return [SomeRemote b (LeafSlice 0 1) (Phantom::Phantom aty) remt]
+         _ -> error "Finishme: DropBackend/simpleRunRaw" 
 
 
   -- runRaw :: (Arrays a)
