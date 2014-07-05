@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP          #-}
 {-# LANGUAGE Rank2Types   #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -25,13 +26,15 @@ import qualified Data.Array.Accelerate.AST                      as AST
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1)
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as SACC
+import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Prog(..))
 import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc, unpackArray)
-import           Data.Array.Accelerate.BackendKit.Utils.Helpers (Phantom(..))
 import           Data.Array.Accelerate.Trafo (Phase(..))
 import           Data.Array.Accelerate.Trafo.Sharing (convertAcc)
 
-import qualified Data.Array.Accelerate.DynamicAcc2 as Dyn 
+import           Data.Array.Accelerate.DynamicAcc2 as Dyn 
 
+-- standard libraries
+import Data.ByteString.Lazy                   as B
 import Data.Char (isAlphaNum)
 import Data.Maybe (fromMaybe)
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
@@ -39,8 +42,9 @@ import Prelude hiding (rem)
 import System.IO.Unsafe (unsafePerformIO)
 import System.Random (randomIO)
 
--- standard libraries
-import           Data.ByteString.Lazy                   as B
+-- TEMP:
+import  Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
+
 
 
 -- We may want to process already-converted, already-optimized,
@@ -150,9 +154,9 @@ class Show b => Backend b where
   -- | Run an already-optimized Accelerate program (`AST.Acc`) and leave the
   -- results on the accelerator device.
   --
-  -- The result of `runRaw` is both asynchronous uses the constructor `Remote`
-  -- to signal that the result is still located on the device rather than the
-  -- host.
+  -- The result of `runRaw` is both asynchronous (returns immediately)
+  -- and uses the constructor `Remote` to signal that the result is
+  -- still located on the device rather than the host.
   --
   -- Optionally, a previously compiled blob may be provided, which /may/ be able
   -- to avoid compilation, but this is backend-dependent.
@@ -278,13 +282,14 @@ class Show b => SimpleBackend b where
                     -> SACC.Fun1 (SACC.Prog ())
                     -> IO (SimpleBlob b)
 
-  -- | Run an already-optimized Accelerate program (`AST.Acc`) and leave the results
-  -- on the accelerator device.  The list of results should be equal in length to the
-  -- `progResults` field of the input `Prog`.
+  -- | Run a simplified Accelerate program and leave the results on
+  -- the accelerator device.  The list of results should be equal in
+  -- length to the `progResults` field of the input `Prog`.  That is,
+  -- one result for each array returned from the computation.
   --
-  -- The result of `runRaw` is both asynchronous uses the constructor `Remote`
-  -- to signal that the result is still located on the device rather than the
-  -- host.
+  -- The result of `runRaw` is both asynchronous (returns immediately)
+  -- and uses the `SimlpeRemote` to signal that the result is still
+  -- located on the device rather than the host.
   --
   -- Optionally, a previously compiled blob may be provided, which /may/ be able
   -- to avoid compilation, but this is backend-dependent.
@@ -458,30 +463,55 @@ instance SimpleBackend b => SimpleBackend (LiftSimpleBackend b) where
 --   full Accelerate AST.
 newtype DropBackend b = DropBackend b deriving (Show, Eq)
 
-data SomeRemote = forall a b . (Backend b, Arrays a) => 
-                  SomeRemote b (Phantom a) (Remote b a)
+data SomeRemote b = forall a . (Backend b, Arrays a) => 
+                    SomeRemote b (Phantom a) (Remote b a)
 
-data SomeBlob   = forall a b . (Backend b, Arrays a) => 
-                  SomeBlob b (Phantom a) (Blob b a)
+data SomeBlob b = forall a . (Backend b, Arrays a) => 
+                  SomeBlob b (AST.Acc a) (Blob b a)
 
 instance Backend b => SimpleBackend (DropBackend b) where
-  type SimpleRemote (DropBackend b) = SomeRemote
-  type SimpleBlob   (DropBackend b) = SomeBlob
+  type SimpleRemote (DropBackend b) = SomeRemote b
+  type SimpleBlob   (DropBackend b) = SomeBlob b
 
   simpleCompile (DropBackend b) path prg = 
-    let sa  = Dyn.convertProg prg in 
     case Dyn.arrayTypeD (SACC.progType prg) of 
-      Dyn.SealedArrayType (_ :: Dyn.Phantom aty) ->
-        error "Finishme: DropBackend/simpleCompile"
-    -- let
-    --     ast      = undefined 
-    --     fullblob = compile b "" ast 
-    -- in undefined
+      SealedArrayType (_ :: Phantom aty) -> do  
+        let acc :: Acc aty
+            acc = downcastA (Dyn.convertProg prg)
+            ast = phase0 acc
+        blb <- compile b "" ast
+        return $ SomeBlob b ast blb
 
-  -- simpleCompile :: b
-  --               -> FilePath
-  --               -> SACC.Prog ()
-  --               -> IO (SimpleBlob b)
+  simpleRunRaw (DropBackend b) nm prg Nothing = do
+    sblb <- simpleCompile (DropBackend b) (fromMaybe "" nm) prg
+    simpleRunRaw (DropBackend b) nm prg (Just sblb)
+
+  simpleRunRaw (DropBackend (b::bkend)) nm Prog{progResults} (Just sblb) = do
+    case sblb of 
+      SomeBlob b (acc::AST.Acc aty) (blb::Blob bkend aty) -> do
+        remt <- runRaw b acc (Just blb)
+        -- Here we need to SUBDIVIDE the resulting arrays...
+        -- but only after they are copied back.
+        return $ SomeRemote b (Phantom::Phantom aty) remt
+        
+        error $ "Try to simpleRunRaw with progResults " ++ show(doc progResults)
+        error "Finishme: DropBackend/simpleRunRaw" 
+
+
+  -- runRaw :: (Arrays a)
+  --        => b
+  --        -> AST.Acc a
+  --        -> Maybe (Blob b a)
+  --        -> IO (Remote b a)
+
+  -- simpleCopyToHost (DropBackend b) r     = 
+  -- simpleCopyToDevice (DropBackend b) a   = 
+  -- simpleCopyToPeer (DropBackend b) r     = 
+  -- simpleWaitRemote (DropBackend b) r     = 
+  -- simpleUseRemote (DropBackend b) r      = 
+  -- simpleSeparateMemorySpace (DropBackend b) = 
+  -- simpleCompileFun1 (DropBackend b) = 
+  -- simpleRunRawFun1  (DropBackend b) = 
 
 
 

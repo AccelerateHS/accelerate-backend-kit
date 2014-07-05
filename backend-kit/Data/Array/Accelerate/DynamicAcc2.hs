@@ -942,6 +942,7 @@ tupToIndex ty ex =
 
 tupTyToIndex = error "finish me"
 
+shapeTyLen :: Type -> Int
 shapeTyLen TInt        = 1
 shapeTyLen (TTuple ls) | P.all (==TInt) ls = length ls
 shapeTyLen ty = error $ "shapeTyLen: invalid shape type: "++show ty
