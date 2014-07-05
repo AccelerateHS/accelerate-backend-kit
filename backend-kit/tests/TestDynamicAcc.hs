@@ -38,14 +38,14 @@ t0b = downcastA t0
 -}
 
 t1 = -- convertClosedExp
-     convertExp emptyEnvPack 
+     convertOpenExp emptyEnvPack 
      (S.ECond (S.EConst (B True)) (S.EConst (I 33)) (S.EConst (I 34)))
 t1_ :: A.Exp Int
 t1_ = downcastE t1
 case_if = H.assertEqual "if and const" (show t1_) "33"
 
 t2 :: SealedExp
-t2 = convertExp emptyEnvPack 
+t2 = convertOpenExp emptyEnvPack 
      (S.ELet (v, TInt, (S.EConst (I 33))) (S.EVr v))
  where v = S.var "v" 
 t2_ :: Exp Int
@@ -54,12 +54,12 @@ case_const = H.assertEqual "simple const" (show t2_) "33"
 
 t4 = roundTrip (allProgsMap M.! "p4")
 
-t5 = convertAcc emptyEnvPack (S.Unit (S.EConst (I 33)))
+t5 = convertOpenAcc emptyEnvPack (S.Unit (S.EConst (I 33)))
 t5_ :: Acc (Scalar Int)
 t5_ = downcastA t5
 case_unit = H.assertEqual "unit array" (show$ I.run t5_) "Array (Z) [33]"
 
-t6 = convertAcc (extendA arr (TArray 0 TInt) t5 emptyEnvPack)
+t6 = convertOpenAcc (extendA arr (TArray 0 TInt) t5 emptyEnvPack)
         (S.Map (S.Lam1 (v,TInt) (S.EVr v)) arr)
   where v   = S.var "v"
         arr = S.var "arr"
@@ -68,7 +68,7 @@ t6_ = downcastA t6
 case_mapId = H.assertEqual "map id function" (show$ I.run t6_) "Array (Z) [33]"
 
 
-t7 = convertAcc (extendA arr (TArray 0 TInt) t5 emptyEnvPack)
+t7 = convertOpenAcc (extendA arr (TArray 0 TInt) t5 emptyEnvPack)
         (S.Map (S.Lam1 (v,TInt) (S.EPrimApp TInt (S.NP S.Add) [S.EVr v, S.EVr v])) arr)
   where v   = S.var "v"
         arr = S.var "arr"
@@ -76,7 +76,7 @@ t7_ :: Acc (Scalar Int)
 t7_ = downcastA t7
 case_mapAdd = H.assertEqual "map add fun" (show$ I.run t7_) "Array (Z) [66]"
 
-t8 = convertExp emptyEnvPack (S.ETuple [S.EConst (I 11), S.EConst (F 3.3)])
+t8 = convertOpenExp emptyEnvPack (S.ETuple [S.EConst (I 11), S.EConst (F 3.3)])
 t8_ :: Exp (Int,Float)
 t8_ = downcastE t8
 case_pairExp = H.assertEqual "simple pair"
@@ -84,14 +84,14 @@ case_pairExp = H.assertEqual "simple pair"
 --             (A.fromList Z [(11,3.3)]) -- Why is there no EQ for Accelerate arrays?
              "Array (Z) [(11,3.3)]"
 
-t9 = convertAcc emptyEnvPack $
+t9 = convertOpenAcc emptyEnvPack $
      S.Use$ S.AccArray [10] [S.ArrayPayloadInt (U.listArray (0,9) [1..10])]
 t9_ :: Acc (Vector Int)
 t9_ = downcastA t9
 case_use = H.assertEqual "use array" (show $ I.run$ t9_)
            "Array (Z :. 10) [1,2,3,4,5,6,7,8,9,10]"
 
-t10 = convertAcc emptyEnvPack $
+t10 = convertOpenAcc emptyEnvPack $
       S.Generate (S.EConst (I 10)) -- (S.EIndex [S.EConst (I 10)])
                  (S.Lam1 (v,TInt) (S.EVr v))
   where v   = S.var "v"
@@ -100,7 +100,7 @@ t10_ = downcastA t10
 case_generate1 = H.assertEqual "generate1" (show $ I.run$ t10_)
                  "Array (Z :. 10) [0,1,2,3,4,5,6,7,8,9]"
 
-t11 = convertAcc emptyEnvPack $
+t11 = convertOpenAcc emptyEnvPack $
       S.Generate (S.ETuple [S.EConst (I 3), S.EConst (I 2)]) -- (S.EIndex [S.EConst (I 10)])
                  (S.Lam1 (v, TTuple [TInt,TInt]) (S.EVr v))
   where v   = S.var "v"
@@ -110,7 +110,7 @@ case_generate2D = H.assertEqual "generate2" (show $ I.run$ t11_)
                  "Array (Z :. 3 :. 2) [(0,0),(0,1),(1,0),(1,1),(2,0),(2,1)]"
 
 -- | This test exercises only tuples on the input side, plus tuple field projection.
-t12 = convertAcc emptyEnvPack $
+t12 = convertOpenAcc emptyEnvPack $
       S.Generate (S.ETuple [S.EConst (I 3), S.EConst (I 2)]) -- (S.EIndex [S.EConst (I 10)])
                  (S.Lam1 (v, TTuple [TInt,TInt]) (S.ETupProject 0 1 (S.EVr v)))
   where v   = S.var "v"
@@ -127,7 +127,7 @@ t12A = A.generate (constant (Z :. (3::Int) :. (2 :: Int)))
 v = S.var "v"
 
 -- | Now project TWO components out of THREE.
-t13 = convertAcc emptyEnvPack $
+t13 = convertOpenAcc emptyEnvPack $
       S.Generate (S.ETuple [S.EConst (I 3), S.EConst (I 2), S.EConst (I 1)]) -- (S.EIndex [S.EConst (I 10)])
                  (S.Lam1 (v, TTuple [TInt,TInt,TInt])
                     (S.ETupProject 1 2 (S.EVr v)))
@@ -146,7 +146,7 @@ ref13 = A.generate (constant (Z :. (3::Int) :. (2 :: Int) :. (1 :: Int)))
 
 -- | Generate an array of shapes -- this is tricky because in
 -- SimpleAcc we represent shapes merely as tuples.
-t14 = convertAcc emptyEnvPack $
+t14 = convertOpenAcc emptyEnvPack $
 --      S.Generate (S.ETuple [S.EConst (I8 3), S.EConst (I16 2), S.EConst (I32 1)]) -- This should be a typechecking error
       S.Generate (S.ETuple [S.EConst (I 3), S.EConst (I 2), S.EConst (I 1)]) 
                  (S.Lam1 (v, TTuple [TInt,TInt,TInt]) (S.EVr v))
@@ -164,7 +164,7 @@ ref14 = A.generate (constant (Z :. (3::Int) :. (2 :: Int) :. (1 :: Int)))
                      (Z :. a :. b :. c) = unlift x
                  in lift (a,(b,c)))
 
-i15 = convertAcc emptyEnvPack $
+i15 = convertOpenAcc emptyEnvPack $
       S.Generate (S.ETuple [S.EConst (I 3), S.EConst (I 2), S.EConst (I 1)]) 
                  (S.Lam1 (v, TTuple [TInt,TInt,TInt])
                   (S.ETuple [ S.ETuple [(S.ETupProject 0 1 (S.EVr v)),
@@ -181,20 +181,20 @@ case_generateTupLeftNest = H.assertEqual "generate6"
 --------------------------------------------------
 -- Test PrimApps:
 
-p1 = convertExp emptyEnvPack
+p1 = convertOpenExp emptyEnvPack
         (S.EPrimApp TInt (S.NP S.Add) [S.EConst (I 1), S.EConst (I 2)])
 p1_ :: Exp Int
 p1_ = downcastE p1
 
 case_primApp_Add = H.assertEqual "primapp_add" (show p1_) "3"
 
-p2 = convertExp emptyEnvPack
+p2 = convertOpenExp emptyEnvPack
         (S.EPrimApp TInt (S.NP S.Sig) [S.EConst (I (-11))])
 p2_ :: Exp Int
 p2_ = downcastE p2
 case_primApp_Sig = H.assertEqual "primapp_sig" (show p2_) "-1"
 
-p3 = convertExp emptyEnvPack
+p3 = convertOpenExp emptyEnvPack
         (S.EPrimApp TInt (S.FP Round) [S.EConst (F (9.99))])
 p3_ :: Exp Int
 p3_ = downcastE p3

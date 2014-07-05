@@ -31,7 +31,7 @@ import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc, 
 import           Data.Array.Accelerate.Trafo (Phase(..))
 import           Data.Array.Accelerate.Trafo.Sharing (convertAcc)
 
-import           Data.Array.Accelerate.DynamicAcc2 as Dyn 
+import           Data.Array.Accelerate.DynamicAcc2 as Dyn hiding (convertAcc)
 
 -- standard libraries
 import Data.ByteString.Lazy                   as B

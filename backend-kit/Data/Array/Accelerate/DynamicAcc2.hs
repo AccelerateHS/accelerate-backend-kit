@@ -26,7 +26,7 @@ module Data.Array.Accelerate.DynamicAcc2
 
          -- * Functions to convert `SimpleAcc` programs into fully-typed Accelerate
          --   programs.
-         convertProg, 
+         convertProg, convertAcc, convertExp, 
 
          -- * Dynamically typed AST pieces
          SealedExp, SealedAcc,
@@ -38,7 +38,7 @@ module Data.Array.Accelerate.DynamicAcc2
          arrayTypeD,  SealedArrayType(..),         
 
          -- * Operating on open array and scalar expressions:
-         convertOpenAcc, convertExp,
+         convertOpenAcc, convertOpenExp,
          emptyEnvPack, extendA, extendE, 
          
          -- * REEXPORTs: for convenience
@@ -46,7 +46,7 @@ module Data.Array.Accelerate.DynamicAcc2
 
          -- * INTERNAL: Syntax-constructing functions, operating over
          -- `Sealed`, dynamic representations.
-         useD, unitD, mapD, generateD, foldD
+         constantE, useD, unitD, mapD, generateD, foldD, dbgtrace
        )
        where
 
@@ -425,17 +425,21 @@ resealTup [(SealedEltTuple (_ :: EltTuple aty), a),
 resealTup components =  
   error$ "resealTup: mismatched or unhandled tuple: "++show components
 
+-- | Convert a closed expression.
+convertExp :: S.Exp -> SealedExp
+convertExp = convertOpenExp emptyEnvPack
+
 -- | Convert an entire `SimpleAcc` expression into a fully-typed (but sealed) Accelerate one.
 --   Requires a type environments for the (open) `SimpleAcc` expression:    
 --   one for free expression variables, one for free array variables.
 --     
-convertExp :: EnvPack -> S.Exp -> SealedExp
-convertExp ep@(EnvPack envE envA mp) ex =
+convertOpenExp :: EnvPack -> S.Exp -> SealedExp
+convertOpenExp ep@(EnvPack envE envA mp) ex =
   dbgtrace(" @ Converting exp "++show ex++" with env "++show mp++"\n    and dyn env "++show (envE,envA)) $
   dbgtrace(" @-> converted exp result: "++show result) $
   result
  where 
-  cE = convertExp ep
+  cE = convertOpenExp ep
   typeEnv  = M.map P.fst mp -- Strip out the SealedExp/Acc bits leaving just the types.
   resultTy = S.recoverExpType typeEnv ex
   result =  
@@ -443,15 +447,15 @@ convertExp ep@(EnvPack envE envA mp) ex =
     S.EConst c -> constantE c
     S.EVr vr -> let (_,se) = mp # vr in expectEVar se
 
-    S.EShape _          -> error "FINISHME: convertExp needs to handle EShape"
-    S.EShapeSize _      -> error "FINISHME: convertExp needs to handle EShapeSize"
-    S.EIndex _          -> error "FINISHME: convertExp needs to handle EIndex"
+    S.EShape _          -> error "FINISHME: convertOpenExp needs to handle EShape"
+    S.EShapeSize _      -> error "FINISHME: convertOpenExp needs to handle EShapeSize"
+    S.EIndex _          -> error "FINISHME: convertOpenExp needs to handle EIndex"
 
     -- Here we run straight into our mismatch between Acc and
     -- SimpleAcc treatment of shape types.
     S.EIndexScalar avr indEx -> 
       let indTy = S.recoverExpType typeEnv indEx
-          ind2  = tupToIndex indTy$ convertExp ep indEx
+          ind2  = tupToIndex indTy$ convertOpenExp ep indEx
           (arrty,sa) = mp # avr
           TArray dims elt = arrty
       in
@@ -468,7 +472,7 @@ convertExp ep@(EnvPack envE envA mp) ex =
            
     
     S.ETupProject {S.indexFromRight=ind, S.projlen=len, S.tupexpr=tex} ->
-      let tup = convertExp ep tex
+      let tup = convertOpenExp ep tex
           tty  = S.recoverExpType typeEnv tex
       in       
        case scalarTypeD tty of
@@ -492,12 +496,12 @@ convertExp ep@(EnvPack envE envA mp) ex =
              _ -> error ("ETupProject got unhandled tuple type: "++show et1)                
     
     S.ETuple []    -> constantE (Tup [])
-    S.ETuple [ex]  -> convertExp ep ex
+    S.ETuple [ex]  -> convertOpenExp ep ex
     S.ETuple [a,b] ->
       let ta = S.recoverExpType typeEnv a
           tb = S.recoverExpType typeEnv b
-          a' = convertExp ep a
-          b' = convertExp ep b
+          a' = convertOpenExp ep a
+          b' = convertOpenExp ep b
       in
       resealTup $ P.zip [scalarTypeD ta, scalarTypeD tb] [a',b']
 
@@ -507,9 +511,9 @@ convertExp ep@(EnvPack envE envA mp) ex =
       let ta = S.recoverExpType typeEnv a
           tb = S.recoverExpType typeEnv b
           tc = S.recoverExpType typeEnv c
-          a' = convertExp ep a
-          b' = convertExp ep b
-          c' = convertExp ep c          
+          a' = convertOpenExp ep a
+          b' = convertOpenExp ep b
+          c' = convertOpenExp ep c          
       in
       resealTup $ P.zip (P.map scalarTypeD [ta, tb, tc]) [a',b',c']
 
@@ -518,10 +522,10 @@ convertExp ep@(EnvPack envE envA mp) ex =
           tb = S.recoverExpType typeEnv b
           tc = S.recoverExpType typeEnv c
           td = S.recoverExpType typeEnv d
-          a' = convertExp ep a
-          b' = convertExp ep b
-          c' = convertExp ep c
-          d' = convertExp ep d               
+          a' = convertOpenExp ep a
+          b' = convertOpenExp ep b
+          c' = convertOpenExp ep c
+          d' = convertOpenExp ep d               
       in
        resealTup $ P.zip (P.map scalarTypeD [ta,tb,tc,td]) [a',b',c',d']
 
@@ -531,11 +535,11 @@ convertExp ep@(EnvPack envE envA mp) ex =
           tc = S.recoverExpType typeEnv c
           td = S.recoverExpType typeEnv d
           te = S.recoverExpType typeEnv e          
-          a' = convertExp ep a
-          b' = convertExp ep b
-          c' = convertExp ep c
-          d' = convertExp ep d
-          e' = convertExp ep e          
+          a' = convertOpenExp ep a
+          b' = convertOpenExp ep b
+          c' = convertOpenExp ep c
+          d' = convertOpenExp ep d
+          e' = convertOpenExp ep e          
       in
        resealTup $ P.zip (P.map scalarTypeD [ta,tb,tc,td,te]) [a',b',c',d',e']
 
@@ -546,12 +550,12 @@ convertExp ep@(EnvPack envE envA mp) ex =
           td = S.recoverExpType typeEnv d
           te = S.recoverExpType typeEnv e
           tf = S.recoverExpType typeEnv f
-          a' = convertExp ep a
-          b' = convertExp ep b
-          c' = convertExp ep c
-          d' = convertExp ep d
-          e' = convertExp ep e
-          f' = convertExp ep f
+          a' = convertOpenExp ep a
+          b' = convertOpenExp ep b
+          c' = convertOpenExp ep c
+          d' = convertOpenExp ep d
+          e' = convertOpenExp ep e
+          f' = convertOpenExp ep f
       in
        resealTup $ P.zip (P.map scalarTypeD [ta,tb,tc,td,te,tf]) [a',b',c',d',e',f']
 
@@ -563,13 +567,13 @@ convertExp ep@(EnvPack envE envA mp) ex =
           te = S.recoverExpType typeEnv e
           tf = S.recoverExpType typeEnv f
           tg = S.recoverExpType typeEnv g
-          a' = convertExp ep a
-          b' = convertExp ep b
-          c' = convertExp ep c
-          d' = convertExp ep d
-          e' = convertExp ep e
-          f' = convertExp ep f
-          g' = convertExp ep g
+          a' = convertOpenExp ep a
+          b' = convertOpenExp ep b
+          c' = convertOpenExp ep c
+          d' = convertOpenExp ep d
+          e' = convertOpenExp ep e
+          f' = convertOpenExp ep f
+          g' = convertOpenExp ep g
       in resealTup $ P.zip (P.map scalarTypeD [ta,tb,tc,td,te,tf,tg])
                            [a',b',c',d',e',f',g']
 
@@ -582,14 +586,14 @@ convertExp ep@(EnvPack envE envA mp) ex =
           tf = S.recoverExpType typeEnv f
           tg = S.recoverExpType typeEnv g
           th = S.recoverExpType typeEnv h
-          a' = convertExp ep a
-          b' = convertExp ep b
-          c' = convertExp ep c
-          d' = convertExp ep d
-          e' = convertExp ep e
-          f' = convertExp ep f
-          g' = convertExp ep g
-          h' = convertExp ep h
+          a' = convertOpenExp ep a
+          b' = convertOpenExp ep b
+          c' = convertOpenExp ep c
+          d' = convertOpenExp ep d
+          e' = convertOpenExp ep e
+          f' = convertOpenExp ep f
+          g' = convertOpenExp ep g
+          h' = convertOpenExp ep h
       in resealTup $ P.zip (P.map scalarTypeD [ta,tb,tc,td,te,tf,tg,th])
                            [a',b',c',d',e',f',g',h']
 
@@ -603,15 +607,15 @@ convertExp ep@(EnvPack envE envA mp) ex =
           tg = S.recoverExpType typeEnv g
           th = S.recoverExpType typeEnv h
           ti = S.recoverExpType typeEnv i
-          a' = convertExp ep a
-          b' = convertExp ep b
-          c' = convertExp ep c
-          d' = convertExp ep d
-          e' = convertExp ep e
-          f' = convertExp ep f
-          g' = convertExp ep g
-          h' = convertExp ep h
-          i' = convertExp ep i
+          a' = convertOpenExp ep a
+          b' = convertOpenExp ep b
+          c' = convertOpenExp ep c
+          d' = convertOpenExp ep d
+          e' = convertOpenExp ep e
+          f' = convertOpenExp ep f
+          g' = convertOpenExp ep g
+          h' = convertOpenExp ep h
+          i' = convertOpenExp ep i
       in resealTup $ P.zip (P.map scalarTypeD [ta,tb,tc,td,te,tf,tg,th,ti])
                            [a',b',c',d',e',f',g',h',i']
 
@@ -627,8 +631,8 @@ convertExp ep@(EnvPack envE envA mp) ex =
     S.ETuple (hd:tl) ->
       let ta = S.recoverExpType typeEnv hd
           tb = S.recoverExpType typeEnv (S.ETuple tl)
-          hd' = convertExp ep hd
-          tl' = convertExp ep (S.ETuple tl)
+          hd' = convertOpenExp ep hd
+          tl' = convertOpenExp ep (S.ETuple tl)
       in 
       case (scalarTypeD ta, scalarTypeD tb) of
         (SealedEltTuple (et1 :: EltTuple aty),
@@ -648,7 +652,7 @@ convertExp ep@(EnvPack envE envA mp) ex =
 
     {- ========================================================================================== -}
     S.EPrimApp outTy op ls ->
-      let args = P.map (convertExp ep) ls 
+      let args = P.map (convertOpenExp ep) ls 
           (fstArg :_) = ls
           fstArgTy = S.recoverExpType typeEnv fstArg
       in 
@@ -830,7 +834,7 @@ convertExp ep@(EnvPack envE envA mp) ex =
           ep'@(EnvPack _ _ m2) = extendE vr ty rhs' ep
           resTy = scalarTypeD (S.recoverExpType (M.map P.fst m2) bod)
       in
-       convertExp ep' bod
+       convertOpenExp ep' bod
 
     S.ECond e1 e2 e3 ->
       let d1 = cE e1
@@ -959,7 +963,7 @@ convertOpenAcc env@(EnvPack _ _ mp) ae =
     S.Vr vr   -> let (_,s) = mp # vr in expectAVar s
     S.Use accarr -> useD accarr
     S.Unit ex ->
-      let ex' = convertExp env ex
+      let ex' = convertOpenExp env ex
           ty  = S.recoverExpType (M.map P.fst mp) ex
       in unitD (scalarTypeD ty) ex'
 
@@ -967,18 +971,18 @@ convertOpenAcc env@(EnvPack _ _ mp) ae =
       let indexTy = tupTyToIndex ty -- "ty" is a plain tuple.
           bodfn ex  = let env' = extendE vr ty (indexToTup ty ex) env in
                       dbgtrace ("Generate/bodyfun called: extended environment to: "++show env')$
-                      convertExp env' bod
+                      convertOpenExp env' bod
           bodty     = S.recoverExpType (M.insert vr ty typeEnv) bod
           -- TODO: Replace this by simply passing in the result type to convertAcc:
           dims = shapeTyLen$ S.recoverExpType typeEnv initE 
           outArrTy  = TArray dims bodty
-          init' = tupToIndex ty$ convertExp env initE 
+          init' = tupToIndex ty$ convertOpenExp env initE 
       in
        dbgtrace ("Generate: computed body type: "++show bodty) $ 
        generateD init' bodfn outArrTy
          
     S.Map (S.Lam1 (vr,ty) bod) inA -> 
-      let bodfn ex = convertExp (extendE vr ty ex env) bod
+      let bodfn ex = convertOpenExp (extendE vr ty ex env) bod
           aty@(TArray dims inty) = P.fst (mp # inA)
           bodty = S.recoverExpType (M.insert vr ty $ M.map P.fst mp) bod
           newAty = arrayTypeD (TArray dims bodty)
@@ -988,8 +992,8 @@ convertOpenAcc env@(EnvPack _ _ mp) ae =
 
     S.Fold (S.Lam2 (v1,ty) (v2,ty2) bod) initE inA ->
       dbgtrace ("FOLD CASE.. fold of "++show (mp # inA))$
-       let init' = convertExp env initE
-           bodfn x y = convertExp (extendE v1 ty x$ extendE v2 ty y env) bod
+       let init' = convertOpenExp env initE
+           bodfn x y = convertOpenExp (extendE v1 ty x$ extendE v2 ty y env) bod
            aty@(TArray dims inty) = P.fst (mp # inA)
            sealedInArr = let (_,sa) = mp # inA in expectAVar sa
        in
@@ -1009,7 +1013,7 @@ convertProg S.Prog{progBinds,progResults} =
   doBinds env (S.ProgBind vr ty dec eith : rst) =
     dbgtrace (" dobinds of "++show (vr,ty,rst)++" "++show env) $ 
     case eith of
-      Left ex  -> let se = convertExp env ex
+      Left ex  -> let se = convertOpenExp env ex
                       env' = extendE vr ty se env
                   in doBinds env' rst
       Right ae -> let sa = convertOpenAcc env ae
