@@ -166,9 +166,9 @@ convertAExps aex =
   in
   case aex of 
      Cond _ a (Vr _ v1) (Vr _ v2) -> S.Cond (cE a) v1 v2
-     Unit _ ex                   -> S.Unit (cE ex)
-     Use _ arr                   -> S.Use arr
-     Generate _ ex fn            -> S.Generate (cE ex) (cF fn)
+     Unit _ ex                    -> S.Unit (cE ex)
+     Use _ arr                    -> S.Use arr
+     Generate _ ex fn             -> S.Generate (cE ex) (cF fn)
      ZipWith _ fn (Vr _ v1) (Vr _ v2) -> S.ZipWith (cF2 fn) v1 v2 
      Map     _ fn (Vr _ v)            -> S.Map     (cF fn)  v
      Replicate _aty slice ex (Vr _ v) -> S.Replicate slice (cE ex) v

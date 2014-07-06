@@ -19,6 +19,7 @@
 module Data.Array.Accelerate.BackendKit.Phase1.ToAccClone
        ( 
          accToAccClone, expToExpClone,
+         expType,
          unpackArray, packArray, repackAcc, Phantom(Phantom),
        )
        where
@@ -62,7 +63,9 @@ accToAccClone = runEnvM . convertAcc
 expToExpClone :: AST.Exp () ans -> T.Exp
 expToExpClone x = runEnvM (convertExp x)
 
-
+-- | Reify the type of an expression in our plain format.
+expType :: (Sug.Elt ans) => AST.Exp () ans -> S.Type
+expType = getExpType 
  
 -- type OpenExp = PreOpenExp OpenAcc
 -- type Exp = OpenExp () = PreOpenExp OpenAcc () 
@@ -333,7 +336,7 @@ convertTupleIdx tix = loop tix
 convertBoundary :: Boundary a -> S.Boundary
 convertBoundary = error "convertBoundary: implement me" -- FIXME TODO
 
--- Takes a closed expression
+-- | Takes a closed expression
 convertExp :: forall env aenv ans . OpenExp env aenv ans -> EnvM T.Exp
 convertExp e = 
   -- (\x -> do x' <- x

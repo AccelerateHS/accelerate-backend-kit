@@ -53,11 +53,12 @@ module Data.Array.Accelerate.DynamicAcc2
 import           Data.Array.Accelerate as A hiding ((++))
 import qualified Data.Array.Accelerate.Smart as Sm
 import qualified Data.Array.Accelerate.Type as T
+import qualified Data.Array.Accelerate.Trafo as Trafo
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
                    (Type(..), Const(..), AVar, Var, Prog(..), 
                     Prim(..), NumPrim(..), IntPrim(..), FloatPrim(..))
-import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc)
+import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc, expType)
 import           Data.Array.Accelerate.BackendKit.Utils.Helpers (Phantom(Phantom))
 
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1)
@@ -103,16 +104,18 @@ dbgtrace x y = y
 -- the case of a downcast error.  Also make them newtypes!
 -- 
 -- TODO: add the S.Type itself to each of these.
-newtype SealedExp     = SealedExp     Dynamic deriving Show
-newtype SealedOpenExp = SealedOpenExp Dynamic deriving Show
+data SealedExp     = SealedExp { expTy :: S.Type, expDyn :: Dynamic } deriving Show
+
 data SealedAcc = SealedAcc { arrTy :: ArrTy, accDyn :: Dynamic } deriving Show
 
 data ArrTy = ArrTy { ndims :: Int, eltTy :: S.Type } deriving Show
 
 newtype SealedSlice   = SealedSlice   Dynamic deriving Show
 
-sealExp :: Typeable a => A.Exp a -> SealedExp
-sealExp = SealedExp . toDyn
+sealExp :: (Elt a, Typeable a) => A.Exp a -> SealedExp
+sealExp x = SealedExp ety (toDyn x)
+ where
+  ety = expType (Trafo.convertExp x)
 
 sealAcc :: (Arrays a, Typeable a) => Acc a -> SealedAcc
 sealAcc x = SealedAcc (ArrTy dims elty) (toDyn x)
@@ -122,7 +125,7 @@ sealAcc x = SealedAcc (ArrTy dims elty) (toDyn x)
 -- | Cast a sealed expression into a statically typed one.  This may
 -- fail with an exception.
 downcastE :: forall a . Typeable a => SealedExp -> A.Exp a
-downcastE (SealedExp d) =
+downcastE (SealedExp _ d) =
   case fromDynamic d of
     Just e -> e
     Nothing ->
@@ -322,9 +325,7 @@ generateD indSealed bodfn outArrTy =
 
 mapD :: (SealedExp -> SealedExp) -> SealedAcc -> S.Type -> SealedAcc 
 mapD bodfn sealedInArr outElmTy = 
-      let 
---          (TArray dims inty) = inArrTy 
-          (ArrTy dims inty) = arrTy sealedInArr
+      let (ArrTy dims inty) = arrTy sealedInArr
           newAty = arrayTypeD (TArray dims outElmTy)
       in
        case (shapeTypeD dims, scalarTypeD inty, scalarTypeD outElmTy) of
