@@ -125,13 +125,14 @@ compileToFile pm name prog = do
 
   let emitted  = emitC pm prog2
       thisprog = ".genC_"++show pm++"_"++ stripFileName name++"_"++show rand
-  b     <- doesFileExist (thisprog++".c")
-  when b $ removeFile    (thisprog++".c") -- Remove file for safety
-  writeFile  (thisprog++".c") emitted
+      tmpcfile = thisprog++".c"
+  b     <- doesFileExist tmpcfile
+  when b $ removeFile    tmpcfile -- Remove file for safety
+  writeFile tmpcfile emitted
   t2 <- getCurrentTime
   dbgPrint 1 $"COMPILETIME_emit: "++show (diffUTCTime t2 t1)
   -----------  
-  dbgPrint 2 $ "[JIT] Invoking C compiler on: "++ thisprog++".c"
+  dbgPrint 2 $ "[JIT] Invoking C compiler on: "++ tmpcfile
 
   -- TODO, obey the $CC environment variable:
   let pickCC onfail = do
@@ -163,10 +164,10 @@ compileToFile pm name prog = do
 -- #define EXE_OUTPUT
 #ifdef EXE_OUTPUT
       output = thisprog++".exe"
-      ccArgs = ccFlags0++[suppress,"-lcilkrts","-std=c99",thisprog++".c","-o",output]
+      ccArgs = ccFlags0++[suppress,"-lcilkrts","-std=c99",tmpcfile,"-o",output]
 #else
       output = thisprog++".so"
-      ccArgs = ccFlags0++[suppress,"-lcilkrts","-std=c99",sharedLib,"-fPIC", thisprog++".c", "-o", output]
+      ccArgs = ccFlags0++[suppress,"-lcilkrts","-std=c99",sharedLib,"-fPIC", tmpcfile, "-o", output]
 #endif
   dbgPrint 2 $ "[JIT]   Compiling with: "++ (cc++unwords ccArgs)
   t1 <- getCurrentTime 
@@ -175,6 +176,9 @@ compileToFile pm name prog = do
   dbgPrint 1 $"COMPILETIME_C: "++show (diffUTCTime t2 t1)
   mapM_ (dbgPrint 1 . ("[CC] "++)) (lines out)
   mapM_ (dbgPrint 1 . ("[CC] "++)) (lines err)
+  when (dbg < 2) $ do 
+    dbgPrint 2 $ "[JIT]   Cleaning up temp file: "++ tmpcfile
+    removeFile tmpcfile
   case code of
     ExitSuccess -> return $! CBlob prog2 ("./" ++ output)
     ExitFailure c -> error$"C Compiler failed with code "++show c

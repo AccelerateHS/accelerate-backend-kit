@@ -88,7 +88,7 @@ Test-Suite test-accelerate-cpu-sequential
                  , bytestring, ghc-prim, time
 
 -- Test of up and down conversions 
-Test-Suite test-accelerate-backend-kit-liftdrop-cpu-sequential
+Test-Suite test-accelerate-liftdrop-cpu-sequential
     type:       exitcode-stdio-1.0
     main-is:    TestLiftDrop.hs
     hs-source-dirs: tests/ 
@@ -148,5 +148,3 @@ Test-Suite test-accelerate-cpu-opencl
      } else {
        Buildable: False
      }
-
-
