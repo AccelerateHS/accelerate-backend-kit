@@ -99,9 +99,13 @@ dbgtrace x y = y
 
 -- TODO: make these pairs that keep around some printed rep for debugging purposes in
 -- the case of a downcast error.  Also make them newtypes!
+-- 
+-- TODO: add the S.Type itself to each of these.
 newtype SealedExp     = SealedExp     Dynamic deriving Show
 newtype SealedOpenExp = SealedOpenExp Dynamic deriving Show
 newtype SealedAcc     = SealedAcc     Dynamic deriving Show
+
+newtype SealedSlice   = SealedSlice   Dynamic deriving Show
 
 sealExp :: Typeable a => A.Exp a -> SealedExp
 sealExp = SealedExp . toDyn
@@ -342,8 +346,14 @@ mapD bodfn sealedInArr inArrTy outElmTy =
 zipWithD :: (SealedExp -> SealedExp -> SealedExp) -> SealedAcc -> SealedAcc ->
             S.Type -> S.Type  -> S.Type -> SealedAcc 
 zipWithD bodfn sealedInArr1 sealedInArr2 inArrTy1 inArrTy2 outElmTy = 
-  undefined
+  error "FINISHME/DynamicAcc - zipWithD"
 
+
+replicateD :: SealedSlice -> SealedExp -> SealedAcc -> SealedAcc
+replicateD slc exp arr  
+--      outElmTy 
+  = 
+  error "FINISHME/DynamicAcc - replicateD"
 
 foldD :: (SealedExp -> SealedExp -> SealedExp) -> SealedExp -> SealedAcc ->
          S.Type -> SealedAcc 
@@ -1002,7 +1012,7 @@ convertOpenAcc env@(EnvPack _ _ mp) ae =
           aty1@(TArray dims1 _) = P.fst (mp # inA)
           aty2@(TArray dims2 _) = P.fst (mp # inB)
           mp' = M.insert vr2 ty2 $ 
-                M.insert vr1 ty1 $ M.map P.fst mp
+                M.insert vr1 ty1 typeEnv
           bodty = S.recoverExpType mp' bod
           sealedInArr1 = let (_,sa1) = mp # inA in expectAVar sa1
           sealedInArr2 = let (_,sa2) = mp # inB in expectAVar sa2
@@ -1021,8 +1031,13 @@ convertOpenAcc env@(EnvPack _ _ mp) ae =
         then error "Mal-formed Fold.  Input types to Lam2 must match eachother and array input."
         else foldD bodfn init' sealedInArr aty
 
-    S.Replicate whichDims inA inE ->  
-      error "FINISHME/DynamicAcc: Replicate unhandled"
+    S.Replicate whichDims inE inA ->  
+      let aty = P.fst (mp # inA)
+          -- ety = S.recoverExpType typeEnv inE
+          sealedE     = convertOpenExp env inE
+          sealedInArr = let (_,sa) = mp # inA in expectAVar sa
+      in replicateD (error "need SealedSlice") sealedE sealedInArr 
+
 
     _ -> error$"FINISHME/DynamicAcc: convertOpenAcc: unhandled array operation: " ++show ae
 
