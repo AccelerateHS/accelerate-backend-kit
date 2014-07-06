@@ -60,6 +60,7 @@ import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
 import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc)
 import           Data.Array.Accelerate.BackendKit.Utils.Helpers (Phantom(Phantom))
 
+import Control.Exception (assert)
 import Data.Bits as B
 import Data.Dynamic (Typeable, Dynamic, fromDynamic, toDyn, typeOf)
 import Data.Map as M
@@ -337,6 +338,11 @@ mapD bodfn sealedInArr inArrTy outElmTy =
              (UnitTuple,     PairTuple _ _) -> sealAcc $ A.map rawfn realIn
              (SingleTuple _, PairTuple _ _) -> sealAcc $ A.map rawfn realIn             
              (PairTuple _ _, PairTuple _ _) -> sealAcc $ A.map rawfn realIn
+
+zipWithD :: (SealedExp -> SealedExp -> SealedExp) -> SealedAcc -> SealedAcc ->
+            S.Type -> S.Type  -> S.Type -> SealedAcc 
+zipWithD bodfn sealedInArr1 sealedInArr2 inArrTy1 inArrTy2 outElmTy = 
+  undefined
 
 
 foldD :: (SealedExp -> SealedExp -> SealedExp) -> SealedExp -> SealedAcc ->
@@ -982,13 +988,27 @@ convertOpenAcc env@(EnvPack _ _ mp) ae =
        generateD init' bodfn outArrTy
          
     S.Map (S.Lam1 (vr,ty) bod) inA -> 
-      let bodfn ex = convertOpenExp (extendE vr ty ex env) bod
-          aty@(TArray dims inty) = P.fst (mp # inA)
-          bodty = S.recoverExpType (M.insert vr ty $ M.map P.fst mp) bod
-          newAty = arrayTypeD (TArray dims bodty)
+      let bodfn ex    = convertOpenExp (extendE vr ty ex env) bod
+          aty         = P.fst (mp # inA)
+          bodty       = S.recoverExpType (M.insert vr ty $ M.map P.fst mp) bod
           sealedInArr = let (_,sa) = mp # inA in expectAVar sa
       in
         mapD bodfn sealedInArr aty bodty
+
+    S.ZipWith (S.Lam2 (vr1,ty1) (vr2,ty2) bod) inA inB ->  
+      let bodfn e1 e2 = let env' = extendE vr2 ty2 e2 $
+                                   extendE vr1 ty1 e1 env
+                        in convertOpenExp env' bod
+          aty1@(TArray dims1 _) = P.fst (mp # inA)
+          aty2@(TArray dims2 _) = P.fst (mp # inB)
+          mp' = M.insert vr2 ty2 $ 
+                M.insert vr1 ty1 $ M.map P.fst mp
+          bodty = S.recoverExpType mp' bod
+          sealedInArr1 = let (_,sa1) = mp # inA in expectAVar sa1
+          sealedInArr2 = let (_,sa2) = mp # inB in expectAVar sa2
+      in
+      assert (dims1 == dims2) $ 
+      zipWithD bodfn sealedInArr1 sealedInArr2 aty1 aty2 bodty
 
     S.Fold (S.Lam2 (v1,ty) (v2,ty2) bod) initE inA ->
       dbgtrace ("FOLD CASE.. fold of "++show (mp # inA))$
@@ -1000,6 +1020,9 @@ convertOpenAcc env@(EnvPack _ _ mp) ae =
         if ty /= ty2 || ty2 /= inty
         then error "Mal-formed Fold.  Input types to Lam2 must match eachother and array input."
         else foldD bodfn init' sealedInArr aty
+
+    S.Replicate whichDims inA inE ->  
+      error "FINISHME/DynamicAcc: Replicate unhandled"
 
     _ -> error$"FINISHME/DynamicAcc: convertOpenAcc: unhandled array operation: " ++show ae
 
