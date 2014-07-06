@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP, ScopedTypeVariables #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE NamedFieldPuns #-}
 -- {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
@@ -32,12 +33,13 @@ import qualified Data.List as L
 import qualified Data.Map  as M
 import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
 import Data.Array.Accelerate.BackendClass (Backend(..), SimpleBackend(..), MinimalBackend(..))
+import Data.Typeable (Typeable)
 
 --------------------------------------------------------------------------------
 
 -- | A unit type just to carry a `SimpleBackend` and `Backend` instance.
 data SimpleInterpBackend = SimpleInterpBackend 
-  deriving (Show,Eq,Ord,Read)
+  deriving (Show,Eq,Ord,Read, Typeable)
 
 instance SimpleBackend SimpleInterpBackend where
   type SimpleRemote SimpleInterpBackend = SA.AccArray

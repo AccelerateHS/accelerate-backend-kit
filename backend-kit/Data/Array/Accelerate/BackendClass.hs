@@ -1,6 +1,9 @@
 {-# LANGUAGE CPP          #-}
 {-# LANGUAGE Rank2Types   #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -32,8 +35,8 @@ import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc, 
 import           Data.Array.Accelerate.BackendKit.Utils.Helpers ((#))
 import           Data.Array.Accelerate.Trafo (Phase(..))
 import           Data.Array.Accelerate.Trafo.Sharing (convertAcc)
-
 import           Data.Array.Accelerate.DynamicAcc2 as Dyn hiding (convertAcc)
+import           Data.Typeable (eqT, (:~:)(..), Typeable, typeOf)
 
 -- standard libraries
 import Data.ByteString.Lazy                   as B
@@ -243,7 +246,7 @@ type DebugName = Maybe String
 --
 -- All methods here are substantially different because in this case we do /not/ have
 -- type-level information about the inputs and results of Accelerate computations.
-class Show b => SimpleBackend b where
+class (Show b, Typeable b) => SimpleBackend b where
 
   -- | The type of a remote handle on device memory. This is class-associated
   -- because different backends may represent device pointers differently.
@@ -369,16 +372,64 @@ class Show b => SimpleBackend b where
 
 -- | An encapsulated SimpleBackend about which we know nothing else.  (Like SomeException.)
 data SomeSimpleBackend = forall b . SimpleBackend b => SomeSimpleBackend b
+  deriving (Typeable)
+
+-- deriving instance Show SomeSimpleBackend
 
 instance Show SomeSimpleBackend where
   show (SomeSimpleBackend b) = show b
+
+data SomeSimpleRemote = forall b . SimpleBackend b => SomeSimpleRemote b (SimpleRemote b)
+data SomeSimpleBlob   = forall b . SimpleBackend b => SomeSimpleBlob   b (SimpleBlob b)
+
+-- | When lifted into the common "supertype", a valid SimpleBackend still remains.
+--  
+-- Actually, this is mainly here as a work-around to a GHC bug [2014.07.06].
+instance SimpleBackend SomeSimpleBackend where
+  type SimpleBlob   SomeSimpleBackend = SomeSimpleBlob
+  type SimpleRemote SomeSimpleBackend = SomeSimpleRemote
+
+  simpleCompile (SomeSimpleBackend b) path acc = do 
+    blb <- simpleCompile b path acc
+    return $ SomeSimpleBlob b blb
+
+  simpleRunRaw sb nm acc Nothing = do
+    blb <- simpleCompile sb (fromMaybe "" nm) acc 
+    simpleRunRaw sb nm acc (Just blb)
+
+  simpleRunRaw (SomeSimpleBackend _b) nm acc (Just (SomeSimpleBlob b blb)) = do
+    -- Could somehow assert that _b and b are the same.
+    rs <- simpleRunRaw b nm acc (Just blb)
+    return [ SomeSimpleRemote b r | r <- rs ]
+
+  simpleCopyToHost _ (SomeSimpleRemote b r) = simpleCopyToHost b r 
+
+  simpleCopyToDevice (SomeSimpleBackend b) a = do 
+    r <- simpleCopyToDevice b a
+    return $ SomeSimpleRemote b r
+
+  simpleCopyToPeer (SomeSimpleBackend (b1::t1)) (SomeSimpleRemote (b2::t2) r) = 
+    case eqT :: Maybe (t1 :~: t2) of 
+     Just Refl -> do r2 <- simpleCopyToPeer b1 r
+                     return $ SomeSimpleRemote b2 r2
+     Nothing -> error $ "simpleCopyToPeer (SomeSimpleBackend instance): called with differently typed backends: "++
+                        show (typeOf b1)++" and "++show (typeOf b2)
+
+  simpleWaitRemote _ (SomeSimpleRemote b r)  = simpleWaitRemote b r
+  simpleUseRemote  _ (SomeSimpleRemote b r) = simpleUseRemote  b r
+  simpleSeparateMemorySpace (SomeSimpleBackend b) = simpleSeparateMemorySpace b
+
+  -- Do this Later:
+  -- simpleCompileFun1 (SomeSimpleBackend b) = simpleCompileFun1 b
+  -- simpleRunRawFun1  (SomeSimpleBackend b) = simpleRunRawFun1 b
+  
 
 
 -- | A type wrapper that "casts" a SimpleBackend into a Backend.
 -- 
 --   Discarding type information is easy, so we have a subtyping relation in this
 --   direction but not the other.
-newtype LiftSimpleBackend b = LiftSimpleBackend b deriving (Show, Eq)
+newtype LiftSimpleBackend b = LiftSimpleBackend b deriving (Show, Eq, Typeable)
 
 
 -- newtype SimpleRemotesList b _a = SimpleRemotesList [SimpleRemote b]
@@ -466,7 +517,7 @@ instance SimpleBackend b => SimpleBackend (LiftSimpleBackend b) where
 --   is a very tricky business and relies on the `DynamicAcc`
 --   conversion module to provide runtime checks that construct the
 --   full Accelerate AST.
-newtype DropBackend b = DropBackend b deriving (Show, Eq)
+newtype DropBackend b = DropBackend b deriving (Show, Eq, Typeable)
 
 -- | Bridging between the `Backend` and `SimpleBackend` notion of a
 -- remote is tricky, because the later is more granular.
@@ -480,7 +531,7 @@ data LeafSlice = LeafSlice { offsetFromRight :: Int, numLeaves :: Int }
 data SomeBlob b = forall a . (Backend b, Arrays a) => 
                   SomeBlob b (AST.Acc a) (Blob b a)
 
-instance Backend b => SimpleBackend (DropBackend b) where
+instance (Typeable b, Backend b) => SimpleBackend (DropBackend b) where
   type SimpleRemote (DropBackend b) = SomeRemote b
   type SimpleBlob   (DropBackend b) = SomeBlob b
 
@@ -626,6 +677,8 @@ class Backend b => CLibraryBackend b where
 --   backends (e.g. Data.Array.Accelerate.Interpreter) will export, because that one
 --   expects the HOAS representation, not the converted one (AST.Acc).
 newtype MinimalBackend = MinimalBackend (forall a . (Arrays a) => AST.Acc a -> a)
+  deriving (Typeable)
+-- TODO: Should phase out all uses of this!  It hides compile/run distinctions [2014.07.06].
 
 instance Show MinimalBackend where
   show _ = "<MinimalBackend based on run function>"

@@ -1,5 +1,6 @@
 {-# LANGUAGE TypeFamilies, CPP #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- CODE used here AND in Cilk.hs... hence all this CPP garbage:
@@ -37,7 +38,7 @@ import           Data.Array.Accelerate.BackendClass
 import           Data.Array.Accelerate.BackendKit.Utils.Helpers (dbgPrint, dbg)
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline
                   (phase0, phase1, phase2, repackAcc, unpackArray, Phantom(..), defaultTrafoConfig)
-
+import Data.Typeable (Typeable)
 import Data.Time.Clock  (getCurrentTime,diffUTCTime)
 import Control.Exception  (evaluate)
 --------------------------------------------------------------------------------
@@ -75,7 +76,7 @@ runDetailed DbgConf{dbgName, useProcess} acc = unsafePerformIO $ do
 
 -- | This is an abstract type representing the internal state of the backend.
 data BKEND = BKEND
-  deriving (Show)
+  deriving (Show, Typeable)
 
 -- Nothing to do here but there could be initialization work in the future.
 mkCBackend :: IO BKEND
