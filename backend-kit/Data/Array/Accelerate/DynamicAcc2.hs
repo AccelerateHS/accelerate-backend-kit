@@ -1,4 +1,4 @@
-{-# LANGUAGE RankNTypes, ScopedTypeVariables, GADTs #-}
+{-# LANGUAGE RankNTypes, ScopedTypeVariables, GADTs #-} 
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE TypeOperators #-}
@@ -54,11 +54,14 @@ import           Data.Array.Accelerate as A hiding ((++))
 import qualified Data.Array.Accelerate.Smart as Sm
 import qualified Data.Array.Accelerate.Type as T
 import qualified Data.Array.Accelerate.Trafo as Trafo
+-- import           Data.Array.Accelerate.Array.Representation (SliceIndex(..))
+import qualified Data.Array.Accelerate.Array.Representation as R
+import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
                    (Type(..), Const(..), AVar, Var, Prog(..), 
                     Prim(..), NumPrim(..), IntPrim(..), FloatPrim(..))
-import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc, expType)
+import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc, expType, convertSliceIndex)
 import           Data.Array.Accelerate.BackendKit.Utils.Helpers (Phantom(Phantom))
 
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1)
@@ -110,7 +113,7 @@ data SealedAcc = SealedAcc { arrTy :: ArrTy, accDyn :: Dynamic } deriving Show
 
 data ArrTy = ArrTy { ndims :: Int, eltTy :: S.Type } deriving Show
 
-newtype SealedSlice   = SealedSlice   Dynamic deriving Show
+-- newtype SealedSlice = SealedSlice Dynamic deriving Show
 
 sealExp :: (Elt a, Typeable a) => A.Exp a -> SealedExp
 sealExp x = SealedExp ety (toDyn x)
@@ -121,6 +124,9 @@ sealAcc :: (Arrays a, Typeable a) => Acc a -> SealedAcc
 sealAcc x = SealedAcc (ArrTy dims elty) (toDyn x)
  where
   TArray dims elty = progType $ phase1 $ phase0 x
+
+-- sealSlice :: (Typeable s) => s -> SealedSlice
+-- sealSlice = SealedSlice . toDyn
 
 -- | Cast a sealed expression into a statically typed one.  This may
 -- fail with an exception.
@@ -203,6 +209,18 @@ data SealedShapeType where
   -- Do we care about the ArrayElt class here?
   SealedShapeType :: Shape sh => Phantom sh -> SealedShapeType
 
+data SealedSliceType where
+  SealedSliceType :: (Sug.Slice s, Elt s) => Phantom s -> SealedSliceType
+  deriving Typeable
+  
+-- data SliceIndex ix slice coSlice sliceDim where
+--   SliceNil   :: SliceIndex () () () ()
+--   SliceAll   ::
+--    SliceIndex ix slice co dim -> SliceIndex (ix, ()) (slice, Int) co (dim, Int)
+--   SliceFixed ::
+--    SliceIndex ix slice co dim -> SliceIndex (ix, Int) slice (co, Int) (dim, Int)
+
+
 -- | Convert the runtime, monomorphic type representation into a sealed container
 -- with the true Haskell type inside.
 scalarTypeD :: Type -> SealedEltTuple
@@ -241,6 +259,7 @@ scalarTypeD ty =
 -- as a goal type when repacking array data or returning an Acc
 -- computation.
 arrayTypeD :: Type -> SealedArrayType
+-- TODO: Fix this to take ArrTy
 arrayTypeD (TArray ndim elty) =
   case shapeTypeD ndim of
     SealedShapeType (_ :: Phantom sh) ->      
@@ -261,6 +280,9 @@ arrayTypeD (TArray ndim elty) =
 arrayTypeD x@(TTuple _) = error$"arrayTypeD: does not handle tuples of arrays yet: "++show x
 arrayTypeD oth = error$"arrayTypeD: expected array type, got "++show oth
 
+
+arrayTypeD' (ArrTy d t) = arrayTypeD (TArray d t)
+
 -- | Construct a Haskell type from an Int!  Why not?
 shapeTypeD :: Int -> SealedShapeType
 shapeTypeD 0 = SealedShapeType (Phantom :: Phantom Z)
@@ -270,6 +292,18 @@ shapeTypeD n =
     SealedShapeType (Phantom :: Phantom sh) ->
       SealedShapeType (Phantom :: Phantom (sh :. Int))
 
+
+-- | Dynamically construct an inhabitant of the Slice class.
+sliceTypeD :: S.SliceType -> SealedSliceType
+sliceTypeD [] = SealedSliceType (Phantom :: Phantom Z)
+sliceTypeD (S.Fixed:rst) = 
+  case sliceTypeD rst of 
+    SealedSliceType (_ :: Phantom slc) -> 
+      SealedSliceType (Phantom :: Phantom (slc :. Int))
+sliceTypeD (S.All:rst) = 
+  case sliceTypeD rst of 
+    SealedSliceType (_ :: Phantom slc) -> 
+      SealedSliceType (Phantom :: Phantom (slc :. All))
 
 --------------------------------------------------------------------------------
 -- AST Construction
@@ -356,11 +390,16 @@ zipWithD bodfn sealedInArr1 sealedInArr2 inArrTy1 inArrTy2 outElmTy =
   error "FINISHME/DynamicAcc - zipWithD"
 
 
-replicateD :: SealedSlice -> SealedExp -> SealedAcc -> SealedAcc
-replicateD slc exp arr  
---      outElmTy 
-  = 
-  error "FINISHME/DynamicAcc - replicateD"
+replicateD :: SealedSliceType -> SealedExp -> SealedAcc -> SealedAcc
+replicateD slc exp arr = 
+  case (slc) of  -- , scalarTypeD (expTy exp)
+    (SealedSliceType (_::Phantom slc)) ->
+--     SealedEltTuple (inET  :: EltTuple inT) ) -> 
+     let e :: Exp slc
+         e = error "FINISHME/DynamicAcc - replicateD"
+--         _ = A.replicate e 
+     in 
+      error "FINISHME/DynamicAcc - replicateD"
 
 foldD :: (SealedExp -> SealedExp -> SealedExp) -> SealedExp -> SealedAcc ->
          S.Type -> SealedAcc 
@@ -981,9 +1020,11 @@ convertAcc = convertOpenAcc emptyEnvPack
 -- sealed) Accelerate one.
 convertOpenAcc :: EnvPack -> S.AExp -> SealedAcc
 convertOpenAcc env@(EnvPack _ _ mp) ae =
-  let typeEnv = M.map P.fst mp in
+  let typeEnv  = M.map P.fst mp 
+      getAVr v = let (_,sa) = mp # v in expectAVar sa
+  in
   case ae of
-    S.Vr vr   -> let (_,s) = mp # vr in expectAVar s
+    S.Vr vr      -> getAVr vr 
     S.Use accarr -> useD accarr
     S.Unit ex ->
       let ex' = convertOpenExp env ex
@@ -1007,9 +1048,7 @@ convertOpenAcc env@(EnvPack _ _ mp) ae =
     S.Map (S.Lam1 (vr,ty) bod) inA -> 
       let bodfn ex    = convertOpenExp (extendE vr ty ex env) bod
           bodty       = S.recoverExpType (M.insert vr ty $ M.map P.fst mp) bod
-          sealedInArr = let (_,sa) = mp # inA in expectAVar sa
-      in
-        mapD bodfn sealedInArr bodty
+      in mapD bodfn (getAVr inA) bodty
 
     S.ZipWith (S.Lam2 (vr1,ty1) (vr2,ty2) bod) inA inB ->  
       let bodfn e1 e2 = let env' = extendE vr2 ty2 e2 $
@@ -1020,29 +1059,23 @@ convertOpenAcc env@(EnvPack _ _ mp) ae =
           mp' = M.insert vr2 ty2 $ 
                 M.insert vr1 ty1 typeEnv
           bodty = S.recoverExpType mp' bod
-          sealedInArr1 = let (_,sa1) = mp # inA in expectAVar sa1
-          sealedInArr2 = let (_,sa2) = mp # inB in expectAVar sa2
       in
       assert (dims1 == dims2) $ 
-      zipWithD bodfn sealedInArr1 sealedInArr2 aty1 aty2 bodty
+      zipWithD bodfn (getAVr inA) (getAVr inB) aty1 aty2 bodty
 
     S.Fold (S.Lam2 (v1,ty) (v2,ty2) bod) initE inA ->
       dbgtrace ("FOLD CASE.. fold of "++show (mp # inA))$
        let init' = convertOpenExp env initE
            bodfn x y = convertOpenExp (extendE v1 ty x$ extendE v2 ty y env) bod
-           aty@(TArray dims inty) = P.fst (mp # inA)
-           sealedInArr = let (_,sa) = mp # inA in expectAVar sa
+           aty@(TArray _ inty) = P.fst (mp # inA)
+           sealedInArr = getAVr inA 
        in
         if ty /= ty2 || ty2 /= inty
         then error "Mal-formed Fold.  Input types to Lam2 must match eachother and array input."
         else foldD bodfn init' sealedInArr aty
 
-    S.Replicate whichDims inE inA ->  
-      let aty = P.fst (mp # inA)
-          -- ety = S.recoverExpType typeEnv inE
-          sealedE     = convertOpenExp env inE
-          sealedInArr = let (_,sa) = mp # inA in expectAVar sa
-      in replicateD (error "need SealedSlice") sealedE sealedInArr 
+    S.Replicate slc inE inA ->  
+      replicateD (sliceTypeD slc) (convertOpenExp env inE) (getAVr inA)
 
 
     _ -> error$"FINISHME/DynamicAcc: convertOpenAcc: unhandled array operation: " ++show ae

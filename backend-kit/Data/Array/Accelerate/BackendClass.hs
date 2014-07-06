@@ -25,7 +25,7 @@ module Data.Array.Accelerate.BackendClass (
 import           Data.Array.Accelerate                          as A hiding ((++))
 import qualified Data.Array.Accelerate.AST                      as AST
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
-import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1)
+import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1, phase2A)
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as SACC
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Prog(..))
 import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc, unpackArray)
@@ -484,7 +484,8 @@ instance Backend b => SimpleBackend (DropBackend b) where
   type SimpleRemote (DropBackend b) = SomeRemote b
   type SimpleBlob   (DropBackend b) = SomeBlob b
 
-  simpleCompile (DropBackend b) _path prg = 
+  simpleCompile (DropBackend b) _path prg0 = 
+    let prg = fmap (const ()) $ phase2A prg0 in -- TEMP! When DynamicAcc2 is more complete this becomes unnecessary!!
     case Dyn.arrayTypeD (SACC.progType prg) of 
       SealedArrayType (_ :: Phantom aty) -> do  
         let acc :: Acc aty

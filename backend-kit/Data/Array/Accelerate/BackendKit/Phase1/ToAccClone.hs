@@ -19,7 +19,7 @@
 module Data.Array.Accelerate.BackendKit.Phase1.ToAccClone
        ( 
          accToAccClone, expToExpClone,
-         expType,
+         expType, convertSliceIndex,
          unpackArray, packArray, repackAcc, Phantom(Phantom),
        )
        where
@@ -165,11 +165,6 @@ convertAcc :: OpenAcc aenv a -> EnvM TAExp
 convertAcc (OpenAcc cacc) =
   convertPreOpenAcc cacc 
  where 
- cvtSlice :: SliceIndex slix sl co dim -> S.SliceType
- cvtSlice (SliceNil)            = []
- cvtSlice (SliceAll   sliceIdx) = S.All   : cvtSlice sliceIdx 
- cvtSlice (SliceFixed sliceIdx) = S.Fixed : cvtSlice sliceIdx 
-
  convertPreOpenAcc :: forall aenv a . 
                       PreOpenAcc OpenAcc aenv a -> EnvM TAExp
  convertPreOpenAcc eacc = 
@@ -288,11 +283,11 @@ convertAcc (OpenAcc cacc) =
 
     Replicate sliceIndex slix a ->
       T.Replicate (getAccTypePre eacc) 
-                  (cvtSlice sliceIndex) 
+                  (convertSliceIndex sliceIndex) 
                   <$> convertExp slix
                   <*> convertAcc a
     Slice sliceIndex acc slix -> 
-      T.Index (getAccTypePre eacc) (cvtSlice sliceIndex) <$> convertAcc acc
+      T.Index (getAccTypePre eacc) (convertSliceIndex sliceIndex) <$> convertAcc acc
                                           <*> convertExp slix
     Reshape e acc -> T.Reshape (getAccTypePre eacc) <$> convertExp e <*> convertAcc acc
     Permute fn dft pfn acc -> T.Permute (getAccType acc) -- Final type is same as input.
@@ -320,10 +315,17 @@ convertAcc (OpenAcc cacc) =
 
     -- TODO: Transform
 
-
 --------------------------------------------------------------------------------
 -- Convert Accelerate Scalar Expressions
 --------------------------------------------------------------------------------
+
+-- | Simply throws away type-level information associated with a
+-- `SliceIndex`.  Returns a normal cons-list (instead of the Snoc-list).
+convertSliceIndex :: SliceIndex slix sl co dim -> S.SliceType
+convertSliceIndex (SliceNil)            = []
+convertSliceIndex (SliceAll   sliceIdx) = S.All   : convertSliceIndex sliceIdx 
+convertSliceIndex (SliceFixed sliceIdx) = S.Fixed : convertSliceIndex sliceIdx 
+
 
 -- For now I'm leaving it as an index from the right with no length:
 convertTupleIdx :: TupleIdx t e -> Int
