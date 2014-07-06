@@ -60,6 +60,8 @@ import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
 import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc)
 import           Data.Array.Accelerate.BackendKit.Utils.Helpers (Phantom(Phantom))
 
+import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1)
+
 import Control.Exception (assert)
 import Data.Bits as B
 import Data.Dynamic (Typeable, Dynamic, fromDynamic, toDyn, typeOf)
@@ -103,15 +105,19 @@ dbgtrace x y = y
 -- TODO: add the S.Type itself to each of these.
 newtype SealedExp     = SealedExp     Dynamic deriving Show
 newtype SealedOpenExp = SealedOpenExp Dynamic deriving Show
-newtype SealedAcc     = SealedAcc     Dynamic deriving Show
+data SealedAcc = SealedAcc { arrTy :: ArrTy, accDyn :: Dynamic } deriving Show
+
+data ArrTy = ArrTy { ndims :: Int, eltTy :: S.Type } deriving Show
 
 newtype SealedSlice   = SealedSlice   Dynamic deriving Show
 
 sealExp :: Typeable a => A.Exp a -> SealedExp
 sealExp = SealedExp . toDyn
 
-sealAcc :: Typeable a => Acc a -> SealedAcc
-sealAcc = SealedAcc . toDyn
+sealAcc :: (Arrays a, Typeable a) => Acc a -> SealedAcc
+sealAcc x = SealedAcc (ArrTy dims elty) (toDyn x)
+ where
+  TArray dims elty = progType $ phase1 $ phase0 x
 
 -- | Cast a sealed expression into a statically typed one.  This may
 -- fail with an exception.
@@ -129,7 +135,7 @@ unused = error "This dummy value should not be used"
 -- | Cast a sealed array expression into a statically typed one.  This
 -- may fail with an exception.
 downcastA :: forall a . Typeable a => SealedAcc -> Acc a
-downcastA (SealedAcc d) =
+downcastA (SealedAcc _ d) =
   case fromDynamic d of
     Just e -> e
     Nothing ->
@@ -314,11 +320,11 @@ generateD indSealed bodfn outArrTy =
            sealAcc acc
 
 
-mapD :: (SealedExp -> SealedExp) -> SealedAcc ->
-        S.Type -> S.Type -> SealedAcc 
-mapD bodfn sealedInArr inArrTy outElmTy = 
+mapD :: (SealedExp -> SealedExp) -> SealedAcc -> S.Type -> SealedAcc 
+mapD bodfn sealedInArr outElmTy = 
       let 
-          (TArray dims inty) = inArrTy 
+--          (TArray dims inty) = inArrTy 
+          (ArrTy dims inty) = arrTy sealedInArr
           newAty = arrayTypeD (TArray dims outElmTy)
       in
        case (shapeTypeD dims, scalarTypeD inty, scalarTypeD outElmTy) of
@@ -999,11 +1005,10 @@ convertOpenAcc env@(EnvPack _ _ mp) ae =
          
     S.Map (S.Lam1 (vr,ty) bod) inA -> 
       let bodfn ex    = convertOpenExp (extendE vr ty ex env) bod
-          aty         = P.fst (mp # inA)
           bodty       = S.recoverExpType (M.insert vr ty $ M.map P.fst mp) bod
           sealedInArr = let (_,sa) = mp # inA in expectAVar sa
       in
-        mapD bodfn sealedInArr aty bodty
+        mapD bodfn sealedInArr bodty
 
     S.ZipWith (S.Lam2 (vr1,ty1) (vr2,ty2) bod) inA inB ->  
       let bodfn e1 e2 = let env' = extendE vr2 ty2 e2 $
