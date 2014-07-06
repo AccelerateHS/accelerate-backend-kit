@@ -14,7 +14,8 @@ module Data.Array.Accelerate.BackendKit.CompilerPipeline
          runOptPass, runOptPassNoD, runOptPassND,
          
          -- * Internal bits, exported for now:
-         phase2A, typecheckPass, optionalTC, DimCheckMode(..)
+         phase2A, phase2A_no1D,
+         typecheckPass, optionalTC, DimCheckMode(..)
        )
        where
 
@@ -98,6 +99,11 @@ phase2 prog =
 phase2A :: S.Prog () -> S.Prog (Maybe (Stride S.Exp),ArraySizeEstimate)
 phase2A prog =
   runSAPass1D  "oneDimensionalize" oneDimensionalize   $  -- (foldstride,size)
+  phase2A_no1D prog
+
+-- | Factor again.
+phase2A_no1D :: S.Prog () -> S.Prog ArraySizeEstimate
+phase2A_no1D prog = 
   runOptPassNoD "deadCode"          deadCode (fmap fst) $  -- (size)
   runSAPassNoD  "trackUses"         trackUses           $  -- (size,uses)
   runOptPassNoD "inlineCheap"     inlineCheap (fmap fst) $ -- (size)
