@@ -189,6 +189,20 @@ case_generateTupLeftNest = H.assertEqual "generate6"
                            "Array (Z :. 3 :. 2 :. 1) [((0,0),0),((0,1),0),((1,0),0),((1,1),0),((2,0),0),((2,1),0)]"
 
 --------------------------------------------------
+
+
+t20 = convertExp $ S.EPrimApp TBool (S.SP S.Gt) [S.EConst (I 1), S.EConst (I 2)]
+t20_ :: Exp Bool
+t20_ = downcastE t20
+case_gt = H.assertEqual "t20_" (show t20_) "False"
+
+
+t21 = convertExp $ S.EPrimApp TBool (S.SP S.Eq) [S.EConst (I 11), S.EConst (I 11)]
+t21_ :: Exp Bool
+t21_ = downcastE t21
+case_eq = H.assertEqual "t21_" (show t21_) "True"
+
+--------------------------------------------------
 -- Test PrimApps:
 
 p1 = convertOpenExp emptyEnvPack

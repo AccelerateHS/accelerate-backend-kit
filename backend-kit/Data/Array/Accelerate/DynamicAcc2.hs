@@ -60,7 +60,7 @@ import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
                    (Type(..), Const(..), AVar, Var, Prog(..), 
-                    Prim(..), NumPrim(..), IntPrim(..), FloatPrim(..))
+                    Prim(..), NumPrim(..), IntPrim(..), FloatPrim(..), ScalarPrim(..))
 import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc, expType, convertSliceIndex)
 import           Data.Array.Accelerate.BackendKit.Utils.Helpers (Phantom(Phantom), maybtrace, dbg)
 
@@ -752,6 +752,7 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
           (fstArg :_) = ls
           fstArgTy = S.recoverExpType typeEnv fstArg
       in 
+      -- Dispatch on the type of the first argument to the primitive:
       (case scalarTypeD fstArgTy of {
        SealedEltTuple t0 -> 
       (case t0 of {
@@ -780,10 +781,12 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
                      a1' = downcastE a1; \
                  in sealExp (unop a1');  \
          _ -> error$ "Unary operator "++show prim++" expects one arg, got "++show args ; })
+-- These occur in a pattern context:
 #define POPINT T.NumScalarType (T.IntegralNumType (nty :: T.IntegralType elt))
 #define POPFLT T.NumScalarType (T.FloatingNumType (nty :: T.FloatingType elt))
 #define POPIDICT case T.integralDict nty of (T.IntegralDict :: T.IntegralDict elt) ->
 #define POPFDICT case T.floatingDict nty of (T.FloatingDict :: T.FloatingDict elt) ->
+#define POPSDICT 
                                               
 -- Monomorphic in second arg:
 #define REPBOPMONO(numpat, popdict, which, prim, binop) (numpat, which prim) -> popdict (case args of { \
@@ -885,7 +888,25 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
 
                -------------- Relational/Equality Primitives --------------
 
--- FINSHME
+      -- (T.NumScalarType (T.IntegralNumType (ity :: T.IntegralType elt)), FP prim) -> \
+      --   (case T.integralDict ity of { (T.IntegralDict :: T.IntegralDict elt) ->     \
+      --    case styIn1 of { T.NumScalarType (T.FloatingNumType (fty :: T.FloatingType eltF)) -> \
+      --    case T.floatingDict fty of { (T.FloatingDict :: T.FloatingDict eltF) -> \
+      --    case args of { \
+      --     [a1] -> (let a1' :: Exp eltF;    \
+      --                  a1' = downcastE a1; \
+      --                  res :: Exp elt;     \
+      --                  res = unop a1';     \
+      --              in sealExp res);        \
+      --     _ -> error$ "Unary operator "++show prim++" expects one arg, got "++show args ;};};};})
+
+               (_, SP S.Eq  ) -> (ordPrim styIn1 (A.==*) args)
+               (_, SP S.NEq ) -> (ordPrim styIn1 (A./=*) args)
+               (_, SP S.Gt  ) -> (ordPrim styIn1 (A.>*) args)
+               (_, SP S.Lt  ) -> (ordPrim styIn1 (A.<*) args)
+               (_, SP S.GtEq) -> (ordPrim styIn1 (A.>=*) args)
+               (_, SP S.LtEq) -> (ordPrim styIn1 (A.<=*) args)
+               -- FINSHME: Max & Min
 
                -------------- Other Primitives --------------
 
@@ -955,6 +976,33 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
                sealExp(((downcastE d1::Exp Bool) A.?
                         (downcastE d2::Exp elt,
                          downcastE d3::Exp elt))::Exp elt)
+
+-- type OrdPrim = (forall b . Ord b => b -> b -> Exp Bool)
+type OrdPrim = (forall b . (Elt b, IsScalar b) => Exp b -> Exp b -> Exp Bool)
+
+-- | Dig down to find an Ord instance and call the given Prim:
+ordPrim :: forall a . Elt a => (T.ScalarType a) -> OrdPrim -> ([SealedExp] -> SealedExp)
+ordPrim inTy prim args = 
+  let [se1,se2] = args in
+  case inTy of 
+   T.NumScalarType (T.IntegralNumType a) -> 
+     case T.integralDict a of 
+      T.IntegralDict -> 
+        let x,y :: Exp a
+            x = downcastE se1
+            y = downcastE se2
+        in sealExp $ prim x y
+
+   T.NumScalarType (T.FloatingNumType a) -> 
+     case T.floatingDict a of 
+      T.FloatingDict -> 
+        let x,y :: Exp a
+            x = downcastE se1
+            y = downcastE se2
+        in sealExp $ prim x y
+
+   T.NonNumScalarType a -> 
+      error$"DynamicAcc2/ordPrim: attempting to apply relational operator to non-numeric type: "++show inTy
 
 -- | The SimpleAcc representation does NOT keep index types disjoint
 -- from regular tuples.  To convert back to Acc we need to reassert
