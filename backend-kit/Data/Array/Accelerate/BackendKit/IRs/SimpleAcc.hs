@@ -294,6 +294,8 @@ data Exp =
       projlen        :: Int,  -- ^ how many scalars to extract
       tupexpr        :: Exp   -- ^ tuple value to extract from
     } -- ^ Project a consecutive series of fields from a tuple.
+      -- This is an odd one because projlen is counted in terms of LEAVES of the tuple,
+      -- if it is a nested tuple.  But the effect is always to 
  deriving (Read,Show,Eq,Ord,Generic)
 
 -- | Trivial expressions.

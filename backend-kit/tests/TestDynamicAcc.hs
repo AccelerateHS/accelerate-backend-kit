@@ -227,10 +227,10 @@ c2 = scalarTypeD (TTuple [TTuple [TInt, TInt32], TInt64])
 case_const0 :: H.Assertion
 case_const0 = H.assertEqual "int const" (show c0_) "99"
 
--- For now we are NOT recovering tuple structure for tuple size > 3.
+-- We ARE using surface tuple types for now:
 case_const1 :: H.Assertion
 case_const1 = H.assertEqual "tuple repr 1"
-            (show c1)  "Sealed:(Int,(Int32,Int64))"
+            (show c1)  "Sealed:(Int,Int32,Int64)"
             
 case_const2 :: H.Assertion
 case_const2 = H.assertEqual "tuple repr 2"

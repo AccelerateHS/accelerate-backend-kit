@@ -768,6 +768,10 @@ prj1_2 e = Sm.Exp $ Tu.SuccTupIdx Tu.ZeroTupIdx `Sm.Prj` e
 prj1_3 :: (Elt a, Elt b, Elt c) => Sm.Exp (a, b, c) -> (Sm.Exp b)
 prj1_3 e = Sm.Exp $ Tu.SuccTupIdx Tu.ZeroTupIdx `Sm.Prj` e
 
+prj2_4 :: (Elt a, Elt b, Elt c, Elt d) => Exp (a, (b, c), d) -> (Exp (b,c))
+prj2_4 e = 
+  -- Sm.Exp $ Tu.SuccTupIdx Tu.ZeroTupIdx `Sm.Prj` e
+  undefined
 
 tix0 :: Elt s => Tu.TupleIdx (t, s) s
 tix0 = Tu.ZeroTupIdx

@@ -62,7 +62,7 @@ import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
                    (Type(..), Const(..), AVar, Var, Prog(..), 
                     Prim(..), NumPrim(..), IntPrim(..), FloatPrim(..))
 import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc, expType, convertSliceIndex)
-import           Data.Array.Accelerate.BackendKit.Utils.Helpers (Phantom(Phantom))
+import           Data.Array.Accelerate.BackendKit.Utils.Helpers (Phantom(Phantom), maybtrace, dbg)
 
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1)
 
@@ -74,14 +74,13 @@ import Debug.Trace
 import Prelude as P 
 import Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
 
-------------------------------------------------------------------------------------------
+dbgtrace = 
+  if dbg >= 5 
+  then maybtrace
+  else \ _s x -> x
+  
 
-#define DEBUG
-#ifdef DEBUG
-dbgtrace = trace
-#else 
-dbgtrace x y = y
-#endif
+------------------------------------------------------------------------------------------
 
 -- INCOMPLETE: In several places we have an incomplete pattern match
 -- due to no Elt instances for C types: [2013.08.09]
@@ -572,9 +571,10 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
                 P.take len $ P.drop ind $ P.zip [SealedEltTuple etA, SealedEltTuple etB]
                                                 [sealExp a, sealExp b]
 
-             PairTuple (ta :: EltTuple aa)
-               (PairTuple (tb :: EltTuple bb)
-                (tc@SingleTuple{} :: EltTuple cc)) ->
+             -- PairTuple (ta :: EltTuple aa)
+             --   (PairTuple (tb :: EltTuple bb)
+             --    (tc@SingleTuple{} :: EltTuple cc)) ->
+             ThreeTuple (ta :: EltTuple aa) (tb :: EltTuple bb) (tc :: EltTuple cc) ->
                let (a,b,c) = unlift (downcastE tup :: Exp (aa,bb,cc))
                in resealTup $ 
                 P.take len $ P.drop ind $ P.zip [SealedEltTuple ta, SealedEltTuple tb, SealedEltTuple tc]
