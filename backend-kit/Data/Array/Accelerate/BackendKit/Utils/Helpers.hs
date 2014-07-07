@@ -40,19 +40,21 @@ module Data.Array.Accelerate.BackendKit.Utils.Helpers
 
 import qualified Data.Map as M
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc  as S
-import Text.PrettyPrint.HughesPJ as PP
 import Foreign.Storable           (sizeOf)
-import Prelude                    (error, ($), (.))
+import Control.Concurrent.MVar (newMVar, withMVar, MVar)
+import Control.Exception       (evaluate)
+import Control.DeepSeq         (rnf)
 import Data.Int                   (Int)
 import Data.Word                  (Word)
-import Prelude                    ((++), show, return, Show)
 import Control.Monad.State.Strict (State, get, put)
 import Control.Applicative        ((<$>),(<*>),pure,Applicative)
 import Debug.Trace                (trace)
+import Prelude ((++), show, return, Show, error, ($), (.))
 import Prelude as P
-import System.IO.Unsafe   (unsafePerformIO)
 import System.Environment (getEnvironment)
-import           System.IO        (stdout, hFlush)
+import System.IO          (stdout, hFlush)
+import System.IO.Unsafe   (unsafePerformIO)
+import Text.PrettyPrint.HughesPJ as PP
 
 
 -- | Used only for communicating type information.
@@ -346,6 +348,13 @@ maybtrace = if dbg>1 then trace else \_ -> id
 
 -- | Print if the debug level is at or above a threshold.
 dbgPrint :: Int -> String -> IO ()
-dbgPrint lvl str = if dbg < lvl then return () else do
-    putStrLn str
-    hFlush stdout
+dbgPrint lvl str = if dbg < lvl then return () else do 
+  evaluate (rnf str) -- Fully evaluate before grabbing lock
+  withMVar globalLock $ \() ->
+     do putStrLn str
+        hFlush stdout
+
+-- | Global lock for debug printing:
+globalLock :: MVar ()
+globalLock = unsafePerformIO (newMVar ())
+{-# NOINLINE globalLock #-}

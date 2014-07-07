@@ -44,9 +44,10 @@ import qualified Data.Array.Accelerate.AST                      as AST
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1, phase2A_no1D)
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as SACC
-import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Prog(..))
+import qualified Data.Array.Accelerate.BackendKit.SimpleArray   as SA
+import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Prog(..), showProgSummary)
 import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc, unpackArray)
-import           Data.Array.Accelerate.BackendKit.Utils.Helpers ((#))
+import           Data.Array.Accelerate.BackendKit.Utils.Helpers ((#), dbgPrint)
 import           Data.Array.Accelerate.Trafo (Phase(..))
 import           Data.Array.Accelerate.Trafo.Sharing (convertAcc)
 import           Data.Array.Accelerate.DynamicAcc2 as Dyn hiding (convertAcc)
@@ -625,8 +626,9 @@ instance (Typeable b, Backend b) => SimpleBackend (DropBackend b) where
   type SimpleRemote (DropBackend b) = SomeRemote b
   type SimpleBlob   (DropBackend b) = SomeBlob b
 
-  simpleCompile (DropBackend b) _path prg0 = 
-    let prg = fmap (const ()) $ phase2A_no1D prg0 in -- TEMP! When DynamicAcc2 is more complete this becomes unnecessary!!
+  simpleCompile (DropBackend b) _path prg0 = do 
+    let prg = fmap (const ()) $ phase2A_no1D prg0 -- TEMP! When DynamicAcc2 is more complete this becomes unnecessary!!
+    dbgPrint 2 $ prg `seq` " [DropBackend] Compiling program via DynamicAcc:\n "++showProgSummary prg
     case Dyn.arrayTypeD (SACC.progType prg) of 
       SealedArrayType (_ :: Phantom aty) -> do  
         let acc :: Acc aty
@@ -663,6 +665,8 @@ instance (Typeable b, Backend b) => SimpleBackend (DropBackend b) where
     hsarr <- copyToHost b rem
     let (repr :: Sug.ArrRepr aty) = Sug.fromArr hsarr
         (_,accArr,_::Phantom aty) = unpackArray repr
+    dbgPrint 2 $ " [DropBackend] CopyToHost fetched accArray with dims"++show (SA.arrDim accArr)
+                  ++", and sizes: "++show (Prelude.map SA.payloadLength (SA.arrPayloads accArr)) 
     return $ accArr
 
   -- simpleCopyToDevice (DropBackend b) a   = 
