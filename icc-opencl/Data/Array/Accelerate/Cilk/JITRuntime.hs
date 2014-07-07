@@ -325,7 +325,8 @@ loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv, G.progType } soNam
     (mkDestroyRecord drr) resultsRec
     let table = M.fromList $ zip (map fst allResults) arrs
         results = map (table #) (map fst progResults)
-    dbgPrint 3 $ "[JIT] FULL RESULTS read back to Haskell (type "++show progType++"):\n  "++show results
+    dbgPrint 3 $ "[JIT] FULL RESULTS read back to Haskell (type "++show progType
+                 ++"):\n  "++take 1000 (show results)
     return results
 
 
