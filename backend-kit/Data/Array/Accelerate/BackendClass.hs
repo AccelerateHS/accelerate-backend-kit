@@ -29,7 +29,8 @@ module Data.Array.Accelerate.BackendClass (
   runTimed, AccTiming(..),
 
   -- * Mutual exclusion between backend actions
-  LockedBackend(), LockWhich(..), Locks(..), newLockedBackend,
+  LockedBackend(LockedBackend), LockWhich(..), Locks(..), 
+  newLockedBackend, newLocks, lockCompileOnly,
 
   -- * Miscellaneous
   Phantom(Phantom),
@@ -542,24 +543,32 @@ data LockWhich = LockWhich { lockCompile  :: Bool -- ^ Compiles should not happe
 --                           , lockAll      :: Bool -- ^ No actions should happen together
                            } deriving (Eq,Ord,Show,Read)
 
+-- | The actual (mutable) locks themselves.
 data Locks = Locks { compileLock  :: MVar ()
                    , runLock      :: MVar ()
                    , transferLock :: MVar () }
+  deriving Eq
 
 instance Show Locks where
   show Locks{} = "<Locks>"
 
-instance Eq Locks where
+-- | Lock only the compile phase.  This is a common use case.
+lockCompileOnly :: LockWhich
+lockCompileOnly = LockWhich { lockCompile=True, lockRun=False, lockTransfer=False }
 
-defaultLocks :: LockWhich
-defaultLocks = LockWhich { lockCompile=True, lockRun=False, lockTransfer=False }
-
+-- | Convert a backend to a locked backend, allocating new locks to protect it.
 newLockedBackend :: SimpleBackend b => LockWhich -> b -> IO (LockedBackend b)
 newLockedBackend which b = do
+  locks <- newLocks
+  return $ LockedBackend which locks b
+
+-- | Allocate a set of locks to protect a backend.
+newLocks :: IO Locks
+newLocks = do
   c <- newMVar ()
   r <- newMVar ()
   t <- newMVar ()
-  return $ LockedBackend which (Locks c r t) b
+  return (Locks c r t)
 
 maybeLock :: Bool -> MVar () -> IO a -> IO a
 maybeLock True  lock action = withMVar lock (\() -> action)
