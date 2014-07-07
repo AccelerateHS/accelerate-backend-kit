@@ -84,6 +84,16 @@ case_pairExp = H.assertEqual "simple pair"
 --             (A.fromList Z [(11,3.3)]) -- Why is there no EQ for Accelerate arrays?
              "Array (Z) [(11,3.3)]"
 
+
+t8b = convertOpenExp emptyEnvPack (S.ETuple [S.EConst (I 11), S.EConst (F 3.3), S.EConst (W 99)])
+t8b_ :: Exp (Int,Float,Word)
+t8b_ = downcastE t8
+
+t8c = convertAcc (S.Unit (S.ETuple [S.EConst (I 11), S.EConst (F 3.3), S.EConst (W 99)]))
+
+t8d = convertAcc (S.Unit (S.ETuple [S.EConst (I 11), S.ETuple [S.EConst (F 3.3), S.EConst (W 99)]]))
+
+
 t9 = convertOpenAcc emptyEnvPack $
      S.Use$ S.AccArray [10] [S.ArrayPayloadInt (U.listArray (0,9) [1..10])]
 t9_ :: Acc (Vector Int)

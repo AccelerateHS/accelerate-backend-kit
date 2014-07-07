@@ -70,11 +70,13 @@ import Control.Exception (assert)
 import Data.Bits as B
 import Data.Dynamic (Typeable, Dynamic, fromDynamic, toDyn, typeOf)
 import Data.Map as M
+import Debug.Trace
 import Prelude as P 
+import Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
 
 ------------------------------------------------------------------------------------------
 
--- define DEBUG
+#define DEBUG
 #ifdef DEBUG
 dbgtrace = trace
 #else 
@@ -121,9 +123,11 @@ sealExp x = SealedExp ety (toDyn x)
   ety = expType (Trafo.convertExp x)
 
 sealAcc :: (Arrays a, Typeable a) => Acc a -> SealedAcc
-sealAcc x = SealedAcc (ArrTy dims elty) (toDyn x)
+sealAcc x = 
+  dbgtrace (" ** Creating arrTy: "++show ty0++" for "++show x) $
+  SealedAcc (ArrTy dims elty) (toDyn x)
  where
-  TArray dims elty = progType $ phase1 $ phase0 x
+  ty0@(TArray dims elty) = progType $ phase1 $ phase0 x
 
 -- sealSlice :: (Typeable s) => s -> SealedSlice
 -- sealSlice = SealedSlice . toDyn
@@ -177,10 +181,13 @@ constantE c =
 --------------------------------------------------------------------------------                
 
 -- | We enhance "Data.Array.Accelerate.Type.TupleType" with Elt constraints.
+-- 
+--   Further, we attempt to model SURFACE tuples here, not their binary-tree encoding.
 data EltTuple a where
   UnitTuple   ::                                               EltTuple ()
   SingleTuple :: (Elt a)        => T.ScalarType a           -> EltTuple a
   PairTuple   :: (Elt a, Elt b) => EltTuple a -> EltTuple b -> EltTuple (a, b)
+  ThreeTuple  :: (Elt a, Elt b, Elt c) => EltTuple a -> EltTuple b -> EltTuple c -> EltTuple (a, b, c)
  deriving Typeable
 -- TODO: ^^ Get rid of SingleTuple and possible just use the NilTup/SnocTup rep.
 
@@ -247,7 +254,21 @@ scalarTypeD ty =
     -- representation.... What canonical tuple representation do we use?
     TTuple []      -> SealedEltTuple UnitTuple
     TTuple [sing]  -> scalarTypeD sing
+    TTuple [x,y]   -> 
+        case (scalarTypeD x, scalarTypeD y) of
+        (SealedEltTuple (et1 :: EltTuple a),
+         SealedEltTuple (et2 :: EltTuple b)) ->
+          SealedEltTuple$ PairTuple et1 et2
+
+    TTuple [x,y,z]   -> 
+        case (scalarTypeD x, scalarTypeD y, scalarTypeD z) of
+        (SealedEltTuple (et1),
+         SealedEltTuple (et2),
+         SealedEltTuple (et3)) ->
+          SealedEltTuple$ ThreeTuple et1 et2 et3
+
     TTuple (hd:tl) ->
+      error ("scalarTypeD: unifinished: "++show ty) $ 
       case (scalarTypeD hd, scalarTypeD (TTuple tl)) of
         (SealedEltTuple (et1 :: EltTuple a),
          SealedEltTuple (et2 :: EltTuple b)) ->
@@ -313,6 +334,7 @@ sliceTypeD (S.All:rst) =
 -- | Dynamically typed variant of `Data.Array.Accelerate.unit`.
 unitD :: SealedEltTuple -> SealedExp -> SealedAcc
 unitD elt exp =
+  dbgtrace (" ** starting unitD: "++show (elt,exp)) $
   case elt of
     SealedEltTuple (t :: EltTuple et) ->
       case t of
@@ -321,6 +343,8 @@ unitD elt exp =
           sealAcc$ unit (downcastE exp :: A.Exp  s)
         PairTuple (_ :: EltTuple l) (_ :: EltTuple r) ->
           sealAcc$ unit (downcastE exp :: A.Exp  (l,r))
+        ThreeTuple (_ :: EltTuple a) (_ :: EltTuple b) (_ :: EltTuple c) ->
+          sealAcc$ unit (downcastE exp :: A.Exp  (a,b,c))
 
 -- | Dynamically-typed variant of `Data.Array.Accelerate.use`.  However, this version
 -- is less powerful, it only takes a single, logical array, not a tuple of arrays.
@@ -532,8 +556,9 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
                exp  = (A.!) arr ind3
            in sealExp exp              
            
-    
+    -- FIXME: This is having a FLATTING effect, which isn't valid for surface tuples:
     S.ETupProject {S.indexFromRight=ind, S.projlen=len, S.tupexpr=tex} ->
+      dbgtrace ("ETupProject: "++show(ind,len,tex)) $
       let tup = convertOpenExp ep tex
           tty  = S.recoverExpType typeEnv tex
       in       
@@ -1085,6 +1110,7 @@ convertOpenAcc env@(EnvPack _ _ mp) ae =
 -- know what type to downcast it to.
 convertProg :: S.Prog () -> SealedAcc
 convertProg S.Prog{progBinds,progResults} =
+    dbgtrace ("CONVERTING whole prog "++show(doc progBinds)) $ 
     doBinds emptyEnvPack progBinds
   where 
   doBinds env (S.ProgBind vr ty dec eith : rst) =
@@ -1111,6 +1137,7 @@ instance Show (EltTuple a) where
   show UnitTuple = "()"
   show (SingleTuple st) = show st
   show (PairTuple a b)  = "("++show a++","++show b++")"
+  show (ThreeTuple a b c)  = "("++show a++","++show b++","++show c++")"
 
 instance Show SealedEltTuple where
   show (SealedEltTuple x) = "Sealed:"++show x
