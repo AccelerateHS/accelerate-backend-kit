@@ -9,19 +9,32 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Data.Array.Accelerate.BackendClass (
+  -- * Backends using the fully-typed Accelerate interface
   Backend(..), SomeBackend(SomeBackend),
-  MinimalBackend(..),
-  SimpleBackend(..), 
-  LiftSimpleBackend(LiftSimpleBackend), SomeSimpleBackend(SomeSimpleBackend), 
-  DropBackend(DropBackend),
-  runWith, 
-  runWithSimple, 
-  runTimed, AccTiming(..),
+
+  -- * Backends using the SimpleAcc AST
+  SimpleBackend(..), SomeSimpleBackend(SomeSimpleBackend), 
 
   -- Not ready for primetime yet:
   -- PortableBackend(..), CLibraryBackend(..)
 
-  Phantom(Phantom)
+  -- * Constructing and converting backends
+  MinimalBackend(..),
+  LiftSimpleBackend(LiftSimpleBackend), 
+  DropBackend(DropBackend),
+
+  -- * Running and timing
+  runWith, 
+  runWithSimple, 
+  runTimed, AccTiming(..),
+
+  -- * Mutual exclusion between backend actions
+  LockedBackend(), LockWhich(..), Locks(..), newLockedBackend,
+
+  -- * Miscellaneous
+  Phantom(Phantom),
+
+
 ) where
 
 -- friends
@@ -39,6 +52,7 @@ import           Data.Array.Accelerate.DynamicAcc2 as Dyn hiding (convertAcc)
 import           Data.Typeable (eqT, (:~:)(..), Typeable, typeOf)
 
 -- standard libraries
+import Control.Concurrent.MVar (newMVar, withMVar, MVar)
 import Data.ByteString.Lazy                   as B
 import Data.Char (isAlphaNum)
 import Data.Maybe (fromMaybe)
@@ -512,6 +526,73 @@ instance SimpleBackend b => SimpleBackend (LiftSimpleBackend b) where
   -- useRemote (LiftSimpleBackend b) r    = useRemote b r
   -- separateMemorySpace (LiftSimpleBackend b) = separateMemorySpace b
 
+--------------------------------------------------------------------------------
+
+-- | In an ideal world this should not be necessary.  All `Backend`s
+-- and `SimpleBackend`s should be fully threadsafe.  However, you may
+-- come across a backend that has problems
+data LockedBackend b = 
+     LockedBackend LockWhich Locks b 
+  deriving (Show, Eq, Typeable)
+
+-- | Configuration specifying which actions should be mutually exclusive.
+data LockWhich = LockWhich { lockCompile  :: Bool -- ^ Compiles should not happen during other compiles
+                           , lockRun      :: Bool -- ^ Runs should not happen during other runs
+                           , lockTransfer :: Bool -- ^ Transfers should not happen during other transfers
+--                           , lockAll      :: Bool -- ^ No actions should happen together
+                           } deriving (Eq,Ord,Show,Read)
+
+data Locks = Locks { compileLock  :: MVar ()
+                   , runLock      :: MVar ()
+                   , transferLock :: MVar () }
+
+instance Show Locks where
+  show Locks{} = "<Locks>"
+
+instance Eq Locks where
+
+defaultLocks :: LockWhich
+defaultLocks = LockWhich { lockCompile=True, lockRun=False, lockTransfer=False }
+
+newLockedBackend :: SimpleBackend b => LockWhich -> b -> IO (LockedBackend b)
+newLockedBackend which b = do
+  c <- newMVar ()
+  r <- newMVar ()
+  t <- newMVar ()
+  return $ LockedBackend which (Locks c r t) b
+
+maybeLock :: Bool -> MVar () -> IO a -> IO a
+maybeLock True  lock action = withMVar lock (\() -> action)
+maybeLock False _    action = action
+
+instance SimpleBackend b => SimpleBackend (LockedBackend b) where
+  type SimpleRemote (LockedBackend b) = SimpleRemote b
+  type SimpleBlob   (LockedBackend b) = SimpleBlob b 
+  simpleCompile (LockedBackend LockWhich{lockCompile} Locks{compileLock} b) path acc = 
+    maybeLock lockCompile compileLock $ simpleCompile b path acc
+
+  simpleRunRaw (LockedBackend LockWhich{lockRun} Locks{runLock} b) nm acc mb = 
+    maybeLock lockRun runLock $ simpleRunRaw b nm acc mb
+
+  simpleCopyToHost (LockedBackend LockWhich{lockTransfer} Locks{transferLock} b) r = 
+    maybeLock lockTransfer transferLock $ simpleCopyToHost b r 
+  simpleCopyToDevice (LockedBackend LockWhich{lockTransfer} Locks{transferLock} b) a = 
+    maybeLock lockTransfer transferLock $ simpleCopyToDevice b a
+  simpleCopyToPeer (LockedBackend LockWhich{lockTransfer} Locks{transferLock} b) r = 
+    maybeLock lockTransfer transferLock $ simpleCopyToPeer b r
+
+  simpleWaitRemote (LockedBackend _ _ b) r     = simpleWaitRemote b r
+  simpleUseRemote (LockedBackend _ _ b) r      = simpleUseRemote b r
+  simpleSeparateMemorySpace (LockedBackend _ _ b) = simpleSeparateMemorySpace b
+
+  simpleCompileFun1 (LockedBackend LockWhich{lockCompile} Locks{compileLock} b) p f = 
+    maybeLock lockCompile compileLock $ simpleCompileFun1 b p f 
+  simpleRunRawFun1  (LockedBackend LockWhich{lockCompile} Locks{compileLock} b) n f mb rs = 
+    maybeLock lockCompile compileLock $ simpleRunRawFun1 b n f mb rs
+
+
+
+----------------------------------------------------------------------------------------------------
 
 -- | A type wrapper that "casts" a Backend to a SimpleBackend.  This
 --   is a very tricky business and relies on the `DynamicAcc`
