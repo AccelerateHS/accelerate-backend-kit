@@ -27,7 +27,7 @@ module Data.Array.Accelerate.BackendKit.Tests
     p10, p10b, p10c, p10d, p10e, p10f, p10g, p10h, p10i, 
     p11, p11b, p11c,
     {-p12,-} p12b, p12c, p12d, p12e,
-    p13, p13b, p13c, p13d, p13e, p13f, p13g, p13g2, p13h, p13i, p13j, p13k, 
+    p13, p13a, p13b, p13c, p13d, p13e, p13f, p13g, p13g2, p13h, p13i, p13j, p13k, 
     p14, p14b, p14c, p14d, p14e, 
     p16a, p16b, p16c, p16d, p16e, p17a, p17b,
     p18a, p18b, p18c, p18d, p18e, p18f,
@@ -147,7 +147,7 @@ otherProgs =
   go "p11" p11, go "p11b" p11b, go "p11c" p11c,
   -- go "p12" p12,  -- [2014.02.20] Temporarily disabled.  This one is nondeterministic (issue #8).  Returning to it later.
   go "p12b" p12b, go "p12c" p12c, go "p12d" p12d, go "p12e" p12e, 
-  go "p13" p13, go "p13b" p13b, go "p13c" p13c, go "p13d" p13d, go "p13e" p13e, go "p13f" p13f,
+  go "p13" p13, go "p13a" p13a, go "p13b" p13b, go "p13c" p13c, go "p13d" p13d, go "p13e" p13e, go "p13f" p13f,
   go "p13g" p13g, go "p13g2" p13g2, go "p13h" p13h, go "p13i" p13i, go "p13j" p13j, go "p13k" p13k,
   go "p14" p14, go "p14b" p14b, 
   go "p14c" p14c, go "p14d" p14d, go "p14e" p14e,
@@ -674,6 +674,12 @@ p13 :: Acc (Scalar ((Int8,Int16),(Int32,Int64)))
 p13 = unit $ 
       Sm.tup2 ((Sm.tup2 (constant (1::Int8),  constant (2::Int16))),
                (Sm.tup2 (constant (3::Int32), constant (4::Int64))))
+
+p13a :: Acc (Scalar (Int8,(Int16,Int32)))
+p13a = unit p13a_
+p13a_ = Sm.tup2 (constant (1::Int8),
+                 (Sm.tup2 (constant (5::Int16), constant (2::Int32))))
+
 
 p13b :: Acc (Scalar (Int8,Int16,Int32))
 p13b = unit p13b_
