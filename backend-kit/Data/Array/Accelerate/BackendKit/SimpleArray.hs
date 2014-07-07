@@ -529,6 +529,7 @@ concatAccArrays origls =
   payls = concat paylss
   (dims,paylss) = unzip [ (dim,payls) | S.AccArray dim payls <- origls ] 
   allSame (hd:tl) = all (==hd) tl
+  allSame []      = True
 
 
 -- | Returns an error message if anything is wrong.  In particular, the number and
