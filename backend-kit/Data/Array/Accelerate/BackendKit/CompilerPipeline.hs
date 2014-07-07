@@ -190,7 +190,8 @@ runPass msg pass input =
            "================================================================================\n")
      (trace (show (doc output)) output)
   else if dbg == 3 
-       then trace (" [" ++ msg ++ " pass] printed output size would be "++ show(length(show output)))
+       then -- trace (" [" ++ msg ++ " pass] printed output size would be "++ show(length(show output)))
+            trace (" [" ++ msg ++ "] Pass running...")
             output
        else output
 
