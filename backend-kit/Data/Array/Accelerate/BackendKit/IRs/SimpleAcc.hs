@@ -41,6 +41,8 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
      var, progToEnv, lookupProgBind, expFreeVars, expASTSize, 
      aexpFreeVars, aexpASTSize, progASTSize, 
      resultNames, resultShapeNames,
+
+     showProgSummary,
      
      -- * Building and normalizing pieces of syntax
      normalizeEConst, mkTTuple, mkETuple,
@@ -178,6 +180,38 @@ resultShapeNames :: ProgResults -> [Var]
 resultShapeNames (WithoutShapes _ls)     = []
 resultShapeNames (WithShapes ls)         = L.map snd ls  
 resultShapeNames (WithShapesUnzipped ls) = concatMap snd ls  
+
+-- | Print the binding structure and metadata of a program as a
+-- multi-line string, without the contents of each array operation.
+showProgSummary :: Show a => Prog a -> String
+showProgSummary prg@Prog{progBinds,progResults,progType} = unlines $ 
+  [ "Program Summary {"
+  , "  AST Size: "++show (progASTSize prg)++", "++show (length progBinds)++" bindings"
+  , "  Result type: "++show progType
+  , "  Output variables: "++show progResults
+  , "  Structure: " ] ++ structureLines ++ 
+  [ "  Types and metadata: " ] ++ typeLines ++
+  [ "}" ] 
+ where 
+  structureLines = map (("    "++) . summarizeBind) progBinds
+  typeLines      = map (("    "++) . typeBind)      progBinds
+
+  summarizeBind :: ProgBind a -> String
+  summarizeBind (ProgBind v t _ (Left ex)) = 
+    "scalar "++show v++
+     (shorter (" = "++show ex)
+              (", defined using "++show (S.toList (expFreeVars ex))))
+
+  summarizeBind (ProgBind v t _ (Right ae)) = 
+     "array "++show v++" = "++aexpOpName ae++
+       (", defined using "++show (S.toList (aexpFreeVars ae)))
+       -- case ae of 
+
+  -- TODO: Align the three columns of this table:
+  typeBind (ProgBind v t dec _) = show v++" :: "++show t++", "++ show dec
+
+  shorter ls1 ls2 | length ls2 < length ls1 = ls2
+                  | otherwise               = ls1            
 
 -- | A top-level binding.  Binds a unique variable name to either an
 --   array or scalar expression.
@@ -972,6 +1006,35 @@ aexpFreeVars ae =
     Reshape     e    v  -> S.insert v $ g e
     Stencil  f1 _bound v -> S.insert v $ fn1 f1
     Stencil2 f2 _b1 v1 _b2 v2 -> S.insert v1 $ S.insert v2 $ fn2 f2
+
+
+aexpOpName :: AExp -> String
+aexpOpName ae =
+  case ae of
+    Vr v             -> "Vr"
+    Unit e           -> "Unit"
+    Cond e v1 v2     -> "Cond"
+    Use     _        -> "Use"
+    Generate  e f1   -> "Generate"
+    Replicate _ e v  -> "Replicate"
+    Index    _ v e   -> "Index"
+    Map      f v     -> "Map"
+    ZipWith  f v1 v2 -> "ZipWith"
+    Fold     f e v   -> "Fold"
+    Fold1    f   v   -> "Fold1"
+    FoldSeg  f e v1 v2 -> "FoldSeg"
+    Fold1Seg f   v1 v2 -> "Fold1Seg"
+    Scanl    f e v     -> "Scanl"
+    Scanl'   f e v     -> "Scanl'"
+    Scanl1   f   v     -> "Scanl1"
+    Scanr    f e v     -> "Scanr"
+    Scanr'   f e v     -> "Scanr'"
+    Scanr1   f   v     -> "Scanr1"
+    Permute  f v1 f1 v2 -> "Permute"
+    Backpermute e f1 v  -> "Backpermute"
+    Reshape     e    v  -> "Reshape"
+    Stencil  f1 _bound v -> "Stencil"
+    Stencil2 f2 _b1 v1 _b2 v2 -> "Stencil2"
 
 -- | Alpha-rename all variables to fresh names.
 freshenExpNames :: Exp -> GensymM Exp
