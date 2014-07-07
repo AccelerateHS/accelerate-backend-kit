@@ -177,51 +177,53 @@ typecheckPass dimMode prog =
 -- TODO: Enable profiling support and a more sophisticated runtime representation of Compilers.
 
 -- | Pass composition:
-runPass :: Out a => String -> (t -> a) -> t -> a
+runPass :: (Show a,Out a) => String -> (t -> a) -> t -> a
 runPass msg pass input =
+ input `seq` 
   let output = pass input in
   if dbg>=4 then
     -- (trace ("\n" ++ msg ++ ", output was:\n"++
     --        "================================================================================\n"
     --        ++show (doc output))
     --  output)
-
-    input `seq` 
-    (trace ("\n" ++ msg ++ ", output was:\n"++
+    trace ("\n" ++ msg ++ ", output was:\n"++
            "================================================================================\n")
-     (trace (show (doc output)) output))
-  else output
+     (trace (show (doc output)) output)
+  else if dbg == 3 
+       then trace (" [" ++ msg ++ " pass] printed output size would be "++ show(length(show output)))
+            output
+       else output
 
 -- An [optional] optimization pass:
-runOptPass :: Out a => String -> (t -> a) -> (t -> a) -> t -> a
+runOptPass :: (Show a, Out a) => String -> (t -> a) -> (t -> a) -> t -> a
 runOptPass str pass _otherwise =
   runPass str pass
 
 -- An optional pass with typechecking
-runOptPassND :: Out a => String -> (S.Prog t -> S.Prog a) -> (S.Prog t -> S.Prog a) -> S.Prog t -> S.Prog a
+runOptPassND :: (Show a, Out a) => String -> (S.Prog t -> S.Prog a) -> (S.Prog t -> S.Prog a) -> S.Prog t -> S.Prog a
 runOptPassND str pass _otherwise =
   runSAPassND str pass
 
-runOptPassNoD :: Out a => String -> (S.Prog t -> S.Prog a) -> (S.Prog t -> S.Prog a) -> S.Prog t -> S.Prog a
+runOptPassNoD :: (Show a, Out a) => String -> (S.Prog t -> S.Prog a) -> (S.Prog t -> S.Prog a) -> S.Prog t -> S.Prog a
 runOptPassNoD str pass _otherwise =
   runSAPassNoD str pass
 
 -- | A specific variant for passes that produce N-dimensional `SimpleAcc` output.
-runSAPassND :: Out a => String -> (S.Prog t -> S.Prog a) -> S.Prog t -> S.Prog a
+runSAPassND :: (Show a, Out a) => String -> (S.Prog t -> S.Prog a) -> S.Prog t -> S.Prog a
 runSAPassND msg pass input =
   optionalTC typecheckND $ 
   runPass msg pass input
 
 -- | This version allows implicit coercion between different dimensionalities.
 -- I.e. reshape desugars to NOTHING.
-runSAPassNoD :: Out a => String -> (S.Prog t -> S.Prog a) -> S.Prog t -> S.Prog a
+runSAPassNoD :: (Show a, Out a) => String -> (S.Prog t -> S.Prog a) -> S.Prog t -> S.Prog a
 runSAPassNoD msg pass input =
   optionalTC (typecheckPass NoDim) $  
   runPass msg pass input
 
 
 -- | A specific variant for passes that produce 1-dimensional `SimpleAcc` output.
-runSAPass1D :: Out a => String -> (S.Prog t -> S.Prog a) -> S.Prog t -> S.Prog a
+runSAPass1D :: (Show a, Out a) => String -> (S.Prog t -> S.Prog a) -> S.Prog t -> S.Prog a
 runSAPass1D msg pass input =
   optionalTC typecheck1D $
   runPass msg pass input

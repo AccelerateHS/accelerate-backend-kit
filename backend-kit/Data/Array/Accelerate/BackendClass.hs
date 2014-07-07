@@ -555,8 +555,6 @@ instance (Typeable b, Backend b) => SimpleBackend (DropBackend b) where
         remt <- runRaw b acc (Just blb)
         let results = SACC.resultNames progResults
             env     = SACC.progToEnv prg
-        Prelude.putStrLn $ "Try to simpleRunRaw with progResults " ++ show(doc progResults)
-
         -- Here we need to SUBDIVIDE the resulting arrays...
         -- but only after they are copied back.
         case [ (v, env#v) | v <- results ] of
