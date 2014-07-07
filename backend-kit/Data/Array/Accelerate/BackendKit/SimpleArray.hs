@@ -519,6 +519,7 @@ tuple ls  = Tup ls
 concatAccArrays :: [S.AccArray] -> S.AccArray
 concatAccArrays [] = error "concatAccArrays: Cannot zip an empty list of AccArrays (don't know dimension)"
 concatAccArrays origls = 
+  maybtrace (" [dbg] concatAccArrays: dims "++show dims++", lens "++show lens) $ 
   if not (allSame lens)
   then error$"concatAccArrays: mismatch in lengths: "++show lens
   else if not (allSame dims)

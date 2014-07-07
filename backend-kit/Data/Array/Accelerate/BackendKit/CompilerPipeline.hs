@@ -182,10 +182,6 @@ runPass msg pass input =
  input `seq` 
   let output = pass input in
   if dbg>=4 then
-    -- (trace ("\n" ++ msg ++ ", output was:\n"++
-    --        "================================================================================\n"
-    --        ++show (doc output))
-    --  output)
     trace ("\n" ++ msg ++ ", output was:\n"++
            "================================================================================\n")
      (trace (show (doc output)) output)
