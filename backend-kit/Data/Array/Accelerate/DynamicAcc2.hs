@@ -385,6 +385,7 @@ mapD bodfn sealedInArr outElmTy =
       let (ArrTy dims inty) = arrTy sealedInArr
           newAty = arrayTypeD (TArray dims outElmTy)
       in
+       -- TODO: Do we really need outElmTy here?
        case (shapeTypeD dims, scalarTypeD inty, scalarTypeD outElmTy) of
          (SealedShapeType (_ :: Phantom shp), 
           SealedEltTuple (inET  :: EltTuple inT),
@@ -400,12 +401,19 @@ mapD bodfn sealedInArr outElmTy =
              (UnitTuple,     UnitTuple)     -> sealAcc $ A.map rawfn realIn
              (SingleTuple _, UnitTuple)     -> sealAcc $ A.map rawfn realIn
              (PairTuple _ _, UnitTuple)     -> sealAcc $ A.map rawfn realIn
+             (ThreeTuple {}, UnitTuple)     -> sealAcc $ A.map rawfn realIn
              (UnitTuple,     SingleTuple _) -> sealAcc $ A.map rawfn realIn
              (SingleTuple _, SingleTuple _) -> sealAcc $ A.map rawfn realIn             
              (PairTuple _ _, SingleTuple _) -> sealAcc $ A.map rawfn realIn
+             (ThreeTuple {}, SingleTuple _) -> sealAcc $ A.map rawfn realIn
              (UnitTuple,     PairTuple _ _) -> sealAcc $ A.map rawfn realIn
              (SingleTuple _, PairTuple _ _) -> sealAcc $ A.map rawfn realIn             
              (PairTuple _ _, PairTuple _ _) -> sealAcc $ A.map rawfn realIn
+             (ThreeTuple {}, PairTuple _ _) -> sealAcc $ A.map rawfn realIn
+             (UnitTuple,     ThreeTuple {}) -> sealAcc $ A.map rawfn realIn
+             (SingleTuple _, ThreeTuple {}) -> sealAcc $ A.map rawfn realIn
+             (PairTuple _ _, ThreeTuple {}) -> sealAcc $ A.map rawfn realIn
+             (ThreeTuple {}, ThreeTuple {}) -> sealAcc $ A.map rawfn realIn
 
 zipWithD :: (SealedExp -> SealedExp -> SealedExp) -> SealedAcc -> SealedAcc ->
             S.Type -> S.Type  -> S.Type -> SealedAcc 
@@ -446,6 +454,7 @@ foldD bodfn initE sealedInArr inArrTy =
               (UnitTuple    )     -> sealAcc $ A.fold rawfn init realIn
               (SingleTuple _)     -> sealAcc $ A.fold rawfn init realIn
               (PairTuple _ _)     -> sealAcc $ A.fold rawfn init realIn
+              (ThreeTuple _ _ _)  -> sealAcc $ A.fold rawfn init realIn
   
 
 --------------------------------------------------------------------------------
@@ -746,12 +755,14 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
       (case scalarTypeD fstArgTy of {
        SealedEltTuple t0 -> 
       (case t0 of {
+       ThreeTuple _ _ _ -> error$ "Primitive "++show op++" should not have a tuple 1st argument type.";
        PairTuple _ _ -> error$ "Primitive "++show op++" should not have a tuple 1st argument type.";
        UnitTuple     -> error$ "Primitive "++show op++" should not have a unit 1st argument type.";
        SingleTuple (styIn1 :: T.ScalarType eltIn1) ->
       (case scalarTypeD outTy of 
         SealedEltTuple t ->
           case t of
+            ThreeTuple _ _ _ -> error$ "Primitive "++show op++" should not have a tuple output type."
             PairTuple _ _ -> error$ "Primitive "++show op++" should not have a tuple output type."
             UnitTuple     -> error$ "Primitive "++show op++" should not have a unit output type."
             SingleTuple (styOut :: T.ScalarType elt) ->
