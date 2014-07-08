@@ -978,6 +978,12 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
                         (downcastE d2::Exp elt,
                          downcastE d3::Exp elt))::Exp elt)
 
+             ThreeTuple {} ->
+               sealExp(((downcastE d1::Exp Bool) A.?
+                        (downcastE d2::Exp elt,
+                         downcastE d3::Exp elt))::Exp elt)
+
+
 -- type OrdPrim = (forall b . Ord b => b -> b -> Exp Bool)
 type OrdPrim = (forall b . (Elt b, IsScalar b) => Exp b -> Exp b -> Exp Bool)
 
