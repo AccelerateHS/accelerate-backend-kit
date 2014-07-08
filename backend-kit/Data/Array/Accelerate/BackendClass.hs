@@ -24,9 +24,8 @@ module Data.Array.Accelerate.BackendClass (
   DropBackend(DropBackend),
 
   -- * Running and timing
-  runWith, 
-  runWithSimple, 
-  runTimed, AccTiming(..),
+  runWith, runWithSimple, 
+  runTimed, runTimedSimple, AccTiming(..),
 
   -- * Mutual exclusion between backend actions
   LockedBackend(LockedBackend), LockWhich(..), Locks(..), 
@@ -112,6 +111,23 @@ runTimed bkend nm _config prog = do
       d2 = fromRational$ toRational$ diffUTCTime t2 t1
       d3 = fromRational$ toRational$ diffUTCTime t3 t2
   return $! (AccTiming d1 d2 d3, res)
+
+runTimedSimple :: (SimpleBackend b) => b -> DebugName -> Phase -> Prog () -> IO (AccTiming, [SA.AccArray])
+runTimedSimple bkend nm _config prog = do
+  (rand::Word64) <- randomIO
+  t0     <- getCurrentTime
+  let path = ".blob_"++fromMaybe "" nm++"_"++show rand
+  blob   <- simpleCompile bkend path prog
+  t1     <- getCurrentTime
+  remts  <- simpleRunRaw bkend nm prog (Just blob)
+  t2     <- getCurrentTime
+  res    <- mapM (simpleCopyToHost bkend) remts
+  t3     <- getCurrentTime
+  let d1 = fromRational$ toRational$ diffUTCTime t1 t0
+      d2 = fromRational$ toRational$ diffUTCTime t2 t1
+      d3 = fromRational$ toRational$ diffUTCTime t3 t2
+  return $! (AccTiming d1 d2 d3, res)
+
 
 -- | Remove exotic characters to yield a filename
 stripFileName :: String -> String
