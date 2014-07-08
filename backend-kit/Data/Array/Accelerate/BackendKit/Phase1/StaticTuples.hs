@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ParallelListComp #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 --------------------------------------------------------------------------------
@@ -39,8 +40,24 @@ staticTuples origae = aexp M.empty origae
    exp tenv e = 
      case e of  
 
+       -- This becomes a full reconstruction of a tuple of greater length:
        T.EIndexConsDynamic e1 e2 -> 
-         error$"IndexCons not handled yet - finish me"
+         -- AUDIT ME:  [2014.07.08]
+         let e1' = exp tenv e1
+             e2' = exp tenv e2
+             ty1 = retrieveTy tenv e1'
+             ty2 = retrieveTy tenv e2'
+--             len = tupleNumLeaves ty1 + tupleNumLeaves ty2
+             len2 = tupleNumLeaves ty2
+             -- FIXME: Must let-bind to avoid code duplication:
+             newtup = mkTuple (e1' : [ mkProject ix 1 e2' ty 
+                                     | ix <- [0 .. tupleSize ty2 - 1]
+                                     | ty <- tupleToList ty2])
+         in newtup
+         -- error$"StaticTuples: IndexCons not handled yet - finish me: "
+         --       ++show newtup++ " given "
+         --       ++ show (e1', e2', ty1, ty2)
+
          
        T.EIndexHeadDynamic e -> 
          let e'  = exp tenv e
@@ -132,6 +149,15 @@ tupleNumLeaves :: S.Type -> Int
 tupleNumLeaves (S.TTuple ls) = L.sum $ L.map tupleNumLeaves ls
 tupleNumLeaves _             = 1
 
+tupleSize :: S.Type -> Int
+tupleSize (S.TTuple ls) = length ls
+tupleSize  _            = 1
+
+tupleToList :: S.Type -> [S.Type]
+tupleToList (S.TTuple ls) = ls
+tupleToList x             = [x]
+
+
 -- TODO: move into SimpleAcc.hs perhaps:
 retrieveTy :: TEnv -> T.Exp -> S.Type
 retrieveTy tenv e =
@@ -161,10 +187,11 @@ retrieveTy tenv e =
     T.EIndexHeadDynamic ex    -> error "EIndexHeadDynamic should have been desugared before calling retrieveTy"
     T.EIndexTailDynamic ex    -> error "EIndexTailDynamic should have been desugared before calling retrieveTy"
 
--- Create an ETupProject but avoid creating spurious ones.
+-- | Create an ETupProject but avoid creating spurious ones.
+--   Index from RIGHT as with ETupProject
 mkProject :: Int -> Int -> T.Exp -> Type -> T.Exp
 mkProject ind len ex (S.TTuple ty) = T.ETupProject ind len ex
-mkProject 0 1 ex oth = ex  -- Eliminate silly ETupProject.
+mkProject 0 1 ex _ = ex  -- Eliminate silly ETupProject.
 mkProject ind len ex ty = error$"internal error: should not have this project on non-tuple type: "++show ty
 
 mkTupleTy [one] = one
