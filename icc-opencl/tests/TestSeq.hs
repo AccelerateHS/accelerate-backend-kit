@@ -55,6 +55,8 @@ knownProblems = words $ ""
   -- [2014.02.27] New breakage from reglueArrayofTups, need to come back to:
   ++ " p13k p13i "
 
+  -- Scan programs
+  ++ " p30 p31 " 
 
 
 

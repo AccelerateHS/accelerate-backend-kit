@@ -35,7 +35,7 @@ module Data.Array.Accelerate.BackendKit.Tests
     p20a, p20b, p20c, 
 
     -- Scan tests
-    p30, 
+    p30, p31, 
     
     -- * Reexports to make life easier:
     doc, convertToSimpleProg,
@@ -162,7 +162,7 @@ otherProgs =
   go "p20a" p20a, go "p20b" p20b, go "p20c" p20c,
 
   -- Scan test                                   
-  go "p30" p30
+  go "p30" p30, go "p31" p31
   ]
 
 makeTestEntry :: forall a . (Show a, Arrays a) => String -> Acc a -> TestEntry
