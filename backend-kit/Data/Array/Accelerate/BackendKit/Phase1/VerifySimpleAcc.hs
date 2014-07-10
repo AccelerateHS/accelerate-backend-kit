@@ -154,6 +154,9 @@ doAE VerifierConfig{dimMode} outTy env ae =
     Reshape e1 vr     -> Nothing
     Index tmplt vr e1 -> Nothing
 
+    Scanl  fn2 e1  vr -> Nothing -- addArrRef vr $ doE e1       $ doFn2 fn2 mp
+    Scanr  fn2 e1  vr -> Nothing -- addArrRef vr $ doE e1       $ doFn2 fn2 mp
+
 --     FoldSeg fn e1 v1 v2 -> addArrRef v1 $ addArrRef v2 $
 --                            doE e1       $ doFn2 fn mp 
 --     Fold1Seg  fn v1 v2  -> addArrRef v1 $ addArrRef v2 $ doFn2 fn mp

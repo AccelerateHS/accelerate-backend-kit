@@ -156,7 +156,11 @@ instance EmitBackend CEmitter where
 
                  -- Create a counter 
                  r_ix <- tmpvar int_t
-                 set r_ix (constant "0")
+                 set r_ix (constant "1")
+
+                 P.sequence $ [arrset (varSyn outV) 0 t
+                              | (outV,_,_) <- outarrs
+                              | t <- tmps ]  
 
                  -- for (round = 0; round < round+inStride; round ++) 
                  E.forStridedRange (round, 1, round+"inStride") $ \ ix -> do
@@ -184,16 +188,17 @@ instance EmitBackend CEmitter where
                    --   eprintf " ** Folding in position %d, offset %d (it was %f) intermediate result %f\n"
                    --           [ix, round, (arrsub (varSyn (head inVs)) ix), varSyn$ head tmps]
 
+                   comm "Write the result to each output array:"
                    P.sequence $ [arrset (varSyn outV) r_ix (varSyn t)
                                 | (outV,_,_) <- outarrs
                                 | t <- tmps ]  
-
                    
-                   -- forM_ (fragileZip tmps vs) $ \ (tmp,(v,_,_)) ->
-                   --    set (varSyn v) (varSyn tmp)
+                   
+                   forM_ (fragileZip tmps vs) $ \ (tmp,(v,_,_)) ->
+                      set (varSyn v) (varSyn tmp)
                    r_ix += 1 
                    return ()
-                 comm "Write the single reduction result to each output array:"
+                 -- comm "Write the Scan result to each output array:"
                  -- P.sequence $ [ arrset (varSyn outV) (round / "inStride") (varSyn v)
                  --              | (outV,_,_) <- outarrs
                  --              | (v,_,_)    <- vs ]
@@ -501,7 +506,7 @@ execBind e GPUProg{sizeEnv} (_ind, GPUProgBind {evtid, outarrs, op, decor=(FreeV
           --   (4*) Pointers to any/all input arrays.
           --   (5*) All components of the initial reduction value
           --   (6*) All free variables in the array kernel (arrayOpFVs)
-            allargs = insize : step : map varSyn outVs ++ map varSyn inVs ++ initargs ++ map varSyn freevars
+            allargs = insize : (step  + 1) : map varSyn outVs ++ map varSyn inVs ++ initargs ++ map varSyn freevars
 
         comm "Allocate all ouput space for the reduction operation:"
         P.sequence$ [ varinit (emitType e (TArray nd elty)) (varSyn outV)

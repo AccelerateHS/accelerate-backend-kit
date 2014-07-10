@@ -46,11 +46,11 @@ doAE mp ae =
     Fold1  _ vr      -> collapseInner vr
     FoldSeg _ _ vr w -> replaceInner (useSizeof vr) (useSizeof w)
     Fold1Seg  _ vr w -> replaceInner (useSizeof vr) (useSizeof w)
-    Scanl  _ _  vr   -> useSizeof vr
+    Scanl  _ _  vr   -> incrementInner vr -- useSizeof vr  
 -- Not handling these yet because of their tuple return type:
 --    Scanl' _ _  vr   -> useSizeof vr
     Scanl1 _    vr   -> useSizeof vr
-    Scanr  _ _  vr   -> useSizeof vr
+    Scanr  _ _  vr   -> incrementInner vr -- useSizeof vr
 --    Scanr' _ _  vr   -> useSizeof vr
     Scanr1 _    vr   -> useSizeof vr
     Permute _ vr _ _ -> useSizeof vr
@@ -100,6 +100,11 @@ doAE mp ae =
      case M.lookup vr mp of
         Nothing -> UnknownSize
         Just (_:tl) -> KnownSize tl
+   --BJS + MV:  For Scan !  
+   incrementInner vr =
+     case M.lookup vr mp of
+        Nothing -> UnknownSize
+        Just (h:tl) -> KnownSize $ h+1:tl 
 
    replaceInner _ UnknownSize = UnknownSize
    replaceInner UnknownSize _ = UnknownSize

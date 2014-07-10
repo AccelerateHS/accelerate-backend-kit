@@ -55,16 +55,13 @@ knownProblems = words $ ""
   -- [2014.02.27] New breakage from reglueArrayofTups, need to come back to:
   ++ " p13k p13i "
 
-  -- Scan programs
-  ++ " p30 p31 " 
-
 
 
 --------------------------------------------------------------------------------  
 -- OLD: switching away from enumerating working cases
 --------------------------------------------------------------------------------  
 
-knownGood = oneDimOrLessTests ++ useTests ++ multiDimTests ++ highDimTests
+knownGood = oneDimOrLessTests ++ useTests ++ multiDimTests ++ highDimTests ++ scanTests
 
 oneDimOrLessTests :: [String]
 oneDimOrLessTests = words$ 
@@ -122,3 +119,8 @@ highDimTests = words$
    "p2d " -- requires array-of-tuple AND >3D
 
    
+scanTests :: [String]
+scanTests = words$ 
+  -- Scan programs 
+  " p30 p31 " 
+
