@@ -127,7 +127,7 @@ instance EmitBackend CEmitter where
   emitGenReduceDef e@(CEmitter typ env) (GPUProgBind{ evtid, outarrs, decor=(FreeVars arrayOpFVs), op = (GenReduce reducer generator (Scan dir initSB) stride )}) = do 
     let ScalarBlock _ initVs _  = initSB
         Lam formals bod = reducer
-        vs = take (length initVs) formals
+        vs = take (length initVs) formals -- 
         ws = drop (length initVs) formals
         initargs = map (\(vr,_,ty) -> (emitType e ty, show vr)) vs
         outargs  = [ (emitType e outTy, show outV)      | (outV,_,outTy) <- outarrs ]
@@ -145,7 +145,7 @@ instance EmitBackend CEmitter where
 
     rawFunDef "void" builder ((int_t, "inSize") : (int_t, "inStride") : 
                                           outargs ++ inargs ++ initargs ++ freeargs) $ 
-         do E.comm$"Fold loop, reduction variable(s): "++show vs
+         do E.comm$"Scan loop, reduction variable(s): "++show vs
             E.comm$"First, some temporaries to back up the inital state"
             E.comm$" (we're going to stomp on the reduction vars / formal params):"
             tmps <- P.sequence [ E.tmpvarinit (emitType e vty) (varSyn v) | (v,_,vty) <- vs ]
@@ -155,8 +155,8 @@ instance EmitBackend CEmitter where
                  P.sequence [ varinit (emitType e vty) (varSyn v) tmp | (v,_,vty) <- vs | tmp <- tmps ]
 
                  -- Create a counter 
-                 ix <- tmpvar int_t
-                 set ix (constant "0")
+                 r_ix <- tmpvar int_t
+                 set r_ix (constant "0")
 
                  E.forStridedRange (round, 1, round+"inStride") $ \ ix -> do
 
@@ -183,14 +183,14 @@ instance EmitBackend CEmitter where
                    --   eprintf " ** Folding in position %d, offset %d (it was %f) intermediate result %f\n"
                    --           [ix, round, (arrsub (varSyn (head inVs)) ix), varSyn$ head tmps]
 
-                   P.sequence $ [arrset (varSyn outV) ix (varSyn t)
+                   P.sequence $ [arrset (varSyn outV) r_ix (varSyn t)
                                 | (outV,_,_) <- outarrs
                                 | t <- tmps ]  
 
                    
                    -- forM_ (fragileZip tmps vs) $ \ (tmp,(v,_,_)) ->
                    --    set (varSyn v) (varSyn tmp)
-                   ix += 1 
+                   r_ix += 1 
                    return ()
                  comm "Write the single reduction result to each output array:"
                  -- P.sequence $ [ arrset (varSyn outV) (round / "inStride") (varSyn v)
@@ -504,7 +504,7 @@ execBind e GPUProg{sizeEnv} (_ind, GPUProgBind {evtid, outarrs, op, decor=(FreeV
 
         comm "Allocate all ouput space for the reduction operation:"
         P.sequence$ [ varinit (emitType e (TArray nd elty)) (varSyn outV)
-                     (function "malloc" [sizeof (emitType e elty) * (insize)])
+                     (function "malloc" [sizeof (emitType e elty) * (insize + 1)])
                     | (outV,_,TArray nd elty) <- outarrs ]
       -- Call the builder to fill in the array: 
         emitStmt$ (function$ strToSyn$ builderName evtid) allargs
