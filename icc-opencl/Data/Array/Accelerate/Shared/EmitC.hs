@@ -468,11 +468,49 @@ execBind e GPUProg{sizeEnv} (_ind, GPUProgBind {evtid, outarrs, op, decor=(FreeV
 
 
 -- BJS: GenReduce. SCAN
-    GenReduce reducer
-              generator
-              (Scan dir initSB)
-              stride  -> error$"EmitC.hs/execBind: can't handle the Scan array operator yet:\n"++show (doc op)
+    GenReduce reducer generator (Scan dir initSB) stride ->
+      do -- error$"EmitC.hs/execBind: can't handle the Scan array operator yet:\n"++show (doc op)
+        let (Lam [(v,_,ty1),(w,_,ty2)] bod) = reducer
+            -- Scan dir initSB = variant
+                        
+        initVs <- emitBlock e initSB
       
+        let freevars = arrayOpFVs 
+            initargs = map varSyn initVs
+            outVs   = [ outV | (outV,_,_) <- outarrs ]
+    
+            insize :: Syntax -- All inputs are the SAME SIZE:
+            insize  = case generator of
+              Manifest inVs -> trivToSyntax$ P.snd$ sizeEnv # head inVs
+              NonManifest (Gen tr _) -> trivToSyntax tr
+          -- If we are running the Generate ourselves, then we don't have any extra
+          -- arguments to pass for the inputs:
+            inVs = case generator of
+                   Manifest vs   -> vs
+                   NonManifest _ -> []
+            step = case stride of
+                   StrideConst s -> emitE e s
+                   StrideAll     -> insize
+      
+          -- ARGUMENT PROTOCOL, for reduction builder:
+          --   (1)  Size in #elements of the complete input array(s)
+          --   (2)  Step: how many elements are in each individual reduction.
+          --        Size/Step should be equal to the output array(s) size
+          --   (3*) Pointers to all output arrays.
+          --   (4*) Pointers to any/all input arrays.
+          --   (5*) All components of the initial reduction value
+          --   (6*) All free variables in the array kernel (arrayOpFVs)
+            allargs = insize : step : map varSyn outVs ++ map varSyn inVs ++ initargs ++ map varSyn freevars
+
+        comm "Allocate all ouput space for the reduction operation:"
+        P.sequence$ [ varinit (emitType e (TArray nd elty)) (varSyn outV)
+                     (function "malloc" [sizeof (emitType e elty) * (insize)])
+                    | (outV,_,TArray nd elty) <- outarrs ]
+      -- Call the builder to fill in the array: 
+        emitStmt$ (function$ strToSyn$ builderName evtid) allargs
+        return ()
+
+                         
     -- This is unpleasantly repetitive.  It doesn't benefit from the lowering to expose freevars and use NewArray.
     GenReduce {reducer,generator,variant,stride} -> do 
       let (Lam [(v,_,ty1),(w,_,ty2)] bod) = reducer
