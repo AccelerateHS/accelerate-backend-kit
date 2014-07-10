@@ -127,8 +127,8 @@ instance EmitBackend CEmitter where
   emitGenReduceDef e@(CEmitter typ env) (GPUProgBind{ evtid, outarrs, decor=(FreeVars arrayOpFVs), op = (GenReduce reducer generator (Scan dir initSB) stride )}) = do 
     let ScalarBlock _ initVs _  = initSB
         Lam formals bod = reducer
-        vs = take (length initVs) formals -- 
-        ws = drop (length initVs) formals
+        vs = take (length initVs) formals -- first argument to operator
+        ws = drop (length initVs) formals -- second argument to operator 
         initargs = map (\(vr,_,ty) -> (emitType e ty, show vr)) vs
         outargs  = [ (emitType e outTy, show outV)      | (outV,_,outTy) <- outarrs ]
         inargs   = case generator of
@@ -158,6 +158,7 @@ instance EmitBackend CEmitter where
                  r_ix <- tmpvar int_t
                  set r_ix (constant "0")
 
+                 -- for (round = 0; round < round+inStride; round ++) 
                  E.forStridedRange (round, 1, round+"inStride") $ \ ix -> do
 
                    
