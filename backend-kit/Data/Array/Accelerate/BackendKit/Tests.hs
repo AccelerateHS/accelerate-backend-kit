@@ -34,6 +34,9 @@ module Data.Array.Accelerate.BackendKit.Tests
 
     p20a, p20b, p20c, 
 
+    -- Scan tests
+    p30, 
+    
     -- * Reexports to make life easier:
     doc, convertToSimpleProg,
 
@@ -156,7 +159,10 @@ otherProgs =
   go "p17a" p17a, go "p17b" p17b,
   go "p18a" p18a, go "p18b" p18b, go "p18c" p18c, go "p18d" p18d, go "p18e" p18e, go "p18f" p18f,
 
-  go "p20a" p20a, go "p20b" p20b, go "p20c" p20c
+  go "p20a" p20a, go "p20b" p20b, go "p20c" p20c,
+
+  -- Scan test                                   
+  go "p30" p30
   ]
 
 makeTestEntry :: forall a . (Show a, Arrays a) => String -> Acc a -> TestEntry
@@ -889,10 +895,6 @@ p18f = let mystery = (unit (index1 7) ! index0) :: Exp (Z:.Int) in
 -- p19a = ...
 -- TODO
 
---------------------------------------------------------------------------------
--- Testing SCAN:
-
--- TODO
 
 --------------------------------------------------------------------------------
 -- Testing all FOLD variants:
@@ -941,6 +943,29 @@ p20c = let xs   = use$ fromList (Z :. (2::Int) :. (5::Int)) [1..10::Float]
 -- Testing STENCILs:
 
 -- TODO
+
+
+--------------------------------------------------------------------------------
+-- Testing SCAN:
+
+-- TODO
+
+p30 :: Acc (Array DIM1 Int)
+p30 = let xs = use$ fromList (Z :. (10::Int)) [1..10::Int]
+      in A.scanl (+) (constant 0)  xs
+
+
+p31 :: Acc (Array DIM1 Int)
+p31 = let xs = use$ fromList (Z :. (10::Int)) [1..10::Int]
+      in A.scanr (+) (constant 0) xs
+
+
+
+
+
+
+
+
 
 --------------------------------------------------------------------------------
 -- Let's print matrices nicely.
