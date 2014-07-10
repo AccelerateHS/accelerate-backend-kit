@@ -176,6 +176,9 @@ compileToFile pm name prog = do
   dbgPrint 1 $"COMPILETIME_C: "++show (diffUTCTime t2 t1)
   mapM_ (dbgPrint 1 . ("[CC] "++)) (lines out)
   mapM_ (dbgPrint 1 . ("[CC] "++)) (lines err)
+
+  putStrLn $ "HELLO FROM JITRuntime.hs" 
+  
   when (dbg < 2) $ do 
     dbgPrint 2 $ "[JIT]   Cleaning up temp file: "++ tmpcfile
     removeFile tmpcfile
