@@ -31,8 +31,10 @@ main = do
          frontEndFusion = False
        }
 
-knownProblems :: [String]
-knownProblems = words $ "" 
+knownProblems = knownProblemsOld ++ scanTestsFail
+
+knownProblemsOld :: [String]
+knownProblemsOld = words $ "" 
   -- These pass in --simple mode, but are having a problem in the repacking phase:
   ----------------------------------------
 --  ++ "p13 p13b p13c p13d p13e p13f p14 p14b p14e "
@@ -54,14 +56,14 @@ knownProblems = words $ ""
 
   -- [2014.02.27] New breakage from reglueArrayofTups, need to come back to:
   ++ " p13k p13i "
-
+  
 
 
 --------------------------------------------------------------------------------  
 -- OLD: switching away from enumerating working cases
 --------------------------------------------------------------------------------  
 
-knownGood = oneDimOrLessTests ++ useTests ++ multiDimTests ++ highDimTests ++ scanTests
+knownGood = oneDimOrLessTests ++ useTests ++ multiDimTests ++ highDimTests ++ scanTestsPass
 
 oneDimOrLessTests :: [String]
 oneDimOrLessTests = words$ 
@@ -119,8 +121,13 @@ highDimTests = words$
    "p2d " -- requires array-of-tuple AND >3D
 
    
-scanTests :: [String]
-scanTests = words$ 
+scanTestsPass :: [String]
+scanTestsPass = words$ 
   -- Scan programs 
-  " p30 p31 " 
+  " p30 " 
 
+
+scanTestsFail :: [String]
+scanTestsFail = words$
+  " p31 p32 p33 " ++
+  " p40a p40b p41a p41b" 

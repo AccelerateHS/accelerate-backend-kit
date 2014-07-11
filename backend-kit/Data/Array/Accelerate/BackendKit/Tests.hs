@@ -35,7 +35,8 @@ module Data.Array.Accelerate.BackendKit.Tests
     p20a, p20b, p20c, 
 
     -- Scan tests
-    p30, p31, 
+    p30, p31, p32, p33,
+    p40a, p40b, p41a, p41b, 
     
     -- * Reexports to make life easier:
     doc, convertToSimpleProg,
@@ -162,7 +163,8 @@ otherProgs =
   go "p20a" p20a, go "p20b" p20b, go "p20c" p20c,
 
   -- Scan test                                   
-  go "p30" p30, go "p31" p31
+  go "p30" p30, go "p31" p31, go "p32" p32, go "p33" p33,
+  go "p40a" p40a, go "p40b" p40b, go "p41a" p41a, go "p41b" p41b  
   ]
 
 makeTestEntry :: forall a . (Show a, Arrays a) => String -> Acc a -> TestEntry
@@ -948,7 +950,8 @@ p20c = let xs   = use$ fromList (Z :. (2::Int) :. (5::Int)) [1..10::Float]
 --------------------------------------------------------------------------------
 -- Testing SCAN:
 
--- TODO
+-- Scan works on Vectors. Does this mean that there is no multidim variant
+-- of these?  
 
 p30 :: Acc (Array DIM1 Int)
 p30 = let xs = use$ fromList (Z :. (10::Int)) [1..10::Int]
@@ -960,6 +963,35 @@ p31 = let xs = use$ fromList (Z :. (10::Int)) [1..10::Int]
       in A.scanr (+) (constant 0) xs
 
 
+p32 :: Acc (Array DIM1 Int)
+p32 = let xs = use$ fromList (Z :. (10::Int)) [1..10::Int]
+      in A.scanl1 (+) xs
+
+p33 :: Acc (Array DIM1 Int)
+p33 = let xs = use$ fromList (Z :. (10::Int)) [1..10::Int]
+      in A.scanr1 (+) xs
+
+
+-- Odd prime versions of Scan
+
+p40a :: Acc (Array DIM1 Int)
+p40a = let xs = use$ fromList (Z :. (10::Int)) [1..10::Int]
+       in P.fst $ A.scanl' (+) (constant 0) xs
+
+p40b :: Acc (Scalar Int)
+p40b = let xs = use$ fromList (Z :. (10::Int)) [1..10::Int]
+       in P.snd $ A.scanl' (+) (constant 0) xs
+
+p41a :: Acc (Array DIM1 Int)
+p41a = let xs = use$ fromList (Z :. (10::Int)) [1..10::Int]
+       in P.fst $ A.scanr' (+) (constant 0) xs
+
+p41b :: Acc (Scalar Int)
+p41b = let xs = use$ fromList (Z :. (10::Int)) [1..10::Int]
+       in P.snd $ A.scanr' (+) (constant 0) xs
+
+         
+ 
 
 
 
