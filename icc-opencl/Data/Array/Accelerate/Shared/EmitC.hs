@@ -149,6 +149,9 @@ instance EmitBackend CEmitter where
             E.comm$"First, some temporaries to back up the inital state"
             E.comm$" (we're going to stomp on the reduction vars / formal params):"
             tmps <- P.sequence [ E.tmpvarinit (emitType e vty) (varSyn v) | (v,_,vty) <- vs ]
+ 
+
+ --           emitLine $ "printf(\"%d\\n\",inStride);"
             let body round = do 
                  E.comm$"Fresh round, new accumulator with the identity:"
                  E.comm$"We shadow the formal params as a hack:"
@@ -156,27 +159,43 @@ instance EmitBackend CEmitter where
 
                  -- Create a counter 
                  r_ix <- tmpvar int_t
-                 set r_ix (constant "1")
+                 
 
-                 P.sequence $ [arrset (varSyn outV) 0 t
+                 let (ix0, r_val, r_inc)  = case dir of 
+                             LeftScan -> (0 ,1 , 1)  
+                             RightScan -> ("inSize", "inSize"-1,-1) 
+            
+                 set r_ix r_val -- (constant "1")
+
+
+                 -- Write the identity value to index zero.     
+                 P.sequence $ [arrset (varSyn outV) ix0 t
                               | (outV,_,_) <- outarrs
                               | t <- tmps ]  
 
-                 -- for (round = 0; round < round+inStride; round ++) 
+                 
+                 -- for (round = 0; round < round+inStride; round ++)                 
                  E.forStridedRange (round, 1, round+"inStride") $ \ ix -> do
-
+                 
+   --                emitLine $ "printf(\"%d, %d, %d\\n\",((inStride - 1) - i3), v01, eetmp2);"
+ 
+                   -- Left or Right ? change order of ixs
+                   let ix' = case dir of 
+                               LeftScan ->  ix 
+                               RightScan -> "inStride"-1-ix
+                   
                    
                    let foldit inputs k =
                          P.sequence$ [ varinit (emitType e wty) (varSyn wvr) (k inV)
                                      | inV <- inputs
                                      | (wvr, _, wty) <- ws ]
                    case generator of
-                     Manifest inVs -> foldit inVs (\ v -> arrsub (varSyn v) ix)
+                     Manifest inVs -> foldit inVs (\ v -> arrsub (varSyn v) ix')
                      NonManifest (Gen _ (Lam args bod)) -> do
                        comm "(1) create input: we run the generator to produce one or more inputs"
                        -- TODO: Assign formals to ix
                        let [(vr,_,ty)] = args -- ONE argument, OneDimensionalize
-                       E.varinit (emitType e ty) (varSyn vr) ix
+                       E.varinit (emitType e ty) (varSyn vr) ix'
                        tmps <- emitBlock e bod
                        comm$"(2) do the reduction with the resulting values ("++show tmps++")"
                        foldit tmps varSyn
@@ -196,7 +215,7 @@ instance EmitBackend CEmitter where
                    
                    forM_ (fragileZip tmps vs) $ \ (tmp,(v,_,_)) ->
                       set (varSyn v) (varSyn tmp)
-                   r_ix += 1 
+                   r_ix += r_inc  -- 1 
                    return ()
                  -- comm "Write the Scan result to each output array:"
                  -- P.sequence $ [ arrset (varSyn outV) (round / "inStride") (varSyn v)
@@ -498,6 +517,7 @@ execBind e GPUProg{sizeEnv} (_ind, GPUProgBind {evtid, outarrs, op, decor=(FreeV
                    StrideConst s -> emitE e s
                    StrideAll     -> insize
       
+   -- This protocol is incorrect (fix it) size of step is problematic. 
           -- ARGUMENT PROTOCOL, for reduction builder:
           --   (1)  Size in #elements of the complete input array(s)
           --   (2)  Step: how many elements are in each individual reduction.
@@ -506,7 +526,7 @@ execBind e GPUProg{sizeEnv} (_ind, GPUProgBind {evtid, outarrs, op, decor=(FreeV
           --   (4*) Pointers to any/all input arrays.
           --   (5*) All components of the initial reduction value
           --   (6*) All free variables in the array kernel (arrayOpFVs)
-            allargs = insize : (step  + 1) : map varSyn outVs ++ map varSyn inVs ++ initargs ++ map varSyn freevars
+            allargs = insize : step : map varSyn outVs ++ map varSyn inVs ++ initargs ++ map varSyn freevars
 
         comm "Allocate all ouput space for the reduction operation:"
         P.sequence$ [ varinit (emitType e (TArray nd elty)) (varSyn outV)

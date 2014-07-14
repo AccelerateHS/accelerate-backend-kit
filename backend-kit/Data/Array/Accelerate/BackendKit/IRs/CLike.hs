@@ -111,6 +111,7 @@ data MGenerator fn = Manifest [Var]
 data ReduceVariant fn sb =
     Fold              sb
   | FoldSeg           sb (MGenerator (fn sb))
+-- BJS: How tell apart Scan and Scan1 and Scan' ?
   | Scan    Direction sb 
     -- | Forward permute also takes a default array and an
     -- index-permuting function:
