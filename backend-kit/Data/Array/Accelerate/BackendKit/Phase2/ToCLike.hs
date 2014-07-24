@@ -194,9 +194,10 @@ doBind env (ProgBind _ ty decor@(OpInputs vis, (SubBinds vos _, (foldstride, _))
        Fold1    {}     -> err
        Fold1Seg {}     -> err
        Scanl lam2 ex _ -> foldHelp (head vis) LL.StrideAll lam2 =<< (LL.Scan LL.LeftScan  <$> doBlock env ex)
-       Scanr lam2 ex _ -> foldHelp (head vis) LL.StrideAll lam2 =<< (LL.Scan LL.RightScan <$> doBlock env ex)    
-       Scanl1 {}       -> err
-       Scanr1 {}       -> err
+       Scanr lam2 ex _ -> foldHelp (head vis) LL.StrideAll lam2 =<< (LL.Scan LL.RightScan <$> doBlock env ex)
+       -- NOTE: Scan1 doesn't have an InitialValue parameter!
+       Scanl1 lam2 _   -> foldHelp (head vis) LL.StrideAll lam2 (LL.Scan1 LL.LeftScan)
+       Scanr1 lam2 _   -> foldHelp (head vis) LL.StrideAll lam2 (LL.Scan1 LL.RightScan)
        Scanl' {}       -> err
        Scanr' {}       -> err
        Unit         {} -> err

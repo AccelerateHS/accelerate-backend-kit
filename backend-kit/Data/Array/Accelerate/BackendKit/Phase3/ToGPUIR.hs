@@ -97,6 +97,7 @@ doBinds sizeEnv evEnv (LLProgBind vartys (FreeVars fvs) toplvl : rest) = do
                                  return ([], FoldSeg sb' (doMGen gen2))
           Scan dir sb      -> do let sb' = doSB sb -- (pb,sb') <- goSB sb
                                  return ([], Scan dir sb')
+          Scan1 dir        -> return ([], Scan1 dir) -- nothing to do? 
           Permute lam mgen -> return ([], Permute (doLam lam) (doMGen mgen))
   
   case toplvl of

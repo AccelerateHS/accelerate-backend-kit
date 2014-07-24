@@ -111,15 +111,16 @@ data MGenerator fn = Manifest [Var]
 data ReduceVariant fn sb =
     Fold              sb
   | FoldSeg           sb (MGenerator (fn sb))
+  | Scan    Direction sb
 -- BJS: How tell apart Scan and Scan1 and Scan' ?
-  | Scan    Direction sb 
+  | Scan1   Direction
     -- | Forward permute also takes a default array and an
     -- index-permuting function:
   | Permute { permfun:: fn sb, defaults::MGenerator (fn sb) }
   deriving (Read,Show,Eq,Ord,Generic)
 
 data Direction = LeftScan | RightScan
- deriving (Read,Show,Eq,Ord,Generic)           
+               deriving (Read,Show,Eq,Ord,Generic)           
           
 ------------------------------------------------------------
 -- Accelerate Scalar Expressions and Functions
