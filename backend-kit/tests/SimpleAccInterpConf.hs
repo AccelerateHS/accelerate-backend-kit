@@ -49,3 +49,9 @@ knownProblems = words $ ""
   ++ " p5 p13j" -- These are failing for the same reason as in the C backend... new Unit/Z handling, unfinished.
 
   ++ " p13i "   -- This test passes in C but gets the tuple components flipped in the interp! Bug!
+
+
+  -- New tests, not supported yet [2014.07.29]:
+  ---------------------------------------------
+  ++ " p31 p32 p33 p40a p40b p41a p41b "
+
