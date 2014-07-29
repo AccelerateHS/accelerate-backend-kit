@@ -53,5 +53,5 @@ knownProblems = words $ ""
 
   -- New tests, not supported yet [2014.07.29]:
   ---------------------------------------------
-  ++ " p31 p32 p33 p40a p40b p41a p41b "
+  ++ " p30 p31 p32 p33 p40a p40b p41a p41b "
 
