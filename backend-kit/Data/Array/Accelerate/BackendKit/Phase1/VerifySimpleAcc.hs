@@ -156,6 +156,8 @@ doAE VerifierConfig{dimMode} outTy env ae =
 
     Scanl  fn2 e1  vr -> Nothing -- addArrRef vr $ doE e1       $ doFn2 fn2 mp
     Scanr  fn2 e1  vr -> Nothing -- addArrRef vr $ doE e1       $ doFn2 fn2 mp
+    Scanl1 fn2     vr -> Nothing
+    Scanr1 fn2     vr -> Nothing
 
 --     FoldSeg fn e1 v1 v2 -> addArrRef v1 $ addArrRef v2 $
 --                            doE e1       $ doFn2 fn mp 

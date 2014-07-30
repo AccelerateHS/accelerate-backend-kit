@@ -230,7 +230,119 @@ instance EmitBackend CEmitter where
             return () -- End rawFunDef
     return () -- End emitFoldDef
 
-  
+
+  -- scan1 attempt
+  emitGenReduceDef e@(CEmitter typ env) (GPUProgBind{ evtid, outarrs, decor=(FreeVars arrayOpFVs), op = (GenReduce reducer generator (Scan1 dir) stride )}) = do 
+    let -- ScalarBlock _ initVs _  = initSB
+        Lam formals bod = reducer
+        len = (length formals) `P.div` 2
+        vs = take len formals -- first argument to operator
+        ws = drop len formals -- second argument to operator 
+        initargs = map (\(vr,_,ty) -> (emitType e ty, show vr)) vs
+        outargs  = [ (emitType e outTy, show outV)      | (outV,_,outTy) <- outarrs ]
+        inargs   = case generator of
+                    Manifest inVs -> [ (emitType e (env # inV), show inV) | inV <- inVs ]
+                    NonManifest _ -> []
+        freeargs = map (\fv -> (emitType e (env # fv), show fv))
+                       arrayOpFVs
+        int_t    = emitType e TInt
+        void_ptr = "void*"
+        builder  = builderName evtid
+    
+--    CE.assert (length initVs == length ws) $ return()
+--    CE.assert (length outarrs == length inVs) $ return()    
+
+    rawFunDef "void" builder ((int_t, "inSize") : (int_t, "inStride") : 
+                                          outargs ++ inargs ++ freeargs) $ 
+         do E.comm$"Scan loop, reduction variable(s): "++show vs
+            E.comm$"First, some temporaries to back up the inital state"
+            E.comm$" (we're going to stomp on the reduction vars / formal params):"
+            E.comm$"Length of vs: "++show len
+            E.comm$"initargs: "++show initargs
+            E.comm$"inargs: "++show inargs
+            let (initIndex)  = case dir of 
+                  LeftScan -> 0 :: Syntax
+                  RightScan -> "inSize"-1
+            tmps <- P.sequence [ E.tmpvarinit (emitType e vty) (arrsub (strToSyn v) initIndex)
+                               | (_,_,vty) <- vs
+                               | (_,v) <- (take len inargs) ]
+            --tmps <- P.sequence [ E.tmpvarinit (emitType e vty) (varSyn v) | (v,_,vty) <- vs ]
+ --           emitLine $ "printf(\"%d\\n\",inStride);"
+            let body round = do 
+                 E.comm$"Fresh round, new accumulator with the identity:"
+                 E.comm$"We shadow the formal params as a hack:"
+                 P.sequence [ varinit (emitType e vty) (varSyn v) tmp | (v,_,vty) <- vs | tmp <- tmps ]
+
+                 -- Create a counter 
+                 r_ix <- tmpvar int_t
+                 
+
+                 let (ix0, r_val, r_inc)  = case dir of 
+                       LeftScan -> (0, 1, 1) :: (Syntax, Syntax, Syntax) 
+                       RightScan -> ("inSize"-1, "inSize"-2, -1) 
+            
+                 set r_ix r_val
+
+                 -- Write the identity value to index zero.     
+                 P.sequence $ [arrset (varSyn outV) ix0 t
+                              | (outV,_,_) <- outarrs
+                              | t <- tmps ]  
+
+                 
+                 E.forStridedRange (round+1, 1, round+"inStride") $ \ ix -> do
+                 
+   --                emitLine $ "printf(\"%d, %d, %d\\n\",((inStride - 1) - i3), v01, eetmp2);"
+ 
+                   -- Left or Right ? change order of ixs
+                   let ix' = case dir of 
+                               LeftScan ->  ix 
+                               RightScan -> "inStride"-1-ix
+                   
+                   
+                   let foldit inputs k =
+                         P.sequence$ [ varinit (emitType e wty) (varSyn wvr) (k inV)
+                                     | inV <- inputs
+                                     | (wvr, _, wty) <- ws ]
+                   case generator of
+                     Manifest inVs -> foldit inVs (\ v -> arrsub (varSyn v) ix')
+                     NonManifest (Gen _ (Lam args bod)) -> do
+                       comm "(1) create input: we run the generator to produce one or more inputs"
+                       -- TODO: Assign formals to ix
+                       let [(vr,_,ty)] = args -- ONE argument, OneDimensionalize
+                       E.varinit (emitType e ty) (varSyn vr) ix'
+                       tmps <- emitBlock e bod
+                       comm$"(2) do the reduction with the resulting values ("++show tmps++")"
+                       foldit tmps varSyn
+
+                   ----------------------- 
+                   tmps <- emitBlock e bod -- Here's the body, already wired to use vs/ws
+                   -----------------------
+                   -- when dbg $ 
+                   --   eprintf " ** Folding in position %d, offset %d (it was %f) intermediate result %f\n"
+                   --           [ix, round, (arrsub (varSyn (head inVs)) ix), varSyn$ head tmps]
+
+                   comm "Write the result to each output array:"
+                   P.sequence $ [arrset (varSyn outV) r_ix (varSyn t)
+                                | (outV,_,_) <- outarrs
+                                | t <- tmps ]  
+                   
+                   
+                   forM_ (fragileZip tmps vs) $ \ (tmp,(v,_,_)) ->
+                      set (varSyn v) (varSyn tmp)
+                   r_ix += r_inc  -- 1 
+                   return ()
+                 -- comm "Write the Scan result to each output array:"
+                 -- P.sequence $ [ arrset (varSyn outV) (round / "inStride") (varSyn v)
+                 --              | (outV,_,_) <- outarrs
+                 --              | (v,_,_)    <- vs ]
+                 return () -- End outer loop
+            case typ of
+              Sequential   -> E.forStridedRange     (0, "inStride", "inSize") body
+              CilkParallel -> E.cilkForStridedRange (0, "inStride", "inSize") body
+
+
+            return () -- End rawFunDef
+    return () -- end scan1
 
 
 
@@ -536,7 +648,41 @@ execBind e GPUProg{sizeEnv} (_ind, GPUProgBind {evtid, outarrs, op, decor=(FreeV
         emitStmt$ (function$ strToSyn$ builderName evtid) allargs
         return ()
 
-                         
+    GenReduce reducer generator (Scan1 dir) stride ->
+      do -- error$"EmitC.hs/execBind: can't handle the Scan array operator yet:\n"++show (doc op)
+        let (Lam [(v,_,ty1),(w,_,ty2)] bod) = reducer
+            -- Scan dir initSB = variant
+                        
+        -- initVs <- emitBlock e initSB
+      
+        let freevars = arrayOpFVs 
+            initargs = [] -- initargs = map varSyn initVs
+            outVs   = [ outV | (outV,_,_) <- outarrs ]
+    
+            insize :: Syntax -- All inputs are the SAME SIZE:
+            insize  = case generator of
+              Manifest inVs -> trivToSyntax$ P.snd$ sizeEnv # head inVs
+              NonManifest (Gen tr _) -> trivToSyntax tr
+          -- If we are running the Generate ourselves, then we don't have any extra
+          -- arguments to pass for the inputs:
+            inVs = case generator of
+                   Manifest vs   -> vs
+                   NonManifest _ -> []
+            step = case stride of
+                   StrideConst s -> emitE e s
+                   StrideAll     -> insize
+
+            allargs = insize : step : map varSyn outVs ++ map varSyn inVs ++ initargs ++ map varSyn freevars
+
+        comm "Allocate all ouput space for the reduction operation:"
+        P.sequence$ [ varinit (emitType e (TArray nd elty)) (varSyn outV)
+                     (function "malloc" [sizeof (emitType e elty) * (insize + 1)])
+                    | (outV,_,TArray nd elty) <- outarrs ]
+      -- Call the builder to fill in the array: 
+        emitStmt$ (function$ strToSyn$ builderName evtid) allargs
+        return ()
+
+
     -- This is unpleasantly repetitive.  It doesn't benefit from the lowering to expose freevars and use NewArray.
     GenReduce {reducer,generator,variant,stride} -> do 
       let (Lam [(v,_,ty1),(w,_,ty2)] bod) = reducer

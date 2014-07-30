@@ -124,10 +124,11 @@ highDimTests = words$
 scanTestsPass :: [String]
 scanTestsPass = words$ 
   -- Scan programs 
-  " p30 p31 " 
+  " p30 p31 " ++ 
+  " p32 p33 "
 
 
 scanTestsFail :: [String]
 scanTestsFail = words$
-  " p32 p33 " ++
+--  " p32 p33 " ++
   " p40a p40b p41a p41b" 
