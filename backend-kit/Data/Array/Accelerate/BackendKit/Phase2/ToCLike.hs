@@ -191,7 +191,7 @@ doBind env (ProgBind _ ty decor@(OpInputs vis, (SubBinds vos _, (foldstride, _))
                                  initSB <- doBlock env ex 
                                  foldHelp inVs (doStride foldstride) lam2
                                    (LL.FoldSeg initSB (LL.Manifest segVs))
-       Fold1    {}     -> err
+       Fold1 lam2 _    -> foldHelp (head vis) LL.StrideAll lam2 LL.Fold1
        Fold1Seg {}     -> err
        Scanl lam2 ex _ -> foldHelp (head vis) LL.StrideAll lam2 =<< (LL.Scan LL.LeftScan  <$> doBlock env ex)
        Scanr lam2 ex _ -> foldHelp (head vis) LL.StrideAll lam2 =<< (LL.Scan LL.RightScan <$> doBlock env ex)

@@ -114,6 +114,7 @@ data ReduceVariant fn sb =
   | Scan    Direction sb
 -- BJS: How tell apart Scan and Scan1 and Scan' ?
   | Scan1   Direction
+  | Fold1 -- Fold1 has no direction or sb
     -- | Forward permute also takes a default array and an
     -- index-permuting function:
   | Permute { permfun:: fn sb, defaults::MGenerator (fn sb) }
