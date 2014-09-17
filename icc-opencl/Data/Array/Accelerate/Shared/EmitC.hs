@@ -447,6 +447,7 @@ instance EmitBackend CEmitter where
                                                 | (v,_,_)    <- vs ]
                  case typ of
                    CilkParallel -> P.sequence [ cilkUnregisterReducer (varSyn v) | (v,_,vty) <- vs | tmp <- tmps ]
+                   Sequential   -> P.sequence [ E.comm$"Reducer out of scope" ]
                  return () -- End outer loop
                
             case typ of
