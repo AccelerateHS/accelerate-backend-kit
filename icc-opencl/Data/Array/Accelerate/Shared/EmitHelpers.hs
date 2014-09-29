@@ -48,10 +48,8 @@ emitCType (TArray dim elt) = emitCType elt +++ str "*"
 emitCType ty = toSyntax$ text$ 
   case ty of
     TInt   -> case sizeOf (0::Int) of
-                4 -> "int"
-                8 -> "long" -- cilk doesn't like int64_t (!)
-               -- 4 -> "int32_t"
-               -- 8 -> "int64_t"
+                4 -> "int32_t"
+                8 -> "int64_t"
     TInt8  -> "int8_t"
     TInt16 -> "int16_t"
     TInt32 -> "int32_t"
