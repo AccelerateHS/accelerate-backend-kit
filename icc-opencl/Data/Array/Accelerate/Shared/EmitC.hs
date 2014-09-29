@@ -379,76 +379,38 @@ instance EmitBackend CEmitter where
             let body round = do 
                  E.comm$"Fresh round, new accumulator with the identity:"
                  E.comm$"We shadow the formal params as a hack:"
-                 -- P.sequence [ varinit (emitType e vty) (varSyn v) tmp | (v,_,vty) <- vs | tmp <- tmps ]
-                 case typ of
-                   Sequential   -> P.sequence [ varinit (emitType e vty) (varSyn v) tmp | (v,_,vty) <- vs | tmp <- tmps ]
-                   CilkParallel -> P.sequence [ cilkReducerOpadd (varSyn v) (emitType e vty) tmp | (v,_,vty) <- vs | tmp <- tmps ]
-                 
-                 -- forLoop (round, 1, round+"inStride") $ \ ix -> do
-                 let innerLoop ix = do
+                 P.sequence [ varinit (emitType e vty) (varSyn v) tmp | (v,_,vty) <- vs | tmp <- tmps ]
+                 E.forStridedRange (round, 1, round+"inStride") $ \ ix -> do
                    -- let v = varinit ( INTTYPE, GeNERATEDNAME ,   CVALUE_0)  
-                       let foldit inputs k = P.sequence $
-                                             [ varinit (emitType e wty) (varSyn wvr) (k inV)
-                                             | inV <- inputs
-                                             | (wvr, _, wty) <- ws ]
-                       case generator of
-                         Manifest inVs -> foldit inVs (\ v -> arrsub (varSyn v) ix)
-                         NonManifest (Gen _ (Lam args bod)) -> do
-                           comm "(1) create input: we run the generator to produce one or more inputs"
-                           -- TODO: Assign formals to ix
-                           let [(vr,_,ty)] = args -- ONE argument, OneDimensionalize
-                           E.varinit (emitType e ty) (varSyn vr) ix
-                           tmps <- emitBlock e bod
-                           comm$"(2) do the reduction with the resulting values ("++show tmps++")"
-                           foldit tmps varSyn
+                   let foldit inputs k =
+                         P.sequence$ [ varinit (emitType e wty) (varSyn wvr) (k inV)
+                                     | inV <- inputs
+                                     | (wvr, _, wty) <- ws ]
+                   case generator of
+                     Manifest inVs -> foldit inVs (\ v -> arrsub (varSyn v) ix)
+                     NonManifest (Gen _ (Lam args bod)) -> do
+                       comm "(1) create input: we run the generator to produce one or more inputs"
+                       -- TODO: Assign formals to ix
+                       let [(vr,_,ty)] = args -- ONE argument, OneDimensionalize
+                       E.varinit (emitType e ty) (varSyn vr) ix
+                       tmps <- emitBlock e bod
+                       comm$"(2) do the reduction with the resulting values ("++show tmps++")"
+                       foldit tmps varSyn
 
-                       tmps2 <- case typ of
-                         Sequential   -> P.sequence [ tmpvarinit (emitType e vty) (varSyn v)
-                                                    | (v,_,vty) <- vs ]
-                         CilkParallel -> P.sequence [ tmpvarinit (emitType e vty) (cilkReducerView (varSyn v))
-                                                    | (v,_,vty) <- vs ]
-                         
-                         
-                       
-                       ----------------------- 
-                       --tmps <- emitBlock e bod -- Here's the body, already wired to use vs/ws
-                       let computeBlock e (ScalarBlock binds rets stmts) = do
-                             E.emitLine "{"
-                             E.comm$"Evil, evil C scope hack! I'm sorry."
-                             P.sequence [ varinit (emitType e vty) (varSyn v) tmp | (v,_,vty) <- vs | tmp <- tmps2 ]
-                             forM_ binds $ \ (vr,_,ty) ->
-                               E.var (emitType e ty) (varSyn vr)
-                             mapM_ (emitS e) stmts
-                             forM_ (fragileZip tmps2 rets) $ \ (tmp,r) ->
-                               set tmp (varSyn r)
-                             E.emitLine "}"
-                             return rets
-                             
-                       tmps1 <- computeBlock e bod
-                       -----------------------
-                       -- when dbg $ 
-                       --   eprintf " ** Folding in position %d, offset %d (it was %f) intermediate result %f\n"
-                       --           [ix, round, (arrsub (varSyn (head inVs)) ix), varSyn$ head tmps]
-                       forM_ (fragileZip tmps2 vs) $ \ (tmp,(v,_,_)) ->
-                         case typ of
-                           Sequential   -> set (varSyn v) tmp
-                           CilkParallel -> set (cilkReducerView (varSyn v)) tmp
-                       return ()
-                 case typ of
-                   Sequential   -> E.forStridedRange (round, 1, round+"inStride") innerLoop
-                   CilkParallel -> E.cilkForStridedRange (round, 1, round+"inStride") innerLoop                 
+                   ----------------------- 
+                   tmps <- emitBlock e bod -- Here's the body, already wired to use vs/ws
+                   -----------------------
+                   -- when dbg $ 
+                   --   eprintf " ** Folding in position %d, offset %d (it was %f) intermediate result %f\n"
+                   --           [ix, round, (arrsub (varSyn (head inVs)) ix), varSyn$ head tmps]
+                   forM_ (fragileZip tmps vs) $ \ (tmp,(v,_,_)) ->
+                      set (varSyn v) (varSyn tmp)
+                   return ()
                  comm "Write the single reduction result to each output array:"
-                 case typ of
-                   Sequential   -> P.sequence $ [ arrset (varSyn outV) (round / "inStride") (varSyn v)
-                                                | (outV,_,_) <- outarrs
-                                                | (v,_,_)    <- vs ]
-                   CilkParallel -> P.sequence $ [ arrset (varSyn outV) (round / "inStride") (cilkReducerView (varSyn v))
-                                                | (outV,_,_) <- outarrs
-                                                | (v,_,_)    <- vs ]
-                 case typ of
-                   CilkParallel -> P.sequence [ cilkUnregisterReducer (varSyn v) | (v,_,vty) <- vs | tmp <- tmps ]
+                 P.sequence $ [ arrset (varSyn outV) (round / "inStride") (varSyn v)
+                              | (outV,_,_) <- outarrs
+                              | (v,_,_)    <- vs ]
                  return () -- End outer loop
-               
             case typ of
               Sequential   -> E.forStridedRange     (0, "inStride", "inSize") body
               CilkParallel -> E.cilkForStridedRange (0, "inStride", "inSize") body
@@ -819,8 +781,6 @@ headerCode =
   P.unlines
   [ "#define max(a,b) ({ __typeof__ (a) _a = (a); __typeof__ (b) _b = (b); _a > _b ? _a : _b; })"
   , "#define min(a,b) ({ __typeof__ (a) _a = (a); __typeof__ (b) _b = (b); _a < _b ? _a : _b; })"
-  , "#include <cilk/cilk.h>"
-  , "#include <cilk/reducer_opadd.h>"
     --  "int min(int a, int b) { return (((a)<(b))?(a):(b)) } "
   ]
 

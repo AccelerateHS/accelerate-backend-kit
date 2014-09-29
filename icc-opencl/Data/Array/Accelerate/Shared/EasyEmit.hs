@@ -27,8 +27,7 @@ module Data.Array.Accelerate.Shared.EasyEmit
     -- * Functions for generating C/C++ Statements:
     emitStmt, block, set, (+=), (-=), if_, return_, sizeof, assert,
     for, forRange, forStridedRange, cilkForRange, cilkForStridedRange, 
-    var, varinit, tmpvar, tmpvarinit, cilkReducerOpadd, cilkRegisterReducer,
-    cilkReducerView, cilkUnregisterReducer,
+    var, varinit, tmpvar, tmpvarinit, 
     
     -- * Defining functions in C/C++ code using HOAS.
     funDef, rawFunDef, rawFunDefProto, function, ObjFun, 
@@ -559,27 +558,6 @@ cilkForStridedRange (start,Syn stride,end) fn = do
   emitLine "#pragma ivdep"
   rawFor "_Cilk_for" start (<end) (\ (Syn i) -> Syn$ i <+> "+=" <+> stride) fn
 
--- | Generate CILK_C_REDUCER_OPADD statement
-cilkReducerOpadd :: Syntax -> Syntax -> Syntax -> EasyEmit Syntax
-cilkReducerOpadd (Syn name) (Syn typ) (Syn val) = do
-  let stmt = Syn $ "CILK_C_REDUCER_OPADD(" <+> name <+> "," <+> typ <+> "," <+> val <+> ")"
-  emitStmt stmt
-  return stmt
-
-
--- | Generate CILK_C_REGISTER_REDUCER statement
-cilkRegisterReducer :: Syntax -> EasyEmit ()
-cilkRegisterReducer (Syn name) = do
-  emitStmt $ Syn $ "CILK_C_REGISTER_REDUCER(" <+> name <+> ")"
-
--- | Generate REDUCER_VIEW statement
-cilkReducerView :: Syntax -> Syntax
-cilkReducerView (Syn name) = Syn $ "REDUCER_VIEW(" <+> name <+> ") "
-
--- | Generate CILK_C_UNREGISTER_REDUCER
-cilkUnregisterReducer :: Syntax -> EasyEmit ()
-cilkUnregisterReducer (Syn name) = do
-  emitStmt $ Syn $ "CILK_C_UNREGISTER_REDUCER(" <+> name <+> ")"
 
 -- | General for loop with one iteration variable.  Three parameters
 --   to the iteration: one value, and two functions.  Typical
