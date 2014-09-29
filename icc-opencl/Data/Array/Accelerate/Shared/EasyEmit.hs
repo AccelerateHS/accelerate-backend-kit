@@ -601,7 +601,7 @@ rawFor (Syn forKeyword) init test incr bodyFn =
      -- TODO: A cleaner way to do this would be to include the indent level in the state monad and NOT LEAVE IT.
      S.put (ls, newcnt)
 
-     let s1 = t"int64_t" <+> var <+> "=" <+> fromSyntax init
+     let s1 = t"int" <+> var <+> "=" <+> fromSyntax init
          s2 = fromSyntax$ test (Syn var)
          s3 = (fromSyntax$ incr (Syn var))
 
