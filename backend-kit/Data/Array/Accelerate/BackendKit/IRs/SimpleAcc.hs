@@ -265,6 +265,7 @@ data AExp =
   | Cond Exp Var Var                 -- ^ Array-level if statements
   | Use       AccArray               -- ^ A real live ARRAY goes here!
   | Generate  Exp (Fun1 Exp)         -- ^ Generate an array by applying a function to every index in shape
+--  | AWhile  (Fun1 [ProgBind ()]) (Fun1 [ProgBind ()]) Var
   | Replicate SliceType Exp Var      -- ^ Replicate array across one or more dimensions.  
                                      --     Exp must return a shape value matching up with the to the SliceType.
   | Index     SliceType Var Exp      -- ^ Generalized indexing that can project a slice from an array.
@@ -318,6 +319,7 @@ data Exp =
                               --   used for common subexpression elimination
   | EPrimApp Type Prim [Exp]  -- ^ /Any/ primitive scalar function, including type of return value.
   | ECond Exp Exp Exp         -- ^ Conditional expression (non-strict in 2nd and 3rd argument).
+  | EWhile (Fun1 Exp) (Fun1 Exp) Exp -- ^ A Scalar while loop
   | EIndexScalar Var Exp      -- ^ Project a single scalar from an array [variable].
   | EShape Var                -- ^ Get the shape of an Array [variable].
   | EShapeSize Exp            -- ^ Number of elements of a shape
@@ -861,6 +863,7 @@ recoverExpType env exp =
         ETuple [x]            -> error$"recoverExpType: invariant broken, one element ETuple containing: "++show x
         ETuple es             -> TTuple$  map (recoverExpType env) es
         ECond _e1 e2 _e3      -> recoverExpType env e2
+        EWhile _f1 _f2 e3     -> recoverExpType env e3
         EPrimApp ty _ _       -> ty
         EShapeSize _ex        -> TInt
         -- Shapes are represented as Tuples of Ints.  But we need to know how long:
@@ -1064,27 +1067,35 @@ freshenExpNames = lp M.empty
 
 -- | How many nodes are contained in an Exp?
 expASTSize :: Exp -> Int
-expASTSize ex =
+expASTSize ex0 =
    let f = expASTSize in
-   case ex of
-    EShape avr          -> 1
+   case ex0 of
+    EShape _avr         -> 1
     EConst _            -> 1 -- Could measure const size.
     EVr _               -> 1
-    ECond a b c         -> 1 + f a + f b
+    ECond a b c         -> 1 + f a + f b + f c
+    EWhile f1 f2 c      -> 1 + fn1 f1 + fn1 f2 + f c
     ELet (_,_,rhs) bod  -> 1 + f rhs + f bod
-    EIndexScalar avr ex -> 1 + f ex 
+    EIndexScalar _av ex -> 1 + f ex 
     EShapeSize ex       -> 1 + f ex
     ETupProject _ _ ex  -> 1 + f ex 
     ETuple els          -> 1 + sum (map f els)
     EPrimApp _ _ els    -> 1 + sum (map f els)
     EIndex els          -> 1 + sum (map f els)
 
+fn1 :: Fun1 Exp -> Int
+fn1 (Lam1 (_,t)   e)     = expASTSize e + typeSize t
+
+fn2 :: Fun2 Exp -> Int
+fn2 (Lam2 (_,t) (_,u) e) = expASTSize e + typeSize t + typeSize u
+
+typeSize :: Type -> Int
+typeSize _ = 0 -- TODO: probably should count types.
+
+
 aexpASTSize :: AExp -> Int
 aexpASTSize ae =
   let g = expASTSize
-      fn1 (Lam1 (_,t)   e)     = g e + typeSize t
-      fn2 (Lam2 (_,t) (_,u) e) = g e + typeSize t + typeSize u
-      typeSize _ = 0 -- TODO: probably should count types.
   in
   case ae of
     Vr v             -> 1 

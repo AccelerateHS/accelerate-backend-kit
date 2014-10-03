@@ -80,6 +80,8 @@ staticTuples origae = aexp M.empty origae
                                  where tenv' = M.insert vr ty tenv
        T.EPrimApp ty p args   -> T.EPrimApp ty p (L.map (exp tenv) args)
        T.ECond e1 e2 e3       -> T.ECond (exp tenv e1) (exp tenv e2) (exp tenv e3)
+
+       T.EWhile f1 f2 e3      -> T.EWhile (lam1 tenv f1) (lam1 tenv f2) (exp tenv e3)
        T.EIndexScalar ae ex   -> T.EIndexScalar (aexp tenv ae) (exp tenv ex)
        T.EShapeSize ex        -> T.EShapeSize (exp  tenv ex)
        T.EShape     ae        -> T.EShape     (aexp tenv ae)
@@ -135,6 +137,7 @@ staticTuples origae = aexp M.empty origae
        T.Stencil   rt fn bndry ae -> T.Stencil     rt (lam1 tenv fn) bndry          (aexp tenv ae)
        T.Stencil2  rt fn bnd1 ae1 bnd2 ae2 ->  T.Stencil2 rt (lam2 tenv fn) bnd1 (aexp tenv ae1)
                                                bnd2 (aexp tenv ae2)
+
    -- Handle arity 1 lambdas:
    lam1 tenv (S.Lam1 (v,ty) bod) = S.Lam1 (v,ty) (exp tenv' bod)
      where tenv' = M.insert v ty tenv

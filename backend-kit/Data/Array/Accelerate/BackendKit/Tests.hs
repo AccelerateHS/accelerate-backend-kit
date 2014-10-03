@@ -37,6 +37,9 @@ module Data.Array.Accelerate.BackendKit.Tests
     -- Scan tests
     p30, p31, p32, p33,
     p40a, p40b, p41a, p41b, 
+
+    -- Iteration
+    p50a,
     
     -- * Reexports to make life easier:
     doc, convertToSimpleProg,
@@ -164,7 +167,10 @@ otherProgs =
 
   -- Scan test                                   
   go "p30" p30, go "p31" p31, go "p32" p32, go "p33" p33,
-  go "p40a" p40a, go "p40b" p40b, go "p41a" p41a, go "p41b" p41b  
+  go "p40a" p40a, go "p40b" p40b, go "p41a" p41a, go "p41b" p41b,
+
+  -- Iteration
+  go "p50a" p50a
   ]
 
 makeTestEntry :: forall a . (Show a, Arrays a) => String -> Acc a -> TestEntry
@@ -991,12 +997,11 @@ p41b = let xs = use$ fromList (Z :. (10::Int)) [1..10::Int]
        in P.snd $ A.scanr' (+) (constant 0) xs
 
          
- 
+-------------------------------------------------------------------------------- 
 
-
-
-
-
+-- | Test iteration
+p50a :: Acc (Array DIM0 Int)
+p50a = A.unit $ A.while (<* 100) (+ 1) 90
 
 
 --------------------------------------------------------------------------------

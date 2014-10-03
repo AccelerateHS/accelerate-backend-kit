@@ -412,6 +412,10 @@ convertExp e =
     Cond c t ex -> T.ECond <$> convertExp c 
                            <*> convertExp t
                            <*> convertExp ex
+
+    While f1 f2 ex -> T.EWhile <$> convertFun1 f1
+                               <*> convertFun1 f2
+                               <*> convertExp ex
     
     Index acc eix -> T.EIndexScalar <$> convertAcc acc
                                     <*> convertExp eix

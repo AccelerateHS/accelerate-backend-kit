@@ -104,6 +104,7 @@ data Exp =
   | EPrimApp Type Prim [Exp]
   | EConst Const
   | ECond Exp Exp Exp
+  | EWhile (Fun1 Exp) (Fun1 Exp) Exp 
   | EIndexScalar (AExp Type) Exp 
   | EShape (AExp Type)
   | EShapeSize Exp 
@@ -136,6 +137,7 @@ convertExps expr =
     ETuple es                -> S.ETuple (L.map f es)
     EConst c                 -> S.EConst c              
     ECond e1 e2 e3           -> S.ECond (f e1) (f e2) (f e3)
+    EWhile f1 f2 e3          -> S.EWhile (convertFun1 f1) (convertFun1 f2) (f e3)
     EShapeSize ex            -> S.EShapeSize (f ex)         
     EPrimApp ty p es         -> S.EPrimApp ty p (L.map f es)
     ETupProject ind len ex   -> S.ETupProject ind len (f ex)
@@ -241,6 +243,7 @@ reverseConvertExps expr =
     S.ETuple es             -> ETuple (L.map f es)
     S.EConst c              -> EConst c              
     S.ECond e1 e2 e3        -> ECond (f e1) (f e2) (f e3)
+    S.EWhile f1 f2 e3       -> EWhile (reverseConvertFun1 f1) (reverseConvertFun1 f2) (f e3)
     S.EIndexScalar v ex     -> EIndexScalar (Vr dt v) (f ex)
     S.EShape v              -> EShape (Vr dt v)
     S.EShapeSize ex         -> EShapeSize (f ex)         
