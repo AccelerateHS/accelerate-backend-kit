@@ -961,13 +961,17 @@ normalizeEConst e =
 -- | Retrieve the set of variables that occur free in an `Exp`.
 expFreeVars :: Exp -> S.Set Var
 expFreeVars ex =
-   let f  = expFreeVars 
-       fs = S.unions . map expFreeVars in
+   let f                          = expFreeVars 
+       fs                         = S.unions . map expFreeVars
+       fn1 (Lam1 (v,_t) e)        = S.delete v $ f e
+       fn2 (Lam2 (v1,_t1) (v2,_t2) e) = S.delete v1 $ S.delete v2 $ f e
+   in
    case ex of
     EShape avr          -> S.singleton avr -- NOTE! THIS WILL CHANGE.
     EConst _            -> S.empty
     EVr vr              -> S.singleton vr  
     ECond e1 e2 e3      -> S.union (f e1)  $ S.union (f e2) (f e3)
+    EWhile f1 f2 e3     -> S.union (fn1 f1) $ S.union (fn1 f2) (f e3)
     ELet (v,_,rhs) bod  -> S.union (f rhs) $ S.delete v $ f bod
     EIndexScalar avr ex -> S.insert avr $ f ex
     EShapeSize ex       -> f ex 
@@ -981,7 +985,7 @@ expFreeVars ex =
 aexpFreeVars :: AExp -> S.Set Var
 aexpFreeVars ae =
   let g = expFreeVars
-      fn1 (Lam1 (v,_t)   e)        = S.delete v $ g e
+      fn1 (Lam1 (v,_t) e)          = S.delete v $ g e
       fn2 (Lam2 (v1,_t) (v2,_u) e) = S.delete v1 $ S.delete v2 $ g e
   in
   case ae of
@@ -1044,7 +1048,11 @@ freshenExpNames :: Exp -> GensymM Exp
 freshenExpNames = lp M.empty
   where
     lp env ex =
-     let f = lp env in
+     let f = lp env
+         rfn1 (Lam1 (v,t) e) = do v' <- genUniqueWith (show v)
+                                  e' <- lp (M.insert v v' env) e
+                                  return (Lam1 (v',t) e')
+     in
      case ex of
       ELet (v,ty,rhs) bod  -> do v' <- genUniqueWith (show v)
                                  rhs' <- f rhs
@@ -1057,6 +1065,10 @@ freshenExpNames = lp M.empty
       EShape _avr         -> return ex
       EConst _            -> return ex
       ECond e1 e2 e3      -> ECond <$> f e1 <*> f e2 <*> f e3
+      EWhile f1 f2 e3     -> do f1 <- rfn1 f1
+                                f2 <- rfn1 f2
+                                e3 <- f e3
+                                return (EWhile f1 f2 e3)
       EIndexScalar avr e  -> EIndexScalar avr <$> f e
       EShapeSize e        -> EShapeSize       <$> f e
       ETupProject i l e   -> ETupProject i l  <$> f e
@@ -1136,6 +1148,9 @@ progASTSize Prog{progBinds, progResults} =
 substExp :: Var -> Exp -> Exp -> Exp
 substExp old new target = loop target
  where
+   rfn1 (Lam1 (v,t) e) = Lam1 (v,t) $ if v == old
+                                      then e
+                                      else loop e
    loop ex =
     case ex of
       ELet (v,ty,rhs) bod -> let rhs' = loop rhs in
@@ -1149,6 +1164,7 @@ substExp old new target = loop target
       EShape _avr         -> ex
       EConst _            -> ex
       ECond e1 e2 e3      -> ECond (loop e1) (loop e2) (loop e3)
+      EWhile f1 f2 e3     -> EWhile (rfn1 f1) (rfn1 f2) (loop e3)
       EIndexScalar avr e  -> EIndexScalar avr (loop e)
       EShapeSize e        -> EShapeSize  (loop e)
       ETupProject i l e   -> ETupProject i l (loop e)

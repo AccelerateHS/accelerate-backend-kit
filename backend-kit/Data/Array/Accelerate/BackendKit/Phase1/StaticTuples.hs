@@ -173,6 +173,7 @@ retrieveTy tenv e =
     T.EPrimApp ty p args   -> ty    
     T.ELet (vr,ty,rhs) bod -> retrieveTy (M.insert vr ty tenv) bod
     T.ECond _e1 e2 _e3     -> retrieveTy tenv e2
+    T.EWhile _f1 _f2 e3    -> retrieveTy tenv e3
     T.EIndexScalar ae ex   -> let TArray _ elt = getAnnot ae in elt
     T.EShapeSize ex        -> TInt
     T.EShape  ae           -> let TArray dim _ = getAnnot ae
