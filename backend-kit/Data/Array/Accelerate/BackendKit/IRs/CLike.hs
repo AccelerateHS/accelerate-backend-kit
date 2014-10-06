@@ -148,7 +148,8 @@ data Exp =
     EConst SA.Const           
   | EVr Var                  
   | EPrimApp Type Prim [Exp]
-  | ECond Exp Exp Exp        
+  | ECond Exp Exp Exp    
+  | EWhile (Fun Exp) (Fun Exp) Exp     
   | EIndexScalar Var Exp Int  -- Reads a tuple from an array, and does index-from-right into that tuple.
     -- TODO: get rid of the numeric argument when tupling is fully eliminated.
  deriving (Read,Show,Eq,Ord,Generic)

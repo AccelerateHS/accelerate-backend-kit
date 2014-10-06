@@ -83,6 +83,9 @@ doEx mp ex =
     EVr _               -> return ex
     EConst _            -> return ex
     ECond e1 e2 e3      -> ECond   <$> doE e1 <*> doE e2 <*> doE e3
+    EWhile (Lam1 a1 bod1) (Lam1 a2 bod2) e -> EWhile <$> (Lam1 a1 <$> doE bod1) 
+                                                     <*> (Lam1 a2 <$> doE bod2)  
+                                                     <*> doE e
     ELet (v,t,rhs) bod  -> (\r b -> ELet (v,t,r) b) <$> doE rhs <*> doE bod
     ETupProject i l e   -> ETupProject i l  <$> doE e
     EPrimApp p t els    -> EPrimApp    p t  <$> mapM doE els

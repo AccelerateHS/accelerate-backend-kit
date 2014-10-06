@@ -65,6 +65,12 @@ doSpine env ex =
     ECond e1 e2 e3        -> do (e1',bnds) <- runWriterT$ doE env e1
                                 (e2',e3')  <- pairM (doSpine env e2) (doSpine env e3)
                                 return$ discharge bnds $ ECond e1' e2' e3'
+    -- This is where it gets tricky! 
+    -- Do we deal with functions here? OR do we pass them along to some later step?
+    -- Do we assure, at this point, that bodys of lambdas have the sought property?
+    --Adding a dummy for now 
+    EWhile _ _ _ -> return ex 
+                                              
     -- ELet's may stay as well.  This is the "spine":
     ELet (v,t,rhs) bod    -> do (rhs',bnds) <- runWriterT (doE env rhs)
                                 let bnds2 = bnds ++ [(v,t,rhs')]
@@ -122,6 +128,9 @@ doE env ex =
                                     enew   <- lift$ ECond e1' <$> doSpine env e2 <*> doSpine env e3
                                     tell [(gensym, recoverExpType env ex, enew)]
                                     return (EVr gensym)
+
+    -- Dummy here as well, for now! 
+    EWhile _ _ _ -> return ex 
     -- Non-spine ELet's are lifted out:
     ELet (v,t,rhs) bod    -> do rhs' <- doE env rhs
                                 -- Inject new bindings for untupled scalars vars:

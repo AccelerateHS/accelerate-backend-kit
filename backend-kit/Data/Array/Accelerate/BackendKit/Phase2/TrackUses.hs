@@ -116,6 +116,7 @@ doE ex mp =
     ELet (vr,ty,rhs) bod -> doE bod $ doE rhs mp 
     EPrimApp ty pr els   -> doEs els mp
     ECond e1 e2 e3       -> doE e1 $ doE e2 $ doE e3 mp
+    EWhile (Lam1 _ bod1) (Lam1 _ bod2) e -> doE e $ doE bod1 $ doE bod2 mp 
     EIndexScalar avr ex  -> addScalarRef avr $ doE ex mp
     EShape avr           -> err ex 
     EShapeSize ex        -> err ex

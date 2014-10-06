@@ -165,7 +165,8 @@ data Exp =
   | EGetLocalID  Int            -- The Int specifies dimension: 0,1,2
   | EGetGlobalID Int 
   | EPrimApp Type SA.Prim [Exp]
-  | ECond Exp Exp Exp        
+  | ECond Exp Exp Exp   
+  | EWhile (Fun Exp) (Fun Exp) Exp      
   | EIndexScalar Var Exp        -- Reads a tuple from an array, and does index-from-right into that tuple.
   | EUnInitArray Type Int       -- This is ONLY here as a special OpenCL convention.  "Local" memory
                                 -- arrays are passed into the kernel as NULL ptrs WITH sizes (here in #elements).

@@ -144,6 +144,7 @@ getFoldStride env allbinds (ProgBind vo outTy osz eith) =
 --------------------------------------------------------------------------------
 
 -- Map Var (ProgBind (a,b,Cost)) -> 
+-- Comment: what is this for? 
 doBind :: M.Map Var Type -> ProgBind ArraySizeEstimate -> MyM (ProgBind ArraySizeEstimate)
 doBind env (ProgBind vo t sz (Left  ex)) = (ProgBind vo (doTy t) (doSz sz) . Left)  <$> doExp env ex
 --doBind (ProgBind vo t sz (Right ex)) = (ProgBind vo (doTy t) (doSz sz) . Right) <$> mapMAE doE ex
@@ -218,6 +219,7 @@ doTy (TArray _ elt) = TArray 1 elt
 doTy (TTuple ls)    = TTuple$ map doTy ls
 doTy ty             = ty 
 
+-- What is the env for here ? it seems to not be used, and not part of result ? 
 doExp :: M.Map Var Type -> Exp -> MyM Exp
 doExp env ex = 
   case ex of
@@ -234,6 +236,9 @@ doExp env ex =
     EShapeSize _        -> doerr ex
     EVr _               -> return ex
     EConst _            -> return ex
+    EWhile (Lam1 (v1,t1) bod1) (Lam1 (v2,t2) bod2) e -> 
+          EWhile  <$> (Lam1 (v1,t1) <$> doExp (M.insert v1 t1 env) bod1) 
+                  <*> (Lam1 (v2,t2) <$> doExp (M.insert v2 t2 env) bod2) <*> doExp env e 
     ECond e1 e2 e3      -> ECond   <$> doExp env e1 <*> doExp env e2 <*> doExp env e3
     ELet (v,t,rhs) bod  -> (\r b -> ELet (v,t,r) b) <$> doExp env rhs <*> doExp (M.insert v t env) bod
     ETupProject i l e   -> ETupProject i l  <$> doExp env e
