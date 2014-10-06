@@ -248,13 +248,13 @@ doE ex = do
     EVr _               -> return ex
     EConst _            -> return ex
     ECond e1 e2 e3      -> ECond   <$> doE e1 <*> doE e2 <*> doE e3
+    EWhile f1 f2 e3     -> undefined 
     ELet (v,t,rhs) bod  -> (\r b -> ELet (v,t,r) b) <$> doE rhs <*> doE bod
     ETupProject i l e   -> ETupProject i l  <$> doE e
     EPrimApp p t els    -> EPrimApp    p t  <$> mapM doE els
     ETuple els          -> ETuple           <$> mapM doE els
     EIndexScalar avr e  -> EIndexScalar avr <$> doE e
     EIndex _            -> doerr ex
-
        
 -- | This handles the boring case where we are NOT adding a `_shape` binding.
 doAE :: AExp -> MyM AExp

@@ -160,6 +160,7 @@ doE mp ex = -- doEWith (repeat Fixed) []
     ELet _ _          -> UnknownSize -- We could do more work on this, but won't.
     EPrimApp _ _ _    -> UnknownSize -- The prog could do some arithmetic to compute a size...
     ECond _ _ _       -> UnknownSize
+    EWhile _ _ _      -> UnknownSize 
     -- This one won't happen because top-level varrefs are ONLY
     -- created by us (and that's for boolean bindings for array level
     -- conditionals only):
