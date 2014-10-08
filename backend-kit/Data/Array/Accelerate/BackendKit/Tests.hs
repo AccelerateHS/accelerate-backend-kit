@@ -239,7 +239,7 @@ testPartialCompiler oracle eval tests = P.map mk (P.zip [0..] tests)
       oracle simpleProg evaled
 
    -- HACK: We don't want to require NFData (yet).  So we just print to force Eval:
-   forceEval prog = length (show prog)
+   forceEval prog = P.length (show prog)
         
 ----------------------------------------------------------------------------------------------------
 
@@ -1007,8 +1007,8 @@ p50a = A.unit $ A.while (<* 100) (+ 1) 90
 --------------------------------------------------------------------------------
 -- Let's print matrices nicely.
 
-padleft n str | length str >= n = str
-padleft n str | otherwise       = P.take (n - length str) (repeat ' ') ++ str
+padleft n str | P.length str >= n = str
+padleft n str | otherwise         = P.take (n - P.length str) (repeat ' ') ++ str
 
 class NiceShow a where
   pp :: a -> String
@@ -1020,7 +1020,7 @@ instance Show a => NiceShow (Array DIM1 a) where
     P.map (padleft maxpad) ls 
    where 
          ls   = P.map show $ toList arr
-         maxpad = P.maximum$ P.map length ls
+         maxpad = P.maximum$ P.map P.length ls
 
 capends x = "| "++x++" |"
 
@@ -1035,7 +1035,7 @@ instance Show a => NiceShow (Array DIM2 a) where
             rowls
    where (Z :. rows :. cols) = arrayShape arr
          ls   = P.map show $ toList arr
-         maxpad = P.maximum$ P.map length ls
+         maxpad = P.maximum$ P.map P.length ls
          rowls = chunksOf cols ls
 
 --------------------------------------------------------------------------------
