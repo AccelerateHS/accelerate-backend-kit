@@ -22,6 +22,7 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
      Type(..), Const(..),
      Prim(..), NumPrim(..), IntPrim(..), FloatPrim(..), ScalarPrim(..), BoolPrim(..), OtherPrim(..),
      Boundary(..), Var, AVar,
+     RawData,
           
      -- * Runtime Array data representation.
      AccArray(..), ArrayPayload(..), 

@@ -44,10 +44,9 @@ import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import Data.Array.Accelerate.BackendKit.Utils.Helpers (maybtrace)
 
 import           Control.Applicative ((<$>))
-import           Data.Array.Base  (UArray(UArray))
 import qualified Data.Array.IO     as IA
 import qualified Data.Array.MArray as MA
-import           Data.Array.Unboxed as U
+import           Data.Array.Storable.Internals
 import qualified Data.Array.Unsafe as Un
 import           Data.Int
 import           Data.List          as L
@@ -58,6 +57,8 @@ import           Data.Primitive.Types (Addr(Addr))
 import           Data.Word
 import           Debug.Trace
 import           Foreign.C.Types
+import           Foreign.ForeignPtr
+import           Foreign.ForeignPtr.Unsafe
 import           Foreign.Marshal.Array (copyArray)
 import           Foreign.Storable      (Storable, sizeOf)
 import           GHC.Prim         (byteArrayContents#, newPinnedByteArray#)
@@ -98,61 +99,64 @@ payloadLength payl =
 indexPayload :: ArrayPayload -> Int -> Const
 indexPayload payl i = 
   case payl of 
-    ArrayPayloadInt    arr -> I   (arr U.! i)
-    ArrayPayloadInt8   arr -> I8  (arr U.! i)
-    ArrayPayloadInt16  arr -> I16 (arr U.! i)
-    ArrayPayloadInt32  arr -> I32 (arr U.! i)
-    ArrayPayloadInt64  arr -> I64 (arr U.! i)
-    ArrayPayloadWord   arr -> W   (arr U.! i)
-    ArrayPayloadWord8  arr -> W8  (arr U.! i)
-    ArrayPayloadWord16 arr -> W16 (arr U.! i)
-    ArrayPayloadWord32 arr -> W32 (arr U.! i)
-    ArrayPayloadWord64 arr -> W64 (arr U.! i)
-    ArrayPayloadFloat  arr -> F   (arr U.! i)
-    ArrayPayloadDouble arr -> D   (arr U.! i)
-    ArrayPayloadChar   arr -> C   (arr U.! i)
-    ArrayPayloadBool   arr -> toBool (arr U.! i) 
+    ArrayPayloadInt    arr -> I   (arr `index` i)
+    ArrayPayloadInt8   arr -> I8  (arr `index` i)
+    ArrayPayloadInt16  arr -> I16 (arr `index` i)
+    ArrayPayloadInt32  arr -> I32 (arr `index` i)
+    ArrayPayloadInt64  arr -> I64 (arr `index` i)
+    ArrayPayloadWord   arr -> W   (arr `index` i)
+    ArrayPayloadWord8  arr -> W8  (arr `index` i)
+    ArrayPayloadWord16 arr -> W16 (arr `index` i)
+    ArrayPayloadWord32 arr -> W32 (arr `index` i)
+    ArrayPayloadWord64 arr -> W64 (arr `index` i)
+    ArrayPayloadFloat  arr -> F   (arr `index` i)
+    ArrayPayloadDouble arr -> D   (arr `index` i)
+    ArrayPayloadChar   arr -> C   (arr `index` i)
+    ArrayPayloadBool   arr -> toBool (arr `index` i) 
     ArrayPayloadUnit   len -> if i < len && i >= 0
                               then Tup []
                               else error $ "indexPayload: out of bounds index ("
                                            ++show i++") into ArrayPayloadUnit of len "++show len
+  where
+    index a i = unsafePerformIO $ MA.readArray a i
 
 -- | Apply a generic transformation to the Array Payload irrespective
 --   of element type.  This is useful for rearranging or removing
 --   elements of a payload without looking at the contents.
-applyToPayload :: (forall a . UArray Int a -> UArray Int a) -> ArrayPayload -> ArrayPayload
+applyToPayload :: (forall a . RawData a -> RawData a) -> ArrayPayload -> ArrayPayload
 applyToPayload fn payl = applyToPayload2 (\ a _ -> fn a) payl
 
 
 -- | This is similar to `applyToPayload`, but also provides the ability for
 --   the function passed in to inspect elements in the input array in a
 --   generic fashion (as Const type).
-applyToPayload2 :: (forall a . UArray Int a -> (Int -> Const) -> UArray Int a)
+applyToPayload2 :: (forall a . RawData a -> (Int -> Const) -> RawData a)
                 -> ArrayPayload -> ArrayPayload
 applyToPayload2 fn payl = 
   case payl of 
 --    ArrayPayloadUnit       -> ArrayPayloadUnit
-    ArrayPayloadInt    arr -> ArrayPayloadInt    (fn arr (\i -> I (arr U.! i)))
-    ArrayPayloadInt8   arr -> ArrayPayloadInt8   (fn arr (\i -> I8 (arr U.! i)))
-    ArrayPayloadInt16  arr -> ArrayPayloadInt16  (fn arr (\i -> I16 (arr U.! i)))
-    ArrayPayloadInt32  arr -> ArrayPayloadInt32  (fn arr (\i -> I32 (arr U.! i))) 
-    ArrayPayloadInt64  arr -> ArrayPayloadInt64  (fn arr (\i -> I64 (arr U.! i)))
-    ArrayPayloadWord   arr -> ArrayPayloadWord   (fn arr (\i -> W (arr U.! i)))
-    ArrayPayloadWord8  arr -> ArrayPayloadWord8  (fn arr (\i -> W8 (arr U.! i))) 
-    ArrayPayloadWord16 arr -> ArrayPayloadWord16 (fn arr (\i -> W16 (arr U.! i)))
-    ArrayPayloadWord32 arr -> ArrayPayloadWord32 (fn arr (\i -> W32 (arr U.! i)))
-    ArrayPayloadWord64 arr -> ArrayPayloadWord64 (fn arr (\i -> W64 (arr U.! i)))
-    ArrayPayloadFloat  arr -> ArrayPayloadFloat  (fn arr (\i -> F (arr U.! i)))
-    ArrayPayloadDouble arr -> ArrayPayloadDouble (fn arr (\i -> D (arr U.! i)))
-    ArrayPayloadChar   arr -> ArrayPayloadChar   (fn arr (\i -> C (arr U.! i)))
+    ArrayPayloadInt    arr -> ArrayPayloadInt    (fn arr (\i -> I   (arr `index` i)))
+    ArrayPayloadInt8   arr -> ArrayPayloadInt8   (fn arr (\i -> I8  (arr `index` i)))
+    ArrayPayloadInt16  arr -> ArrayPayloadInt16  (fn arr (\i -> I16 (arr `index` i)))
+    ArrayPayloadInt32  arr -> ArrayPayloadInt32  (fn arr (\i -> I32 (arr `index` i))) 
+    ArrayPayloadInt64  arr -> ArrayPayloadInt64  (fn arr (\i -> I64 (arr `index` i)))
+    ArrayPayloadWord   arr -> ArrayPayloadWord   (fn arr (\i -> W   (arr `index` i)))
+    ArrayPayloadWord8  arr -> ArrayPayloadWord8  (fn arr (\i -> W8  (arr `index` i))) 
+    ArrayPayloadWord16 arr -> ArrayPayloadWord16 (fn arr (\i -> W16 (arr `index` i)))
+    ArrayPayloadWord32 arr -> ArrayPayloadWord32 (fn arr (\i -> W32 (arr `index` i)))
+    ArrayPayloadWord64 arr -> ArrayPayloadWord64 (fn arr (\i -> W64 (arr `index` i)))
+    ArrayPayloadFloat  arr -> ArrayPayloadFloat  (fn arr (\i -> F   (arr `index` i)))
+    ArrayPayloadDouble arr -> ArrayPayloadDouble (fn arr (\i -> D   (arr `index` i)))
+    ArrayPayloadChar   arr -> ArrayPayloadChar   (fn arr (\i -> C   (arr `index` i)))
     ArrayPayloadBool   arr -> ArrayPayloadBool -- Word8's represent bools
-                              (fn arr (\i -> case arr U.! i of
+                              (fn arr (\i -> case arr `index` i of
                                                0 -> B False 
                                                _ -> B True))
     -- No values can actually change here.  WARNING: this plays fast and loose
     -- with error conditions.  In particular we should have to expose out-of-bounds access:
     ArrayPayloadUnit   len -> ArrayPayloadUnit len
-
+  where
+    index a i = unsafePerformIO $ MA.readArray a i
 
 
 -- | This version allows the payload to be rebuilt as a list of Const,
@@ -162,28 +166,29 @@ applyToPayload3 :: (Int -> (Int -> Const) -> [Const]) -> ArrayPayload -> ArrayPa
 applyToPayload3 fn payl = 
   case payl of 
 --    ArrayPayloadUnit       -> ArrayPayloadUnit
-    ArrayPayloadInt    arr -> ArrayPayloadInt    (fromL (map unI  $ fn len (\i -> I   (arr U.! i))))
-    ArrayPayloadInt8   arr -> ArrayPayloadInt8   (fromL (map unI8 $ fn len (\i -> I8  (arr U.! i))))
-    ArrayPayloadInt16  arr -> ArrayPayloadInt16  (fromL (map unI16$ fn len (\i -> I16 (arr U.! i))))
-    ArrayPayloadInt32  arr -> ArrayPayloadInt32  (fromL (map unI32$ fn len (\i -> I32 (arr U.! i))))
-    ArrayPayloadInt64  arr -> ArrayPayloadInt64  (fromL (map unI64$ fn len (\i -> I64 (arr U.! i))))
-    ArrayPayloadWord   arr -> ArrayPayloadWord   (fromL (map unW  $ fn len (\i -> W   (arr U.! i))))
-    ArrayPayloadWord8  arr -> ArrayPayloadWord8  (fromL (map unW8 $ fn len (\i -> W8  (arr U.! i))))
-    ArrayPayloadWord16 arr -> ArrayPayloadWord16 (fromL (map unW16$ fn len (\i -> W16 (arr U.! i))))
-    ArrayPayloadWord32 arr -> ArrayPayloadWord32 (fromL (map unW32$ fn len (\i -> W32 (arr U.! i))))
-    ArrayPayloadWord64 arr -> ArrayPayloadWord64 (fromL (map unW64$ fn len (\i -> W64 (arr U.! i))))
-    ArrayPayloadFloat  arr -> ArrayPayloadFloat  (fromL (map unF  $ fn len (\i -> F   (arr U.! i))))
-    ArrayPayloadDouble arr -> ArrayPayloadDouble (fromL (map unD  $ fn len (\i -> D   (arr U.! i))))
-    ArrayPayloadChar   arr -> ArrayPayloadChar   (fromL (map unC  $ fn len (\i -> C   (arr U.! i))))
-    ArrayPayloadBool   arr -> ArrayPayloadBool   (fromL (map fromBool$ fn len (\i -> toBool (arr U.! i))))
+    ArrayPayloadInt    arr -> ArrayPayloadInt    (fromL (map unI  $ fn len (\i -> I   (arr `index` i))))
+    ArrayPayloadInt8   arr -> ArrayPayloadInt8   (fromL (map unI8 $ fn len (\i -> I8  (arr `index` i))))
+    ArrayPayloadInt16  arr -> ArrayPayloadInt16  (fromL (map unI16$ fn len (\i -> I16 (arr `index` i))))
+    ArrayPayloadInt32  arr -> ArrayPayloadInt32  (fromL (map unI32$ fn len (\i -> I32 (arr `index` i))))
+    ArrayPayloadInt64  arr -> ArrayPayloadInt64  (fromL (map unI64$ fn len (\i -> I64 (arr `index` i))))
+    ArrayPayloadWord   arr -> ArrayPayloadWord   (fromL (map unW  $ fn len (\i -> W   (arr `index` i))))
+    ArrayPayloadWord8  arr -> ArrayPayloadWord8  (fromL (map unW8 $ fn len (\i -> W8  (arr `index` i))))
+    ArrayPayloadWord16 arr -> ArrayPayloadWord16 (fromL (map unW16$ fn len (\i -> W16 (arr `index` i))))
+    ArrayPayloadWord32 arr -> ArrayPayloadWord32 (fromL (map unW32$ fn len (\i -> W32 (arr `index` i))))
+    ArrayPayloadWord64 arr -> ArrayPayloadWord64 (fromL (map unW64$ fn len (\i -> W64 (arr `index` i))))
+    ArrayPayloadFloat  arr -> ArrayPayloadFloat  (fromL (map unF  $ fn len (\i -> F   (arr `index` i))))
+    ArrayPayloadDouble arr -> ArrayPayloadDouble (fromL (map unD  $ fn len (\i -> D   (arr `index` i))))
+    ArrayPayloadChar   arr -> ArrayPayloadChar   (fromL (map unC  $ fn len (\i -> C   (arr `index` i))))
+    ArrayPayloadBool   arr -> ArrayPayloadBool   (fromL (map fromBool$ fn len (\i -> toBool (arr `index` i))))
     ArrayPayloadUnit   len -> ArrayPayloadUnit len
   where 
-   len = payloadLength payl
+   len       = payloadLength payl
+   index a i = unsafePerformIO $ MA.readArray a i
 
 
 -- Various helpers:
 ----------------------------------------
-fromL l = U.listArray (0,length l - 1) l
+fromL l = unsafePerformIO $ MA.newListArray (0,length l - 1) l
 toBool 0 = B False
 toBool _ = B True
 fromBool (B False) = 0
@@ -204,9 +209,9 @@ unD (D x) = x
 unC (C x) = x
 unB (B x) = x
 unTup (Tup ls) = ls
--- Length of a UArray, add one because bounds are INCLUSIVE
-arrLen :: (Num a1, Ix a1, IArray a e) => a a1 e -> a1
-arrLen arr = let (st,en) = U.bounds arr in en - st + 1
+
+arrLen :: Storable e => RawData e -> Int
+arrLen arr = unsafePerformIO $ MA.rangeSize `fmap` MA.getBounds arr
 
 
 -- | Apply an elementwise function to each Const inside an array.  The
@@ -240,25 +245,27 @@ mapPayload :: (Const -> Const) -> ArrayPayload -> [ArrayPayload]
 mapPayload fn payl =   
 --  tracePrint ("\nMapPayload of "++show payl++" was : ") $ 
   case payl of        
-    ArrayPayloadInt   arr -> rebuild (fn . I  $ arr U.! 0) (fn . I  ) arr
-    ArrayPayloadInt8  arr -> rebuild (fn . I8 $ arr U.! 0) (fn . I8 ) arr
-    ArrayPayloadInt16 arr -> rebuild (fn . I16$ arr U.! 0) (fn . I16) arr
-    ArrayPayloadInt32 arr -> rebuild (fn . I32$ arr U.! 0) (fn . I32) arr
-    ArrayPayloadInt64 arr -> rebuild (fn . I64$ arr U.! 0) (fn . I64) arr
-    ArrayPayloadWord   arr -> rebuild (fn . W  $ arr U.! 0) (fn . W  ) arr
-    ArrayPayloadWord8  arr -> rebuild (fn . W8 $ arr U.! 0) (fn . W8 ) arr
-    ArrayPayloadWord16 arr -> rebuild (fn . W16$ arr U.! 0) (fn . W16) arr
-    ArrayPayloadWord32 arr -> rebuild (fn . W32$ arr U.! 0) (fn . W32) arr
-    ArrayPayloadWord64 arr -> rebuild (fn . W64$ arr U.! 0) (fn . W64) arr
-    ArrayPayloadFloat  arr -> rebuild (fn . F  $ arr U.! 0) (fn . F) arr
-    ArrayPayloadDouble arr -> rebuild (fn . D  $ arr U.! 0) (fn . D) arr
-    ArrayPayloadChar   arr -> rebuild (fn . C  $ arr U.! 0) (fn . C) arr
-    ArrayPayloadBool   arr -> rebuild (fn . W8 $ arr U.! 0) (fn . W8) arr
+    ArrayPayloadInt   arr  -> rebuild (fn . I  $ arr `index` 0) (fn . I  ) arr
+    ArrayPayloadInt8  arr  -> rebuild (fn . I8 $ arr `index` 0) (fn . I8 ) arr
+    ArrayPayloadInt16 arr  -> rebuild (fn . I16$ arr `index` 0) (fn . I16) arr
+    ArrayPayloadInt32 arr  -> rebuild (fn . I32$ arr `index` 0) (fn . I32) arr
+    ArrayPayloadInt64 arr  -> rebuild (fn . I64$ arr `index` 0) (fn . I64) arr
+    ArrayPayloadWord   arr -> rebuild (fn . W  $ arr `index` 0) (fn . W  ) arr
+    ArrayPayloadWord8  arr -> rebuild (fn . W8 $ arr `index` 0) (fn . W8 ) arr
+    ArrayPayloadWord16 arr -> rebuild (fn . W16$ arr `index` 0) (fn . W16) arr
+    ArrayPayloadWord32 arr -> rebuild (fn . W32$ arr `index` 0) (fn . W32) arr
+    ArrayPayloadWord64 arr -> rebuild (fn . W64$ arr `index` 0) (fn . W64) arr
+    ArrayPayloadFloat  arr -> rebuild (fn . F  $ arr `index` 0) (fn . F) arr
+    ArrayPayloadDouble arr -> rebuild (fn . D  $ arr `index` 0) (fn . D) arr
+    ArrayPayloadChar   arr -> rebuild (fn . C  $ arr `index` 0) (fn . C) arr
+    ArrayPayloadBool   arr -> rebuild (fn . W8 $ arr `index` 0) (fn . W8) arr
     ArrayPayloadUnit   len -> [ArrayPayloadUnit len]
+  where
+    index a i = unsafePerformIO $ MA.readArray a i
 
     
 {-# INLINE rebuild #-}
-rebuild :: IArray UArray e' => Const -> (e' -> Const) -> UArray Int e' -> [ArrayPayload]
+rebuild :: Storable e' => Const -> (e' -> Const) -> RawData e' -> [ArrayPayload]
 rebuild first fn arr = 
   case first of
     I   _ -> [ArrayPayloadInt    $ amap (unI   . fn) arr]
@@ -281,6 +288,8 @@ rebuild first fn arr =
     oth -> error$"This constant should not be found inside an ArrayPayload: "++show oth
  where
    tupref (Tup ls) i = ls !! i
+
+   amap f a = unsafePerformIO $ MA.mapArray f a
 
 
 -- | Convert a list of `Const` scalars of the same type into one or
@@ -345,21 +354,24 @@ payloadsFromList1 ls@(hd:_) =
 payloadToList :: ArrayPayload -> [Const]
 payloadToList payl =   
   case payl of        
-    ArrayPayloadInt    arr -> map I  $ U.elems arr
-    ArrayPayloadInt8   arr -> map I8 $ U.elems arr
-    ArrayPayloadInt16  arr -> map I16$ U.elems arr
-    ArrayPayloadInt32  arr -> map I32$ U.elems arr
-    ArrayPayloadInt64  arr -> map I64$ U.elems arr
-    ArrayPayloadWord   arr -> map W  $ U.elems arr
-    ArrayPayloadWord8  arr -> map W8 $ U.elems arr
-    ArrayPayloadWord16 arr -> map W16$ U.elems arr
-    ArrayPayloadWord32 arr -> map W32$ U.elems arr
-    ArrayPayloadWord64 arr -> map W64$ U.elems arr
-    ArrayPayloadFloat  arr -> map F  $ U.elems arr
-    ArrayPayloadDouble arr -> map D  $ U.elems arr
-    ArrayPayloadChar   arr -> map C  $ U.elems arr
-    ArrayPayloadBool   arr -> map toBool $ U.elems arr
+    ArrayPayloadInt    arr -> map I  $ elems arr
+    ArrayPayloadInt8   arr -> map I8 $ elems arr
+    ArrayPayloadInt16  arr -> map I16$ elems arr
+    ArrayPayloadInt32  arr -> map I32$ elems arr
+    ArrayPayloadInt64  arr -> map I64$ elems arr
+    ArrayPayloadWord   arr -> map W  $ elems arr
+    ArrayPayloadWord8  arr -> map W8 $ elems arr
+    ArrayPayloadWord16 arr -> map W16$ elems arr
+    ArrayPayloadWord32 arr -> map W32$ elems arr
+    ArrayPayloadWord64 arr -> map W64$ elems arr
+    ArrayPayloadFloat  arr -> map F  $ elems arr
+    ArrayPayloadDouble arr -> map D  $ elems arr
+    ArrayPayloadChar   arr -> map C  $ elems arr
+    ArrayPayloadBool   arr -> map toBool $ elems arr
     ArrayPayloadUnit   len -> L.replicate len (Tup [])
+  where
+    elems :: forall e. Storable e => RawData e -> [e]
+    elems = unsafePerformIO . MA.getElems
 
 -- | Get a `ForeignPtr` to the raw storage of an array.
 --
@@ -367,20 +379,20 @@ payloadToList payl =
 payloadToPtr :: ArrayPayload -> Ptr ()
 payloadToPtr payl = 
   case payl of        
-    ArrayPayloadInt    arr -> castPtr$uArrayPtr arr
-    ArrayPayloadInt8   arr -> castPtr$uArrayPtr arr
-    ArrayPayloadInt16  arr -> castPtr$uArrayPtr arr
-    ArrayPayloadInt32  arr -> castPtr$uArrayPtr arr
-    ArrayPayloadInt64  arr -> castPtr$uArrayPtr arr
-    ArrayPayloadWord   arr -> castPtr$uArrayPtr arr
-    ArrayPayloadWord8  arr -> castPtr$uArrayPtr arr
-    ArrayPayloadWord16 arr -> castPtr$uArrayPtr arr
-    ArrayPayloadWord32 arr -> castPtr$uArrayPtr arr
-    ArrayPayloadWord64 arr -> castPtr$uArrayPtr arr
-    ArrayPayloadFloat  arr -> castPtr$uArrayPtr arr
-    ArrayPayloadDouble arr -> castPtr$uArrayPtr arr
-    ArrayPayloadChar   arr -> castPtr$uArrayPtr arr
-    ArrayPayloadBool   arr -> castPtr$uArrayPtr arr
+    ArrayPayloadInt    arr -> castPtr $ storableArrayPtr arr
+    ArrayPayloadInt8   arr -> castPtr $ storableArrayPtr arr
+    ArrayPayloadInt16  arr -> castPtr $ storableArrayPtr arr
+    ArrayPayloadInt32  arr -> castPtr $ storableArrayPtr arr
+    ArrayPayloadInt64  arr -> castPtr $ storableArrayPtr arr
+    ArrayPayloadWord   arr -> castPtr $ storableArrayPtr arr
+    ArrayPayloadWord8  arr -> castPtr $ storableArrayPtr arr
+    ArrayPayloadWord16 arr -> castPtr $ storableArrayPtr arr
+    ArrayPayloadWord32 arr -> castPtr $ storableArrayPtr arr
+    ArrayPayloadWord64 arr -> castPtr $ storableArrayPtr arr
+    ArrayPayloadFloat  arr -> castPtr $ storableArrayPtr arr
+    ArrayPayloadDouble arr -> castPtr $ storableArrayPtr arr
+    ArrayPayloadChar   arr -> castPtr $ storableArrayPtr arr
+    ArrayPayloadBool   arr -> castPtr $ storableArrayPtr arr
     ArrayPayloadUnit   _   -> error "payloadToPtr: cannot work for an ArrayPayloadUnit"
 
 -- | Copy from foreign memory (O(N)) to reconstruct a payload with the given type and
@@ -392,46 +404,38 @@ payloadToPtr payl =
 payloadFromPtr :: Type -> Int -> Ptr Word8 -> IO ArrayPayload
 payloadFromPtr ty len srcPtr =
   case ty of 
-    TInt    -> ArrayPayloadInt    <$> uarr
-    TInt8   -> ArrayPayloadInt8   <$> uarr
-    TInt16  -> ArrayPayloadInt16  <$> uarr
-    TInt32  -> ArrayPayloadInt32  <$> uarr
-    TInt64  -> ArrayPayloadInt64  <$> uarr
-    TWord   -> ArrayPayloadWord   <$> uarr
-    TWord8  -> ArrayPayloadWord8  <$> uarr
-    TWord16 -> ArrayPayloadWord16 <$> uarr
-    TWord32 -> ArrayPayloadWord32 <$> uarr
-    TWord64 -> ArrayPayloadWord64 <$> uarr
-    TFloat  -> ArrayPayloadFloat  <$> uarr
-    TDouble -> ArrayPayloadDouble <$> uarr
-    TChar   -> ArrayPayloadChar   <$> uarr
-    TBool   -> ArrayPayloadBool   <$> uarr
+    TInt    -> ArrayPayloadInt    <$> arr
+    TInt8   -> ArrayPayloadInt8   <$> arr
+    TInt16  -> ArrayPayloadInt16  <$> arr
+    TInt32  -> ArrayPayloadInt32  <$> arr
+    TInt64  -> ArrayPayloadInt64  <$> arr
+    TWord   -> ArrayPayloadWord   <$> arr
+    TWord8  -> ArrayPayloadWord8  <$> arr
+    TWord16 -> ArrayPayloadWord16 <$> arr
+    TWord32 -> ArrayPayloadWord32 <$> arr
+    TWord64 -> ArrayPayloadWord64 <$> arr
+    TFloat  -> ArrayPayloadFloat  <$> arr
+    TDouble -> ArrayPayloadDouble <$> arr
+    TChar   -> ArrayPayloadChar   <$> arr
+    TBool   -> ArrayPayloadBool   <$> arr
     TTuple [] -> return (ArrayPayloadUnit len)
     -- TTuple tys -> concatMap (uncurry payloadsFromList)                 
     --                         (zip tys (L.transpose $ map unTup ls))
     _ -> error$"payloadFromPtr: Unexpected array type: "++show ty
   where
-    uarr :: forall elt . Storable elt => IO (UArray Int elt)
-    uarr = do let bytes = len * sizeOf (undefined::elt)
+    arr :: forall elt . Storable elt => IO (RawData elt)
+    arr = do  let bytes = len * sizeOf (undefined::elt)
               maybtrace (" [dbg] !! Copying back "++show bytes++" bytes (array len "++show len++") into haskell heap!" )$return()
-              b1 <- BA.newPinnedByteArray bytes
-              b2 <- BA.unsafeFreezeByteArray b1
-              case BA.byteArrayContents b2 of
-                Addr addr# -> do
-                  maybtrace(" [dbg] !! Copying to "++show (Ptr addr#)++" from "++show srcPtr)$return()
-                  copyArray (Ptr addr#) srcPtr bytes
-              case b2 of
-                BA.ByteArray ba# -> return (UArray 0 (len - 1) len ba# )
+              fp <- mallocForeignPtrArray len
+              withForeignPtr fp $ \dstPtr -> copyArray dstPtr (castPtr srcPtr) len
+              return $ StorableArray 0 (len-1) len fp
 
 
--- Obtains a pointer to the payload of an unboxed array.
+-- Obtains a pointer to the payload of an storable array.
 --
--- PRECONDITION: The unboxed array must be pinned.
---
-{-# INLINE uArrayPtr #-}
-uArrayPtr :: UArray Int a -> Ptr a
-uArrayPtr (UArray _ _ _ ba) = Ptr (byteArrayContents# ba)
-
+{-# INLINE storableArrayPtr #-}
+storableArrayPtr :: StorableArray i a -> Ptr a
+storableArrayPtr (StorableArray _ _ _ fp) = unsafeForeignPtrToPtr fp
 
 -- | Create an array of with the given dimensions and many copies of
 --   the same element.  This deals with constructing the appropriate
@@ -679,24 +683,25 @@ splitPayload n k payl =
 
 -- | Takes a specific chunksize for the output partitions. 
 --   Any elements left over go in the final array.
-splitArrays :: (U.IArray U.UArray elt) => 
-               Int -> Int -> U.UArray Int elt -> [U.UArray Int elt]
-splitArrays size howmany arr = 
+splitArrays
+    :: Storable elt
+    => Int
+    -> Int
+    -> RawData elt
+    -> [RawData elt]
+splitArrays size howmany arr =
   -- trace(" CUTTING ARRAY, bounds "++show(low,high)++", size "++show size++", quotRem: "++show (howmany,leftover))$
-  [ U.listArray (0,size-1) 
-    [ arr U.! (i + y*size) | i <- [0 .. size-1]]
-  | y <- [0 .. howmany-2] ] ++ 
-  [ U.listArray (0,size+leftover-1) 
-    [ arr U.! (i + (howmany-1)*size) | i <- [0 .. size+leftover-1]]]
- where 
-  (low,high) = U.bounds arr
-  leftover = (high - low + 1) - (size * howmany)
-
+  [ fromL s | s <- cut (howmany-1) xs ]
+  where
+    xs          = unsafePerformIO $ MA.getElems arr
+    cut 0 r     = [r]
+    cut n r     = let (x,y) = splitAt size r
+                  in  x : cut (n-1) y
 
 
 -- Scratch:
-t0 :: U.UArray Int Int
-t0 = U.listArray (0,11) [1..12]
+t0 :: RawData Int
+t0 = fromL [1..12]
 
 t0b :: AccArray 
 -- t0b = AccArray [3,2,2] [ArrayPayloadInt t0, ArrayPayloadInt t0]
@@ -705,15 +710,15 @@ t0b = AccArray [2,2,3] [ArrayPayloadInt t0, ArrayPayloadInt t0]
 p0 = splitAccArray 2 t0b
 v0 = map (verifyAccArray (TArray 3 (TTuple [TInt,TInt]))) p0
 
-t1 :: U.UArray Int Char
-t1 = U.listArray (0,9) ['a'..'j']
+t1 :: RawData Char
+t1 = fromL ['a'..'j']
 
 p1 = splitArrays 5 2 t1
 
 go :: IO ()
 go = 
   case t0 of 
-    UArray l u nn ptr -> 
+    StorableArray l u nn _fp -> 
       putStrLn $ "HMM "++show (l,u,nn)
 
 -- last and init functions together.  I wonder if it's actually faster.
