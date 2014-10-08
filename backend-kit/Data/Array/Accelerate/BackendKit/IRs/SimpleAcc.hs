@@ -1,6 +1,9 @@
-{-# LANGUAGE DeriveGeneric, CPP #-}
-{-# LANGUAGE Rank2Types, FlexibleContexts #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE CPP                #-}
+{-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE FlexibleContexts   #-}
+{-# LANGUAGE NamedFieldPuns     #-}
+{-# LANGUAGE Rank2Types         #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 -- TEMP: for UArray Read instance:
 {-# LANGUAGE ScopedTypeVariables, FlexibleInstances #-}
@@ -58,21 +61,22 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
 import           Control.DeepSeq (NFData(..))
 import           Control.Monad.State.Strict (State, get, put)
 import           Control.Applicative  ((<$>),(<*>))
-import qualified Data.Array.IO     as IA
-import qualified Data.Array.MArray as MA
-import           Data.Array.Unboxed as U
-import qualified Data.Array.Unsafe as Un
+import           Data.Array                             ( bounds )
+import           Data.Array.Storable.Internals          ( StorableArray(..) )
+import qualified Data.Array.IO                          as IA
+import qualified Data.Array.MArray                      as MA
+import qualified Data.Array.Unsafe                      as Un
 import           Data.Int
-import qualified Data.Map          as M
-import qualified Data.Set          as S
-import qualified Data.List         as L
+import qualified Data.Map                               as M
+import qualified Data.Set                               as S
+import qualified Data.List                              as L
 import           Data.Word
 import           Foreign.C.Types 
 import           Text.PrettyPrint.HughesPJ (text)
 import           System.IO.Unsafe  (unsafePerformIO)
 import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
 
-import           Foreign.Storable (sizeOf)
+import           Foreign.Storable (Storable, sizeOf)
 -- import           System.Environment(getEnvironment)
 
 --------------------------------------------------------------------------------
@@ -504,21 +508,21 @@ instance Show AccArray where
    where
      doPayld p = 
        case p of 
-         ArrayPayloadInt    arr -> show$ U.elems arr
-         ArrayPayloadInt8   arr -> show$ U.elems arr
-         ArrayPayloadInt16  arr -> show$ U.elems arr
-         ArrayPayloadInt32  arr -> show$ U.elems arr
-         ArrayPayloadInt64  arr -> show$ U.elems arr
-         ArrayPayloadWord   arr -> show$ U.elems arr
-         ArrayPayloadWord8  arr -> show$ U.elems arr
-         ArrayPayloadWord16 arr -> show$ U.elems arr
-         ArrayPayloadWord32 arr -> show$ U.elems arr
-         ArrayPayloadWord64 arr -> show$ U.elems arr
-         ArrayPayloadFloat  arr -> show$ U.elems arr
-         ArrayPayloadDouble arr -> show$ U.elems arr
-         ArrayPayloadChar   arr -> show$ U.elems arr
-         ArrayPayloadBool   arr -> show$ U.elems arr
-         ArrayPayloadUnit   len -> show$ replicate len ()
+         ArrayPayloadInt    arr -> show arr
+         ArrayPayloadInt8   arr -> show arr
+         ArrayPayloadInt16  arr -> show arr
+         ArrayPayloadInt32  arr -> show arr
+         ArrayPayloadInt64  arr -> show arr
+         ArrayPayloadWord   arr -> show arr
+         ArrayPayloadWord8  arr -> show arr
+         ArrayPayloadWord16 arr -> show arr
+         ArrayPayloadWord32 arr -> show arr
+         ArrayPayloadWord64 arr -> show arr
+         ArrayPayloadFloat  arr -> show arr
+         ArrayPayloadDouble arr -> show arr
+         ArrayPayloadChar   arr -> show arr
+         ArrayPayloadBool   arr -> show arr
+         ArrayPayloadUnit   len -> show $ replicate len ()
 
 instance Read AccArray where
 --  read str = error "FIXME: Read instance for AccArray is unfinished."
@@ -552,7 +556,25 @@ data ArrayPayload =
 -- | This is our Haskell representation of raw, contiguous data (arrays).
 -- It is subject to change in the future depending on what internal
 -- representation the Accelerate front-end uses.
-type RawData e = UArray Int e
+type RawData e = StorableArray Int e
+
+instance (Storable e, Show e) => Show (RawData e) where
+  showsPrec = showsRawData
+
+showsRawData :: (Storable e, Show e) => Int -> RawData e -> ShowS
+showsRawData p a
+  = showParen (p > 9)
+  $ showString "array"
+  . showChar ' '
+  . shows sh
+  . showChar ' '
+  . shows xs
+  where
+    sh  = unsafePerformIO $ MA.getBounds a
+    xs  = unsafePerformIO $ MA.getElems  a
+
+deriving instance Eq  (RawData e)
+deriving instance Ord (RawData e)
 
 -- This will only report a FLAT tuple structure.  It does not keep additional type
 -- information.
@@ -1247,16 +1269,21 @@ instance (Out k, Out v) => Out (M.Map k v) where
   doc         = docPrec 0 
   
 -- Why is this one not included in the array package?:
-instance (Read elt, U.IArray UArray elt) => Read (U.UArray Int elt) where
+instance (Read elt, Storable elt) => Read (StorableArray Int elt) where
     readsPrec p = readParen (p > 9)
-           (\r -> [(U.array b as :: U.UArray Int elt, u) | 
+           (\r -> [(unsafePerformIO $ newAssocsArray b as :: StorableArray Int elt, u) | 
                    ("array",s) <- lex r,
                    (b,t)       <- reads s,
                    (as :: [(Int,elt)],u) <- reads t ])
 
+newAssocsArray :: (MA.MArray a e m, MA.Ix i) => (i, i) -> [(i,e)] -> m (a i e)
+newAssocsArray sh xs = do
+  arr <- MA.newArray_ sh
+  mapM_ (uncurry (MA.writeArray arr)) xs
+  return arr
 
-test :: UArray Int Int
-test = read "array (1,5) [(1,200),(2,201),(3,202),(4,203),(5,204)]" :: U.UArray Int Int
+test :: RawData Int
+test = read "array (1,5) [(1,200),(2,201),(3,202),(4,203),(5,204)]" :: StorableArray Int Int
 
 
 -- More ugly boilerplate for NFData
@@ -1291,7 +1318,7 @@ instance NFData ProgResults where
   rnf (WithShapesUnzipped ls) = rnf ls  
 
 ----------------------------------------------------------------------------------------------------
-
+{--
 -- Note: an alternate approach to the large sum of payload types would
 -- be to cast them all to a UArray of bytes.  There is not direct
 -- support for this in the UArray module, but we could accomplish it
@@ -1315,5 +1342,5 @@ uarrGenerate len fn = unsafePerformIO $
          loop i = do MA.writeArray marr i (fn i)
                      loop (i-1)
      loop (len-1)
-
+--}
 
