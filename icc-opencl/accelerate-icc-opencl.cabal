@@ -1,5 +1,5 @@
 Name:                accelerate-icc-opencl
-Version:             0.15.0.0
+Version:             0.16.0.0
 Synopsis:            OpenCL and Cilk/ICC backends for Accelerate.
 
 Homepage:            https://github.com/AccelerateHS/accelerate-cpu/
@@ -42,7 +42,7 @@ Library
                      test-framework, process, unix, 
                      mtl, pretty, prettyclass, GenericPretty,
                      accelerate >= 0.15,
-                     accelerate-backend-kit >= 0.15,
+                     accelerate-backend-kit == 0.16.*,
                      bytestring, ghc-prim, time
 
   if flag(opencl) {
