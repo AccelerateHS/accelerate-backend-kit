@@ -50,10 +50,11 @@ module Data.Array.Accelerate.DynamicAcc2
        )
        where
 
-import           Data.Array.Accelerate as A hiding ((++))
-import qualified Data.Array.Accelerate.Smart as Sm
-import qualified Data.Array.Accelerate.Type as T
-import qualified Data.Array.Accelerate.Trafo as Trafo
+import           Data.Array.Accelerate                          as A hiding ((++))
+import qualified Data.Array.Accelerate.AST                      as AST
+import qualified Data.Array.Accelerate.Smart                    as Sm
+import qualified Data.Array.Accelerate.Type                     as T
+import qualified Data.Array.Accelerate.Trafo                    as Trafo
 -- import           Data.Array.Accelerate.Array.Representation (SliceIndex(..))
 import qualified Data.Array.Accelerate.Array.Representation as R
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
@@ -116,10 +117,10 @@ data ArrTy = ArrTy { ndims :: Int, eltTy :: S.Type } deriving Show
 
 -- newtype SealedSlice = SealedSlice Dynamic deriving Show
 
-sealExp :: (Elt a, Typeable a) => A.Exp a -> SealedExp
+sealExp :: forall a. (Elt a, Typeable a) => A.Exp a -> SealedExp
 sealExp x = SealedExp ety (toDyn x)
  where
-  ety = expType (Trafo.convertExp x)
+  ety = expType (undefined :: AST.Exp () a)
 
 sealAcc :: (Arrays a, Typeable a) => Acc a -> SealedAcc
 sealAcc x = 
@@ -813,6 +814,8 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
 
 -----------------------------------------------------------------------------------
              (case (styOut,op) of 
+
+{-- TLM: BROKEN
                REPBOP(POPINT, POPIDICT, NP, Add, (+))
                REPBOP(POPINT, POPIDICT, NP, Sub, (-))
                REPBOP(POPINT, POPIDICT, NP, Mul, (*))
@@ -864,7 +867,8 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
                REPUOP_I2F(Round, A.round)
                REPUOP_I2F(Floor, A.floor)
                REPUOP_I2F(Ceiling, A.ceiling)
-     
+--}
+
                -------------- Boolean Primitives --------------
                (_, BP S.And) -> (case args of { 
                  [a1,a2] -> let a1', a2' :: Exp Bool;
@@ -913,6 +917,7 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
 
                -------------- Other Primitives --------------
 
+{-- TLM: BROKEN
                -- FromIntegral case 1/2: integral->integral
                (T.NumScalarType (T.IntegralNumType (ityOut :: T.IntegralType elt)), 
                 OP S.FromIntegral) -> 
@@ -926,7 +931,8 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
                              res = A.fromIntegral a1'
                          in sealExp res;
                  _ -> error$ "fromIntegral operator expects one arg, got "++show args ;};};};})
-
+--}
+{-- TLM: BROKEN
                -- FromIntegral case 2/2: integral->floating
                (T.NumScalarType (T.FloatingNumType (ityOut :: T.FloatingType elt)), 
                 OP S.FromIntegral) -> 
@@ -940,7 +946,7 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
                              res = A.fromIntegral a1'
                          in sealExp res;
                  _ -> error$ "fromIntegral operator expects one arg, got "++show args ;};};};})
-
+--}
 -- FINSHME
                --------------------------------------------------
                _ -> error$ "Primop unhandled or got wrong argument type: "++show op++" / "++show outTy
@@ -998,7 +1004,8 @@ ordPrim inTy prim args =
         let x,y :: Exp a
             x = downcastE se1
             y = downcastE se2
-        in sealExp $ prim x y
+        in error "ordPrim: BROKEN"
+--        in sealExp $ prim x y
 
    T.NumScalarType (T.FloatingNumType a) -> 
      case T.floatingDict a of 
@@ -1006,7 +1013,8 @@ ordPrim inTy prim args =
         let x,y :: Exp a
             x = downcastE se1
             y = downcastE se2
-        in sealExp $ prim x y
+        in error "ordPrim: BROKEN"
+--        in sealExp $ prim x y
 
    T.NonNumScalarType a -> 
       error$"DynamicAcc2/ordPrim: attempting to apply relational operator to non-numeric type: "++show inTy
@@ -1101,7 +1109,7 @@ tupTyToIndex = error "finish me"
 
 shapeTyLen :: Type -> Int
 shapeTyLen TInt        = 1
-shapeTyLen (TTuple ls) | P.all (==TInt) ls = length ls
+shapeTyLen (TTuple ls) | P.all (==TInt) ls = P.length ls
 shapeTyLen ty = error $ "shapeTyLen: invalid shape type: "++show ty
 
 convertAcc :: S.AExp -> SealedAcc
