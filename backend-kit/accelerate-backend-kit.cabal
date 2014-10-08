@@ -1,5 +1,5 @@
 Name:                accelerate-backend-kit
-Version:             0.15.0.4
+Version:             0.16.0.0
 Synopsis:            Simplified AST for Accelerate that makes it easy to build new backends.
 
 -- Description:         
@@ -81,17 +81,21 @@ Library
                         mtl,
                         pretty          >= 1.0 && < 1.2,
                         prettyclass,
-                        base >= 4, ghc-prim,
+                        base            >= 4,
+                        ghc-prim,
                         containers,
-                        accelerate      >= 0.15.0.0,
+                        accelerate      == 0.16.*,
                         GenericPretty   >= 1.0,
                         vector          >= 0.9,
                         deepseq         >= 1.3,
                         random          >= 1.0,
                         time            >= 1.4,
-                        split >= 0.2,
-                        bytestring, primitive,
-                        test-framework, test-framework-hunit, HUnit
+                        split           >= 0.2,
+                        bytestring,
+                        primitive,
+                        test-framework,
+                        test-framework-hunit,
+                        HUnit
 
   Default-Language:     Haskell2010
   ghc-options: -threaded -Wall
@@ -104,18 +108,23 @@ Test-Suite test-accelerate-backend-kit-unittests
     ghc-options: -threaded -rtsopts -with-rtsopts=-N -Wall
     default-language: Haskell2010
     build-depends: accelerate-backend-kit
-    build-depends: base >= 4, containers, ghc-prim,
-                   array >= 0.3,
+    build-depends: base                 >= 4,
+                   GenericPretty        >= 1.0,
+                   HUnit,
+                   accelerate           == 0.16.*,
+                   array                >= 0.3,
+                   bytestring,
+                   containers,
+                   deepseq              >= 1.3,
+                   ghc-prim,
                    mtl,
-                   pretty          >= 1.0 && < 1.2,
-                   accelerate      >= 0.15,
-                   GenericPretty   >= 1.0,
-                   deepseq         >= 1.3,
-                   random          >= 1.0,
-                   time            >= 1.4,
-                   test-framework, test-framework-hunit, HUnit,
-                   split >= 0.2,
-                   bytestring, primitive
+                   pretty               >= 1.0 && < 1.2,
+                   primitive,
+                   random               >= 1.0,
+                   split                >= 0.2,
+                   test-framework,
+                   test-framework-hunit,
+                   time                 >= 1.4
 
 -- "System" tests of the entire backend-kit compiler & interpreter.
 Test-Suite test-accelerate-backend-kit-simple-interp
@@ -129,7 +138,7 @@ Test-Suite test-accelerate-backend-kit-simple-interp
                    array >= 0.3,
                    mtl,
                    pretty          >= 1.0 && < 1.2,
-                   accelerate      >= 0.15,
+                   accelerate      == 0.16.*,
                    GenericPretty   >= 1.0,
                    deepseq         >= 1.3,
                    random          >= 1.0,
@@ -152,7 +161,7 @@ Test-Suite test-accelerate-main-interp
                    array >= 0.3,
                    mtl,
                    pretty          >= 1.0 && < 1.2,
-                   accelerate      >= 0.15,
+                   accelerate      == 0.16.*,
                    GenericPretty   >= 1.0,
                    deepseq         >= 1.3,
                    random          >= 1.0,
@@ -173,7 +182,7 @@ Test-Suite test-dynamic-acc
                    array >= 0.3,
                    mtl,
                    pretty          >= 1.0 && < 1.2,
-                   accelerate      >= 0.15,
+                   accelerate      == 0.16.*,
                    GenericPretty   >= 1.0,
                    deepseq         >= 1.3,
                    random          >= 1.0,
@@ -197,7 +206,7 @@ Test-Suite test-accelerate-backend-kit-liftdrop-interp
                    array >= 0.3,
                    mtl,
                    pretty          >= 1.0 && < 1.2,
-                   accelerate      >= 0.15,
+                   accelerate      == 0.16.*,
                    GenericPretty   >= 1.0,
                    deepseq         >= 1.3,
                    random          >= 1.0,
