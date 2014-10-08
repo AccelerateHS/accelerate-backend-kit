@@ -48,8 +48,7 @@ import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Prog(..), showP
 import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc, unpackArray)
 import           Data.Array.Accelerate.BackendKit.Utils.Helpers ((#), dbgPrint)
 import           Data.Array.Accelerate.Trafo (Phase(..))
-import           Data.Array.Accelerate.Trafo.Sharing (convertAcc)
-import           Data.Array.Accelerate.DynamicAcc2 as Dyn hiding (convertAcc)
+import           Data.Array.Accelerate.DynamicAcc2 as Dyn
 import           Data.Typeable (eqT, (:~:)(..), Typeable, typeOf)
 
 -- standard libraries
@@ -82,7 +81,7 @@ import  Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
 --   Optionally takes a name associated with the program.
 runWith :: (Backend b, Arrays a) => b -> DebugName -> Acc a -> a
 runWith bkend _nm prog = unsafePerformIO $ do 
-  let cvtd = convertAcc True True True prog
+  let cvtd = phase0 prog
   remote <- runRaw bkend cvtd Nothing 
   copyToHost bkend remote
 

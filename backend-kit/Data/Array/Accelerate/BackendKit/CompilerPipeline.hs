@@ -1,5 +1,7 @@
-{-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE NamedFieldPuns       #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 
 module Data.Array.Accelerate.BackendKit.CompilerPipeline
        (
@@ -22,11 +24,12 @@ module Data.Array.Accelerate.BackendKit.CompilerPipeline
 import           Text.PrettyPrint.GenericPretty (Out(..))
 import           Text.PrettyPrint.HughesPJ (text)
 import           Debug.Trace (trace)
-import qualified Data.Array.Accelerate.AST as AST
-import qualified Data.Array.Accelerate.Smart       as Smt
-import qualified Data.Array.Accelerate.Array.Sugar as Sug
-import           Data.Array.Accelerate.Trafo.Sharing (convertAcc)
-import           Data.Array.Accelerate.Trafo (Phase(..))
+import           Data.Array.Accelerate.Trafo
+import           Data.Array.Accelerate.Tuple
+import           Data.Array.Accelerate.AST                      ( OpenAcc(..), OpenAfun, OpenExp, OpenFun, PreOpenExp(..), PreOpenFun(..), PreOpenAcc(..), PreOpenAfun(..) )
+import qualified Data.Array.Accelerate.AST                      as AST
+import qualified Data.Array.Accelerate.Smart                    as Smt
+import qualified Data.Array.Accelerate.Array.Sugar              as Sug
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import qualified Data.Array.Accelerate.BackendKit.IRs.CLike     as C
 import qualified Data.Array.Accelerate.BackendKit.IRs.GPUIR     as G
@@ -134,9 +137,9 @@ phase1 prog =
 -- | This simply calls the Accelerate *front-end* with the default settings for a
 -- backend-kit compiler.
 phase0 :: Sug.Arrays a => Smt.Acc a -> AST.Acc a
-phase0 = convertAcc True True True
+phase0 = undelayAcc . convertAccWith defaultTrafoConfig
 
--- NOTE: This is the same configuration as used by the CUDA backend:
+-- NOTE: This is _NOT_ the same configuration as used by the CUDA backend:
 --
 -- How the Accelerate program should be interpreted.
 -- TODO: make sharing/fusion runtime configurable via debug flags or otherwise.
@@ -153,6 +156,92 @@ defaultTrafoConfig =  Phase
   , convertOffsetOfSegment = False
   }
 
+
+-- HACK: Remove the producer/consumer fusion represented by the DelayedAcc type
+-- and convert it back into a regular AST.Acc.
+--
+undelayAcc :: Sug.Arrays arrs => DelayedOpenAcc aenv arrs -> OpenAcc aenv arrs
+undelayAcc = cvtA
+  where
+    cvtA :: DelayedOpenAcc aenv a -> OpenAcc aenv a
+    cvtA (Delayed sh f _)       = OpenAcc $ Generate (cvtE sh) (cvtF f)
+    cvtA (Manifest pacc)        = OpenAcc $
+      case pacc of
+        Avar ix                 -> Avar ix
+        Use arr                 -> Use arr
+        Unit e                  -> Unit (cvtE e)
+        Alet bnd body           -> Alet (cvtA bnd) (cvtA body)
+        Acond p t e             -> Acond (cvtE p) (cvtA t) (cvtA e)
+        Awhile p f a            -> Awhile (cvtAF p) (cvtAF f) (cvtA a)
+        Atuple tup              -> Atuple (cvtAT tup)
+        Aprj ix tup             -> Aprj ix (cvtA tup)
+        Apply f a               -> Apply (cvtAF f) (cvtA a)
+        Aforeign ff f a         -> Aforeign ff (cvtAF f) (cvtA a)
+        Map f a                 -> Map (cvtF f) (cvtA a)
+        ZipWith f a b           -> ZipWith (cvtF f) (cvtA a) (cvtA b)
+        Generate sh f           -> Generate (cvtE sh) (cvtF f)
+        Transform sh p f a      -> Transform (cvtE sh) (cvtF p) (cvtF f) (cvtA a)
+        Backpermute sh p a      -> Backpermute (cvtE sh) (cvtF p) (cvtA a)
+        Reshape sl a            -> Reshape (cvtE sl) (cvtA a)
+        Replicate sl sh a       -> Replicate sl (cvtE sh) (cvtA a)
+        Slice sl a sh           -> Slice sl (cvtA a) (cvtE sh)
+        Fold f z a              -> Fold (cvtF f) (cvtE z) (cvtA a)
+        Fold1 f a               -> Fold1 (cvtF f) (cvtA a)
+        FoldSeg f z a s         -> FoldSeg (cvtF f) (cvtE z) (cvtA a) (cvtA s)
+        Fold1Seg f a s          -> Fold1Seg (cvtF f) (cvtA a) (cvtA s)
+        Scanl f z a             -> Scanl (cvtF f) (cvtE z) (cvtA a)
+        Scanl1 f a              -> Scanl1 (cvtF f) (cvtA a)
+        Scanl' f z a            -> Scanl' (cvtF f) (cvtE z) (cvtA a)
+        Scanr f z a             -> Scanr (cvtF f) (cvtE z) (cvtA a)
+        Scanr1 f a              -> Scanr1 (cvtF f) (cvtA a)
+        Scanr' f z a            -> Scanr' (cvtF f) (cvtE z) (cvtA a)
+        Permute f d p a         -> Permute (cvtF f) (cvtA d) (cvtF p) (cvtA a)
+        Stencil f x a           -> Stencil (cvtF f) x (cvtA a)
+        Stencil2 f x a y b      -> Stencil2 (cvtF f) x (cvtA a) y (cvtA b)
+
+    cvtAT :: Atuple (DelayedOpenAcc aenv) a -> Atuple (OpenAcc aenv) a
+    cvtAT NilAtup        = NilAtup
+    cvtAT (SnocAtup t a) = cvtAT t `SnocAtup` cvtA a
+
+    cvtAF :: PreOpenAfun DelayedOpenAcc aenv f -> OpenAfun aenv f
+    cvtAF (Alam f)  = Alam  (cvtAF f)
+    cvtAF (Abody b) = Abody (cvtA b)
+
+    cvtF :: DelayedOpenFun env aenv t -> OpenFun env aenv t
+    cvtF (Lam  f) = Lam  (cvtF f)
+    cvtF (Body b) = Body (cvtE b)
+
+    cvtE :: DelayedOpenExp env aenv t -> OpenExp env aenv t
+    cvtE exp =
+      case exp of
+        Let bnd body            -> Let (cvtE bnd) (cvtE body)
+        Var ix                  -> Var ix
+        Const c                 -> Const c
+        Tuple tup               -> Tuple (cvtT tup)
+        Prj ix t                -> Prj ix (cvtE t)
+        IndexNil                -> IndexNil
+        IndexCons sh sz         -> IndexCons (cvtE sh) (cvtE sz)
+        IndexHead sh            -> IndexHead (cvtE sh)
+        IndexTail sh            -> IndexTail (cvtE sh)
+        IndexAny                -> IndexAny
+        IndexSlice x ix sh      -> IndexSlice x (cvtE ix) (cvtE sh)
+        IndexFull x ix sl       -> IndexFull x (cvtE ix) (cvtE sl)
+        ToIndex sh ix           -> ToIndex (cvtE sh) (cvtE ix)
+        FromIndex sh ix         -> FromIndex (cvtE sh) (cvtE ix)
+        Cond p t e              -> Cond (cvtE p) (cvtE t) (cvtE e)
+        While p f x             -> While (cvtF p) (cvtF f) (cvtE x)
+        PrimConst c             -> PrimConst c
+        PrimApp f x             -> PrimApp f (cvtE x)
+        Index a sh              -> Index (cvtA a) (cvtE sh)
+        LinearIndex a i         -> LinearIndex (cvtA a) (cvtE i)
+        Shape a                 -> Shape (cvtA a)
+        ShapeSize sh            -> ShapeSize (cvtE sh)
+        Intersect s t           -> Intersect (cvtE s) (cvtE t)
+        Foreign ff f e          -> Foreign ff (cvtF f) (cvtE e)
+
+    cvtT :: Tuple (DelayedOpenExp env aenv) t -> Tuple (OpenExp env aenv) t
+    cvtT NilTup        = NilTup
+    cvtT (SnocTup t e) = cvtT t `SnocTup` cvtE e
 
 --------------------------------------------------------------------------------    
 -- Type Checking

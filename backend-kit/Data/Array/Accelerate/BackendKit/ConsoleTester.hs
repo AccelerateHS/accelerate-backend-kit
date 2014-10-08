@@ -12,7 +12,6 @@ module Data.Array.Accelerate.BackendKit.ConsoleTester
 import           Control.Exception
 import           Control.Monad (when, unless)
 import qualified Data.Array.Accelerate             as A
-import           Data.Array.Accelerate.Trafo.Sharing (convertAcc)
 import           Data.Array.Accelerate.Trafo (convertAccWith, Phase(..))
 import           Data.Array.Accelerate.BackendKit.Tests (allProgs,allProgsMap,testCompiler,TestEntry(..),
                                                          AccProg(AccProg),makeTestEntry)
