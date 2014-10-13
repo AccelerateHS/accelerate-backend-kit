@@ -224,6 +224,7 @@ doStmt st =
 doStmts :: [Stmt] -> S.Set SA.Var
 doStmts = S.unions .  L.map doStmt
 
+-- COLLECT FREE VARS 
 doE :: Exp -> S.Set SA.Var
 doE ex =
   case ex of
@@ -232,6 +233,11 @@ doE ex =
     EGetLocalID  _      -> S.empty    
     EVr vr              -> S.singleton vr  
     ECond e1 e2 e3      -> S.union (doE e1)  $ S.union (doE e2) (doE e3)
+    EWhile (Lam [(v1,_,t1)] bod1) (Lam [(v2,_,t2)] bod2) e ->
+        let s1 = S.delete v1 $doE bod1 
+            s2 = S.delete v1 $doE bod2    
+        in s1 `S.union` s2 `S.union` (doE e) 
+       
     EIndexScalar v e    -> S.insert v $ doE e
     EPrimApp _ _ els    -> doEs els
  where

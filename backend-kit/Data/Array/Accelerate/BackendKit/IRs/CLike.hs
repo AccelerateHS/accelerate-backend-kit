@@ -195,6 +195,12 @@ fvE ex =
     EConst _            -> S.empty
     EVr vr              -> S.singleton vr  
     ECond e1 e2 e3      -> S.union (fvE e1)  $ S.union (fvE e2) (fvE e3)
+    EWhile (Lam [(v1,t1)] bod1) 
+           (Lam [(v2,t2)] bod2) e -> 
+       let s1 = S.delete v1 $fvE bod1 
+           s2 = S.delete v1 $fvE bod2 
+           
+       in s1 `S.union` s2 `S.union` (fvE e) 
     EIndexScalar v e _  -> S.insert v $ fvE e
     EPrimApp _ _ els    -> fvEs els     
  where

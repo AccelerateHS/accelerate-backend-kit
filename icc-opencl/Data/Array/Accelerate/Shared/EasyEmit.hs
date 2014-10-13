@@ -588,6 +588,33 @@ rawFor (Syn forKeyword) init test incr bodyFn =
                                                           s3)) indent $
 	            body
 
+---------------------------------------------------------------------------
+-- Experimenting with While loops 
+---------------------------------------------------------------------------
+-- | While loops 
+while :: (Syntax -> [Syntax] -> EasyEmit ()) 
+      -> ([Syntax] -> EasyEmit ()) 
+      -> [Syntax] 
+      -> [Syntax] 
+      -> EasyEmit ()
+while primerfn bodyfn init state = 
+    do cv@(Syn cond_var) <- gensym "c" 
+       
+       emitLine $ Syn $ t"int" <+> cond_var 
+       primerfn cv init 
+              
+       (ls,oldcnt) <- S.get 
+       let (_,newcnt,body) = rawRunEasyEmit oldcnt (bodyfn state) 
+       let (_,newcnt2,primer) = rawRunEasyEmit newcnt (primerfn cv state) 
+       S.put (ls,newcnt2) 
+              
+       emitLine $ Syn$ hangbraces ("while"  <+> PP.parens cond_var) indent $ 
+                body <+> primer 
+
+      
+
+
+
 
 -- Helper used below:
 a <++> b | a P.== "" = b

@@ -69,7 +69,27 @@ doSpine env ex =
     -- Do we deal with functions here? OR do we pass them along to some later step?
     -- Do we assure, at this point, that bodys of lambdas have the sought property?
     --Adding a dummy for now 
-    EWhile _ _ _ -> return ex 
+    EWhile (Lam1 (v1,t1) bod1) (Lam1 (v2,t2) bod2) e ->  
+        do 
+          let env1 = M.insert v1 t1 env 
+          (bod1', bnds1) <- runWriterT$ doE env1 bod1 
+
+          let env2 = M.insert v2 t2 env 
+          (bod2', bnds2) <- runWriterT$ doE env2 bod2 
+
+          let bod1'' = discharge bnds1 bod1' 
+              bod2'' = discharge bnds2 bod2' 
+       
+          (e', bnds )  <- runWriterT$ doE env e 
+          return (discharge bnds$ EWhile (Lam1 (v1,t1) bod1'') 
+                                         (Lam1 (v2,t2) bod2'') e') 
+
+              
+                            
+
+                            
+
+-- return ex 
                                               
     -- ELet's may stay as well.  This is the "spine":
     ELet (v,t,rhs) bod    -> do (rhs',bnds) <- runWriterT (doE env rhs)
@@ -129,8 +149,15 @@ doE env ex =
                                     tell [(gensym, recoverExpType env ex, enew)]
                                     return (EVr gensym)
 
-    -- Dummy here as well, for now! 
-    EWhile _ _ _ -> return ex 
+    -- Not a dummy anymore
+    EWhile (Lam1 (v1,t1)  bod1) (Lam1 (v2,t2) bod2) e -> 
+        do 
+          bod1' <- doE (M.insert v1 t1 env) bod1 
+          bod2' <- doE (M.insert v2 t2 env) bod2
+          e'    <- doE env e 
+          return $ EWhile (Lam1 (v1,t1) bod1') (Lam1 (v2,t2) bod2') e' 
+
+
     -- Non-spine ELet's are lifted out:
     ELet (v,t,rhs) bod    -> do rhs' <- doE env rhs
                                 -- Inject new bindings for untupled scalars vars:
