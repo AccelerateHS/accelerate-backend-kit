@@ -1,24 +1,24 @@
-{-# LANGUAGE DeriveGeneric  #-}
-{-# LANGUAGE Rank2Types #-}
-{-# LANGUAGE MagicHash #-}
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE MagicHash           #-}
+{-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
--- | Utilities for working with the simplified representation of
---   Accelerate arrays on the Haskell heap.
--- 
---   These functions should mainly be used for constructing
---   interpreters and reference implementations.  Many of them are
---   unsuited for high-performance scenarios.
-module Data.Array.Accelerate.BackendKit.SimpleArray
-   ( 
-          
+-- | Utilities for working with the simplified representation of Accelerate
+--   arrays on the Haskell heap.
+--
+--   These functions should mainly be used for constructing interpreters and
+--   reference implementations. Many of them are unsuited for high-performance
+--   scenarios.
+--
+module Data.Array.Accelerate.BackendKit.SimpleArray (
+
      -- * Runtime Array data representation.
      AccArray(..), ArrayPayload(..),  -- Reexported from SimpleAST
 
      -- * Data invariant validation and recovery
      verifyAccArray, reglueArrayofTups,
-     
+
      -- * Functions for operating on `AccArray`s
      mapArray,
      splitComponent, numComponents,
@@ -26,47 +26,48 @@ module Data.Array.Accelerate.BackendKit.SimpleArray
      splitAccArray,
 
      -- * Functions for constructing `AccArray`s
-     Data.Array.Accelerate.BackendKit.SimpleArray.replicate,      
-     
+     Data.Array.Accelerate.BackendKit.SimpleArray.replicate,
+
      -- * Functions for operating on payloads (internal components of AccArrays)
+     listArray,
      payloadToPtr, payloadFromPtr,
      payloadToList, payloadsFromList, payloadsFromList1,
-     payloadLength, 
+     payloadLength,
      mapPayload, indexPayload,
-     
+
      applyToPayload, applyToPayload2, applyToPayload3,
      concatAccArrays
-   )
-   
-where 
 
-import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
-import Data.Array.Accelerate.BackendKit.Utils.Helpers (maybtrace)
+) where
 
-import           Control.Applicative ((<$>))
-import qualified Data.Array.IO     as IA
-import qualified Data.Array.MArray as MA
-import           Data.Array.Storable.Internals
-import qualified Data.Array.Unsafe as Un
-import           Data.Int
-import           Data.List          as L
-import qualified Data.Map          as M
-import           Data.Maybe   (catMaybes)
-import qualified Data.Primitive.ByteArray as BA
-import           Data.Primitive.Types (Addr(Addr))
-import           Data.Word
-import           Debug.Trace
-import           Foreign.C.Types
-import           Foreign.ForeignPtr
-import           Foreign.ForeignPtr.Unsafe
-import           Foreign.Marshal.Array (copyArray)
-import           Foreign.Storable      (Storable, sizeOf)
-import           GHC.Prim         (byteArrayContents#, newPinnedByteArray#)
-import           GHC.Ptr          (Ptr(Ptr), castPtr)
-import           System.IO.Unsafe (unsafePerformIO)
-import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
--- import GHC.Prim           (newPinnedByteArray#, byteArrayContents#,
---                            unsafeFreezeByteArray#, Int#, (*#))
+import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc   as S
+import Data.Array.Accelerate.BackendKit.Utils.Helpers   ( maybtrace )
+
+import Control.Applicative                              ( (<$>) )
+import Data.Array.Storable.Internals
+import Data.Int
+import Data.List                                        as L
+import Data.Maybe                                       ( catMaybes )
+import Data.Primitive.Types                             ( Addr( Addr))
+import Data.Word
+import Debug.Trace
+import Foreign.C.Types
+import Foreign.ForeignPtr
+import Foreign.ForeignPtr.Unsafe
+import Foreign.Marshal.Array                            ( copyArray )
+import Foreign.Storable                                 ( Storable, sizeOf )
+import System.IO.Unsafe                                 ( unsafePerformIO )
+import Text.PrettyPrint.GenericPretty                   ( Out(doc,docPrec), Generic )
+
+import qualified Data.Array.IO                          as IA
+import qualified Data.Array.MArray                      as MA
+import qualified Data.Array.Unsafe                      as Un
+import qualified Data.Map                               as M
+import qualified Data.Primitive.ByteArray               as BA
+
+import GHC.Prim         (byteArrayContents#, newPinnedByteArray#)
+import GHC.Ptr          (Ptr(Ptr), castPtr)
+
 ----------------------------------------------------------------------------------------------------
 -- Helper functions for working with Array data living on the Haskell heap:
 ----------------------------------------------------------------------------------------------------
@@ -75,7 +76,7 @@ import           Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
 --   large case dispatch on element type.
 payloadLength :: ArrayPayload -> Int
 payloadLength payl =
-  case payl of 
+  case payl of
 --    ArrayPayloadUnit       -> 0
     ArrayPayloadInt    arr -> arrLen arr
     ArrayPayloadInt8   arr -> arrLen arr
@@ -92,13 +93,13 @@ payloadLength payl =
     ArrayPayloadChar   arr -> arrLen arr
     ArrayPayloadBool   arr -> arrLen arr
     ArrayPayloadUnit   len -> len
- 
+
 
 -- | Dereference an element within a payload.  Payload is indexed in
 -- the same way as an array (single dimension, zero-based).
 indexPayload :: ArrayPayload -> Int -> Const
-indexPayload payl i = 
-  case payl of 
+indexPayload payl i =
+  case payl of
     ArrayPayloadInt    arr -> I   (arr `index` i)
     ArrayPayloadInt8   arr -> I8  (arr `index` i)
     ArrayPayloadInt16  arr -> I16 (arr `index` i)
@@ -112,7 +113,7 @@ indexPayload payl i =
     ArrayPayloadFloat  arr -> F   (arr `index` i)
     ArrayPayloadDouble arr -> D   (arr `index` i)
     ArrayPayloadChar   arr -> C   (arr `index` i)
-    ArrayPayloadBool   arr -> toBool (arr `index` i) 
+    ArrayPayloadBool   arr -> toBool (arr `index` i)
     ArrayPayloadUnit   len -> if i < len && i >= 0
                               then Tup []
                               else error $ "indexPayload: out of bounds index ("
@@ -132,16 +133,16 @@ applyToPayload fn payl = applyToPayload2 (\ a _ -> fn a) payl
 --   generic fashion (as Const type).
 applyToPayload2 :: (forall a . RawData a -> (Int -> Const) -> RawData a)
                 -> ArrayPayload -> ArrayPayload
-applyToPayload2 fn payl = 
-  case payl of 
+applyToPayload2 fn payl =
+  case payl of
 --    ArrayPayloadUnit       -> ArrayPayloadUnit
     ArrayPayloadInt    arr -> ArrayPayloadInt    (fn arr (\i -> I   (arr `index` i)))
     ArrayPayloadInt8   arr -> ArrayPayloadInt8   (fn arr (\i -> I8  (arr `index` i)))
     ArrayPayloadInt16  arr -> ArrayPayloadInt16  (fn arr (\i -> I16 (arr `index` i)))
-    ArrayPayloadInt32  arr -> ArrayPayloadInt32  (fn arr (\i -> I32 (arr `index` i))) 
+    ArrayPayloadInt32  arr -> ArrayPayloadInt32  (fn arr (\i -> I32 (arr `index` i)))
     ArrayPayloadInt64  arr -> ArrayPayloadInt64  (fn arr (\i -> I64 (arr `index` i)))
     ArrayPayloadWord   arr -> ArrayPayloadWord   (fn arr (\i -> W   (arr `index` i)))
-    ArrayPayloadWord8  arr -> ArrayPayloadWord8  (fn arr (\i -> W8  (arr `index` i))) 
+    ArrayPayloadWord8  arr -> ArrayPayloadWord8  (fn arr (\i -> W8  (arr `index` i)))
     ArrayPayloadWord16 arr -> ArrayPayloadWord16 (fn arr (\i -> W16 (arr `index` i)))
     ArrayPayloadWord32 arr -> ArrayPayloadWord32 (fn arr (\i -> W32 (arr `index` i)))
     ArrayPayloadWord64 arr -> ArrayPayloadWord64 (fn arr (\i -> W64 (arr `index` i)))
@@ -150,7 +151,7 @@ applyToPayload2 fn payl =
     ArrayPayloadChar   arr -> ArrayPayloadChar   (fn arr (\i -> C   (arr `index` i)))
     ArrayPayloadBool   arr -> ArrayPayloadBool -- Word8's represent bools
                               (fn arr (\i -> case arr `index` i of
-                                               0 -> B False 
+                                               0 -> B False
                                                _ -> B True))
     -- No values can actually change here.  WARNING: this plays fast and loose
     -- with error conditions.  In particular we should have to expose out-of-bounds access:
@@ -163,32 +164,34 @@ applyToPayload2 fn payl =
 --   which must all be the same type as the input.
 applyToPayload3 :: (Int -> (Int -> Const) -> [Const]) -> ArrayPayload -> ArrayPayload
 -- TODO!! The same-type-as-input restriction could be relaxed.
-applyToPayload3 fn payl = 
-  case payl of 
+applyToPayload3 fn payl =
+  case payl of
 --    ArrayPayloadUnit       -> ArrayPayloadUnit
-    ArrayPayloadInt    arr -> ArrayPayloadInt    (fromL (map unI  $ fn len (\i -> I   (arr `index` i))))
-    ArrayPayloadInt8   arr -> ArrayPayloadInt8   (fromL (map unI8 $ fn len (\i -> I8  (arr `index` i))))
-    ArrayPayloadInt16  arr -> ArrayPayloadInt16  (fromL (map unI16$ fn len (\i -> I16 (arr `index` i))))
-    ArrayPayloadInt32  arr -> ArrayPayloadInt32  (fromL (map unI32$ fn len (\i -> I32 (arr `index` i))))
-    ArrayPayloadInt64  arr -> ArrayPayloadInt64  (fromL (map unI64$ fn len (\i -> I64 (arr `index` i))))
-    ArrayPayloadWord   arr -> ArrayPayloadWord   (fromL (map unW  $ fn len (\i -> W   (arr `index` i))))
-    ArrayPayloadWord8  arr -> ArrayPayloadWord8  (fromL (map unW8 $ fn len (\i -> W8  (arr `index` i))))
-    ArrayPayloadWord16 arr -> ArrayPayloadWord16 (fromL (map unW16$ fn len (\i -> W16 (arr `index` i))))
-    ArrayPayloadWord32 arr -> ArrayPayloadWord32 (fromL (map unW32$ fn len (\i -> W32 (arr `index` i))))
-    ArrayPayloadWord64 arr -> ArrayPayloadWord64 (fromL (map unW64$ fn len (\i -> W64 (arr `index` i))))
-    ArrayPayloadFloat  arr -> ArrayPayloadFloat  (fromL (map unF  $ fn len (\i -> F   (arr `index` i))))
-    ArrayPayloadDouble arr -> ArrayPayloadDouble (fromL (map unD  $ fn len (\i -> D   (arr `index` i))))
-    ArrayPayloadChar   arr -> ArrayPayloadChar   (fromL (map unC  $ fn len (\i -> C   (arr `index` i))))
-    ArrayPayloadBool   arr -> ArrayPayloadBool   (fromL (map fromBool$ fn len (\i -> toBool (arr `index` i))))
+    ArrayPayloadInt    arr -> ArrayPayloadInt    (listArray (map unI  $ fn len (\i -> I   (arr `index` i))))
+    ArrayPayloadInt8   arr -> ArrayPayloadInt8   (listArray (map unI8 $ fn len (\i -> I8  (arr `index` i))))
+    ArrayPayloadInt16  arr -> ArrayPayloadInt16  (listArray (map unI16$ fn len (\i -> I16 (arr `index` i))))
+    ArrayPayloadInt32  arr -> ArrayPayloadInt32  (listArray (map unI32$ fn len (\i -> I32 (arr `index` i))))
+    ArrayPayloadInt64  arr -> ArrayPayloadInt64  (listArray (map unI64$ fn len (\i -> I64 (arr `index` i))))
+    ArrayPayloadWord   arr -> ArrayPayloadWord   (listArray (map unW  $ fn len (\i -> W   (arr `index` i))))
+    ArrayPayloadWord8  arr -> ArrayPayloadWord8  (listArray (map unW8 $ fn len (\i -> W8  (arr `index` i))))
+    ArrayPayloadWord16 arr -> ArrayPayloadWord16 (listArray (map unW16$ fn len (\i -> W16 (arr `index` i))))
+    ArrayPayloadWord32 arr -> ArrayPayloadWord32 (listArray (map unW32$ fn len (\i -> W32 (arr `index` i))))
+    ArrayPayloadWord64 arr -> ArrayPayloadWord64 (listArray (map unW64$ fn len (\i -> W64 (arr `index` i))))
+    ArrayPayloadFloat  arr -> ArrayPayloadFloat  (listArray (map unF  $ fn len (\i -> F   (arr `index` i))))
+    ArrayPayloadDouble arr -> ArrayPayloadDouble (listArray (map unD  $ fn len (\i -> D   (arr `index` i))))
+    ArrayPayloadChar   arr -> ArrayPayloadChar   (listArray (map unC  $ fn len (\i -> C   (arr `index` i))))
+    ArrayPayloadBool   arr -> ArrayPayloadBool   (listArray (map fromBool$ fn len (\i -> toBool (arr `index` i))))
     ArrayPayloadUnit   len -> ArrayPayloadUnit len
-  where 
+  where
    len       = payloadLength payl
    index a i = unsafePerformIO $ MA.readArray a i
 
 
 -- Various helpers:
 ----------------------------------------
-fromL l = unsafePerformIO $ MA.newListArray (0,length l - 1) l
+listArray :: Storable e => [e] -> RawData e
+listArray l = unsafePerformIO $ MA.newListArray (0,length l - 1) l
+
 toBool 0 = B False
 toBool _ = B True
 fromBool (B False) = 0
@@ -218,33 +221,33 @@ arrLen arr = unsafePerformIO $ MA.rangeSize `fmap` MA.getBounds arr
 --   mapped function must consistently map the same type of input
 --   Const to the same type of output Const, or a runtime error will
 --   be generated.
--- 
+--
 --   Note, this function must coalesce tuples-of-arrays into tuples of
 --   elements before those elements can be passed to the mapped function.
 mapArray :: (Const -> Const) -> AccArray -> AccArray
-mapArray fn (AccArray sh [pl]) = 
+mapArray fn (AccArray sh [pl]) =
   AccArray sh (mapPayload fn pl)
 
 -- This case is more complicated.  Here's where the coalescing happens.
-mapArray fn (AccArray sh pls) = 
+mapArray fn (AccArray sh pls) =
   -- For the time being we fall back to an extremely inefficient
   -- system.  This function should only ever be really be used for
   -- non-performance-critical reference implemenatations.
-  AccArray sh $ payloadsFromList1 $ 
-  map fn $ 
+  AccArray sh $ payloadsFromList1 $
+  map fn $
   map Tup $ L.transpose $ map payloadToList pls
 
 -- | Apply an elementwise function to a single payload.  The function
 --   must consistently map the same type of input to the same type of
 --   output `Const`.
--- 
+--
 --   The output for each precossed element may be a tuple, the number
 --   of elements within that tuple determines how many `ArrayPayload`s
 --   will reside in this function's output list.
 mapPayload :: (Const -> Const) -> ArrayPayload -> [ArrayPayload]
-mapPayload fn payl =   
---  tracePrint ("\nMapPayload of "++show payl++" was : ") $ 
-  case payl of        
+mapPayload fn payl =
+--  tracePrint ("\nMapPayload of "++show payl++" was : ") $
+  case payl of
     ArrayPayloadInt   arr  -> rebuild (fn . I  $ arr `index` 0) (fn . I  ) arr
     ArrayPayloadInt8  arr  -> rebuild (fn . I8 $ arr `index` 0) (fn . I8 ) arr
     ArrayPayloadInt16 arr  -> rebuild (fn . I16$ arr `index` 0) (fn . I16) arr
@@ -263,28 +266,28 @@ mapPayload fn payl =
   where
     index a i = unsafePerformIO $ MA.readArray a i
 
-    
+
 {-# INLINE rebuild #-}
 rebuild :: Storable e' => Const -> (e' -> Const) -> RawData e' -> [ArrayPayload]
-rebuild first fn arr = 
+rebuild first fn arr =
   case first of
     I   _ -> [ArrayPayloadInt    $ amap (unI   . fn) arr]
-    I8  _ -> [ArrayPayloadInt8   $ amap (unI8  . fn) arr]    
-    I16 _ -> [ArrayPayloadInt16  $ amap (unI16 . fn) arr]    
-    I32 _ -> [ArrayPayloadInt32  $ amap (unI32 . fn) arr]    
-    I64 _ -> [ArrayPayloadInt64  $ amap (unI64 . fn) arr]    
+    I8  _ -> [ArrayPayloadInt8   $ amap (unI8  . fn) arr]
+    I16 _ -> [ArrayPayloadInt16  $ amap (unI16 . fn) arr]
+    I32 _ -> [ArrayPayloadInt32  $ amap (unI32 . fn) arr]
+    I64 _ -> [ArrayPayloadInt64  $ amap (unI64 . fn) arr]
     W   _ -> [ArrayPayloadWord   $ amap (unW   . fn) arr]
-    W8  _ -> [ArrayPayloadWord8  $ amap (unW8  . fn) arr]    
-    W16 _ -> [ArrayPayloadWord16 $ amap (unW16 . fn) arr]    
-    W32 _ -> [ArrayPayloadWord32 $ amap (unW32 . fn) arr]    
-    W64 _ -> [ArrayPayloadWord64 $ amap (unW64 . fn) arr]        
+    W8  _ -> [ArrayPayloadWord8  $ amap (unW8  . fn) arr]
+    W16 _ -> [ArrayPayloadWord16 $ amap (unW16 . fn) arr]
+    W32 _ -> [ArrayPayloadWord32 $ amap (unW32 . fn) arr]
+    W64 _ -> [ArrayPayloadWord64 $ amap (unW64 . fn) arr]
     F   _ -> [ArrayPayloadFloat  $ amap (unF   . fn) arr]
     D   _ -> [ArrayPayloadDouble $ amap (unD   . fn) arr]
     C   _ -> [ArrayPayloadChar   $ amap (unC   . fn) arr]
     B   _ -> [ArrayPayloadBool   $ amap (unW8  . fn) arr]
     Tup [] -> [ArrayPayloadUnit $ arrLen arr]
-    Tup ls -> concatMap (\ (i,x) -> rebuild x (\ x -> tupref (fn x) i) arr) $ 
-              zip [0..] ls              
+    Tup ls -> concatMap (\ (i,x) -> rebuild x (\ x -> tupref (fn x) i) arr) $
+              zip [0..] ls
     oth -> error$"This constant should not be found inside an ArrayPayload: "++show oth
  where
    tupref (Tup ls) i = ls !! i
@@ -296,32 +299,31 @@ rebuild first fn arr =
 --   more `ArrayPayload`s.  Keep in mind that this is an inefficient
 --   thing to do, and in performant code you should never convert
 --   arrays to or from lists.
---   
+--
 --   The first argument is the exected element type.
---   
+--
 --   More than one `ArrayPayload` output is produced when the inputs
 --   are tuple constants.
 payloadsFromList :: Type -> [Const] -> [ArrayPayload]
-payloadsFromList ty ls = 
-  case ty of 
-    TInt   -> [ArrayPayloadInt    $ fromL $ map unI   ls]
-    TInt8  -> [ArrayPayloadInt8   $ fromL $ map unI8  ls]
-    TInt16  -> [ArrayPayloadInt16  $ fromL $ map unI16 ls]
-    TInt32  -> [ArrayPayloadInt32  $ fromL $ map unI32 ls]
-    TInt64  -> [ArrayPayloadInt64  $ fromL $ map unI64 ls]
-    TWord    -> [ArrayPayloadWord   $ fromL $ map unW   ls]
-    TWord8   -> [ArrayPayloadWord8  $ fromL $ map unW8  ls]
-    TWord16  -> [ArrayPayloadWord16 $ fromL $ map unW16 ls]
-    TWord32  -> [ArrayPayloadWord32 $ fromL $ map unW32 ls]
-    TWord64  -> [ArrayPayloadWord64 $ fromL $ map unW64 ls]
-    TFloat  -> [ArrayPayloadFloat  $ fromL $ map unF   ls]
-    TDouble -> [ArrayPayloadDouble $ fromL $ map unD   ls]
-    TChar   -> [ArrayPayloadChar   $ fromL $ map unC   ls]
-    TBool   -> [ArrayPayloadBool   $ fromL $ map fromBool ls]
-    TTuple [] -> [ArrayPayloadUnit $ length ls]
-    TTuple tys -> concatMap (uncurry payloadsFromList)                 
-                            (zip tys (L.transpose $ map unTup ls))
-    oth -> error$"payloadsFromList: This constant should not be found inside an ArrayPayload: "++show oth
+payloadsFromList ty ls =
+  case ty of
+    TInt        -> [ArrayPayloadInt    $ listArray $ map unI   ls]
+    TInt8       -> [ArrayPayloadInt8   $ listArray $ map unI8  ls]
+    TInt16      -> [ArrayPayloadInt16  $ listArray $ map unI16 ls]
+    TInt32      -> [ArrayPayloadInt32  $ listArray $ map unI32 ls]
+    TInt64      -> [ArrayPayloadInt64  $ listArray $ map unI64 ls]
+    TWord       -> [ArrayPayloadWord   $ listArray $ map unW   ls]
+    TWord8      -> [ArrayPayloadWord8  $ listArray $ map unW8  ls]
+    TWord16     -> [ArrayPayloadWord16 $ listArray $ map unW16 ls]
+    TWord32     -> [ArrayPayloadWord32 $ listArray $ map unW32 ls]
+    TWord64     -> [ArrayPayloadWord64 $ listArray $ map unW64 ls]
+    TFloat      -> [ArrayPayloadFloat  $ listArray $ map unF   ls]
+    TDouble     -> [ArrayPayloadDouble $ listArray $ map unD   ls]
+    TChar       -> [ArrayPayloadChar   $ listArray $ map unC   ls]
+    TBool       -> [ArrayPayloadBool   $ listArray $ map fromBool ls]
+    TTuple []   -> [ArrayPayloadUnit $ length ls]
+    TTuple tys  -> concatMap (uncurry payloadsFromList) (zip tys (L.transpose $ map unTup ls))
+    oth         -> error $ "payloadsFromList: This constant should not be found inside an ArrayPayload: " ++ show oth
 
 
 -- | Same as `payloadsFromList` but requires that the list be non-empty and all
@@ -329,31 +331,31 @@ payloadsFromList ty ls =
 --   `Const`s.
 payloadsFromList1 :: [Const] -> [ArrayPayload]
 payloadsFromList1 [] = error "payloadFromList1: cannot convert empty list -- what are the type of its contents?"
-payloadsFromList1 ls@(hd:_) = 
-  case hd of 
-    I   _ -> [ArrayPayloadInt    $ fromL $ map unI   ls]
-    I8  _ -> [ArrayPayloadInt8   $ fromL $ map unI8  ls]
-    I16 _ -> [ArrayPayloadInt16  $ fromL $ map unI16 ls]
-    I32 _ -> [ArrayPayloadInt32  $ fromL $ map unI32 ls]
-    I64 _ -> [ArrayPayloadInt64  $ fromL $ map unI64 ls]
-    W   _ -> [ArrayPayloadWord   $ fromL $ map unW   ls]
-    W8  _ -> [ArrayPayloadWord8  $ fromL $ map unW8  ls]
-    W16 _ -> [ArrayPayloadWord16 $ fromL $ map unW16 ls]
-    W32 _ -> [ArrayPayloadWord32 $ fromL $ map unW32 ls]
-    W64 _ -> [ArrayPayloadWord64 $ fromL $ map unW64 ls]
-    F   _ -> [ArrayPayloadFloat  $ fromL $ map unF   ls]
-    D   _ -> [ArrayPayloadDouble $ fromL $ map unD   ls]
-    C   _ -> [ArrayPayloadChar   $ fromL $ map unC   ls]
-    B   _ -> [ArrayPayloadBool   $ fromL $ map fromBool ls]
+payloadsFromList1 ls@(hd:_) =
+  case hd of
+    I   _ -> [ArrayPayloadInt    $ listArray $ map unI   ls]
+    I8  _ -> [ArrayPayloadInt8   $ listArray $ map unI8  ls]
+    I16 _ -> [ArrayPayloadInt16  $ listArray $ map unI16 ls]
+    I32 _ -> [ArrayPayloadInt32  $ listArray $ map unI32 ls]
+    I64 _ -> [ArrayPayloadInt64  $ listArray $ map unI64 ls]
+    W   _ -> [ArrayPayloadWord   $ listArray $ map unW   ls]
+    W8  _ -> [ArrayPayloadWord8  $ listArray $ map unW8  ls]
+    W16 _ -> [ArrayPayloadWord16 $ listArray $ map unW16 ls]
+    W32 _ -> [ArrayPayloadWord32 $ listArray $ map unW32 ls]
+    W64 _ -> [ArrayPayloadWord64 $ listArray $ map unW64 ls]
+    F   _ -> [ArrayPayloadFloat  $ listArray $ map unF   ls]
+    D   _ -> [ArrayPayloadDouble $ listArray $ map unD   ls]
+    C   _ -> [ArrayPayloadChar   $ listArray $ map unC   ls]
+    B   _ -> [ArrayPayloadBool   $ listArray $ map fromBool ls]
     Tup [] -> [ArrayPayloadUnit $ length ls] -- FIXME: check the type of the whole list.
-    Tup _ -> concatMap payloadsFromList1 $ 
+    Tup _ -> concatMap payloadsFromList1 $
              L.transpose $ map unTup ls
-    oth -> error$"payloadsFromList1: This constant should not be found inside an ArrayPayload: "++show oth      
+    oth -> error$"payloadsFromList1: This constant should not be found inside an ArrayPayload: "++show oth
 
 -- | Unpack a payload into a list of Const.  Inefficient!
 payloadToList :: ArrayPayload -> [Const]
-payloadToList payl =   
-  case payl of        
+payloadToList payl =
+  case payl of
     ArrayPayloadInt    arr -> map I  $ elems arr
     ArrayPayloadInt8   arr -> map I8 $ elems arr
     ArrayPayloadInt16  arr -> map I16$ elems arr
@@ -375,10 +377,10 @@ payloadToList payl =
 
 -- | Get a `ForeignPtr` to the raw storage of an array.
 --
--- PRECONDITION: The unboxed array must be pinned.    
+-- PRECONDITION: The unboxed array must be pinned.
 payloadToPtr :: ArrayPayload -> Ptr ()
-payloadToPtr payl = 
-  case payl of        
+payloadToPtr payl =
+  case payl of
     ArrayPayloadInt    arr -> castPtr $ storableArrayPtr arr
     ArrayPayloadInt8   arr -> castPtr $ storableArrayPtr arr
     ArrayPayloadInt16  arr -> castPtr $ storableArrayPtr arr
@@ -403,7 +405,7 @@ payloadToPtr payl =
 -- allocate space for results within Haskell as UArrays.
 payloadFromPtr :: Type -> Int -> Ptr Word8 -> IO ArrayPayload
 payloadFromPtr ty len srcPtr =
-  case ty of 
+  case ty of
     TInt    -> ArrayPayloadInt    <$> arr
     TInt8   -> ArrayPayloadInt8   <$> arr
     TInt16  -> ArrayPayloadInt16  <$> arr
@@ -419,7 +421,7 @@ payloadFromPtr ty len srcPtr =
     TChar   -> ArrayPayloadChar   <$> arr
     TBool   -> ArrayPayloadBool   <$> arr
     TTuple [] -> return (ArrayPayloadUnit len)
-    -- TTuple tys -> concatMap (uncurry payloadsFromList)                 
+    -- TTuple tys -> concatMap (uncurry payloadsFromList)
     --                         (zip tys (L.transpose $ map unTup ls))
     _ -> error$"payloadFromPtr: Unexpected array type: "++show ty
   where
@@ -441,33 +443,33 @@ storableArrayPtr (StorableArray _ _ _ fp) = unsafeForeignPtrToPtr fp
 --   the same element.  This deals with constructing the appropriate
 --   type of payload to match the type of constant (which is otherwise
 --   a large case statement).
-replicate :: [Int] -> Const -> AccArray 
+replicate :: [Int] -> Const -> AccArray
 replicate dims const = AccArray dims (payload const)
-  where 
+  where
     len = foldl (*) 1 dims
-    payload const = 
-     case const of 
-       I   x -> [ArrayPayloadInt   (fromL$ Prelude.replicate len x)]
-       I8  x -> [ArrayPayloadInt8  (fromL$ Prelude.replicate len x)]
-       I16 x -> [ArrayPayloadInt16 (fromL$ Prelude.replicate len x)]
-       I32 x -> [ArrayPayloadInt32 (fromL$ Prelude.replicate len x)]
-       I64 x -> [ArrayPayloadInt64 (fromL$ Prelude.replicate len x)]
-       W   x -> [ArrayPayloadWord   (fromL$ Prelude.replicate len x)]
-       W8  x -> [ArrayPayloadWord8  (fromL$ Prelude.replicate len x)]       
-       W16 x -> [ArrayPayloadWord16 (fromL$ Prelude.replicate len x)]
-       W32 x -> [ArrayPayloadWord32 (fromL$ Prelude.replicate len x)]
-       W64 x -> [ArrayPayloadWord64 (fromL$ Prelude.replicate len x)]
-       F x -> [ArrayPayloadFloat  (fromL$ Prelude.replicate len x)]
-       D x -> [ArrayPayloadDouble (fromL$ Prelude.replicate len x)]
-       C x -> [ArrayPayloadChar   (fromL$ Prelude.replicate len x)]
-       B x -> [ArrayPayloadBool   (fromL$ Prelude.replicate len (fromBool const))]
+    payload const =
+     case const of
+       I   x  -> [ArrayPayloadInt    (listArray $ Prelude.replicate len x)]
+       I8  x  -> [ArrayPayloadInt8   (listArray $ Prelude.replicate len x)]
+       I16 x  -> [ArrayPayloadInt16  (listArray $ Prelude.replicate len x)]
+       I32 x  -> [ArrayPayloadInt32  (listArray $ Prelude.replicate len x)]
+       I64 x  -> [ArrayPayloadInt64  (listArray $ Prelude.replicate len x)]
+       W   x  -> [ArrayPayloadWord   (listArray $ Prelude.replicate len x)]
+       W8  x  -> [ArrayPayloadWord8  (listArray $ Prelude.replicate len x)]
+       W16 x  -> [ArrayPayloadWord16 (listArray $ Prelude.replicate len x)]
+       W32 x  -> [ArrayPayloadWord32 (listArray $ Prelude.replicate len x)]
+       W64 x  -> [ArrayPayloadWord64 (listArray $ Prelude.replicate len x)]
+       F x    -> [ArrayPayloadFloat  (listArray $ Prelude.replicate len x)]
+       D x    -> [ArrayPayloadDouble (listArray $ Prelude.replicate len x)]
+       C x    -> [ArrayPayloadChar   (listArray $ Prelude.replicate len x)]
+       B x    -> [ArrayPayloadBool   (listArray $ Prelude.replicate len (fromBool const))]
        Tup [] -> [ArrayPayloadUnit len]
-       Tup ls -> concatMap payload ls 
+       Tup ls -> concatMap payload ls
 -- TODO -- add all C array types to the ArrayPayload type:
---            | CF CFloat   | CD CDouble 
+--            | CF CFloat   | CD CDouble
 --            | CS  CShort  | CI  CInt  | CL  CLong  | CLL  CLLong
 --            | CUS CUShort | CUI CUInt | CUL CULong | CULL CULLong
---            | CC  CChar   | CSC CSChar | CUC CUChar 
+--            | CC  CChar   | CSC CSChar | CUC CUChar
 
 
 -- | An AccArray stores an array of tuples.  This function reports how
@@ -480,35 +482,35 @@ numComponents (AccArray _ payloads) = length payloads
 --   represents an array of tuples.  This returns two new AccArrays,
 --   the first of which is a scalar, and the second of which contains
 --   all remaining components.
--- 
+--
 --   If there are less than two components, this function raises a
 --   runtime error.
 splitComponent :: AccArray -> (AccArray, AccArray)
-splitComponent (AccArray sh (h1:h2:rst)) = 
+splitComponent (AccArray sh (h1:h2:rst)) =
   (AccArray sh [h1], AccArray sh (h2:rst))
-splitComponent x@(AccArray _ ls) = 
+splitComponent x@(AccArray _ ls) =
   error$ "splitComponent: input array has only "++show(length ls)++
          " components, needs at least two:\n   "++ show x
 
 
 
 -- | Dereference an element from an AccArray.
--- 
+--
 -- This uses the most basic possible representation of
 -- multidimensional indices, namely "[Int]"
--- 
+--
 -- Note that these indices are the REVERSE of the Accelerate source
 -- representation.  Fastest varying index is the LEFTMOST.
 indexArray ::  AccArray -> [Int] -> Const
 -- Index into a Scalar:
-indexArray (AccArray dims payloads) ind | length ind /= length dims = 
+indexArray (AccArray dims payloads) ind | length ind /= length dims =
   error$"indexArray: array dimensions were "++show dims++" but index was of different length: "++ show ind
 indexArray (AccArray []   payloads) []  = tuple $ map (`indexPayload` 0)        payloads
-indexArray (AccArray dims payloads) ind = 
+indexArray (AccArray dims payloads) ind =
      maybtrace ("[dbg] Indexing array "++show ind++" multipliers "++show multipliers++" pos "++show position
-                ++" array:\n          "++show (AccArray dims payloads)) $ 
+                ++" array:\n          "++show (AccArray dims payloads)) $
      tuple $ map (`indexPayload` position) payloads
-  where 
+  where
     -- How many elements do we per increment of this dimension?  Rightmost is fastest changing.
     -- multipliers = scanr (*) 1 (init dims) -- The rightmost gets a 1 multiplier.
     multipliers = scanl (*) 1 (tail dims) -- The leftmost gets a 1 multiplier.
@@ -519,20 +521,20 @@ tuple :: [Const] -> Const
 tuple [x] = x
 tuple ls  = Tup ls
 
--- | Take a list of arrays of equal shape and concat them into a single AccArray.  
+-- | Take a list of arrays of equal shape and concat them into a single AccArray.
 concatAccArrays :: [S.AccArray] -> S.AccArray
 concatAccArrays [] = error "concatAccArrays: Cannot zip an empty list of AccArrays (don't know dimension)"
-concatAccArrays origls = 
-  maybtrace (" [dbg] concatAccArrays: dims "++show dims++", lens "++show lens) $ 
+concatAccArrays origls =
+  maybtrace (" [dbg] concatAccArrays: dims "++show dims++", lens "++show lens) $
   if not (allSame lens)
   then error$"concatAccArrays: mismatch in lengths: "++show lens
   else if not (allSame dims)
        then error$"concatAccArrays: mismatch in dims: "++show dims
        else S.AccArray (head dims) payls
- where 
+ where
   lens = L.map payloadLength payls
   payls = concat paylss
-  (dims,paylss) = unzip [ (dim,payls) | S.AccArray dim payls <- origls ] 
+  (dims,paylss) = unzip [ (dim,payls) | S.AccArray dim payls <- origls ]
   allSame (hd:tl) = all (==hd) tl
   allSame []      = True
 
@@ -546,7 +548,7 @@ verifyAccArray ty (AccArray shp cols) =
   case ty of
     TArray d elt ->
       let expectedCols = flattenTy elt in -- FIXME: handling units..
-      re$ unlines $ catMaybes $      
+      re$ unlines $ catMaybes $
       ((if d /= length shp
         then Just$"AccArray shape "++show shp++" doesn't match dimension in type: "++show d
         else Nothing) :
@@ -562,7 +564,7 @@ verifyAccArray ty (AccArray shp cols) =
  where
    expectedSize = product shp
    re ""  = Nothing
-   re str = Just str   
+   re str = Just str
    mismatchErr msg got expected = msg++" does not match expected. "++
                                   "\nGot:      "++show got ++
                                   "\nExpected: "++show expected
@@ -570,26 +572,26 @@ verifyAccArray ty (AccArray shp cols) =
      if got == expected
      then Nothing
      else Just(mismatchErr msg got expected)
-   -- Enhance the message with more info:       
-   tag  = map (fmap 
+   -- Enhance the message with more info:
+   tag  = map (fmap
                (++"\nAccArray contents: "++
                 unlines (map ((take 70) . show) cols)))
 
 
 -- | Some backends end up with a flatter representation than they want after
 -- flattening out both array level tuples and scalar tuples /inside/ arrays.
--- 
+--
 -- Given an [overly] flat list of "singleton" AccArrays, this does a type-guided
 -- repackaging to produce a, possibly shorter, list of AccArrays that reassociate the
 -- individual components of an array-of-tuples.
--- 
+--
 -- The result should match the provided type (or an error is thrown).
 reglueArrayofTups :: S.Type -> [S.AccArray] -> [S.AccArray]
-reglueArrayofTups ty0 ls0 = 
---   trace ("reglueArrayofTups "++show (ty0,ls0)++" -> "++show result) $ 
+reglueArrayofTups ty0 ls0 =
+--   trace ("reglueArrayofTups "++show (ty0,ls0)++" -> "++show result) $
    result
-  where 
-   result = case ty0 of 
+  where
+   result = case ty0 of
              TTuple tys -> loop tys   ls0
              oth        -> loop [oth] ls0
    notEnough = error $ "reglueArrayofTups: not enough payloads to fulfill type "++show ty0++": "++show ls0
@@ -604,26 +606,26 @@ reglueArrayofTups ty0 ls0 =
    loop _  [] = notEnough
    loop [] _  = error $ "reglueArrayofTups: too many payloads ("++show(length ls0)
                         ++") to fulfill type "++show ty0++": "++(take 160$ show ls0)
-   loop (TArray dim elt : tys) arrs = 
-      let scalars  = myflatten elt 
+   loop (TArray dim elt : tys) arrs =
+      let scalars  = myflatten elt
           expected = length scalars
-          (batch,rest) = splitAt expected arrs 
+          (batch,rest) = splitAt expected arrs
       in
-      -- trace ("reglueArrayofTups: got batch "++show (scalars, (batch,rest))) $ 
-      if expected == 0 
+      -- trace ("reglueArrayofTups: got batch "++show (scalars, (batch,rest))) $
+      if expected == 0
       then error$"reglueArrayofTups: internal invariant broken, why does this array need zero values?: "++show (TArray dim elt)
-      else if length batch /= expected then notEnough else 
+      else if length batch /= expected then notEnough else
        case batch of
          [] -> notEnough
-         (AccArray dims0 [payload0] : rst ) -> 
-          let payloads = reverse $ 
-                     foldl (\ acc (S.AccArray dims1 [payl]) -> 
-                              if dims0 == dims1 
+         (AccArray dims0 [payload0] : rst ) ->
+          let payloads = reverse $
+                     foldl (\ acc (S.AccArray dims1 [payl]) ->
+                              if dims0 == dims1
                               then payl:acc
                               else error$"reglueArrayofTups: two arrays to be zipped have different dims: "
                                          ++show dims0++", vs "++show dims1)
                            [payload0] rst
-          in AccArray dims0 payloads 
+          in AccArray dims0 payloads
              : loop tys rest
 
    loop (TTuple ls1 : ls2) arrs = loop (ls1++ls2) arrs
@@ -639,17 +641,17 @@ type ErrorMsg = String
 -- | Split an AccArray into K pieces along the outermost dimension.  The outermost
 -- dimension corresponds to cutting the actual memory buffers into even (contiguous)
 -- pieces.
--- 
+--
 -- If the size of the array does not divide evenly, the last parttion gets the extra
 -- data.
 splitAccArray :: Int -> AccArray -> [AccArray]
-splitAccArray pieces (AccArray dims payls) 
+splitAccArray pieces (AccArray dims payls)
   | pieces < 1 = error $"splitAccArray: Cannot split into less than one piece: "++show pieces
   | qt < 1 = error$ "AccArray of dimensions "++show dims++" cannot be split into "++show pieces++" pieces along outer (last) dim!"
-  | otherwise = 
-    -- trace ("splitAccArray, "++show (size,qt,rem,rest,outer)) $ 
-    zipWith AccArray allDims $ 
-    L.transpose $ 
+  | otherwise =
+    -- trace ("splitAccArray, "++show (size,qt,rem,rest,outer)) $
+    zipWith AccArray allDims $
+    L.transpose $
     map (splitPayload size pieces) payls
  where
   allDims     = L.replicate (pieces-1) newDims ++ [newDimsLast]
@@ -660,28 +662,28 @@ splitAccArray pieces (AccArray dims payls)
   (rest,outer) = splitLast dims
 
 splitPayload :: Int -> Int -> ArrayPayload -> [ArrayPayload]
-splitPayload n k payl =   
-  -- tracePrint ("\nsplitPayload of "++show payl++" was : ") $ 
+splitPayload n k payl =
+  -- tracePrint ("\nsplitPayload of "++show payl++" was : ") $
   case payl of
     ArrayPayloadInt  arr  -> map ArrayPayloadInt   $ splitArrays n k arr
-    ArrayPayloadInt8  arr -> map ArrayPayloadInt8  $ splitArrays n k arr 
-    ArrayPayloadInt16 arr -> map ArrayPayloadInt16 $ splitArrays n k arr 
-    ArrayPayloadInt32 arr -> map ArrayPayloadInt32 $ splitArrays n k arr 
-    ArrayPayloadInt64 arr -> map ArrayPayloadInt64 $ splitArrays n k arr 
-    ArrayPayloadWord   arr -> map ArrayPayloadWord $ splitArrays n k arr 
-    ArrayPayloadWord8  arr -> map ArrayPayloadWord8 $ splitArrays n k arr 
-    ArrayPayloadWord16 arr -> map ArrayPayloadWord16 $ splitArrays n k arr  
-    ArrayPayloadWord32 arr -> map ArrayPayloadWord32 $ splitArrays n k arr  
-    ArrayPayloadWord64 arr -> map ArrayPayloadWord64 $ splitArrays n k arr  
-    ArrayPayloadFloat  arr -> map ArrayPayloadFloat $ splitArrays n k arr  
-    ArrayPayloadDouble arr -> map ArrayPayloadDouble $ splitArrays n k arr  
-    ArrayPayloadChar   arr -> map ArrayPayloadChar $ splitArrays n k arr 
-    ArrayPayloadBool   arr -> map ArrayPayloadBool $ splitArrays n k arr 
-    ArrayPayloadUnit   len -> let (q,r) = quotRem len n in 
+    ArrayPayloadInt8  arr -> map ArrayPayloadInt8  $ splitArrays n k arr
+    ArrayPayloadInt16 arr -> map ArrayPayloadInt16 $ splitArrays n k arr
+    ArrayPayloadInt32 arr -> map ArrayPayloadInt32 $ splitArrays n k arr
+    ArrayPayloadInt64 arr -> map ArrayPayloadInt64 $ splitArrays n k arr
+    ArrayPayloadWord   arr -> map ArrayPayloadWord $ splitArrays n k arr
+    ArrayPayloadWord8  arr -> map ArrayPayloadWord8 $ splitArrays n k arr
+    ArrayPayloadWord16 arr -> map ArrayPayloadWord16 $ splitArrays n k arr
+    ArrayPayloadWord32 arr -> map ArrayPayloadWord32 $ splitArrays n k arr
+    ArrayPayloadWord64 arr -> map ArrayPayloadWord64 $ splitArrays n k arr
+    ArrayPayloadFloat  arr -> map ArrayPayloadFloat $ splitArrays n k arr
+    ArrayPayloadDouble arr -> map ArrayPayloadDouble $ splitArrays n k arr
+    ArrayPayloadChar   arr -> map ArrayPayloadChar $ splitArrays n k arr
+    ArrayPayloadBool   arr -> map ArrayPayloadBool $ splitArrays n k arr
+    ArrayPayloadUnit   len -> let (q,r) = quotRem len n in
                               (L.replicate (q-1) (ArrayPayloadUnit n))
                               ++ [ArrayPayloadUnit (n+r)]
 
--- | Takes a specific chunksize for the output partitions. 
+-- | Takes a specific chunksize for the output partitions.
 --   Any elements left over go in the final array.
 splitArrays
     :: Storable elt
@@ -691,7 +693,7 @@ splitArrays
     -> [RawData elt]
 splitArrays size howmany arr =
   -- trace(" CUTTING ARRAY, bounds "++show(low,high)++", size "++show size++", quotRem: "++show (howmany,leftover))$
-  [ fromL s | s <- cut (howmany-1) xs ]
+  [ listArray s | s <- cut (howmany-1) xs ]
   where
     xs          = unsafePerformIO $ MA.getElems arr
     cut 0 r     = [r]
@@ -701,9 +703,9 @@ splitArrays size howmany arr =
 
 -- Scratch:
 t0 :: RawData Int
-t0 = fromL [1..12]
+t0 = listArray [1..12]
 
-t0b :: AccArray 
+t0b :: AccArray
 -- t0b = AccArray [3,2,2] [ArrayPayloadInt t0, ArrayPayloadInt t0]
 t0b = AccArray [2,2,3] [ArrayPayloadInt t0, ArrayPayloadInt t0]
 
@@ -711,14 +713,14 @@ p0 = splitAccArray 2 t0b
 v0 = map (verifyAccArray (TArray 3 (TTuple [TInt,TInt]))) p0
 
 t1 :: RawData Char
-t1 = fromL ['a'..'j']
+t1 = listArray ['a'..'j']
 
 p1 = splitArrays 5 2 t1
 
 go :: IO ()
-go = 
-  case t0 of 
-    StorableArray l u nn _fp -> 
+go =
+  case t0 of
+    StorableArray l u nn _fp ->
       putStrLn $ "HMM "++show (l,u,nn)
 
 -- last and init functions together.  I wonder if it's actually faster.
@@ -726,6 +728,4 @@ splitLast :: [a] -> ([a], a)
 splitLast [] = error "splitLast: given null list"
 splitLast [x] = ([],x)
 splitLast (h:tl) = let (r,x) = splitLast tl in (h:r,x)
-
-  
 
