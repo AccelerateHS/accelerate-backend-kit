@@ -1,31 +1,36 @@
-{-# LANGUAGE RankNTypes, ScopedTypeVariables, GADTs #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE FlexibleContexts, FlexibleInstances #-}
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DeriveDataTypeable  #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeOperators       #-}
 
 module Main where
 
 import Data.Array.Accelerate.DynamicAcc2
 
-import           Data.Array.Accelerate as A hiding ((++))
-import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc (Type(..), Const(..), FloatPrim(..))
+import Data.Array.Accelerate                                    as A hiding ( (++) )
+import Data.Array.Accelerate.Interpreter                        as I
+import Data.Array.Accelerate.BackendKit.SimpleArray             ( listArray )
+import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc           ( Type(..), Const(..), FloatPrim(..) )
+import Data.Array.Accelerate.BackendKit.Tests                   ( allProgs, allProgsMap, TestEntry(..), AccProg(..) )
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
-import           Data.Array.Accelerate.BackendKit.Tests (allProgs, allProgsMap, TestEntry(..), AccProg(..))
-import           Data.Array.Accelerate.Interpreter as I
-import qualified Data.Array.Unboxed as U
-import           Data.Map as M
-import           Prelude as P 
-import qualified Test.Framework as TF
-import           Test.Framework.Providers.HUnit (testCase)
-import           Test.Framework.TH (testGroupGenerator)
-import qualified Test.HUnit as H 
 
---------------------------------------------------------------------------------  
+import Prelude                                                  as P
+import Data.Map                                                 as M
+
+import Test.Framework.Providers.HUnit                           ( testCase )
+import Test.Framework.TH                                        ( testGroupGenerator )
+import qualified Test.Framework                                 as TF
+import qualified Test.HUnit                                     as H
+
+--------------------------------------------------------------------------------
 -- Misc, Tests, and Examples
---------------------------------------------------------------------------------  
+--------------------------------------------------------------------------------
 
 
 {-
@@ -38,16 +43,16 @@ t0b = downcastA t0
 -}
 
 t1 = -- convertClosedExp
-     convertOpenExp emptyEnvPack 
+     convertOpenExp emptyEnvPack
      (S.ECond (S.EConst (B True)) (S.EConst (I 33)) (S.EConst (I 34)))
 t1_ :: A.Exp Int
 t1_ = downcastE t1
 case_if = H.assertEqual "if and const" (show t1_) "33"
 
 t2 :: SealedExp
-t2 = convertOpenExp emptyEnvPack 
+t2 = convertOpenExp emptyEnvPack
      (S.ELet (v, TInt, (S.EConst (I 33))) (S.EVr v))
- where v = S.var "v" 
+ where v = S.var "v"
 t2_ :: Exp Int
 t2_ = downcastE t2
 case_const = H.assertEqual "simple const" (show t2_) "33"
@@ -95,7 +100,7 @@ t8d = convertAcc (S.Unit (S.ETuple [S.EConst (I 11), S.ETuple [S.EConst (F 3.3),
 
 
 t9 = convertOpenAcc emptyEnvPack $
-     S.Use$ S.AccArray [10] [S.ArrayPayloadInt (U.listArray (0,9) [1..10])]
+     S.Use$ S.AccArray [10] [S.ArrayPayloadInt (listArray [1..10])]
 t9_ :: Acc (Vector Int)
 t9_ = downcastA t9
 case_use = H.assertEqual "use array" (show $ I.run$ t9_)
@@ -158,7 +163,7 @@ ref13 = A.generate (constant (Z :. (3::Int) :. (2 :: Int) :. (1 :: Int)))
 -- SimpleAcc we represent shapes merely as tuples.
 t14 = convertOpenAcc emptyEnvPack $
 --      S.Generate (S.ETuple [S.EConst (I8 3), S.EConst (I16 2), S.EConst (I32 1)]) -- This should be a typechecking error
-      S.Generate (S.ETuple [S.EConst (I 3), S.EConst (I 2), S.EConst (I 1)]) 
+      S.Generate (S.ETuple [S.EConst (I 3), S.EConst (I 2), S.EConst (I 1)])
                  (S.Lam1 (v, TTuple [TInt,TInt,TInt]) (S.EVr v))
 -- t14_ :: Acc (Array DIM3 (Int,(Int,Int)))
 -- t14_ :: Acc (Array DIM3 (Int,Int,Int))
@@ -175,7 +180,7 @@ ref14 = A.generate (constant (Z :. (3::Int) :. (2 :: Int) :. (1 :: Int)))
                  in lift (a,(b,c)))
 
 i15 = convertOpenAcc emptyEnvPack $
-      S.Generate (S.ETuple [S.EConst (I 3), S.EConst (I 2), S.EConst (I 1)]) 
+      S.Generate (S.ETuple [S.EConst (I 3), S.EConst (I 2), S.EConst (I 1)])
                  (S.Lam1 (v, TTuple [TInt,TInt,TInt])
                   (S.ETuple [ S.ETuple [(S.ETupProject 0 1 (S.EVr v)),
                                        (S.ETupProject 1 1 (S.EVr v))],
@@ -245,7 +250,7 @@ case_const0 = H.assertEqual "int const" (show c0_) "99"
 case_const1 :: H.Assertion
 case_const1 = H.assertEqual "tuple repr 1"
             (show c1)  "Sealed:(Int,Int32,Int64)"
-            
+
 case_const2 :: H.Assertion
 case_const2 = H.assertEqual "tuple repr 2"
             (show c2) "Sealed:((Int,Int32),Int64)"
@@ -262,10 +267,10 @@ allProg_tests = TF.testGroup "Backend kit unit tests" $
 -- p12e, which seems to indicate a bug.
 
 roundTrip :: TestEntry -> IO ()
-roundTrip TestEntry{name, simpleProg, origProg= AccProg (acc :: Acc aty) } = do 
+roundTrip TestEntry{name, simpleProg, origProg= AccProg (acc :: Acc aty) } = do
   let cvt :: Acc aty
       cvt = downcastA $ convertProg simpleProg
-  dbgtrace ("RoundTripping:\n" ++ show acc) $ 
+  dbgtrace ("RoundTripping:\n" ++ show acc) $
    H.assertEqual ("roundTrip "++name)
                  (show$ I.run cvt)
                  (show$ I.run acc)
