@@ -166,6 +166,8 @@ Test-suite test-accelerate-backend-kit-simple-interp
 -- that all test programs go through without error.
 --
 Test-Suite test-accelerate-main-interp
+  buildable:            False
+
   type:                 exitcode-stdio-1.0
   main-is:              TestInterp.hs
   hs-source-dirs:       tests/
