@@ -210,7 +210,7 @@ Test-Suite test-dynamic-acc
                         HUnit,
                         mtl,
                         pretty                          >= 1.0 && < 1.2,
-                        primitive
+                        primitive,
                         random                          >= 1.0,
                         split                           >= 0.2,
                         test-framework,
@@ -219,6 +219,7 @@ Test-Suite test-dynamic-acc
                         time                            >= 1.4
 
 -- Test of up and down conversions
+--
 Test-Suite test-accelerate-backend-kit-liftdrop-interp
   type:                 exitcode-stdio-1.0
   main-is:              TestLiftDrop.hs
@@ -226,7 +227,7 @@ Test-Suite test-accelerate-backend-kit-liftdrop-interp
   ghc-options:          -Wall -threaded -rtsopts -with-rtsopts=-N
   default-language:     Haskell2010
   build-depends:        accelerate                      == 0.16.*,
-                        accelerate-backend-kit          == 0.16.*
+                        accelerate-backend-kit          == 0.16.*,
                         array                           >= 0.3,
                         base >= 4,
                         bytestring,
