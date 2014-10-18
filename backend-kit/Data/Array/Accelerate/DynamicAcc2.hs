@@ -1,85 +1,82 @@
-{-# LANGUAGE RankNTypes, ScopedTypeVariables, GADTs #-} 
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE FlexibleContexts, FlexibleInstances #-}
-{-# LANGUAGE DeriveDataTypeable #-}
-
+{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DeriveDataTypeable  #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators       #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 -- | A library for the runtime construction of fully typed Accelerate programs.
--- 
--- In contrast with DynamicAcc.hs, this version uses the "Smart"
--- (HOAS) AST representation, rather than going straight to type-level
--- De-bruijn indices.
 --
--- TODO: If we want to use this seriously, then switch to template
--- Haskell or some other, better boilerplate elimination mechanism,
--- not CPP macros.
+-- In contrast with DynamicAcc.hs, this version uses the "Smart" (HOAS) AST
+-- representation, rather than going straight to type-level De-bruijn indices.
 --
--- TODO: We should simply TYPECHECK SimpleAcc expressions to get nice
--- error messages before putting them into the dynamic casting meat
--- grinder below.
+-- TODO: If we want to use this seriously, then switch to template Haskell or
+-- some other, better boilerplate elimination mechanism, not CPP macros.
+--
+-- TODO: We should simply TYPECHECK SimpleAcc expressions to get nice error
+-- messages before putting them into the dynamic casting meat grinder below.
 
-module Data.Array.Accelerate.DynamicAcc2
-       (
+module Data.Array.Accelerate.DynamicAcc2 (
 
-         -- * Functions to convert `SimpleAcc` programs into fully-typed Accelerate
-         --   programs.
-         convertProg, convertAcc, convertExp, 
+   -- * Functions to convert `SimpleAcc` programs into fully-typed Accelerate
+   --   programs.
+   convertProg, convertAcc, convertExp,
 
-         -- * Dynamically typed AST pieces
-         SealedExp, SealedAcc,
-         downcastE, downcastA,
+   -- * Dynamically typed AST pieces
+   SealedExp, SealedAcc,
+   downcastE, downcastA,
 
-         -- * Computing types at runtime so as to downcast:
-         scalarTypeD, SealedEltTuple(..), 
-         shapeTypeD,  SealedShapeType(..), 
-         arrayTypeD,  SealedArrayType(..),         
+   -- * Computing types at runtime so as to downcast:
+   scalarTypeD, SealedEltTuple(..),
+   shapeTypeD,  SealedShapeType(..),
+   arrayTypeD,  SealedArrayType(..),
 
-         -- * Operating on open array and scalar expressions:
-         convertOpenAcc, convertOpenExp,
-         emptyEnvPack, extendA, extendE, 
-         
-         -- * REEXPORTs: for convenience
-         Type(..), Const(..), Phantom(..),
+   -- * Operating on open array and scalar expressions:
+   convertOpenAcc, convertOpenExp,
+   emptyEnvPack, extendA, extendE,
 
-         -- * INTERNAL: Syntax-constructing functions, operating over
-         -- `Sealed`, dynamic representations.
-         constantE, useD, unitD, mapD, generateD, foldD, dbgtrace
-       )
-       where
+   -- * REEXPORTs: for convenience
+   Type(..), Const(..), Phantom(..),
 
-import           Data.Array.Accelerate                          as A hiding ((++))
+   -- * INTERNAL: Syntax-constructing functions, operating over
+   -- `Sealed`, dynamic representations.
+   constantE, useD, unitD, mapD, generateD, foldD, dbgtrace
+
+) where
+
+import Data.Array.Accelerate.BackendKit.CompilerPipeline        ( phase0, phase1 )
+import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc           ( Type(..), Const(..), AVar, Var, Prog(..) , Prim(..), NumPrim(..), IntPrim(..), FloatPrim(..), ScalarPrim(..) )
+import Data.Array.Accelerate.BackendKit.Phase1.ToAccClone       ( repackAcc, expType, convertSliceIndex )
+import Data.Array.Accelerate.BackendKit.Utils.Helpers           ( Phantom(Phantom), maybtrace, dbg )
+
+import Data.Array.Accelerate                                    as A hiding ( (++) )
 import qualified Data.Array.Accelerate.AST                      as AST
 import qualified Data.Array.Accelerate.Smart                    as Sm
 import qualified Data.Array.Accelerate.Type                     as T
 import qualified Data.Array.Accelerate.Trafo                    as Trafo
--- import           Data.Array.Accelerate.Array.Representation (SliceIndex(..))
-import qualified Data.Array.Accelerate.Array.Representation as R
-import qualified Data.Array.Accelerate.Array.Sugar as Sug
+import qualified Data.Array.Accelerate.Array.Representation     as R
+import qualified Data.Array.Accelerate.Array.Sugar              as Sug
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
-import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
-                   (Type(..), Const(..), AVar, Var, Prog(..), 
-                    Prim(..), NumPrim(..), IntPrim(..), FloatPrim(..), ScalarPrim(..))
-import           Data.Array.Accelerate.BackendKit.Phase1.ToAccClone (repackAcc, expType, convertSliceIndex)
-import           Data.Array.Accelerate.BackendKit.Utils.Helpers (Phantom(Phantom), maybtrace, dbg)
 
-import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1)
+import Control.Exception                                        ( assert )
+import Data.Dynamic                                             ( Typeable, Dynamic, fromDynamic, toDyn, typeOf )
+import Data.Bits                                                as B
+import Data.Map                                                 as M
+import Prelude                                                  as P
+import Text.PrettyPrint.GenericPretty                           ( Out(doc,docPrec), Generic )
 
-import Control.Exception (assert)
-import Data.Bits as B
-import Data.Dynamic (Typeable, Dynamic, fromDynamic, toDyn, typeOf)
-import Data.Map as M
 import Debug.Trace
-import Prelude as P 
-import Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
 
-dbgtrace = 
-  if dbg >= 5 
+dbgtrace :: String -> a -> a
+dbgtrace =
+  if dbg >= 5
   then maybtrace
   else \ _s x -> x
-  
+
 
 ------------------------------------------------------------------------------------------
 
@@ -107,7 +104,7 @@ dbgtrace =
 
 -- TODO: make these pairs that keep around some printed rep for debugging purposes in
 -- the case of a downcast error.  Also make them newtypes!
--- 
+--
 -- TODO: add the S.Type itself to each of these.
 data SealedExp     = SealedExp { expTy :: S.Type, expDyn :: Dynamic } deriving Show
 
@@ -123,7 +120,7 @@ sealExp x = SealedExp ety (toDyn x)
   ety = expType (undefined :: AST.Exp () a)
 
 sealAcc :: (Arrays a, Typeable a) => Acc a -> SealedAcc
-sealAcc x = 
+sealAcc x =
   dbgtrace (" ** Creating arrTy: "++show ty0++" for "++show x) $
   SealedAcc (ArrTy dims elty) (toDyn x)
  where
@@ -160,7 +157,7 @@ downcastA (SealedAcc _ d) =
 -- | Convert a `SimpleAcc` constant into a fully-typed (but sealed) Accelerate one.
 constantE :: Const -> SealedExp
 
-#define SEALIT(pat) pat x -> sealExp (A.constant x); 
+#define SEALIT(pat) pat x -> sealExp (A.constant x);
 #define ERRIT(pat) pat x -> error$"constantE: Accelerate is missing Elt instances for C types presently: "++show x;
 constantE c =
   case c of {
@@ -170,19 +167,19 @@ constantE c =
     SEALIT(B)
     ERRIT(CS) ERRIT(CI) ERRIT(CL) ERRIT(CLL)
     ERRIT(CUS) ERRIT(CUI) ERRIT(CUL) ERRIT(CULL)
-    ERRIT(C) ERRIT(CC) ERRIT(CSC) ERRIT(CUC)    
+    ERRIT(C) ERRIT(CC) ERRIT(CSC) ERRIT(CUC)
     ERRIT(CF) ERRIT(CD)
     Tup [] -> sealExp $ A.constant ();
---    Tup ls -> error$ "constantE: Cannot handle tuple constants!  These should be ETuple's: "++show c 
+--    Tup ls -> error$ "constantE: Cannot handle tuple constants!  These should be ETuple's: "++show c
     Tup ls -> convertExp (S.ETuple$ P.map S.EConst ls)
   }
 
 --------------------------------------------------------------------------------
 -- Type representations
---------------------------------------------------------------------------------                
+--------------------------------------------------------------------------------
 
 -- | We enhance "Data.Array.Accelerate.Type.TupleType" with Elt constraints.
--- 
+--
 --   Further, we attempt to model SURFACE tuples here, not their binary-tree encoding.
 data EltTuple a where
   UnitTuple   ::                                               EltTuple ()
@@ -220,7 +217,7 @@ data SealedShapeType where
 data SealedSliceType where
   SealedSliceType :: (Sug.Slice s, Elt s) => Phantom s -> SealedSliceType
   deriving Typeable
-  
+
 -- data SliceIndex ix slice coSlice sliceDim where
 --   SliceNil   :: SliceIndex () () () ()
 --   SliceAll   ::
@@ -238,14 +235,14 @@ scalarTypeD ty =
     TInt8   -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Int8)
     TInt16  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Int16)
     TInt32  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Int32)
-    TInt64  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Int64)    
+    TInt64  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Int64)
     TWord    -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word)
     TWord8   -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word8)
     TWord16  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word16)
     TWord32  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word32)
     TWord64  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word64)
     TFloat   -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Float)
-    TDouble  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Double)    
+    TDouble  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Double)
     TBool    -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Bool)
     TChar    -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Char)
 
@@ -255,13 +252,13 @@ scalarTypeD ty =
     -- representation.... What canonical tuple representation do we use?
     TTuple []      -> SealedEltTuple UnitTuple
     TTuple [sing]  -> scalarTypeD sing
-    TTuple [x,y]   -> 
+    TTuple [x,y]   ->
         case (scalarTypeD x, scalarTypeD y) of
         (SealedEltTuple (et1 :: EltTuple a),
          SealedEltTuple (et2 :: EltTuple b)) ->
           SealedEltTuple$ PairTuple et1 et2
 
-    TTuple [x,y,z]   -> 
+    TTuple [x,y,z]   ->
         case (scalarTypeD x, scalarTypeD y, scalarTypeD z) of
         (SealedEltTuple (et1),
          SealedEltTuple (et2),
@@ -269,7 +266,7 @@ scalarTypeD ty =
           SealedEltTuple$ ThreeTuple et1 et2 et3
 
     TTuple (hd:tl) ->
-      error ("scalarTypeD: unifinished: "++show ty) $ 
+      error ("scalarTypeD: unifinished: "++show ty) $
       case (scalarTypeD hd, scalarTypeD (TTuple tl)) of
         (SealedEltTuple (et1 :: EltTuple a),
          SealedEltTuple (et2 :: EltTuple b)) ->
@@ -284,18 +281,18 @@ arrayTypeD :: Type -> SealedArrayType
 -- TODO: Fix this to take ArrTy
 arrayTypeD (TArray ndim elty) =
   case shapeTypeD ndim of
-    SealedShapeType (_ :: Phantom sh) ->      
+    SealedShapeType (_ :: Phantom sh) ->
 #define ATY(t1,t2) t1 -> SealedArrayType (Phantom :: Phantom (Array sh t2));
      case elty of {
-       ATY(TInt,Int) ATY(TInt8,Int8) ATY(TInt16,Int16) ATY(TInt32,Int32) ATY(TInt64,Int64) 
-       ATY(TWord,Word) ATY(TWord8,Word8) ATY(TWord16,Word16) ATY(TWord32,Word32) ATY(TWord64,Word64) 
+       ATY(TInt,Int) ATY(TInt8,Int8) ATY(TInt16,Int16) ATY(TInt32,Int32) ATY(TInt64,Int64)
+       ATY(TWord,Word) ATY(TWord8,Word8) ATY(TWord16,Word16) ATY(TWord32,Word32) ATY(TWord64,Word64)
        ATY(TFloat,Float) ATY(TDouble,Double)
        ATY(TChar,Char) ATY(TBool,Bool)
 
        INSERT_CTY_ERR_CASES
 
-       TTuple ls -> (case scalarTypeD elty of 
-                      SealedEltTuple (et :: EltTuple etty) -> 
+       TTuple ls -> (case scalarTypeD elty of
+                      SealedEltTuple (et :: EltTuple etty) ->
                        SealedArrayType (Phantom:: Phantom(Array sh etty)));
        TArray _ _ -> error$"arrayTypeD: nested array type, not allowed in Accelerate: "++show(TArray ndim elty)
      }
@@ -318,13 +315,13 @@ shapeTypeD n =
 -- | Dynamically construct an inhabitant of the Slice class.
 sliceTypeD :: S.SliceType -> SealedSliceType
 sliceTypeD [] = SealedSliceType (Phantom :: Phantom Z)
-sliceTypeD (S.Fixed:rst) = 
-  case sliceTypeD rst of 
-    SealedSliceType (_ :: Phantom slc) -> 
+sliceTypeD (S.Fixed:rst) =
+  case sliceTypeD rst of
+    SealedSliceType (_ :: Phantom slc) ->
       SealedSliceType (Phantom :: Phantom (slc :. Int))
-sliceTypeD (S.All:rst) = 
-  case sliceTypeD rst of 
-    SealedSliceType (_ :: Phantom slc) -> 
+sliceTypeD (S.All:rst) =
+  case sliceTypeD rst of
+    SealedSliceType (_ :: Phantom slc) ->
       SealedSliceType (Phantom :: Phantom (slc :. All))
 
 --------------------------------------------------------------------------------
@@ -360,13 +357,13 @@ useD arr =
    sty = arrayTypeD dty
 
 generateD :: SealedExp -> (SealedExp -> SealedExp) ->
-        S.Type -> SealedAcc 
+        S.Type -> SealedAcc
 generateD indSealed bodfn outArrTy =
   dbgtrace (" ** starting generateD fun: outArrTy "++show (outArrTy)) $
       let (TArray dims outty) = outArrTy in
        case (shapeTypeD dims, scalarTypeD outty) of
-         (SealedShapeType (_ :: Phantom shp), 
-          SealedEltTuple (outET :: EltTuple outT)) ->           
+         (SealedShapeType (_ :: Phantom shp),
+          SealedEltTuple (outET :: EltTuple outT)) ->
           let
             rawfn :: Exp shp -> Exp outT
             rawfn x =
@@ -382,14 +379,14 @@ generateD indSealed bodfn outArrTy =
            sealAcc acc
 
 
-mapD :: (SealedExp -> SealedExp) -> SealedAcc -> S.Type -> SealedAcc 
-mapD bodfn sealedInArr outElmTy = 
+mapD :: (SealedExp -> SealedExp) -> SealedAcc -> S.Type -> SealedAcc
+mapD bodfn sealedInArr outElmTy =
       let (ArrTy dims inty) = arrTy sealedInArr
           newAty = arrayTypeD (TArray dims outElmTy)
       in
        -- TODO: Do we really need outElmTy here?
        case (shapeTypeD dims, scalarTypeD inty, scalarTypeD outElmTy) of
-         (SealedShapeType (_ :: Phantom shp), 
+         (SealedShapeType (_ :: Phantom shp),
           SealedEltTuple (inET  :: EltTuple inT),
           SealedEltTuple (outET :: EltTuple outT)) ->
           let
@@ -405,11 +402,11 @@ mapD bodfn sealedInArr outElmTy =
              (PairTuple _ _, UnitTuple)     -> sealAcc $ A.map rawfn realIn
              (ThreeTuple {}, UnitTuple)     -> sealAcc $ A.map rawfn realIn
              (UnitTuple,     SingleTuple _) -> sealAcc $ A.map rawfn realIn
-             (SingleTuple _, SingleTuple _) -> sealAcc $ A.map rawfn realIn             
+             (SingleTuple _, SingleTuple _) -> sealAcc $ A.map rawfn realIn
              (PairTuple _ _, SingleTuple _) -> sealAcc $ A.map rawfn realIn
              (ThreeTuple {}, SingleTuple _) -> sealAcc $ A.map rawfn realIn
              (UnitTuple,     PairTuple _ _) -> sealAcc $ A.map rawfn realIn
-             (SingleTuple _, PairTuple _ _) -> sealAcc $ A.map rawfn realIn             
+             (SingleTuple _, PairTuple _ _) -> sealAcc $ A.map rawfn realIn
              (PairTuple _ _, PairTuple _ _) -> sealAcc $ A.map rawfn realIn
              (ThreeTuple {}, PairTuple _ _) -> sealAcc $ A.map rawfn realIn
              (UnitTuple,     ThreeTuple {}) -> sealAcc $ A.map rawfn realIn
@@ -418,31 +415,31 @@ mapD bodfn sealedInArr outElmTy =
              (ThreeTuple {}, ThreeTuple {}) -> sealAcc $ A.map rawfn realIn
 
 zipWithD :: (SealedExp -> SealedExp -> SealedExp) -> SealedAcc -> SealedAcc ->
-            S.Type -> S.Type  -> S.Type -> SealedAcc 
-zipWithD bodfn sealedInArr1 sealedInArr2 inArrTy1 inArrTy2 outElmTy = 
+            S.Type -> S.Type  -> S.Type -> SealedAcc
+zipWithD bodfn sealedInArr1 sealedInArr2 inArrTy1 inArrTy2 outElmTy =
   error "FINISHME/DynamicAcc - zipWithD"
 
 
 replicateD :: SealedSliceType -> SealedExp -> SealedAcc -> SealedAcc
-replicateD slc exp arr = 
+replicateD slc exp arr =
   case (slc) of  -- , scalarTypeD (expTy exp)
     (SealedSliceType (_::Phantom slc)) ->
---     SealedEltTuple (inET  :: EltTuple inT) ) -> 
+--     SealedEltTuple (inET  :: EltTuple inT) ) ->
      let e :: Exp slc
          e = error "FINISHME/DynamicAcc - replicateD"
---         _ = A.replicate e 
-     in 
+--         _ = A.replicate e
+     in
       error "FINISHME/DynamicAcc - replicateD"
 
 foldD :: (SealedExp -> SealedExp -> SealedExp) -> SealedExp -> SealedAcc ->
-         S.Type -> SealedAcc 
-foldD bodfn initE sealedInArr inArrTy = 
+         S.Type -> SealedAcc
+foldD bodfn initE sealedInArr inArrTy =
       let (TArray dims inty) = inArrTy
           -- Knock off one dimension:
           newAty = arrayTypeD (TArray (dims - 1) inty)
       in
        case (shapeTypeD (dims - 1), scalarTypeD inty) of
-         (SealedShapeType (_ :: Phantom shp), 
+         (SealedShapeType (_ :: Phantom shp),
           SealedEltTuple (inET  :: EltTuple inT)) ->
            let
                rawfn :: Exp inT -> Exp inT -> Exp inT
@@ -457,7 +454,7 @@ foldD bodfn initE sealedInArr inArrTy =
               (SingleTuple _)     -> sealAcc $ A.fold rawfn init realIn
               (PairTuple _ _)     -> sealAcc $ A.fold rawfn init realIn
               (ThreeTuple _ _ _)  -> sealAcc $ A.fold rawfn init realIn
-  
+
 
 --------------------------------------------------------------------------------
 -- TODO: These conversion functions could move to their own module:
@@ -476,16 +473,16 @@ expectAVar :: Either SealedExp SealedAcc -> SealedAcc
 expectAVar (Left se)  = error$"expected array variable, got variable bound to: "++show se
 expectAVar (Right sa) = sa
 
-emptyEnvPack :: EnvPack 
-emptyEnvPack = EnvPack [] [] M.empty 
+emptyEnvPack :: EnvPack
+emptyEnvPack = EnvPack [] [] M.empty
 
 -- | New array binding
-extendA :: AVar -> Type -> SealedAcc -> EnvPack -> EnvPack 
+extendA :: AVar -> Type -> SealedAcc -> EnvPack -> EnvPack
 extendA avr ty sld (EnvPack eS eA mp) =
   EnvPack eS ((avr,ty):eA)
           (M.insert avr (ty,Right sld) mp)
 
-extendE :: Var -> Type -> SealedExp -> EnvPack -> EnvPack 
+extendE :: Var -> Type -> SealedExp -> EnvPack -> EnvPack
 extendE vr ty sld (EnvPack eS eA mp) =
   EnvPack ((vr,ty):eS) eA
           (M.insert vr (ty,Left sld) mp)
@@ -518,7 +515,7 @@ resealTup [(SealedEltTuple (_ :: EltTuple aty), a),
                       downcastE c :: Exp cty,
                       downcastE d :: Exp dty)
 
-resealTup components =  
+resealTup components =
   error$ "resealTup: mismatched or unhandled tuple: "++show components
 
 -- | Convert a closed expression.
@@ -526,19 +523,19 @@ convertExp :: S.Exp -> SealedExp
 convertExp = convertOpenExp emptyEnvPack
 
 -- | Convert an entire `SimpleAcc` expression into a fully-typed (but sealed) Accelerate one.
---   Requires a type environments for the (open) `SimpleAcc` expression:    
+--   Requires a type environments for the (open) `SimpleAcc` expression:
 --   one for free expression variables, one for free array variables.
---     
+--
 convertOpenExp :: EnvPack -> S.Exp -> SealedExp
 convertOpenExp ep@(EnvPack envE envA mp) ex =
   dbgtrace(" @ Converting exp "++show ex++" with env "++show mp++"\n    and dyn env "++show (envE,envA)) $
   dbgtrace(" @-> converted exp result: "++show result) $
   result
- where 
+ where
   cE = convertOpenExp ep
   typeEnv  = M.map P.fst mp -- Strip out the SealedExp/Acc bits leaving just the types.
   resultTy = S.recoverExpType typeEnv ex
-  result =  
+  result =
    case ex of
     S.EConst c -> constantE c
     S.EVr vr -> let (_,se) = mp # vr in expectEVar se
@@ -549,7 +546,7 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
 
     -- Here we run straight into our mismatch between Acc and
     -- SimpleAcc treatment of shape types.
-    S.EIndexScalar avr indEx -> 
+    S.EIndexScalar avr indEx ->
       let indTy = S.recoverExpType typeEnv indEx
           ind2  = tupToIndex indTy$ convertOpenExp ep indEx
           (arrty,sa) = mp # avr
@@ -564,21 +561,21 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
                arr  = downcastA $ expectAVar sa
                exp  :: Exp eT
                exp  = (A.!) arr ind3
-           in sealExp exp              
-           
+           in sealExp exp
+
     -- FIXME: This is having a FLATTING effect, which isn't valid for surface tuples:
     S.ETupProject {S.indexFromRight=ind, S.projlen=len, S.tupexpr=tex} ->
       dbgtrace ("ETupProject: "++show(ind,len,tex)) $
       let tup = convertOpenExp ep tex
           tty  = S.recoverExpType typeEnv tex
-      in       
+      in
        case scalarTypeD tty of
          SealedEltTuple (et1 :: EltTuple tupT) ->
            case et1 of
              UnitTuple -> error "Tup projection from unit."
              PairTuple (etA :: EltTuple aa) (etB@SingleTuple{} :: EltTuple bb) ->
                let (a,b) = unlift (downcastE tup :: Exp (aa,bb))
-               in resealTup $ 
+               in resealTup $
                 P.take len $ P.drop ind $ P.zip [SealedEltTuple etA, SealedEltTuple etB]
                                                 [sealExp a, sealExp b]
 
@@ -587,12 +584,12 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
              --    (tc@SingleTuple{} :: EltTuple cc)) ->
              ThreeTuple (ta :: EltTuple aa) (tb :: EltTuple bb) (tc :: EltTuple cc) ->
                let (a,b,c) = unlift (downcastE tup :: Exp (aa,bb,cc))
-               in resealTup $ 
+               in resealTup $
                 P.take len $ P.drop ind $ P.zip [SealedEltTuple ta, SealedEltTuple tb, SealedEltTuple tc]
                                                 [sealExp a, sealExp b, sealExp c]
 
-             _ -> error ("ETupProject got unhandled tuple type: "++show et1)                
-    
+             _ -> error ("ETupProject got unhandled tuple type: "++show et1)
+
     S.ETuple []    -> constantE (Tup [])
     S.ETuple [ex]  -> convertOpenExp ep ex
     S.ETuple [a,b] ->
@@ -611,7 +608,7 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
           tc = S.recoverExpType typeEnv c
           a' = convertOpenExp ep a
           b' = convertOpenExp ep b
-          c' = convertOpenExp ep c          
+          c' = convertOpenExp ep c
       in
       resealTup $ P.zip (P.map scalarTypeD [ta, tb, tc]) [a',b',c']
 
@@ -623,7 +620,7 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
           a' = convertOpenExp ep a
           b' = convertOpenExp ep b
           c' = convertOpenExp ep c
-          d' = convertOpenExp ep d               
+          d' = convertOpenExp ep d
       in
        resealTup $ P.zip (P.map scalarTypeD [ta,tb,tc,td]) [a',b',c',d']
 
@@ -632,12 +629,12 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
           tb = S.recoverExpType typeEnv b
           tc = S.recoverExpType typeEnv c
           td = S.recoverExpType typeEnv d
-          te = S.recoverExpType typeEnv e          
+          te = S.recoverExpType typeEnv e
           a' = convertOpenExp ep a
           b' = convertOpenExp ep b
           c' = convertOpenExp ep c
           d' = convertOpenExp ep d
-          e' = convertOpenExp ep e          
+          e' = convertOpenExp ep e
       in
        resealTup $ P.zip (P.map scalarTypeD [ta,tb,tc,td,te]) [a',b',c',d',e']
 
@@ -731,7 +728,7 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
           tb = S.recoverExpType typeEnv (S.ETuple tl)
           hd' = convertOpenExp ep hd
           tl' = convertOpenExp ep (S.ETuple tl)
-      in 
+      in
       case (scalarTypeD ta, scalarTypeD tb) of
         (SealedEltTuple (et1 :: EltTuple aty),
          SealedEltTuple (et2 :: EltTuple bty)) ->
@@ -744,25 +741,25 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
 --                    tup' :: Sm.PreExp acc Exp (??? bty,aty ???)
 --                    tup' = Sm.Tuple tup
                 in
-                error "FINISHME/DynamicAcc"    
+                error "FINISHME/DynamicAcc"
                 -- sealExp$ Sm.Exp tup'
 #endif
 
     {- ========================================================================================== -}
     S.EPrimApp outTy op ls ->
-      let args = P.map (convertOpenExp ep) ls 
+      let args = P.map (convertOpenExp ep) ls
           (fstArg :_) = ls
           fstArgTy = S.recoverExpType typeEnv fstArg
-      in 
+      in
       -- Dispatch on the type of the first argument to the primitive:
       (case scalarTypeD fstArgTy of {
-       SealedEltTuple t0 -> 
+       SealedEltTuple t0 ->
       (case t0 of {
        ThreeTuple _ _ _ -> error$ "Primitive "++show op++" should not have a tuple 1st argument type.";
        PairTuple _ _ -> error$ "Primitive "++show op++" should not have a tuple 1st argument type.";
        UnitTuple     -> error$ "Primitive "++show op++" should not have a unit 1st argument type.";
        SingleTuple (styIn1 :: T.ScalarType eltIn1) ->
-      (case scalarTypeD outTy of 
+      (case scalarTypeD outTy of
         SealedEltTuple t ->
           case t of
             ThreeTuple _ _ _ -> error$ "Primitive "++show op++" should not have a tuple output type."
@@ -771,25 +768,28 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
             SingleTuple (styOut :: T.ScalarType elt) ->
 
 -- <BOILERPLATE abstracted as CPP macros>
------------------------------------------------------------------------------------              
-#define REPBOP(numpat, popdict, which, theprim, binop) (numpat, which theprim) -> popdict (case args of { \
-         [a1,a2] -> let a1',a2' :: Exp elt;    \
-                        a1' = downcastE a1;     \
-                        a2' = downcastE a2;     \
-                    in sealExp (binop a1' a2'); \
+-----------------------------------------------------------------------------------
+#define REPBOP(numpat, popdict, which, theprim, binop)                          \
+  (numpat, which theprim) -> popdict (case args of {                            \
+         [a1,a2] -> let a1',a2' :: Exp elt;                                     \
+                        a1' = downcastE a1;                                     \
+                        a2' = downcastE a2;                                     \
+                    in sealExp (binop a1' a2');                                 \
          _ -> error$ "Binary operator "++show theprim++" expects two args, got "++show args ; })
+
 #define REPUOP(numpat, popdict, which, prim, unop) (numpat, which prim) -> popdict (case args of { \
          [a1] -> let a1' :: Exp elt;     \
                      a1' = downcastE a1; \
                  in sealExp (unop a1');  \
          _ -> error$ "Unary operator "++show prim++" expects one arg, got "++show args ; })
+
 -- These occur in a pattern context:
 #define POPINT T.NumScalarType (T.IntegralNumType (nty :: T.IntegralType elt))
 #define POPFLT T.NumScalarType (T.FloatingNumType (nty :: T.FloatingType elt))
 #define POPIDICT case T.integralDict nty of (T.IntegralDict :: T.IntegralDict elt) ->
 #define POPFDICT case T.floatingDict nty of (T.FloatingDict :: T.FloatingDict elt) ->
-#define POPSDICT 
-                                              
+#define POPSDICT
+
 -- Monomorphic in second arg:
 #define REPBOPMONO(numpat, popdict, which, prim, binop) (numpat, which prim) -> popdict (case args of { \
          [a1,a2] -> let a1' :: Exp elt;         \
@@ -813,7 +813,16 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
           _ -> error$ "Unary operator "++show prim++" expects one arg, got "++show args ;};};};})
 
 -----------------------------------------------------------------------------------
-             (case (styOut,op) of 
+             (case (styOut,op) of
+
+--               (T.NumScalarType (T.IntegralNumType (nty:: T.IntegralType elt)), NP Add)
+--                 | T.IntegralDict <- T.integralDict nty -- :: T.IntegralDict x)
+--                 ->  case args of
+--                       [a1,a2] -> let a1',a2' :: Exp elt
+--                                      a1' = downcastE a1
+--                                      a2' = downcastE a2
+--                                  in
+--                                  sealExp (a1' + a2' :: Exp elt)
 
 {-- TLM: BROKEN
                REPBOP(POPINT, POPIDICT, NP, Add, (+))
@@ -862,7 +871,7 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
                REPUOP(POPFLT, POPFDICT, FP, Sqrt, sqrt)
                REPUOP(POPFLT, POPFDICT, FP, Log, log)
 
-               -- Warning!  Heterogeneous input/output types:               
+               -- Warning!  Heterogeneous input/output types:
                REPUOP_I2F(Truncate, A.truncate)
                REPUOP_I2F(Round, A.round)
                REPUOP_I2F(Floor, A.floor)
@@ -870,24 +879,24 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
 --}
 
                -------------- Boolean Primitives --------------
-               (_, BP S.And) -> (case args of { 
+               (_, BP S.And) -> (case args of {
                  [a1,a2] -> let a1', a2' :: Exp Bool;
-                                a1' = downcastE a1;     
-                                a2' = downcastE a2;     
-                            in sealExp (a1' A.&&* a2'); 
+                                a1' = downcastE a1;
+                                a2' = downcastE a2;
+                            in sealExp (a1' A.&&* a2');
                  _ -> error$ "Boolean AND operator expects two args, got "++show args ; })
 
-               (_, BP S.Or) -> (case args of { 
+               (_, BP S.Or) -> (case args of {
                  [a1,a2] -> let a1', a2' :: Exp Bool;
-                                a1' = downcastE a1;     
-                                a2' = downcastE a2;     
-                            in sealExp (a1' A.||* a2'); 
+                                a1' = downcastE a1;
+                                a2' = downcastE a2;
+                            in sealExp (a1' A.||* a2');
                  _ -> error$ "Boolean OR operator expects two args, got "++show args ; })
 
-               (_, BP S.Not) -> (case args of { 
+               (_, BP S.Not) -> (case args of {
                  [a1] -> let a1' :: Exp Bool;
                              a1' = downcastE a1;
-                         in sealExp (A.not a1'); 
+                         in sealExp (A.not a1');
                  _ -> error$ "Boolean NOT operator expects one arg, got "++show args ; })
 
 
@@ -919,11 +928,11 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
 
 {-- TLM: BROKEN
                -- FromIntegral case 1/2: integral->integral
-               (T.NumScalarType (T.IntegralNumType (ityOut :: T.IntegralType elt)), 
-                OP S.FromIntegral) -> 
-                (case T.integralDict ityOut of { (T.IntegralDict :: T.IntegralDict elt) -> 
+               (T.NumScalarType (T.IntegralNumType (ityOut :: T.IntegralType elt)),
+                OP S.FromIntegral) ->
+                (case T.integralDict ityOut of { (T.IntegralDict :: T.IntegralDict elt) ->
                  case styIn1 of { T.NumScalarType (T.IntegralNumType (ity :: T.IntegralType inElt)) ->
-                 case T.integralDict ity of { (T.IntegralDict :: T.IntegralDict inElt) -> 
+                 case T.integralDict ity of { (T.IntegralDict :: T.IntegralDict inElt) ->
                  case args of {
                  [a1] -> let a1' :: Exp inElt;
                              a1' = downcastE a1;
@@ -934,11 +943,11 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
 --}
 {-- TLM: BROKEN
                -- FromIntegral case 2/2: integral->floating
-               (T.NumScalarType (T.FloatingNumType (ityOut :: T.FloatingType elt)), 
-                OP S.FromIntegral) -> 
-                (case T.floatingDict ityOut of { (T.FloatingDict :: T.FloatingDict eltF) -> 
+               (T.NumScalarType (T.FloatingNumType (ityOut :: T.FloatingType elt)),
+                OP S.FromIntegral) ->
+                (case T.floatingDict ityOut of { (T.FloatingDict :: T.FloatingDict eltF) ->
                  case styIn1 of { T.NumScalarType (T.IntegralNumType (ity :: T.IntegralType inElt)) ->
-                 case T.integralDict ity of { (T.IntegralDict :: T.IntegralDict inElt) -> 
+                 case T.integralDict ity of { (T.IntegralDict :: T.IntegralDict inElt) ->
                  case args of {
                  [a1] -> let a1' :: Exp inElt;
                              a1' = downcastE a1;
@@ -971,7 +980,7 @@ convertOpenExp ep@(EnvPack envE envA mp) ex =
           SealedEltTuple (t :: EltTuple elt) ->
            -- #define a macro for this?
            case t of
-             UnitTuple -> 
+             UnitTuple ->
                sealExp(((downcastE d1::Exp Bool) A.?
                         (downcastE d2::Exp elt,
                          downcastE d3::Exp elt))::Exp elt)
@@ -995,28 +1004,28 @@ type OrdPrim = (forall b . (Elt b, IsScalar b) => Exp b -> Exp b -> Exp Bool)
 
 -- | Dig down to find an Ord instance and call the given Prim:
 ordPrim :: forall a . Elt a => (T.ScalarType a) -> OrdPrim -> ([SealedExp] -> SealedExp)
-ordPrim inTy prim args = 
+ordPrim inTy prim args =
   let [se1,se2] = args in
-  case inTy of 
-   T.NumScalarType (T.IntegralNumType a) -> 
-     case T.integralDict a of 
-      T.IntegralDict -> 
+  case inTy of
+   T.NumScalarType (T.IntegralNumType a) ->
+     case T.integralDict a of
+      T.IntegralDict ->
         let x,y :: Exp a
             x = downcastE se1
             y = downcastE se2
         in error "ordPrim: BROKEN"
 --        in sealExp $ prim x y
 
-   T.NumScalarType (T.FloatingNumType a) -> 
-     case T.floatingDict a of 
-      T.FloatingDict -> 
+   T.NumScalarType (T.FloatingNumType a) ->
+     case T.floatingDict a of
+      T.FloatingDict ->
         let x,y :: Exp a
             x = downcastE se1
             y = downcastE se2
         in error "ordPrim: BROKEN"
 --        in sealExp $ prim x y
 
-   T.NonNumScalarType a -> 
+   T.NonNumScalarType a ->
       error$"DynamicAcc2/ordPrim: attempting to apply relational operator to non-numeric type: "++show inTy
 
 -- | The SimpleAcc representation does NOT keep index types disjoint
@@ -1025,22 +1034,22 @@ ordPrim inTy prim args =
 -- tuples to indices at the appropriate places.
 indexToTup :: S.Type -> SealedExp -> SealedExp
 indexToTup ty ex =
-  dbgtrace (" -- starting indexToTup... ")$ 
+  dbgtrace (" -- starting indexToTup... ")$
   dbgtrace (" -- indexTo tup, converting "++show (ty,ex)++" to "++ show res)
    res
   where
-    res = 
+    res =
      case ty of
        TTuple [] -> sealExp (constant ())
 
-       TTuple [TInt,TInt] -> 
+       TTuple [TInt,TInt] ->
          let l,r :: Exp Int
              (Z :. l :. r) = unlift (downcastE ex :: Exp (Z :. Int :. Int))
              tup :: Exp (Int, Int)
              tup = lift (l, r)
          in sealExp tup
 
-       TTuple [TInt,TInt,TInt] -> 
+       TTuple [TInt,TInt,TInt] ->
          let a,b,c :: Exp Int
              (Z :. a :. b :. c) = unlift (downcastE ex :: Exp (Z :. Int :. Int :. Int))
              tup :: Exp (Int, Int, Int)
@@ -1052,7 +1061,7 @@ indexToTup ty ex =
        TTuple ls -> error$ "indexToTup: tuple type not handled: "++show(ty,ex)
        TArray{}  -> error$ "indexToTup: expected tuple-of-scalar type, got: "++show ty
        _ ->
-         case scalarTypeD ty of      
+         case scalarTypeD ty of
            SealedEltTuple (t :: EltTuple elt) ->
              let
                  z :: Exp (Z :. elt)
@@ -1065,15 +1074,15 @@ indexToTup ty ex =
 -- TInt type as the first argument.
 tupToIndex :: S.Type -> SealedExp -> SealedExp
 tupToIndex ty ex =
-    dbgtrace (" ~~ starting tupToIndex... ")$ 
+    dbgtrace (" ~~ starting tupToIndex... ")$
     dbgtrace (" ~~ tupToIndex tup, converting "++show (ty,ex)++" to "++ show res) res
  where
- res =  
+ res =
   case ty of
     TTuple []  -> sealExp (constant Z)
     TTuple [a] -> error$ "tupToIndex: internal error, singleton tuple: "++show (ty,ex)
 
-    TTuple [TInt,TInt] -> 
+    TTuple [TInt,TInt] ->
       dbgtrace ("Converting tuple type to index type... "++show ty) $
           let l,r :: Exp Int
               (l,r) = unlift (downcastE ex :: Exp (Int,Int))
@@ -1081,21 +1090,21 @@ tupToIndex ty ex =
               ind' = lift (Z :. l :. r)
           in sealExp ind'
 
-    TTuple [TInt,TInt,TInt] -> 
+    TTuple [TInt,TInt,TInt] ->
       dbgtrace ("Converting tuple type to index type... "++show ty) $
           let a,b,c :: Exp Int
               (a,b,c) = unlift (downcastE ex :: Exp (Int,Int,Int))
               ind' :: Exp (Z :. Int :. Int :. Int)
               ind' = lift (Z :. a :. b :. c)
           in sealExp ind'
-      
+
 -- FINISHME: Go up to tuple size 9.
 
     TTuple _ -> error$"tupToIndex: unhandled tuple type: "++ show ty
 
     TArray{}  -> error$ "tupToIndex: expected tuple-of-scalar type, got: "++show ty
-    _ -> 
-      case scalarTypeD ty of      
+    _ ->
+      case scalarTypeD ty of
         SealedEltTuple (t :: EltTuple elt) ->
           let
               z :: Z :. Exp elt
@@ -1119,11 +1128,11 @@ convertAcc = convertOpenAcc emptyEnvPack
 -- sealed) Accelerate one.
 convertOpenAcc :: EnvPack -> S.AExp -> SealedAcc
 convertOpenAcc env@(EnvPack _ _ mp) ae =
-  let typeEnv  = M.map P.fst mp 
+  let typeEnv  = M.map P.fst mp
       getAVr v = let (_,sa) = mp # v in expectAVar sa
   in
   case ae of
-    S.Vr vr      -> getAVr vr 
+    S.Vr vr      -> getAVr vr
     S.Use accarr -> useD accarr
     S.Unit ex ->
       let ex' = convertOpenExp env ex
@@ -1137,29 +1146,29 @@ convertOpenAcc env@(EnvPack _ _ mp) ae =
                       convertOpenExp env' bod
           bodty     = S.recoverExpType (M.insert vr ty typeEnv) bod
           -- TODO: Replace this by simply passing in the result type to convertAcc:
-          dims = shapeTyLen$ S.recoverExpType typeEnv initE 
+          dims = shapeTyLen$ S.recoverExpType typeEnv initE
           outArrTy  = TArray dims bodty
-          init' = tupToIndex ty$ convertOpenExp env initE 
+          init' = tupToIndex ty$ convertOpenExp env initE
       in
-       dbgtrace ("Generate: computed body type: "++show bodty) $ 
+       dbgtrace ("Generate: computed body type: "++show bodty) $
        generateD init' bodfn outArrTy
-         
-    S.Map (S.Lam1 (vr,ty) bod) inA -> 
+
+    S.Map (S.Lam1 (vr,ty) bod) inA ->
       let bodfn ex    = convertOpenExp (extendE vr ty ex env) bod
           bodty       = S.recoverExpType (M.insert vr ty $ M.map P.fst mp) bod
       in mapD bodfn (getAVr inA) bodty
 
-    S.ZipWith (S.Lam2 (vr1,ty1) (vr2,ty2) bod) inA inB ->  
+    S.ZipWith (S.Lam2 (vr1,ty1) (vr2,ty2) bod) inA inB ->
       let bodfn e1 e2 = let env' = extendE vr2 ty2 e2 $
                                    extendE vr1 ty1 e1 env
                         in convertOpenExp env' bod
           aty1@(TArray dims1 _) = P.fst (mp # inA)
           aty2@(TArray dims2 _) = P.fst (mp # inB)
-          mp' = M.insert vr2 ty2 $ 
+          mp' = M.insert vr2 ty2 $
                 M.insert vr1 ty1 typeEnv
           bodty = S.recoverExpType mp' bod
       in
-      assert (dims1 == dims2) $ 
+      assert (dims1 == dims2) $
       zipWithD bodfn (getAVr inA) (getAVr inB) aty1 aty2 bodty
 
     S.Fold (S.Lam2 (v1,ty) (v2,ty2) bod) initE inA ->
@@ -1167,13 +1176,13 @@ convertOpenAcc env@(EnvPack _ _ mp) ae =
        let init' = convertOpenExp env initE
            bodfn x y = convertOpenExp (extendE v1 ty x$ extendE v2 ty y env) bod
            aty@(TArray _ inty) = P.fst (mp # inA)
-           sealedInArr = getAVr inA 
+           sealedInArr = getAVr inA
        in
         if ty /= ty2 || ty2 /= inty
         then error "Mal-formed Fold.  Input types to Lam2 must match eachother and array input."
         else foldD bodfn init' sealedInArr aty
 
-    S.Replicate slc inE inA ->  
+    S.Replicate slc inE inA ->
       replicateD (sliceTypeD slc) (convertOpenExp env inE) (getAVr inA)
 
 
@@ -1184,11 +1193,11 @@ convertOpenAcc env@(EnvPack _ _ mp) ae =
 -- know what type to downcast it to.
 convertProg :: S.Prog () -> SealedAcc
 convertProg S.Prog{progBinds,progResults} =
-    dbgtrace ("CONVERTING whole prog "++show(doc progBinds)) $ 
+    dbgtrace ("CONVERTING whole prog "++show(doc progBinds)) $
     doBinds emptyEnvPack progBinds
-  where 
+  where
   doBinds env (S.ProgBind vr ty dec eith : rst) =
-    dbgtrace (" dobinds of "++show (vr,ty,rst)++" "++show env) $ 
+    dbgtrace (" dobinds of "++show (vr,ty,rst)++" "++show env) $
     case eith of
       Left ex  -> let se = convertOpenExp env ex
                       env' = extendE vr ty se env
@@ -1200,12 +1209,12 @@ convertProg S.Prog{progBinds,progResults} =
     case S.resultNames progResults of
       [resVr] -> expectAVar$ P.snd$ mp # resVr
       _ -> error$ "FINISHME/DynamicAcc: convertProg with multiple results: "++show progResults
-  
+
 
 
 --------------------------------------------------------------------------------
 -- Instances
---------------------------------------------------------------------------------    
+--------------------------------------------------------------------------------
 
 instance Show (EltTuple a) where
   show UnitTuple = "()"
@@ -1219,7 +1228,7 @@ instance Show SealedEltTuple where
 instance Show SealedShapeType where
   show (SealedShapeType (Phantom :: Phantom sh)) =
     "Sealed:"++show (toDyn (unused::sh))
-    
+
 instance Show SealedArrayType where
   show (SealedArrayType (Phantom :: Phantom sh)) =
     "Sealed:"++show (toDyn (unused::sh))
