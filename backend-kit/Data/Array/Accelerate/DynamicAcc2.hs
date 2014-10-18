@@ -106,6 +106,7 @@ dbgtrace =
 -- the case of a downcast error.  Also make them newtypes!
 --
 -- TODO: add the S.Type itself to each of these.
+--
 data SealedExp     = SealedExp { expTy :: S.Type, expDyn :: Dynamic } deriving Show
 
 data SealedAcc = SealedAcc { arrTy :: ArrTy, accDyn :: Dynamic } deriving Show
@@ -158,19 +159,17 @@ downcastA (SealedAcc _ d) =
 constantE :: Const -> SealedExp
 
 #define SEALIT(pat) pat x -> sealExp (A.constant x);
-#define ERRIT(pat) pat x -> error$"constantE: Accelerate is missing Elt instances for C types presently: "++show x;
 constantE c =
   case c of {
     SEALIT(I) SEALIT(I8) SEALIT(I16) SEALIT(I32) SEALIT(I64)
     SEALIT(W) SEALIT(W8) SEALIT(W16) SEALIT(W32) SEALIT(W64)
     SEALIT(F) SEALIT(D)
     SEALIT(B)
-    ERRIT(CS) ERRIT(CI) ERRIT(CL) ERRIT(CLL)
-    ERRIT(CUS) ERRIT(CUI) ERRIT(CUL) ERRIT(CULL)
-    ERRIT(C) ERRIT(CC) ERRIT(CSC) ERRIT(CUC)
-    ERRIT(CF) ERRIT(CD)
+    SEALIT(CS) SEALIT(CI) SEALIT(CL) SEALIT(CLL)
+    SEALIT(CUS) SEALIT(CUI) SEALIT(CUL) SEALIT(CULL)
+    SEALIT(C) SEALIT(CC) SEALIT(CSC) SEALIT(CUC)
+    SEALIT(CF) SEALIT(CD)
     Tup [] -> sealExp $ A.constant ();
---    Tup ls -> error$ "constantE: Cannot handle tuple constants!  These should be ETuple's: "++show c
     Tup ls -> convertExp (S.ETuple$ P.map S.EConst ls)
   }
 
@@ -226,8 +225,9 @@ data SealedSliceType where
 --    SliceIndex ix slice co dim -> SliceIndex (ix, Int) slice (co, Int) (dim, Int)
 
 
--- | Convert the runtime, monomorphic type representation into a sealed container
--- with the true Haskell type inside.
+-- | Convert the runtime, monomorphic type representation into a sealed
+-- container with the true Haskell type inside.
+--
 scalarTypeD :: Type -> SealedEltTuple
 scalarTypeD ty =
   case ty of
@@ -236,15 +236,15 @@ scalarTypeD ty =
     TInt16  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Int16)
     TInt32  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Int32)
     TInt64  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Int64)
-    TWord    -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word)
-    TWord8   -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word8)
-    TWord16  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word16)
-    TWord32  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word32)
-    TWord64  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word64)
-    TFloat   -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Float)
-    TDouble  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Double)
-    TBool    -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Bool)
-    TChar    -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Char)
+    TWord   -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word)
+    TWord8  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word8)
+    TWord16 -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word16)
+    TWord32 -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word32)
+    TWord64 -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Word64)
+    TFloat  -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Float)
+    TDouble -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Double)
+    TBool   -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Bool)
+    TChar   -> SealedEltTuple$ SingleTuple (T.scalarType :: T.ScalarType Char)
 
     INSERT_CTY_ERR_CASES
 
@@ -461,8 +461,11 @@ foldD bodfn initE sealedInArr inArrTy =
 --------------------------------------------------------------------------------
 
 -- | Track the scalar, array environment, and combined, fast-access environment.
-data EnvPack = EnvPack [(Var,Type)] [(AVar,Type)]
-                 (M.Map Var (Type, Either SealedExp SealedAcc))
+data EnvPack =
+  EnvPack
+    [(Var,Type)]
+    [(AVar,Type)]
+    (M.Map Var (Type, Either SealedExp SealedAcc))
  deriving Show
 
 expectEVar :: Either SealedExp SealedAcc -> SealedExp
