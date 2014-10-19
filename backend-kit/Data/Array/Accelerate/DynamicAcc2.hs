@@ -49,27 +49,24 @@ module Data.Array.Accelerate.DynamicAcc2 (
 ) where
 
 import Data.Array.Accelerate.BackendKit.CompilerPipeline        ( phase0, phase1 )
-import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc           ( Type(..), Const(..), AVar, Var, Prog(..) , Prim(..), NumPrim(..), IntPrim(..), FloatPrim(..), ScalarPrim(..) )
-import Data.Array.Accelerate.BackendKit.Phase1.ToAccClone       ( repackAcc, expType, convertSliceIndex )
+import Data.Array.Accelerate.BackendKit.Phase1.ToAccClone       ( repackAcc, expType )
 import Data.Array.Accelerate.BackendKit.Utils.Helpers           ( Phantom(Phantom), maybtrace, dbg )
+import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc           ( Type(..), Const(..), AVar, Var, Prog(..), Prim(..), NumPrim(..), IntPrim(..), FloatPrim(..), ScalarPrim(..), BoolPrim(..), OtherPrim(..) )
+import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 
 import Data.Array.Accelerate                                    as A hiding ( (++) )
+import Data.Array.Accelerate.AST                                ( PrimFun(..) )
+import Data.Array.Accelerate.Smart                              ( tup2, tup3, tup4, Exp(Exp), PreExp(PrimApp) )
 import qualified Data.Array.Accelerate.AST                      as AST
-import qualified Data.Array.Accelerate.Smart                    as Sm
 import qualified Data.Array.Accelerate.Type                     as T
-import qualified Data.Array.Accelerate.Trafo                    as Trafo
-import qualified Data.Array.Accelerate.Array.Representation     as R
-import qualified Data.Array.Accelerate.Array.Sugar              as Sug
-import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
+import qualified Data.Array.Accelerate.Array.Sugar              as Sugar
 
 import Control.Exception                                        ( assert )
 import Data.Dynamic                                             ( Typeable, Dynamic, fromDynamic, toDyn, typeOf )
-import Data.Bits                                                as B
 import Data.Map                                                 as M
-import Prelude                                                  as P
-import Text.PrettyPrint.GenericPretty                           ( Out(doc,docPrec), Generic )
-
-import Debug.Trace
+import Prelude                                                  as P hiding ( exp )
+import Text.PrettyPrint.GenericPretty                           ( Out(doc) )
+import Text.Printf
 
 dbgtrace :: String -> a -> a
 dbgtrace =
@@ -107,11 +104,23 @@ dbgtrace =
 --
 -- TODO: add the S.Type itself to each of these.
 --
-data SealedExp     = SealedExp { expTy :: S.Type, expDyn :: Dynamic } deriving Show
+data SealedExp = SealedExp
+  { expTy       :: S.Type
+  , expDyn      :: Dynamic
+  }
+  deriving Show
 
-data SealedAcc = SealedAcc { arrTy :: ArrTy, accDyn :: Dynamic } deriving Show
+data SealedAcc = SealedAcc
+  { arrTy       :: ArrTy
+  , accDyn      :: Dynamic
+  }
+  deriving Show
 
-data ArrTy = ArrTy { ndims :: Int, eltTy :: S.Type } deriving Show
+data ArrTy = ArrTy
+  { eltTy       :: S.Type
+  , ndims       :: Int
+  }
+  deriving Show
 
 -- newtype SealedSlice = SealedSlice Dynamic deriving Show
 
@@ -123,7 +132,7 @@ sealExp x = SealedExp ety (toDyn x)
 sealAcc :: (Arrays a, Typeable a) => Acc a -> SealedAcc
 sealAcc x =
   dbgtrace (" ** Creating arrTy: "++show ty0++" for "++show x) $
-  SealedAcc (ArrTy dims elty) (toDyn x)
+  SealedAcc (ArrTy elty dims) (toDyn x)
  where
   ty0@(TArray dims elty) = progType $ phase1 $ phase0 x
 
@@ -139,6 +148,13 @@ downcastE (SealedExp _ d) =
     Nothing ->
       error$"Attempt to unpack SealedExp "++show d
          ++ ", expecting type Exp "++ show (toDyn (unused::a))
+
+downcastF1 :: forall a b. (Typeable a, Typeable b) => SealedExp -> (A.Exp a -> A.Exp b)
+downcastF1 (SealedExp _ d) =
+  case fromDynamic d of
+    Just e      -> e
+    Nothing     -> error $ printf "Attempt to unpack SealedExp %s, expecting type Exp %s"
+                              (show d) (show (toDyn (unused :: a -> b)))
 
 unused :: a
 unused = error "This dummy value should not be used"
@@ -214,7 +230,7 @@ data SealedShapeType where
   SealedShapeType :: Shape sh => Phantom sh -> SealedShapeType
 
 data SealedSliceType where
-  SealedSliceType :: (Sug.Slice s, Elt s) => Phantom s -> SealedSliceType
+  SealedSliceType :: (Sugar.Slice s, Elt s) => Phantom s -> SealedSliceType
   deriving Typeable
 
 -- data SliceIndex ix slice coSlice sliceDim where
@@ -300,7 +316,8 @@ arrayTypeD x@(TTuple _) = error$"arrayTypeD: does not handle tuples of arrays ye
 arrayTypeD oth = error$"arrayTypeD: expected array type, got "++show oth
 
 
-arrayTypeD' (ArrTy d t) = arrayTypeD (TArray d t)
+arrayTypeD' :: ArrTy -> SealedArrayType
+arrayTypeD' (ArrTy t d) = arrayTypeD (TArray d t)
 
 -- | Construct a Haskell type from an Int!  Why not?
 shapeTypeD :: Int -> SealedShapeType
@@ -381,7 +398,7 @@ generateD indSealed bodfn outArrTy =
 
 mapD :: (SealedExp -> SealedExp) -> SealedAcc -> S.Type -> SealedAcc
 mapD bodfn sealedInArr outElmTy =
-      let (ArrTy dims inty) = arrTy sealedInArr
+      let (ArrTy inty dims) = arrTy sealedInArr
           newAty = arrayTypeD (TArray dims outElmTy)
       in
        -- TODO: Do we really need outElmTy here?
@@ -493,35 +510,48 @@ extendE vr ty sld (EnvPack eS eA mp) =
 type AENV0 = ()
 
 
+resealTup :: [(SealedEltTuple, SealedExp)] -> SealedExp
 resealTup [] = sealExp$ A.constant ()
 
 resealTup [(_,sing)] = sing
 
 resealTup [(SealedEltTuple (_ :: EltTuple aty), a'),
            (SealedEltTuple (_ :: EltTuple bty), b')] =
-    sealExp$ Sm.tup2 (downcastE a' :: Exp aty,
-                      downcastE b' :: Exp bty)
+    sealExp$ tup2 (downcastE a' :: Exp aty,
+                   downcastE b' :: Exp bty)
 
 resealTup [(SealedEltTuple (_ :: EltTuple aty), a),
            (SealedEltTuple (_ :: EltTuple bty), b),
            (SealedEltTuple (_ :: EltTuple cty), c)] =
-    sealExp$ Sm.tup3 (downcastE a :: Exp aty,
-                      downcastE b :: Exp bty,
-                      downcastE c :: Exp cty)
+    sealExp$ tup3 (downcastE a :: Exp aty,
+                   downcastE b :: Exp bty,
+                   downcastE c :: Exp cty)
 
 resealTup [(SealedEltTuple (_ :: EltTuple aty), a),
            (SealedEltTuple (_ :: EltTuple bty), b),
            (SealedEltTuple (_ :: EltTuple cty), c),
            (SealedEltTuple (_ :: EltTuple dty), d)] =
-    sealExp$ Sm.tup4 (downcastE a :: Exp aty,
-                      downcastE b :: Exp bty,
-                      downcastE c :: Exp cty,
-                      downcastE d :: Exp dty)
+    sealExp$ tup4 (downcastE a :: Exp aty,
+                   downcastE b :: Exp bty,
+                   downcastE c :: Exp cty,
+                   downcastE d :: Exp dty)
 
 resealTup components =
   error$ "resealTup: mismatched or unhandled tuple: "++show components
 
--- | Convert a closed expression.
+
+-- | Convert open scalar functions
+--
+convertOpenFun1 :: S.Fun1 S.Exp -> EnvPack -> SealedExp -> SealedExp
+convertOpenFun1 (S.Lam1 (var,ty) body) env x =
+  convertOpenExp (extendE var ty x env) body
+
+convertOpenFun2 :: S.Fun2 S.Exp -> EnvPack -> SealedExp -> SealedExp -> SealedExp
+convertOpenFun2 (S.Lam2 (var1,ty1) (var2,ty2) body) env x1 x2 =
+  convertOpenExp (extendE var2 ty2 x2 (extendE var1 ty1 x1 env)) body
+
+-- | Convert a closed scalar expression
+--
 convertExp :: S.Exp -> SealedExp
 convertExp = convertOpenExp emptyEnvPack
 
@@ -530,365 +560,301 @@ convertExp = convertOpenExp emptyEnvPack
 --   one for free expression variables, one for free array variables.
 --
 convertOpenExp :: EnvPack -> S.Exp -> SealedExp
-convertOpenExp ep@(EnvPack envE envA mp) ex =
-  dbgtrace(" @ Converting exp "++show ex++" with env "++show mp++"\n    and dyn env "++show (envE,envA)) $
-  dbgtrace(" @-> converted exp result: "++show result) $
-  result
- where
-  cE = convertOpenExp ep
-  typeEnv  = M.map P.fst mp -- Strip out the SealedExp/Acc bits leaving just the types.
-  resultTy = S.recoverExpType typeEnv ex
-  result =
-   case ex of
-    S.EConst c -> constantE c
-    S.EVr vr -> let (_,se) = mp # vr in expectEVar se
+convertOpenExp ep@(EnvPack envE envA mp) ex
+  = dbgtrace(printf " @ Converting exp %s with\n  env: %s\n  dynamic env: %s\n" (show ex) (show mp) (show (envE,envA)))
+  $ dbgtrace(printf " @ Converted exp result: %s " (show result))
+  $ result
+  where
+    cvtF1 :: S.Fun1 S.Exp -> SealedExp -> SealedExp
+    cvtF1 f = convertOpenFun1 f ep
 
-    S.EShape _          -> error "FINISHME/DynamicAcc: convertOpenExp needs to handle EShape"
-    S.EShapeSize _      -> error "FINISHME/DynamicAcc: convertOpenExp needs to handle EShapeSize"
-    S.EIndex _          -> error "FINISHME/DynamicAcc: convertOpenExp needs to handle EIndex"
+    cvtE :: S.Exp -> SealedExp
+    cvtE e =
+      case e of
+        S.EConst c              -> constantE c
+        S.EVr var               -> let (_,se) = mp # var in expectEVar se
+        S.ELet e1 e2            -> elet e1 e2
+        S.EShape sh             -> eshape sh
+        S.EShapeSize sh         -> eshapeSize sh
+        S.EIndex ix             -> eindex ix
+        S.EIndexScalar var ix   -> eindexScalar var ix
+        S.ETupProject m n ix    -> prjT m n ix
+        S.ETuple tup            -> etuple tup
+        S.EPrimApp ty f xs      -> eprimApp ty f xs
+        S.ECond p e1 e2         -> econd p e1 e2
+        S.EWhile p f e          -> ewhile p f e
 
-    -- Here we run straight into our mismatch between Acc and
-    -- SimpleAcc treatment of shape types.
-    S.EIndexScalar avr indEx ->
-      let indTy = S.recoverExpType typeEnv indEx
-          ind2  = tupToIndex indTy$ convertOpenExp ep indEx
-          (arrty,sa) = mp # avr
-          TArray dims elt = arrty
+    -- Strip out the SealedExp/Acc bits leaving just the types
+    typeEnv :: M.Map Var Type
+    typeEnv = M.map P.fst mp
+
+    result :: SealedExp
+    result = cvtE ex
+
+    -- Shapes and indices
+    --
+    eshape :: S.Var -> SealedExp
+    eshape avar
+      | SealedShapeType (_ :: Phantom sh) <- shapeTypeD dim
+      , SealedEltTuple  (_ :: EltTuple e) <- scalarTypeD e
+      = let arr :: Acc (Array sh e)
+            arr = downcastA $ expectAVar sa
+        in
+        sealExp $ A.shape arr
+      where
+        (arrTy, sa)     = mp # avar
+        TArray dim e    = arrTy
+
+    eshapeSize :: S.Exp -> SealedExp
+    eshapeSize _ = error "DynamicAcc.convertOpenExp: EShapeSize"
+
+    eindex :: [S.Exp] -> SealedExp
+    eindex _ = error "DynamicAcc.convertOpenExp: EIndex"
+
+    -- Scalar let bindings
+    --
+    elet :: (Var, Type, S.Exp) -> S.Exp -> SealedExp
+    elet (var, ty, bnd) body =
+      let bnd'                  = cvtE bnd
+          bodyTy                = scalarTypeD (S.recoverExpType (M.map P.fst m2) body)
+          ep'@(EnvPack _ _ m2)  = extendE var ty bnd' ep
       in
-       case (shapeTypeD dims, scalarTypeD elt) of
-         (SealedShapeType (_ :: Phantom shp),
-          SealedEltTuple  (_ :: EltTuple eT)) ->
-           let ind3 :: Exp shp
-               ind3 = downcastE ind2
-               arr  :: Acc (Array shp eT)
-               arr  = downcastA $ expectAVar sa
-               exp  :: Exp eT
-               exp  = (A.!) arr ind3
-           in sealExp exp
+      convertOpenExp ep' body
 
-    -- FIXME: This is having a FLATTING effect, which isn't valid for surface tuples:
-    S.ETupProject {S.indexFromRight=ind, S.projlen=len, S.tupexpr=tex} ->
-      dbgtrace ("ETupProject: "++show(ind,len,tex)) $
-      let tup = convertOpenExp ep tex
-          tty  = S.recoverExpType typeEnv tex
-      in
-       case scalarTypeD tty of
-         SealedEltTuple (et1 :: EltTuple tupT) ->
-           case et1 of
-             UnitTuple -> error "Tup projection from unit."
-             PairTuple (etA :: EltTuple aa) (etB@SingleTuple{} :: EltTuple bb) ->
-               let (a,b) = unlift (downcastE tup :: Exp (aa,bb))
-               in resealTup $
-                P.take len $ P.drop ind $ P.zip [SealedEltTuple etA, SealedEltTuple etB]
-                                                [sealExp a, sealExp b]
+    -- Scalar conditionals
+    --
+    econd :: S.Exp -> S.Exp -> S.Exp -> SealedExp
+    econd p e1 e2
+      | SealedEltTuple (_ :: EltTuple e) <- scalarTypeD (S.recoverExpType typeEnv e1)
+      = let p' :: Exp Bool
+            p' = downcastE (cvtE p)
 
-             -- PairTuple (ta :: EltTuple aa)
-             --   (PairTuple (tb :: EltTuple bb)
-             --    (tc@SingleTuple{} :: EltTuple cc)) ->
-             ThreeTuple (ta :: EltTuple aa) (tb :: EltTuple bb) (tc :: EltTuple cc) ->
-               let (a,b,c) = unlift (downcastE tup :: Exp (aa,bb,cc))
-               in resealTup $
-                P.take len $ P.drop ind $ P.zip [SealedEltTuple ta, SealedEltTuple tb, SealedEltTuple tc]
-                                                [sealExp a, sealExp b, sealExp c]
+            e1', e2' :: Exp e
+            e1' = downcastE (cvtE e1)
+            e2' = downcastE (cvtE e2)
+        in
+        sealExp (p' A.? (e1', e2'))
 
-             _ -> error ("ETupProject got unhandled tuple type: "++show et1)
+    -- Here we run straight into our mismatch between the Acc and SimpleAcc
+    -- treatment of shape types.
+    --
+    eindexScalar :: S.Var -> S.Exp -> SealedExp
+    eindexScalar avar ix
+      | SealedShapeType (_ :: Phantom sh) <- shapeTypeD dim
+      , SealedEltTuple  (_ :: EltTuple e) <- scalarTypeD e
+      = let ix' :: Exp sh
+            ix' = downcastE $ tupToIndex (S.recoverExpType typeEnv ix) (cvtE ix)
 
-    S.ETuple []    -> constantE (Tup [])
-    S.ETuple [ex]  -> convertOpenExp ep ex
-    S.ETuple [a,b] ->
-      let ta = S.recoverExpType typeEnv a
-          tb = S.recoverExpType typeEnv b
-          a' = convertOpenExp ep a
-          b' = convertOpenExp ep b
-      in
-      resealTup $ P.zip [scalarTypeD ta, scalarTypeD tb] [a',b']
+            arr :: Acc (Array sh e)
+            arr = downcastA $ expectAVar sa
+        in
+        sealExp $ arr A.! ix'
+      where
+        (arrTy, sa)     = mp # avar
+        TArray dim e    = arrTy
 
-    S.ETuple tup
-      -> resealTup
-       $ P.map (\e -> (scalarTypeD $ S.recoverExpType typeEnv e, convertOpenExp ep e)) tup
+    -- Scalar tuples
+    --
+    etuple :: [S.Exp] -> SealedExp
+    etuple []   = constantE (Tup [])
+    etuple [e]  = cvtE e
+    etuple es   = resealTup
+                $ P.map (\e -> (scalarTypeD (S.recoverExpType typeEnv e), cvtE e)) es
 
-    {- ========================================================================================== -}
-    S.EPrimApp outTy op ls ->
-      let args = P.map (convertOpenExp ep) ls
-          (fstArg :_) = ls
-          fstArgTy = S.recoverExpType typeEnv fstArg
-      in
-      -- Dispatch on the type of the first argument to the primitive:
-      (case scalarTypeD fstArgTy of {
-       SealedEltTuple t0 ->
-      (case t0 of {
-       ThreeTuple _ _ _ -> error$ "Primitive "++show op++" should not have a tuple 1st argument type.";
-       PairTuple _ _ -> error$ "Primitive "++show op++" should not have a tuple 1st argument type.";
-       UnitTuple     -> error$ "Primitive "++show op++" should not have a unit 1st argument type.";
-       SingleTuple (styIn1 :: T.ScalarType eltIn1) ->
-      (case scalarTypeD outTy of
-        SealedEltTuple t ->
-          case t of
-            ThreeTuple _ _ _ -> error$ "Primitive "++show op++" should not have a tuple output type."
-            PairTuple _ _ -> error$ "Primitive "++show op++" should not have a tuple output type."
-            UnitTuple     -> error$ "Primitive "++show op++" should not have a unit output type."
-            SingleTuple (styOut :: T.ScalarType elt) ->
+    -- Scalar tuple projection
+    --
+    -- FIXME: This is having a FLATTING effect, which isn't valid for surface tuples
+    --
+    prjT :: Int -> Int -> S.Exp -> SealedExp
+    prjT ind len exp
+      | dbgtrace (printf "ETupProject: ind=%d, len=%d, tup=%s\n" ind len (show exp)) False
+      = undefined
 
--- <BOILERPLATE abstracted as CPP macros>
------------------------------------------------------------------------------------
-#define REPBOP(numpat, popdict, which, theprim, binop)                          \
-  (numpat, which theprim) -> popdict (case args of {                            \
-         [a1,a2] -> let a1',a2' :: Exp elt;                                     \
-                        a1' = downcastE a1;                                     \
-                        a2' = downcastE a2;                                     \
-                    in sealExp (binop a1' a2');                                 \
-         _ -> error$ "Binary operator "++show theprim++" expects two args, got "++show args ; })
+      | SealedEltTuple (tup :: EltTuple tup) <- scalarTypeD tupTy
+      = case tup of
+          UnitTuple
+            -> error "DynamicAcc.convertOpenExp: Tuple projection from unit"
 
-#define REPUOP(numpat, popdict, which, prim, unop) (numpat, which prim) -> popdict (case args of { \
-         [a1] -> let a1' :: Exp elt;     \
-                     a1' = downcastE a1; \
-                 in sealExp (unop a1');  \
-         _ -> error$ "Unary operator "++show prim++" expects one arg, got "++show args ; })
+          SingleTuple (_ :: T.ScalarType a)
+            -> let exp' :: Exp a
+                   exp' = downcastE $ cvtE exp
+               in
+               sealExp exp'
 
--- These occur in a pattern context:
-#define POPINT T.NumScalarType (T.IntegralNumType (nty :: T.IntegralType elt))
-#define POPFLT T.NumScalarType (T.FloatingNumType (nty :: T.FloatingType elt))
-#define POPIDICT case T.integralDict nty of (T.IntegralDict :: T.IntegralDict elt) ->
-#define POPFDICT case T.floatingDict nty of (T.FloatingDict :: T.FloatingDict elt) ->
-#define POPSDICT
+          PairTuple (ta :: EltTuple a) (tb :: EltTuple b)
+            -> let exp' :: Exp (a,b)
+                   exp'  = downcastE $ cvtE exp
+                   (a,b) = unlift exp'
+               in
+               sliceT [SealedEltTuple ta, SealedEltTuple tb]
+                      [sealExp a, sealExp b]
 
--- Monomorphic in second arg:
-#define REPBOPMONO(numpat, popdict, which, prim, binop) (numpat, which prim) -> popdict (case args of { \
-         [a1,a2] -> let a1' :: Exp elt;         \
-                        a1' = downcastE a1;     \
-                        a2' :: Exp Int;         \
-                        a2' = downcastE a2;     \
-                    in sealExp (binop a1' a2'); \
-         _ -> error$ "Binary operator "++show prim++" expects two args, got "++show args ; })
+          ThreeTuple (ta :: EltTuple a) (tb :: EltTuple b) (tc :: EltTuple c)
+            -> let exp' :: Exp (a,b,c)
+                   exp'    = downcastE $ cvtE exp
+                   (a,b,c) = unlift exp'
+               in
+               sliceT [SealedEltTuple ta, SealedEltTuple tb, SealedEltTuple tc]
+                      [sealExp a, sealExp b, sealExp c]
+      where
+        tupTy           = S.recoverExpType typeEnv exp
+        sliceT ts es     = resealTup . P.take len . P.drop ind $ P.zip ts es
 
-#define REPUOP_I2F(prim, unop)  \
-      (T.NumScalarType (T.IntegralNumType (ity :: T.IntegralType elt)), FP prim) -> \
-        (case T.integralDict ity of { (T.IntegralDict :: T.IntegralDict elt) ->     \
-         case styIn1 of { T.NumScalarType (T.FloatingNumType (fty :: T.FloatingType eltF)) -> \
-         case T.floatingDict fty of { (T.FloatingDict :: T.FloatingDict eltF) -> \
-         case args of { \
-          [a1] -> (let a1' :: Exp eltF;    \
-                       a1' = downcastE a1; \
-                       res :: Exp elt;     \
-                       res = unop a1';     \
-                   in sealExp res);        \
-          _ -> error$ "Unary operator "++show prim++" expects one arg, got "++show args ;};};};})
+    -- Scalar iteration
+    --
+    ewhile :: S.Fun1 S.Exp -> S.Fun1 S.Exp -> S.Exp -> SealedExp
+    ewhile p f e
+      | SealedEltTuple (_ :: EltTuple e) <- scalarTypeD (S.recoverExpType typeEnv e)
+      = let p' :: Exp e -> Exp Bool
+            p' = downcastF1 (cvtF1 p undefined)
 
------------------------------------------------------------------------------------
-             (case (styOut,op) of
+            f' :: Exp e -> Exp e
+            f' = downcastF1 (cvtF1 f undefined)
 
---               (T.NumScalarType (T.IntegralNumType (nty:: T.IntegralType elt)), NP Add)
---                 | T.IntegralDict <- T.integralDict nty -- :: T.IntegralDict x)
---                 ->  case args of
---                       [a1,a2] -> let a1',a2' :: Exp elt
---                                      a1' = downcastE a1
---                                      a2' = downcastE a2
---                                  in
---                                  sealExp (a1' + a2' :: Exp elt)
+            e' :: Exp e
+            e' = downcastE (cvtE e)
+        in
+        sealExp $ A.while p' f' e'
 
-{-- TLM: BROKEN
-               REPBOP(POPINT, POPIDICT, NP, Add, (+))
-               REPBOP(POPINT, POPIDICT, NP, Sub, (-))
-               REPBOP(POPINT, POPIDICT, NP, Mul, (*))
-               REPUOP(POPINT, POPIDICT, NP, Abs, abs)
-               REPUOP(POPINT, POPIDICT, NP, Neg, (\x -> (-x)))
-               REPUOP(POPINT, POPIDICT, NP, Sig, signum)
-               -- UGH, do the same thing with float dicts:
-               REPBOP(POPFLT, POPFDICT, NP, Add, (+))
-               REPBOP(POPFLT, POPFDICT, NP, Sub, (-))
-               REPBOP(POPFLT, POPFDICT, NP, Mul, (*))
-               REPUOP(POPFLT, POPFDICT, NP, Abs, abs)
-               REPUOP(POPFLT, POPFDICT, NP, Neg, (\x -> (-x)))
-               REPUOP(POPFLT, POPFDICT, NP, Sig, signum)
+    -- Primitive function application.
+    -- This is extremely painful.
+    --
+    eprimApp :: S.Type -> S.Prim -> [S.Exp] -> SealedExp
+    eprimApp outTy op args
+      | SealedEltTuple (SingleTuple (sa :: T.ScalarType a)) <- scalarTypeD inTy
+      , SealedEltTuple (SingleTuple (sb :: T.ScalarType b)) <- scalarTypeD outTy
+      = sealExp
+      $ case op of
+          NP f | T.NumScalarType t                      <- sb   -> num t f
+          IP f | T.NumScalarType (T.IntegralNumType t)  <- sb   -> integral t f
+          FP f | T.NumScalarType (T.FloatingNumType fa) <- sa
+               , T.NumScalarType nb                     <- sb   -> floating fa nb f
+          BP f | T.NonNumScalarType T.TypeBool{} <- sb          -> bool f
+          SP f                                                  -> scalar sa sb f
+          OP f                                                  -> other sa sb f
+          _ -> error "DynamicAcc.convertOpenExp: inconsistent valuation"
 
-               REPBOP(POPINT, POPIDICT, IP, Quot, quot)
-               REPBOP(POPINT, POPIDICT, IP, Rem,  rem)
-               REPBOP(POPINT, POPIDICT, IP, IDiv, div)
-               REPBOP(POPINT, POPIDICT, IP, Mod,  mod)
-               REPBOP(POPINT, POPIDICT, IP, BAnd, (.&.))
-               REPBOP(POPINT, POPIDICT, IP, BOr,  (.|.))
-               REPBOP(POPINT, POPIDICT, IP, BXor, xor)
-               REPUOP(POPINT, POPIDICT, IP, BNot, complement)
-               -- These take monomorphic Int arguments:
-               REPBOPMONO(POPINT, POPIDICT, IP, BShiftL, A.shiftL)
-               REPBOPMONO(POPINT, POPIDICT, IP, BShiftR, A.shiftR)
-               REPBOPMONO(POPINT, POPIDICT, IP, BRotateL, A.rotateL)
-               REPBOPMONO(POPINT, POPIDICT, IP, BRotateR, A.rotateR)
+      | otherwise
+      = error "DynamicAcc.convertOpenExp: inconsistent valuation"
+      where
+        args'   = P.map cvtE args
+        inTy    = S.recoverExpType typeEnv (head args)
 
-               REPBOP(POPFLT, POPFDICT, FP, FDiv, (/))
-               REPBOP(POPFLT, POPFDICT, FP, FPow, (**))
-               REPBOP(POPFLT, POPFDICT, FP, LogBase, logBase)
-               REPBOP(POPFLT, POPFDICT, FP, Atan2, atan2)
-               REPUOP(POPFLT, POPFDICT, FP, Recip, recip)
-               REPUOP(POPFLT, POPFDICT, FP, Sin, sin)
-               REPUOP(POPFLT, POPFDICT, FP, Cos, cos)
-               REPUOP(POPFLT, POPFDICT, FP, Tan, tan)
-               REPUOP(POPFLT, POPFDICT, FP, Asin, asin)
-               REPUOP(POPFLT, POPFDICT, FP, Acos, acos)
-               REPUOP(POPFLT, POPFDICT, FP, Atan, atan)
-               REPUOP(POPFLT, POPFDICT, FP, Asinh, asinh)
-               REPUOP(POPFLT, POPFDICT, FP, Acosh, acosh)
-               REPUOP(POPFLT, POPFDICT, FP, Atanh, atanh)
-               REPUOP(POPFLT, POPFDICT, FP, ExpFloating, exp)
-               REPUOP(POPFLT, POPFDICT, FP, Sqrt, sqrt)
-               REPUOP(POPFLT, POPFDICT, FP, Log, log)
+        unary :: (Elt a, Elt b) => PrimFun (a -> b) -> Exp b
+        unary f
+          | [x] <- args'        = Exp $ f `PrimApp` downcastE x
+          | otherwise           = error "DynamicAcc.convertOpenExp: inconsistent valuation"
 
-               -- Warning!  Heterogeneous input/output types:
-               REPUOP_I2F(Truncate, A.truncate)
-               REPUOP_I2F(Round, A.round)
-               REPUOP_I2F(Floor, A.floor)
-               REPUOP_I2F(Ceiling, A.ceiling)
---}
+        binary :: (Elt a, Elt b, Elt c) => PrimFun ((a,b) -> c) -> Exp c
+        binary f
+          | [x,y] <-  args'     = Exp $ f `PrimApp` tup2 (downcastE x, downcastE y)
+          | otherwise           = error "DynamicAcc.convertOpenExp: inconsistent valuation"
 
-               -------------- Boolean Primitives --------------
-               (_, BP S.And) -> (case args of {
-                 [a1,a2] -> let a1', a2' :: Exp Bool;
-                                a1' = downcastE a1;
-                                a2' = downcastE a2;
-                            in sealExp (a1' A.&&* a2');
-                 _ -> error$ "Boolean AND operator expects two args, got "++show args ; })
+        num :: Elt a => T.NumType a -> NumPrim -> Exp a
+        num t Add = binary (PrimAdd t)
+        num t Sub = binary (PrimSub t)
+        num t Mul = binary (PrimMul t)
+        num t Neg = unary  (PrimNeg t)
+        num t Abs = unary  (PrimAbs t)
+        num t Sig = unary  (PrimSig t)
 
-               (_, BP S.Or) -> (case args of {
-                 [a1,a2] -> let a1', a2' :: Exp Bool;
-                                a1' = downcastE a1;
-                                a2' = downcastE a2;
-                            in sealExp (a1' A.||* a2');
-                 _ -> error$ "Boolean OR operator expects two args, got "++show args ; })
+        integral :: Elt a => T.IntegralType a -> IntPrim -> Exp a
+        integral t Quot     = binary (PrimQuot t)
+        integral t Rem      = binary (PrimRem t)
+        integral t IDiv     = binary (PrimIDiv t)
+        integral t Mod      = binary (PrimMod t)
+        integral t BAnd     = binary (PrimBAnd t)
+        integral t BOr      = binary (PrimBOr t)
+        integral t BXor     = binary (PrimBXor t)
+        integral t BNot     = unary  (PrimBNot t)
+        integral t BShiftL  = binary (PrimBShiftL t)
+        integral t BShiftR  = binary (PrimBShiftR t)
+        integral t BRotateL = binary (PrimBRotateL t)
+        integral t BRotateR = binary (PrimBRotateR t)
 
-               (_, BP S.Not) -> (case args of {
-                 [a1] -> let a1' :: Exp Bool;
-                             a1' = downcastE a1;
-                         in sealExp (A.not a1');
-                 _ -> error$ "Boolean NOT operator expects one arg, got "++show args ; })
+        floating :: (Elt a, Elt b) => T.FloatingType a -> T.NumType b -> FloatPrim -> Exp b
+        floating ta nb f
+          | T.FloatingNumType tb <- nb
+          = case f of
+              Recip       -> unary  (PrimRecip tb)
+              Sin         -> unary  (PrimSin tb)
+              Cos         -> unary  (PrimCos tb)
+              Tan         -> unary  (PrimTan tb)
+              Asin        -> unary  (PrimAsin tb)
+              Acos        -> unary  (PrimAcos tb)
+              Atan        -> unary  (PrimAtan tb)
+              Asinh       -> unary  (PrimAsinh tb)
+              Acosh       -> unary  (PrimAcosh tb)
+              Atanh       -> unary  (PrimAtanh tb)
+              ExpFloating -> unary  (PrimExpFloating tb)
+              Sqrt        -> unary  (PrimSqrt tb)
+              Log         -> unary  (PrimLog tb)
+              FDiv        -> binary (PrimFDiv tb)
+              FPow        -> binary (PrimFPow tb)
+              LogBase     -> binary (PrimLogBase tb)
+              Atan2       -> binary (PrimAtan2 tb)
+              _           -> error "DynamicAcc.convertOpenExp: inconsistent valuation"
 
+          | T.IntegralNumType tb <- nb
+          = case f of
+              Truncate    -> unary (PrimTruncate ta tb)
+              Round       -> unary (PrimRound ta tb)
+              Floor       -> unary (PrimFloor ta tb)
+              Ceiling     -> unary (PrimCeiling ta tb)
+              _           -> error "DynamicAcc.convertOpenExp: inconsistent valuation"
 
-               -------------- Relational/Equality Primitives --------------
+          | otherwise
+          = error "DynamicAcc.convertOpenExp: inconsistent valuation"
 
-      -- (T.NumScalarType (T.IntegralNumType (ity :: T.IntegralType elt)), FP prim) -> \
-      --   (case T.integralDict ity of { (T.IntegralDict :: T.IntegralDict elt) ->     \
-      --    case styIn1 of { T.NumScalarType (T.FloatingNumType (fty :: T.FloatingType eltF)) -> \
-      --    case T.floatingDict fty of { (T.FloatingDict :: T.FloatingDict eltF) -> \
-      --    case args of { \
-      --     [a1] -> (let a1' :: Exp eltF;    \
-      --                  a1' = downcastE a1; \
-      --                  res :: Exp elt;     \
-      --                  res = unop a1';     \
-      --              in sealExp res);        \
-      --     _ -> error$ "Unary operator "++show prim++" expects one arg, got "++show args ;};};};})
+        scalar :: (Elt a, Elt b) => T.ScalarType a -> T.ScalarType b -> ScalarPrim -> Exp b
+        scalar sa sb f
+          | T.NonNumScalarType T.TypeBool{} <- sb
+          = case f of
+              Lt   -> binary (PrimLt sa)
+              Gt   -> binary (PrimGt sa)
+              LtEq -> binary (PrimLtEq sa)
+              GtEq -> binary (PrimGtEq sa)
+              Eq   -> binary (PrimEq sa)
+              NEq  -> binary (PrimNEq sa)
+              _    -> error "DynamicAcc.convertOpenExp: inconsistent valuation"
 
-               (_, SP S.Eq  ) -> (ordPrim styIn1 (A.==*) args)
-               (_, SP S.NEq ) -> (ordPrim styIn1 (A./=*) args)
-               (_, SP S.Gt  ) -> (ordPrim styIn1 (A.>*) args)
-               (_, SP S.Lt  ) -> (ordPrim styIn1 (A.<*) args)
-               (_, SP S.GtEq) -> (ordPrim styIn1 (A.>=*) args)
-               (_, SP S.LtEq) -> (ordPrim styIn1 (A.<=*) args)
-               -- FINSHME: Max & Min
+          | otherwise
+          = case f of
+              Min  -> binary (PrimMin sb)
+              Max  -> binary (PrimMax sb)
+              _    -> error "DynamicAcc.convertOpenExp: inconsistent valuation"
 
-               -------------- Other Primitives --------------
+        bool :: BoolPrim -> Exp Bool
+        bool And = binary PrimLAnd
+        bool Or  = binary PrimLOr
+        bool Not = unary  PrimLNot
 
-               -------------- Other Primitives --------------
+        other :: (Elt a, Elt b) => T.ScalarType a -> T.ScalarType b -> OtherPrim -> Exp b
+        other sa sb f =
+          case f of
+            Ord
+              | T.NonNumScalarType T.TypeChar{}                 <- sa
+              , T.NumScalarType (T.IntegralNumType T.TypeInt{}) <- sb
+              -> unary PrimOrd
 
-{-- TLM: BROKEN
-               -- FromIntegral case 1/2: integral->integral
-               (T.NumScalarType (T.IntegralNumType (ityOut :: T.IntegralType elt)),
-                OP S.FromIntegral) ->
-                (case T.integralDict ityOut of { (T.IntegralDict :: T.IntegralDict elt) ->
-                 case styIn1 of { T.NumScalarType (T.IntegralNumType (ity :: T.IntegralType inElt)) ->
-                 case T.integralDict ity of { (T.IntegralDict :: T.IntegralDict inElt) ->
-                 case args of {
-                 [a1] -> let a1' :: Exp inElt;
-                             a1' = downcastE a1;
-                             res :: Exp elt
-                             res = A.fromIntegral a1'
-                         in sealExp res;
-                 _ -> error$ "fromIntegral operator expects one arg, got "++show args ;};};};})
---}
-{-- TLM: BROKEN
-               -- FromIntegral case 2/2: integral->floating
-               (T.NumScalarType (T.FloatingNumType (ityOut :: T.FloatingType elt)),
-                OP S.FromIntegral) ->
-                (case T.floatingDict ityOut of { (T.FloatingDict :: T.FloatingDict eltF) ->
-                 case styIn1 of { T.NumScalarType (T.IntegralNumType (ity :: T.IntegralType inElt)) ->
-                 case T.integralDict ity of { (T.IntegralDict :: T.IntegralDict inElt) ->
-                 case args of {
-                 [a1] -> let a1' :: Exp inElt;
-                             a1' = downcastE a1;
-                             res :: Exp elt
-                             res = A.fromIntegral a1'
-                         in sealExp res;
-                 _ -> error$ "fromIntegral operator expects one arg, got "++show args ;};};};})
---}
--- FINSHME
-               --------------------------------------------------
-               _ -> error$ "Primop unhandled or got wrong argument type: "++show op++" / "++show outTy
-               )
-      )  -- End outTy dispatch.
-      })}) -- End fstArgTy dispatch.
-    -- End PrimApp case.
+            Chr
+              | T.NumScalarType (T.IntegralNumType T.TypeInt{}) <- sa
+              , T.NonNumScalarType T.TypeChar{}                 <- sb
+              -> unary PrimChr
 
-    S.ELet (vr,ty,rhs) bod ->
-      let rhs' = cE rhs
-          ep'@(EnvPack _ _ m2) = extendE vr ty rhs' ep
-          resTy = scalarTypeD (S.recoverExpType (M.map P.fst m2) bod)
-      in
-       convertOpenExp ep' bod
+            BoolToInt
+              | T.NonNumScalarType T.TypeBool{} <- sa
+              , T.NumScalarType (T.IntegralNumType T.TypeInt{}) <- sb
+              -> unary PrimBoolToInt
 
-    S.ECond e1 e2 e3 ->
-      let d1 = cE e1
-          d2 = cE e2
-          d3 = cE e3
-          ty = S.recoverExpType typeEnv e2
-      in case scalarTypeD ty of
-          SealedEltTuple (t :: EltTuple elt) ->
-           -- #define a macro for this?
-           case t of
-             UnitTuple ->
-               sealExp(((downcastE d1::Exp Bool) A.?
-                        (downcastE d2::Exp elt,
-                         downcastE d3::Exp elt))::Exp elt)
-             SingleTuple _ ->
-               sealExp(((downcastE d1::Exp Bool) A.?
-                        (downcastE d2::Exp elt,
-                         downcastE d3::Exp elt))::Exp elt)
-             PairTuple _ _ ->
-               sealExp(((downcastE d1::Exp Bool) A.?
-                        (downcastE d2::Exp elt,
-                         downcastE d3::Exp elt))::Exp elt)
+            FromIntegral
+              | T.NumScalarType (T.IntegralNumType ta) <- sa
+              , T.NumScalarType tb                     <- sb
+              -> unary (PrimFromIntegral ta tb)
 
-             ThreeTuple {} ->
-               sealExp(((downcastE d1::Exp Bool) A.?
-                        (downcastE d2::Exp elt,
-                         downcastE d3::Exp elt))::Exp elt)
+            _ -> error "DynamicAcc.convertOpenExp: inconsistent valuation"
 
 
--- type OrdPrim = (forall b . Ord b => b -> b -> Exp Bool)
-type OrdPrim = (forall b . (Elt b, IsScalar b) => Exp b -> Exp b -> Exp Bool)
-
--- | Dig down to find an Ord instance and call the given Prim:
-ordPrim :: forall a . Elt a => (T.ScalarType a) -> OrdPrim -> ([SealedExp] -> SealedExp)
-ordPrim inTy prim args =
-  let [se1,se2] = args in
-  case inTy of
-   T.NumScalarType (T.IntegralNumType a) ->
-     case T.integralDict a of
-      T.IntegralDict ->
-        let x,y :: Exp a
-            x = downcastE se1
-            y = downcastE se2
-        in error "ordPrim: BROKEN"
---        in sealExp $ prim x y
-
-   T.NumScalarType (T.FloatingNumType a) ->
-     case T.floatingDict a of
-      T.FloatingDict ->
-        let x,y :: Exp a
-            x = downcastE se1
-            y = downcastE se2
-        in error "ordPrim: BROKEN"
---        in sealExp $ prim x y
-
-   T.NonNumScalarType a ->
-      error$"DynamicAcc2/ordPrim: attempting to apply relational operator to non-numeric type: "++show inTy
 
 -- | The SimpleAcc representation does NOT keep index types disjoint
 -- from regular tuples.  To convert back to Acc we need to reassert
