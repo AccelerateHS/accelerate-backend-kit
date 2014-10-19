@@ -7,6 +7,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+{-# OPTIONS_GHC -fno-warn-orphans          #-}
 
 -- | This module defines the abstract syntax datatypes produced by the
 --   simplified Accelerate backend-kit. These datatypes are the /starting point/
