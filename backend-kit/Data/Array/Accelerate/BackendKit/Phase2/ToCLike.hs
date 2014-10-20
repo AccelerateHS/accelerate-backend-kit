@@ -112,6 +112,11 @@ makeResultWriterCont ty = do
           tmps results
   return (binds,cont)
   
+
+-- 
+hackAssign :: [Var] -> Cont -> [LL.Stmt] 
+hackAssign vs f = f (L.map LL.EVr vs)
+
 -- | This takes a continuation for where to write the results.
 --
 -- Returns:
@@ -143,6 +148,38 @@ doStmts k env ex =
 
     ECond a b c -> fmap sing $ 
       LL.SCond (doE env a) <$> doStmts k env b <*> doStmts k env c
+
+    -- Handle While here ?
+    -- Previously this was in doE (so used the fallthrough below) 
+    EWhile (Lam1 (v1,t1) bod1) (Lam1 (v2,t2) bod2) e -> do 
+        
+       --(binds1,cont1) <- lift$ makeResultWriterCont t1 
+       --(binds2,cont2) <- lift$ makeResultWriterCont t2
+       
+       let env1 = M.insert v1 (t1,[v1],Nothing) env
+       --   subcomps1 = L.map fst binds1
+       --     a'   = doE env a   
+ 
+           env2 = M.insert v2 (t2,[v2],Nothing) env
+       --   subcomps2 = L.map fst binds2
+           -- dosomething         
+                 
+       let ty1 = recoverExpType (unliftEnv env1) bod1
+       (binds1,cont1)   <- lift $ makeResultWriterCont ty1
+       (stmts1,binds1') <- lift $ runWriterT$ doStmts cont1 env1 bod1
+       let f1 = LL.Lam [(v1,t1)] $ LL.ScalarBlock (binds1++binds1') (L.map fst binds1) stmts1
+
+       let ty2 = recoverExpType (unliftEnv env2) bod2
+       (binds2,cont2)   <- lift $ makeResultWriterCont ty2
+       (stmts2,binds2') <- lift $ runWriterT$ doStmts k env2 bod2
+       let f2 = LL.Lam [(v2,t2)] $ LL.ScalarBlock (binds2++binds2') (L.map fst binds2) stmts2
+
+       let e' = doE env e  
+                
+       return $ [LL.SWhile ((fst . head) binds1) f1 f2  e'] ++ 
+                hackAssign (L.map fst binds2) k  
+
+       --  return $ (prestuff : LL.SWhile something something) 
 
     -- An ETuple in tail position:                                 
     ETuple ls -> return$ k$ L.map (doE env) ls 
@@ -258,9 +295,9 @@ doE env ex =
                           oth   -> LL.EConst c
     EPrimApp ty p ls -> LL.EPrimApp ty p $ L.map (doE env) ls
     ECond a b c      -> LL.ECond (doE env a) (doE env b) (doE env c)
-    EWhile (Lam1 (v1,t1) bod1) (Lam1 (v2,t2) bod2) e   -> LL.EWhile (LL.Lam [(v1,t1)] (doE env bod1))
-                                                                    (LL.Lam [(v2,t2)] (doE env bod2)) 
-                                                                    (doE env e) 
+ --   EWhile (Lam1 (v1,t1) bod1) (Lam1 (v2,t2) bod2) e   -> LL.EWhile (LL.Lam [(v1,t1)] (doE env bod1))
+ --                                                                   (LL.Lam [(v2,t2)] (doE env bod2)) 
+ --                                                                  (doE env e) 
     EIndexScalar v e -> LL.EIndexScalar v (doE env e) 0
     EIndex _     -> err
     EShapeSize _ -> err 

@@ -179,9 +179,9 @@ doE ex =
     EPrimApp t p ls -> G.EPrimApp t p (map doE ls)
     ECond a b c     -> G.ECond (doE a) (doE b) (doE c)
 -- Going with G.Default 
-    EWhile (Lam [(v1,t1)] bod1) (Lam [(v2,t2)] bod2) e -> G.EWhile (G.Lam [(v1, G.Default, t1)] (doE bod1) )
-                                                                   (G.Lam [(v2, G.Default, t2)] (doE bod2) ) 
-                                                                   (doE e) 
+--    EWhile (Lam [(v1,t1)] bod1) (Lam [(v2,t2)] bod2) e -> G.EWhile (G.Lam [(v1, G.Default, t1)] (doE bod1) )
+--                                                                   (G.Lam [(v2, G.Default, t2)] (doE bod2) ) 
+--                                                                   (doE e) 
     EIndexScalar v e i | i == 0    -> G.EIndexScalar v (doE e)
                        | otherwise -> error$"ConvertLLIR.hs/doE: only handles EIndexScalar without tuple dereference index: "++show i
  

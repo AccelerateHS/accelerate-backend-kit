@@ -112,22 +112,22 @@ Test-Suite test-accelerate-liftdrop-cpu-sequential
 
 
 
-Test-Suite test-accelerate-cpu-unit-tests
-    type:       exitcode-stdio-1.0
-    Default-Language:    Haskell2010
-    main-is:    UnitTests.hs
-    hs-source-dirs: tests/ 
-    ghc-options: -threaded -rtsopts -with-rtsopts=-N8
-    build-depends: base >= 4, containers, random, process, unix, array, directory
-                 , accelerate-icc-opencl, accelerate-backend-kit
-                 , test-framework, test-framework-th, test-framework-hunit, HUnit
-                 -- , deepseq         >= 1.3
-                 -- , test-framework, test-framework-hunit, HUnit
-                 -- , split >= 0.2
-                 -- , mtl, pretty, prettyclass, GenericPretty
-                 -- , accelerate-backend-kit >= 0.13.0.99
-                 -- , accelerate >= 0.13.0.99
-                 -- , bytestring, ghc-prim, time
+-- Test-Suite test-accelerate-cpu-unit-tests
+--     type:       exitcode-stdio-1.0
+--     Default-Language:    Haskell2010
+--     main-is:    UnitTests.hs
+--     hs-source-dirs: tests/ 
+--     ghc-options: -threaded -rtsopts -with-rtsopts=-N8
+--     build-depends: base >= 4, containers, random, process, unix, array, directory
+--                  , accelerate-icc-opencl, accelerate-backend-kit
+--                  , test-framework, test-framework-th, test-framework-hunit, HUnit
+--                  -- , deepseq         >= 1.3
+--                  -- , test-framework, test-framework-hunit, HUnit
+--                  -- , split >= 0.2
+--                  -- , mtl, pretty, prettyclass, GenericPretty
+--                  -- , accelerate-backend-kit >= 0.13.0.99
+--                  -- , accelerate >= 0.13.0.99
+--                  -- , bytestring, ghc-prim, time
 
 
 Test-Suite test-accelerate-cpu-opencl

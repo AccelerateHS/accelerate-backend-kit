@@ -138,10 +138,14 @@ data Fun a = Lam [(Var,Type)] a
 data ScalarBlock = ScalarBlock [(Var,Type)] [Var] [Stmt]
  deriving (Read,Show,Eq,Ord,Generic)           
           
-data Stmt =   
+-- Moving While to be a statement, beacause we believe it to be the right thing  
+-- to do.
+
 --    SCond Exp ScalarBlock ScalarBlock
-    SCond Exp [Stmt] [Stmt]
-  | SSet Var Exp
+data Stmt = SCond Exp [Stmt] [Stmt]
+          --       condvar  cond                 body       init  
+          | SWhile Var (Fun ScalarBlock)  (Fun ScalarBlock) Exp  
+          | SSet Var Exp
  deriving (Read,Show,Eq,Ord,Generic)               
           
 data Exp = 
@@ -149,7 +153,7 @@ data Exp =
   | EVr Var                  
   | EPrimApp Type Prim [Exp]
   | ECond Exp Exp Exp    
-  | EWhile (Fun Exp) (Fun Exp) Exp     
+--  | EWhile (Fun Exp) (Fun Exp) Exp     
   | EIndexScalar Var Exp Int  -- Reads a tuple from an array, and does index-from-right into that tuple.
     -- TODO: get rid of the numeric argument when tupling is fully eliminated.
  deriving (Read,Show,Eq,Ord,Generic)
@@ -195,12 +199,12 @@ fvE ex =
     EConst _            -> S.empty
     EVr vr              -> S.singleton vr  
     ECond e1 e2 e3      -> S.union (fvE e1)  $ S.union (fvE e2) (fvE e3)
-    EWhile (Lam [(v1,t1)] bod1) 
-           (Lam [(v2,t2)] bod2) e -> 
-       let s1 = S.delete v1 $fvE bod1 
-           s2 = S.delete v1 $fvE bod2 
+    -- EWhile (Lam [(v1,t1)] bod1) 
+    --        (Lam [(v2,t2)] bod2) e -> 
+    --    let s1 = S.delete v1 $fvE bod1 
+    --        s2 = S.delete v1 $fvE bod2 
            
-       in s1 `S.union` s2 `S.union` (fvE e) 
+    --    in s1 `S.union` s2 `S.union` (fvE e) 
     EIndexScalar v e _  -> S.insert v $ fvE e
     EPrimApp _ _ els    -> fvEs els     
  where
