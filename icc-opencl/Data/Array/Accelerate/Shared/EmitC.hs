@@ -109,7 +109,7 @@ instance EmitBackend CEmitter where
     case e of
       CEmitter Sequential   _ -> return ()
       CEmitter CilkParallel _ -> do include "cilk/cilk.h"
-                                    include "cilk/cilk_api_linux.h"
+                                    include "cilk/cilk_api.h"
                                     include "cilk/reducer.h"
     mapM_ (emitLine . strToSyn) $ P.lines headerCode 
 
