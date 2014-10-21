@@ -167,7 +167,7 @@ compileToFile pm name prog = do
       ccArgs = ccFlags0++[suppress,"-lcilkrts","-std=c99",tmpcfile,"-o",output]
 #else
       output = thisprog++".so"
-      ccArgs = ccFlags0++[suppress,"-lcilkrts","-std=c99",sharedLib,"-fPIC", tmpcfile, "-o", output]
+      ccArgs = ccFlags0++[suppress,"-lcilkrts","-std=c99",sharedLib, tmpcfile, "-o", output]
 #endif
   dbgPrint 2 $ "[JIT]   Compiling with: "++ (cc ++ ' ':unwords ccArgs)
   t1 <- getCurrentTime 
