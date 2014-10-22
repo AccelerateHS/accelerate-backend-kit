@@ -160,6 +160,13 @@ doE tenv env ex =
     EConst _            -> return ex
     EVr _               -> return ex
     ECond e1 e2 e3      -> ECond <$> fn e1 <*> fn e2 <*> fn e3
+    EWhile (Lam1 (v1,t1) bod1) (Lam1 (v2,t2) bod2) e -> 
+        do 
+          bod1' <- fn bod1 
+          bod2' <- fn bod2
+          e' <- fn e 
+          return $ EWhile (Lam1 (v1,t1) bod1') (Lam1 (v2,t2) bod2') e'
+
     ELet (v,t,rhs) bod  -> do rhs' <- fn rhs
                               ELet (v,t,rhs') <$> fn bod
     ETuple els          -> ETuple       <$> mapM fn els

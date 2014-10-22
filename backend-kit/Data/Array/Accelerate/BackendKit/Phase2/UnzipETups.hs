@@ -180,6 +180,17 @@ doSpine env ex =
 
     -- In tail (or "spine") position multiple values may be returned by the branches:
     ECond e1 e2 e3        -> ECond <$> (unsing <$> doE env e1) <*> doSpine env e2 <*> doSpine env e3
+    EWhile (Lam1 (v1,t1) bod1) (Lam1 (v2,t2) bod2) e -> 
+        do 
+          let env1 = M.insert v1 (t1,Nothing) env 
+              env2 = M.insert v2 (t2,Nothing) env 
+                     
+          bod1' <- doSpine env1 bod1 
+          bod2' <- doSpine env2 bod2 
+
+          e' <- doE env e 
+          return $ EWhile  (Lam1 (v1,t1) bod1') (Lam1 (v2,t2) bod2') (mkETuple e')
+      
 
     -- EConds in the RHS of a let are still on the "spine" (don't untuple):
     ELet (v,t,ECond a b c) bod -> do

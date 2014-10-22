@@ -39,7 +39,7 @@ module Data.Array.Accelerate.BackendKit.Tests
     p40a, p40b, p41a, p41b, 
 
     -- Iteration
-    p50a,
+    p50a, -- p50b, 
     
     -- * Reexports to make life easier:
     doc, convertToSimpleProg,
@@ -171,6 +171,7 @@ otherProgs =
 
   -- Iteration
   go "p50a" p50a
+--  go "p50b" p50b
   ]
 
 makeTestEntry :: forall a . (Show a, Arrays a) => String -> Acc a -> TestEntry
@@ -1002,6 +1003,9 @@ p41b = let xs = use$ fromList (Z :. (10::Int)) [1..10::Int]
 -- | Test iteration
 p50a :: Acc (Array DIM0 Int)
 p50a = A.unit $ A.while (<* 100) (+ 1) 90
+
+-- p50b :: Acc (Array DIM0 (Int,Int))
+-- p50b = A.unit $ A.while (<* 100) (+ 1) (90,1) 
 
 
 --------------------------------------------------------------------------------

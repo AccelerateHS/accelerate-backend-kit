@@ -193,6 +193,17 @@ fvStmt (SCond e1 s1 s2) = S.union (fvE e1)
                            $ S.union (S.unions$ L.map fvStmt s1)
                                      (S.unions$ L.map fvStmt s2)
 
+--ScalarBlock [(Var,Type)] [Var] [Stmt]
+fvStmt (SWhile v (Lam binds1 (ScalarBlock locals1 v1 stms1) )
+                   (Lam binds2 (ScalarBlock locals2 v2 stms2))  e) = 
+    let fv_e = fvE e
+        fv_sb1 = S.unions $ L.map fvStmt stms1
+        fv_sb2 = S.unions $ L.map fvStmt stms2 
+        tmp =  fv_e `S.union` fv_sb1 `S.union` fv_sb2 
+        dels = S.fromList $ map fst (binds1 L.++ binds2 L.++ locals1 L.++ locals2)
+    in  S.difference tmp dels 
+
+
 fvE :: Exp -> S.Set SA.Var
 fvE ex =
   case ex of

@@ -165,6 +165,13 @@ doStmt st =
   case st of
     SCond e l1 l2 -> G.SCond (doE e) (doStmts l1) (doStmts l2)
     SSet vr ex    -> G.SSet vr (doE ex)
+    
+    SWhile v (Lam vs1 (ScalarBlock vl1 r1 stms1)) 
+             (Lam vs2 (ScalarBlock vl2 r2 stms2)) e -> 
+          G.SWhile v (G.Lam (map liftBind vs1)  
+                          (G.ScalarBlock (map liftBind vl1) r1 (doStmts stms1)))
+                     (G.Lam (map liftBind vs2)
+                          (G.ScalarBlock (map liftBind vl2) r2 (doStmts stms2))) (doE e) 
 
 doStmts :: [Stmt] -> [G.Stmt]
 doStmts = map doStmt

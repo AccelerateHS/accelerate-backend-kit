@@ -171,11 +171,12 @@ doStmts k env ex =
 
        let ty2 = recoverExpType (unliftEnv env2) bod2
        (binds2,cont2)   <- lift $ makeResultWriterCont ty2
-       (stmts2,binds2') <- lift $ runWriterT$ doStmts k env2 bod2
+       (stmts2,binds2') <- lift $ runWriterT$ doStmts cont2 env2 bod2
        let f2 = LL.Lam [(v2,t2)] $ LL.ScalarBlock (binds2++binds2') (L.map fst binds2) stmts2
 
        let e' = doE env e  
-                
+       mytell $ binds2
+               
        return $ [LL.SWhile ((fst . head) binds1) f1 f2  e'] ++ 
                 hackAssign (L.map fst binds2) k  
 

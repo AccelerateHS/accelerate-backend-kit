@@ -149,6 +149,7 @@ data Stmt =
            forincr :: Exp,
            forbody :: [Stmt]
            }                    -- for (init,test,incr) { body }
+  | SWhile Var (Fun ScalarBlock)  (Fun ScalarBlock) Exp  
   | SNoOp                       -- no operation
   | SSynchronizeThreads
 
@@ -166,7 +167,8 @@ data Exp =
   | EGetGlobalID Int 
   | EPrimApp Type SA.Prim [Exp]
   | ECond Exp Exp Exp   
-  | EWhile (Fun Exp) (Fun Exp) Exp      
+-- This guy now has statement status 
+--   | EWhile (Fun Exp) (Fun Exp) Exp      
   | EIndexScalar Var Exp        -- Reads a tuple from an array, and does index-from-right into that tuple.
   | EUnInitArray Type Int       -- This is ONLY here as a special OpenCL convention.  "Local" memory
                                 -- arrays are passed into the kernel as NULL ptrs WITH sizes (here in #elements).
@@ -233,10 +235,10 @@ doE ex =
     EGetLocalID  _      -> S.empty    
     EVr vr              -> S.singleton vr  
     ECond e1 e2 e3      -> S.union (doE e1)  $ S.union (doE e2) (doE e3)
-    EWhile (Lam [(v1,_,t1)] bod1) (Lam [(v2,_,t2)] bod2) e ->
-        let s1 = S.delete v1 $doE bod1 
-            s2 = S.delete v1 $doE bod2    
-        in s1 `S.union` s2 `S.union` (doE e) 
+--    EWhile (Lam [(v1,_,t1)] bod1) (Lam [(v2,_,t2)] bod2) e ->
+--        let s1 = S.delete v1 $doE bod1 
+--            s2 = S.delete v1 $doE bod2    
+--        in s1 `S.union` s2 `S.union` (doE e) 
        
     EIndexScalar v e    -> S.insert v $ doE e
     EPrimApp _ _ els    -> doEs els

@@ -68,7 +68,9 @@ doSpine env ex =
     -- This is where it gets tricky! 
     -- Do we deal with functions here? OR do we pass them along to some later step?
     -- Do we assure, at this point, that bodys of lambdas have the sought property?
-    --Adding a dummy for now 
+    -- Adding a dummy for now 
+    --  NOTE! 
+    -- Maybe need to doSpine on bod1 and bod2 
     EWhile (Lam1 (v1,t1) bod1) (Lam1 (v2,t2) bod2) e ->  
         do 
           let env1 = M.insert v1 t1 env 

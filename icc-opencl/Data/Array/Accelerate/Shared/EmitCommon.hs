@@ -199,6 +199,41 @@ emitS e stmt =
                        (mapM_ (emitS e) c)
     SArrSet a ix rhs -> arrset (varSyn a) (emitE e ix) (emitE e rhs)
     SNoOp            -> return ()
+    -- SWhile Var (Fun ScalarBlock)  (Fun ScalarBlock) Exp  
+    -- Need to replace init with a list of Exp
+    -- this list will match up with the args to Lam.
+    -- Right now a hack, assume no tuples. 
+    SWhile vr (Lam [(v,_,t)] sb@(ScalarBlock _ _ stms)) 
+              (Lam [(p,_,pt)] bod)  init -> 
+        do 
+          
+           emitLine $ toSyntax $ fromSyntax (emitType e t) <+> fromSyntax (varSyn v) <> semi
+           emitLine $ toSyntax $ fromSyntax (emitType e pt) <+> fromSyntax (varSyn p) <> semi
+           emitLine $ toSyntax $ fromSyntax (varSyn v) <+> "=" <+> (fromSyntax (emitE e init)) <> semi
+           emitLine $ toSyntax $ fromSyntax (varSyn p) <+> "=" <+> (fromSyntax (emitE e init)) <> semi
+           -- evaluate condition before loop
+           [tmp] <- emitBlock e sb
+                
+  --           return () 
+          
+           -- ready to write our while loop 
+           emitLine $ toSyntax $ "while " <> PP.parens (fromSyntax (varSyn vr))
+           block $ do 
+              --[tmp] <- emitBlock e bod 
+              --[c]  <- emitBlock e sb
+              mapM_ (emitS e) $ getStms bod 
+              mapM_ (emitS e) $ getStms sb
+              -- assign params  tmp 
+              emitLine $ toSyntax $ fromSyntax (varSyn p) <+> "=" <+> fromSyntax (varSyn tmp) <> semi
+             --   emitLine $ toSyntax $ fromSyntax (varSyn vr) <+> "=" <+> fromSyntax (varSyn c) <> semi
+              return () 
+
+              -- mapM_ (emitS e) stms
+           -- block $ emitBlock  
+        
+    -- let init = emitE e init
+        
+
     -- We do a lame bit of remaning here:
     SFor vr init test incr body -> do
        let init' = emitE e init
@@ -217,7 +252,8 @@ emitS e stmt =
 
 --    SSynchronizeThreads -> error$"EmitCommon.hs/emitS: cannot handle SSynchronizeThreads in this generic version"
     SSynchronizeThreads -> emitStmt "barrier(CLK_GLOBAL_MEM_FENCE)"
-    
+
+getStms (ScalarBlock _ _ stms) = stms    
 
 -- FIXME: maps an expression onto Syntax... this doesn't allow multi-line.
 emitE :: EmitBackend e => e -> Exp -> Syntax
