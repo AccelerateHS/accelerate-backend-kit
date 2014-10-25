@@ -111,6 +111,7 @@ data Value = TupVal [Value]
 instance Out Value
 
 -- | Extract a `Const` from a `Value` if that is possible.
+valToConst :: Value -> Const
 valToConst (ConstVal c ) = c
 valToConst (TupVal ls)   = Tup $ map valToConst ls
 valToConst (ArrVal a)    = error$ "cannot convert Array value to Const: "++show a
@@ -352,8 +353,10 @@ evalE env expr =
     T.EShape vr          -> let ArrVal (AccArray sh _) = envLookup env vr
                             in ConstVal$ Tup $ map I sh
 
-    T.EShapeSize ex      -> case evalE env ex of
-                            _ -> error "need more work on shapes"
+    T.EShapeSize sh      -> ConstVal $ I
+                          $ product
+                          $ map (fromIntegral . constToInteger) $ untuple $ valToConst
+                          $ evalE env sh
 
     T.EPrimApp ty p es  -> ConstVal$ evalPrim ty p (map (valToConst . evalE env) es)
 
