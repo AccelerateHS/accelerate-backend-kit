@@ -375,6 +375,17 @@ evalE env expr =
     T.EIndex indls       -> let ls = map (valToConst . evalE env) indls in
                           ConstVal$ tuple ls
 
+    T.EWhile p f z      ->
+      let f' x  = evalF1 env f x
+          p' x  = case evalF1 env p x of
+                    B b      -> b
+
+          go x
+            | p' x      = go (f' x)
+            | otherwise = ConstVal x
+      in
+      go (valToConst $ evalE env z)
+
 --------------------------------------------------------------------------------
 
 -- | Create a list of Const/int indices corresponding to the index space
