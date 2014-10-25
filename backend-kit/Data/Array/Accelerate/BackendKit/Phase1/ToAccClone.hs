@@ -400,8 +400,34 @@ convertExp e =
       -- return T.EIndexAny
 
     -- New, unhandled cases:
-    IndexSlice {} -> error "ToAccClone.hs: TODO: handle IndexSlice"
-    IndexFull {} -> error "ToAccClone.hs: TODO: handle IndexFull"
+    IndexSlice sliceIndex slix sh       -> do
+      let restrict :: SliceIndex slix sl co sh -> [T.Exp] -> [T.Exp] -> [T.Exp]
+          restrict SliceNil              _       _       = []
+          restrict (SliceAll   sliceIdx) slx     (sz:sl) = sz : restrict sliceIdx slx sl
+          restrict (SliceFixed sliceIdx) (_:slx) ( _:sl) =      restrict sliceIdx slx sl
+          restrict _ _ _ = error "IndexSlice: unexpected shapes"
+          --
+          slice slix' sh' = reverse $ restrict sliceIndex (reverse slix') (reverse sh')
+
+      slix'     <- unfold <$> convertExp slix
+      sh'       <- unfold <$> convertExp sh
+
+      return . T.ETuple $! slice slix' sh'
+
+
+    IndexFull sliceIndex slix sl        -> do
+      let extend :: SliceIndex slix sl co sh -> [T.Exp] -> [T.Exp] -> [T.Exp]
+          extend SliceNil              _        _       = []
+          extend (SliceAll   sliceIdx) slx      (sz:sh) = sz : extend sliceIdx slx sh
+          extend (SliceFixed sliceIdx) (sz:slx) sh      = sz : extend sliceIdx slx sh
+          --
+          replicate slix' sl' = reverse $ extend sliceIndex (reverse slix') (reverse sl')
+      --
+      slix'     <- unfold <$> convertExp slix
+      sl'       <- unfold <$> convertExp sl
+
+      return . T.ETuple $! replicate slix' sl'
+
     ToIndex {} -> error "ToAccClone.hs: TODO: handle ToIndex"
     FromIndex {} -> error "ToAccClone.hs: TODO: handle FromIndex"
     LinearIndex {} -> error "ToAccClone.hs: TODO: handle LinearIndex"
@@ -497,6 +523,13 @@ convertTuple (SnocTup tup e) =
 tupleNumLeaves :: S.Type -> Int
 tupleNumLeaves (S.TTuple ls) = L.sum $ L.map tupleNumLeaves ls
 tupleNumLeaves _             = 1
+
+
+unfold :: T.Exp -> [T.Exp]
+unfold e = case e of
+  T.EIndex ix   -> ix
+  T.ETuple tup  -> tup
+  _             -> [e]  -- TLM: I have no fucking idea what I am doing
 
 --------------------------------------------------------------------------------
 -- Convert types
