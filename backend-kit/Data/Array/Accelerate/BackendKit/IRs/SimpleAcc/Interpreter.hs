@@ -125,212 +125,210 @@ unArrVal   (ArrVal v)   = v
 --------------------------------------------------------------------------------
 -- Evaluation:
 
--- | Evaluating a complete program creates a FLAT list of arrays (of
--- scalars) as a result.  Reimposing a nested structure to the
--- resulting tuple-of-arrays is not the job of this function.
+-- | Evaluating a complete program creates a FLAT list of arrays (of scalars) as
+-- a result.  Reimposing a nested structure to the resulting tuple-of-arrays is
+-- not the job of this function.
 --
--- Note that the length of the list will be increased BOTH because of
--- tuples of arrays, and because of unzipping arrays of tuples.
+-- Note that the length of the list will be increased BOTH because of tuples of
+-- arrays, and because of unzipping arrays of tuples.
 --
--- The length of the resulting list WILL match the length of the input
--- `Prog`'s `progResults` field.
+-- The length of the resulting list WILL match the length of the input `Prog`'s
+-- `progResults` field.
+--
 evalSimpleAcc :: S.Prog a -> [AccArray]
-evalSimpleAcc (S.Prog {progBinds, progResults}) =
---    concatArrays $
-    maybtrace ("[dbg] evalSimpleAcc, initial env "++ show (L.map (\(ProgBind v _ _ _)->v) progBinds)
-           ++"  yielded environment: "++show (M.keys finalenv)) $
-    L.map (unArrVal . (envLookup finalenv)) (resultNames progResults)
+evalSimpleAcc (S.Prog {progBinds, progResults})
+  | maybtrace ("[dbg] evalSimpleAcc, initial env "++ show (L.map (\(ProgBind v _ _ _)->v) progBinds)
+             ++"  yielded environment: "++show (M.keys finalenv)) True
+  = L.map (unArrVal . (envLookup finalenv)) (resultNames progResults)
   where
-   finalenv = loop M.empty progBinds
-   -- A binding simply extends an environment of values.
---   loop :: [(S.Var, S.Type, Either S.Exp S.AExp)] -> Env
-   loop env [] = env
-   loop env (ProgBind vr ty _ (Left rhs)  :rst) = loop (M.insert vr (evalE env rhs) env) rst
-   loop env (ProgBind vr ty _ (Right rhs) :rst) = loop (doaexp env vr ty rhs) rst
+    finalenv = loop M.empty progBinds
 
-   doaexp env vr (TArray _dim elty) rhs =
-     let bind rhs' = M.insert vr rhs' env in
-     case rhs of
-       S.Vr  v             -> bind$ envLookup env v
-       S.Unit e -> case evalE env e of
-                    ConstVal c -> bind$ ArrVal$ SA.replicate [] c
-                    oth  -> error$"evalSimpleAcc: expecting ConstVal input to Unit, received: "++show oth
-       S.Cond e1 v1 v2 -> case evalE env e1 of
-                             ConstVal (B True)  -> bind$ envLookup env v1
-                             ConstVal (B False) -> bind$ envLookup env v2
-       S.Use arr -> bind$ ArrVal arr
-       --------------------------------------------------------------------------------
-       S.Generate eSz (S.Lam1 (vr,vty) bodE) ->
-         maybtrace ("[dbg] GENERATING: "++ show dims ++" "++ show elty) $
+    -- A binding simply extends an environment of values.
+    loop :: M.Map Var Value -> [ProgBind a] -> M.Map AVar Value
+    loop env []                                  = env
+    loop env (ProgBind vr ty _ (Left rhs)  :rst) = loop (M.insert vr (evalE env rhs) env) rst
+    loop env (ProgBind vr ty _ (Right rhs) :rst) = loop (evalA env vr ty rhs) rst
 
-         -- It's tricky to support elementwise functions that produce
-         -- tuples, which in turn need to be unpacked into a
-         -- multi-payload array....
-         bind $ ArrVal $ AccArray dims $ payloadsFromList elty $
-         map (\ind -> valToConst $ evalE env (T.ELet (vr,vty,T.EConst ind) bodE))
-             (indexSpace dims)
+    evalA :: M.Map Var Value -> Var -> Type -> AExp -> M.Map Var Value
+    evalA env atype (TArray _dim elty) aexp =
+      let
+          bind :: Value -> M.Map Var Value
+          bind v = M.insert atype v env
+
+          lookupArray :: Var -> AccArray
+          lookupArray v = let ArrVal a = envLookup env v in a
+      in
+      bind $ case aexp of
+        S.Vr  v         -> envLookup env v
+        S.Unit e        -> case evalE env e of
+                             ConstVal c -> ArrVal $ SA.replicate [] c
+                             oth        -> error  $"evalSimpleAcc: expecting ConstVal input to Unit, received: "++show oth
+
+        S.Cond e1 v1 v2 -> case evalE env e1 of
+                             ConstVal (B True)  -> envLookup env v1
+                             ConstVal (B False) -> envLookup env v2
+
+        S.Use arr       -> ArrVal arr
+        S.Map f a       -> ArrVal $ mapArray (evalF1 env f) (lookupArray a)
+        S.Generate sh f ->
+          ArrVal
+            $ AccArray sh'
+            $ payloadsFromList elty
+            $ map (evalF1 env f) (indexSpace sh')
+          where
+            sh' = case evalE env sh of
+                    ConstVal (I i)      -> [i]
+                    ConstVal (Tup is)   -> map (\(I i) -> i) is
+
+        --------------------------------------------------------------------------------
+
+        -- One way to think of the slice descriptor fed to replicate is
+        -- it contains exactly as many "All"s as there are dimensions
+        -- in the input.  These All's are replaced, in order, by input
+        -- dimensions.
+        --
+        -- "Fixed" dimensions on the other hand are the replication
+        -- dimensions.  Varying indices in those dimensions will not
+        -- change the value contained in the indexed slot in the array.
+        S.Replicate slcSig ex vr ->
+          maybtrace ("[dbg] REPLICATING to "++show finalElems ++ " elems, newdims "++show newDims ++ " dims in "++show dimsIn) $
+          maybtrace ("[dbg]   replicatation index stream: "++show (map (map constToInteger . untuple) allIndices)) $
+          if length dimsOut /= replicateDims ||
+             length dimsIn  /= retainDims
+          then error$ "replicate: replicating across "++show slcSig
+                   ++ " dimensions whereas the first argument to replicate had dimension "++show dimsOut
+          else if replicateDims == 0  -- This isn't a replication at all!
+          then ArrVal $ inArray
+
+          else ArrVal $ AccArray newDims $
+               payloadsFromList elty $
+               map (\ ind -> let intind = map (fromIntegral . constToInteger) (untuple ind) in
+                             indexArray inArray (unliftInd intind))
+                   allIndices
          where
-           dims =
-             -- Indices can be arbitrary shapes:
-             case evalE env eSz of
-               ConstVal (I n)    -> [n]
-               ConstVal (Tup ls) -> map (\ (I i) -> i) ls
+            allIndices = indexSpace newDims
+            newDims    = injectDims dimsIn slcSig dimsOut
+            replicateDims = length $ filter (== Fixed) slcSig
+            retainDims    = length $ filter (== All)   slcSig
+            -- These are ONLY the new replicated dimensions (excluding All fields):
+            dimsOut = case evalE env ex of
+                       ConstVal s | isIntConst s -> [fromIntegral$ constToInteger s]
+                       ConstVal (Tup ls) ->
+                         map (fromIntegral . constToInteger) $
+                         filter isNumConst ls
+                       oth -> error $ "replicate: bad first argument to replicate: "++show oth
+            ArrVal (inArray@(AccArray dimsIn _)) = envLookup env vr
 
-       --------------------------------------------------------------------------------
+            -- The number of final elements is the starting elements times the degree of replication:
+            finalElems = foldl (*) 1 dimsIn *
+                         foldl (*) 1 dimsOut
 
-       -- One way to think of the slice descriptor fed to replicate is
-       -- it contains exactly as many "All"s as there are dimensions
-       -- in the input.  These All's are replaced, in order, by input
-       -- dimensions.
-       --
-       -- "Fixed" dimensions on the other hand are the replication
-       -- dimensions.  Varying indices in those dimensions will not
-       -- change the value contained in the indexed slot in the array.
-       S.Replicate slcSig ex vr ->
-         maybtrace ("[dbg] REPLICATING to "++show finalElems ++ " elems, newdims "++show newDims ++ " dims in "++show dimsIn) $
-         maybtrace ("[dbg]   replicatation index stream: "++show (map (map constToInteger . untuple) allIndices)) $
-         if length dimsOut /= replicateDims ||
-            length dimsIn  /= retainDims
-         then error$ "replicate: replicating across "++show slcSig
-                  ++ " dimensions whereas the first argument to replicate had dimension "++show dimsOut
-         else if replicateDims == 0  -- This isn't a replication at all!
-         then bind$ ArrVal $ inArray
+            -- Insert the new dimensions where "All"s occur.
+            injectDims :: [Int] -> SliceType -> [Int] -> [Int]
+            injectDims [] [] [] = []
+            injectDims (dim:l1) (All : l2)    l3       = dim : injectDims l1 l2 l3
+            injectDims l1       (Fixed : l2)  (dim:l3) = dim : injectDims l1 l2 l3
+            injectDims l1 l2 l3 = error$ "injectDims: bad input: "++ show (l1,l2,l3)
 
-         else bind$ ArrVal $ AccArray newDims $
-              payloadsFromList elty $
-              map (\ ind -> let intind = map (fromIntegral . constToInteger) (untuple ind) in
-                            indexArray inArray (unliftInd intind))
-                  allIndices
-        where
-           allIndices = indexSpace newDims
-           newDims    = injectDims dimsIn slcSig dimsOut
-           replicateDims = length $ filter (== Fixed) slcSig
-           retainDims    = length $ filter (== All)   slcSig
-           -- These are ONLY the new replicated dimensions (excluding All fields):
-           dimsOut = case evalE env ex of
-                      ConstVal s | isIntConst s -> [fromIntegral$ constToInteger s]
-                      ConstVal (Tup ls) ->
-                        map (fromIntegral . constToInteger) $
-                        filter isNumConst ls
-                      oth -> error $ "replicate: bad first argument to replicate: "++show oth
-           ArrVal (inArray@(AccArray dimsIn _)) = envLookup env vr
+            -- Take an index (represented as [Int]) into the larger,
+            -- replicated, index space and project it back into the
+            -- originating index space.
+            unliftInd :: [Int] -> [Int]
+            unliftInd = unliftLoop slcSig
+            unliftLoop [] [] = []
+            unliftLoop (Fixed:ssig) (_:inds) =     unliftLoop ssig inds
+            unliftLoop (All:ssig)   (i:inds) = i : unliftLoop ssig inds
 
-           -- The number of final elements is the starting elements times the degree of replication:
-           finalElems = foldl (*) 1 dimsIn *
-                        foldl (*) 1 dimsOut
+        --------------------------------------------------------------------------------
+        S.ZipWith  (S.Lam2 (v1,vty1) (v2,vty2) bod) vr1 vr2  ->
+          if dims1 /= dims2
+          then error$"zipWith: internal error, input arrays not the same dimension: "++ show dims1 ++" "++ show dims2
+          -- TODO: Handle the case where the resulting array is an array of tuples:
+          else ArrVal$ AccArray dims1 final
+          where
+            ArrVal (a1@(AccArray dims1 pays1)) = envLookup env vr1
+            ArrVal (a2@(AccArray dims2 pays2)) = envLookup env vr2
+            final = concatMap payloadsFromList1 $
+                    L.transpose $
+                    zipWith evaluator
+                            (L.transpose$ map payloadToList pays1)
+                            (L.transpose$ map payloadToList pays2)
+            -- INCORRECT - we need to reassemble tuples here:
+            evaluator cls1 cls2 = map valToConst $ untupleVal $ evalE env
+                                  (T.ELet (v1,vty1, T.EConst$ tuple cls1) $
+                                   T.ELet (v2,vty2, T.EConst$ tuple cls2) bod)
 
-           -- Insert the new dimensions where "All"s occur.
-           injectDims :: [Int] -> SliceType -> [Int] -> [Int]
-           injectDims [] [] [] = []
-           injectDims (dim:l1) (All : l2)    l3       = dim : injectDims l1 l2 l3
-           injectDims l1       (Fixed : l2)  (dim:l3) = dim : injectDims l1 l2 l3
-           injectDims l1 l2 l3 = error$ "injectDims: bad input: "++ show (l1,l2,l3)
+        --------------------------------------------------------------------------------
+        S.Backpermute sh p a ->
+          ArrVal
+            $ AccArray sh'
+            $ payloadsFromList elty
+            $ map (\ix -> let ix' = map (fromIntegral . constToInteger) $ untuple $ evalF1 env p ix
+                          in  indexArray a' ix')
+                  (indexSpace sh')
+          where
+            a'  = lookupArray a
+            sh' = case evalE env sh of
+                    ConstVal (I i)      -> [i]
+                    ConstVal (Tup is)   -> map (\(I i) -> i) is
 
-           -- Take an index (represented as [Int]) into the larger,
-           -- replicated, index space and project it back into the
-           -- originating index space.
-           unliftInd :: [Int] -> [Int]
-           unliftInd = unliftLoop slcSig
-           unliftLoop [] [] = []
-           unliftLoop (Fixed:ssig) (_:inds) =     unliftLoop ssig inds
-           unliftLoop (All:ssig)   (i:inds) = i : unliftLoop ssig inds
+        --------------------------------------------------------------------------------
+        -- Shave off leftmost dim in 'sh' list
+        -- (the rightmost dim in the user's (Z :. :.) expression):
+        S.Fold (S.Lam2 (v1,_) (v2,_) bodE) ex avr ->
+          -- trace ("FOLDING, shape "++show (innerdim:sh') ++ " lens "++
+          --        show (alllens, L.group alllens) ++" arr "++show payloads++"\n") $
+            case payloads of
+              [] -> error "Empty payloads!"
+              _  -> ArrVal (AccArray sh' payloads')
+          where initacc = evalE env ex
+                ArrVal (AccArray (innerdim:sh') payloads) = envLookup env avr -- Must be >0 dimensional.
+                payloads' = map (applyToPayload3 buildFolded) payloads
 
-       --------------------------------------------------------------------------------
-       S.Map (S.Lam1 (v,vty) bod) invr ->
--- TODO!!! Handle maps that CHANGE the tupling...
-         bind$ ArrVal$ mapArray evaluator inarr
-         where
-           ArrVal inarr = envLookup env invr
-           evaluator c = -- tracePrint ("In map, evaluating element "++ show c++" to ")$
-                         valToConst $ evalE env (T.ELet (v,vty, T.EConst c) bod)
+                alllens = map payloadLength payloads
+                len = case L.group alllens of
+                       [len:_] -> len
+                       x -> error$ "Corrupt Accelerate array.  Non-homogenous payload lengths: "++show x
 
-       --------------------------------------------------------------------------------
-       S.ZipWith  (S.Lam2 (v1,vty1) (v2,vty2) bod) vr1 vr2  ->
-         if dims1 /= dims2
-         then error$"zipWith: internal error, input arrays not the same dimension: "++ show dims1 ++" "++ show dims2
--- TODO: Handle the case where the resulting array is an array of tuples:
-         else bind$ ArrVal$ AccArray dims1 final
-         where
-           ArrVal (a1@(AccArray dims1 pays1)) = envLookup env vr1
-           ArrVal (a2@(AccArray dims2 pays2)) = envLookup env vr2
-           final = concatMap payloadsFromList1 $
-                   L.transpose $
-                   zipWith evaluator
-                           (L.transpose$ map payloadToList pays1)
-                           (L.transpose$ map payloadToList pays2)
--- INCORRECT - we need to reassemble tuples here:
-           evaluator cls1 cls2 = map valToConst $ untupleVal $ evalE env
-                                 (T.ELet (v1,vty1, T.EConst$ tuple cls1) $
-                                  T.ELet (v2,vty2, T.EConst$ tuple cls2) bod)
+                -- Cut the total size down by whatever the length of the inner dimension is:
+                newlen = len `quot` innerdim
 
-       --------------------------------------------------------------------------------
-       S.Backpermute sh (S.Lam1 (v,t) p) a ->
-         bind $ ArrVal
-              $ AccArray sh'
-              $ payloadsFromList elty
-              $ map (\ix -> let ix' = map (fromIntegral . constToInteger)
-                                    $ untuple
-                                    $ valToConst
-                                    $ evalE env (T.ELet (v,t,T.EConst ix) p)
-                            in  indexArray a' ix')
-                    (indexSpace sh')
-         where
-           ArrVal a'    = envLookup env a
-           sh'          = case evalE env sh of
-                            ConstVal (I n)      -> [n]
-                            ConstVal (Tup is)   -> map (\(I i) -> i) is
+                buildFolded :: Int -> (Int -> Const) -> [Const]
+                buildFolded _ lookup =
+--                   tracePrint "\nbuildFOLDED : "$
+                   [ valToConst (innerloop lookup (innerdim * i) innerdim initacc)
+                   | i <- [0..newlen] ]
 
-       --------------------------------------------------------------------------------
-       -- Shave off leftmost dim in 'sh' list
-       -- (the rightmost dim in the user's (Z :. :.) expression):
-       S.Fold (S.Lam2 (v1,_) (v2,_) bodE) ex avr ->
-         -- trace ("FOLDING, shape "++show (innerdim:sh') ++ " lens "++
-         --        show (alllens, L.group alllens) ++" arr "++show payloads++"\n") $
-           case payloads of
-             [] -> error "Empty payloads!"
-             _  -> bind$ ArrVal (AccArray sh' payloads')
-         where initacc = evalE env ex
-               ArrVal (AccArray (innerdim:sh') payloads) = envLookup env avr -- Must be >0 dimensional.
-               payloads' = map (applyToPayload3 buildFolded) payloads
+                -- The innermost dim is always contiguous in memory.
+                innerloop :: (Int -> Const) -> Int -> Int -> Value -> Value
+                innerloop _ _ 0 acc = acc
+                innerloop lookup offset count acc =
+--                  trace ("Inner looping "++show(offset,count,acc))$
+                  innerloop lookup (offset+1) (count-1) $
+                   evalE (M.insert v1 acc $
+                          M.insert v2 (ConstVal$ lookup offset) env)
+                         bodE
+        S.Index     slcty  ae ex  -> error "UNFINISHED: Index"
+        S.Fold1     fn ae         -> error "UNFINISHED: Foldl1"
+        S.FoldSeg   fn ex ae1 ae2 -> error "UNFINISHED: FoldSeg"
+        S.Fold1Seg  fn    ae1 ae2 -> error "UNFINISHED: Fold1Seg"
+        S.Scanl     fn ex ae      -> error "UNFINISHED: Scanl"
+        S.Scanl'    fn ex ae      -> error "UNFINISHED: Scanl'"
+        S.Scanl1    fn    ae      -> error "UNFINISHED: Scanl1"
+        S.Scanr     fn ex ae      -> error "UNFINISHED: Scanr"
+        S.Scanr'    fn ex ae      -> error "UNFINISHED: Scanr'"
+        S.Scanr1    fn    ae      -> error "UNFINISHED: Scanr1"
+        S.Permute  fn1 ae1 fn2 ae2 -> error "UNFINISHED: Permute"
+        S.Reshape      ex    ae     -> error "UNFINISHED: Reshape"
+        S.Stencil      fn  bnd ae   -> error "UNFINISHED: Stencil"
+        S.Stencil2  fn bnd1 ae1 bnd2 ae2 -> error "UNFINISHED: Stencil2"
+        _ -> error$"Accelerate array expression breaks invariants: "++ show aexp
 
-               alllens = map payloadLength payloads
-               len = case L.group alllens of
-                      [len:_] -> len
-                      x -> error$ "Corrupt Accelerate array.  Non-homogenous payload lengths: "++show x
 
-               -- Cut the total size down by whatever the length of the inner dimension is:
-               newlen = len `quot` innerdim
-
-               buildFolded :: Int -> (Int -> Const) -> [Const]
-               buildFolded _ lookup =
---                  tracePrint "\nbuildFOLDED : "$
-                  [ valToConst (innerloop lookup (innerdim * i) innerdim initacc)
-                  | i <- [0..newlen] ]
-
-               -- The innermost dim is always contiguous in memory.
-               innerloop :: (Int -> Const) -> Int -> Int -> Value -> Value
-               innerloop _ _ 0 acc = acc
-               innerloop lookup offset count acc =
---                 trace ("Inner looping "++show(offset,count,acc))$
-                 innerloop lookup (offset+1) (count-1) $
-                  evalE (M.insert v1 acc $
-                         M.insert v2 (ConstVal$ lookup offset) env)
-                        bodE
-       S.Index     slcty  ae ex  -> error "UNFINISHED: Index"
-       S.Fold1     fn ae         -> error "UNFINISHED: Foldl1"
-       S.FoldSeg   fn ex ae1 ae2 -> error "UNFINISHED: FoldSeg"
-       S.Fold1Seg  fn    ae1 ae2 -> error "UNFINISHED: Fold1Seg"
-       S.Scanl     fn ex ae      -> error "UNFINISHED: Scanl"
-       S.Scanl'    fn ex ae      -> error "UNFINISHED: Scanl'"
-       S.Scanl1    fn    ae      -> error "UNFINISHED: Scanl1"
-       S.Scanr     fn ex ae      -> error "UNFINISHED: Scanr"
-       S.Scanr'    fn ex ae      -> error "UNFINISHED: Scanr'"
-       S.Scanr1    fn    ae      -> error "UNFINISHED: Scanr1"
-       S.Permute  fn1 ae1 fn2 ae2 -> error "UNFINISHED: Permute"
-       S.Reshape      ex    ae     -> error "UNFINISHED: Reshape"
-       S.Stencil      fn  bnd ae   -> error "UNFINISHED: Stencil"
-       S.Stencil2  fn bnd1 ae1 bnd2 ae2 -> error "UNFINISHED: Stencil2"
-       _ -> error$"Accelerate array expression breaks invariants: "++ show rhs
+evalF1 :: Env -> Fun1 Exp -> Const -> Const
+evalF1 env (S.Lam1 (v1,t1) body) x
+  = valToConst
+  $ evalE env (T.ELet (v1,t1,T.EConst x) body)
 
 evalE :: Env -> T.Exp -> Value
 evalE env expr =
