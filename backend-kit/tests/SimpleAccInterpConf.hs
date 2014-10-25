@@ -35,8 +35,8 @@ knownProblems = words $ ""
 
   -- Simply unfinished:
   ----------------------------------------
-  ++" p10d p10e p10f p10g p10h p10i "   -- Index
-  ++" p16e p17a p17b p18b p18c p18d p18e p1bb p7 " -- Backpermute/Reshape, other shapes support
+  ++" p10d p10e p10f p10g p10h "   -- Index
+  ++" p17a p17b p18b p18c p18d p18e p1bb " -- Backpermute/Reshape, other shapes support
   ++" p20a p20b p20c  " -- Unfinished, fold segs
 
   -- NOTE! If the debug level is cranked up, four tests fail intermediate typechecks:
