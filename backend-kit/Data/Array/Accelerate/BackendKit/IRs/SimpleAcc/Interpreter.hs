@@ -263,6 +263,23 @@ evalSimpleAcc (S.Prog {progBinds, progResults}) =
                                   T.ELet (v2,vty2, T.EConst$ tuple cls2) bod)
 
        --------------------------------------------------------------------------------
+       S.Backpermute sh (S.Lam1 (v,t) p) a ->
+         bind $ ArrVal
+              $ AccArray sh'
+              $ payloadsFromList elty
+              $ map (\ix -> let ix' = map (fromIntegral . constToInteger)
+                                    $ untuple
+                                    $ valToConst
+                                    $ evalE env (T.ELet (v,t,T.EConst ix) p)
+                            in  indexArray a' ix')
+                    (indexSpace sh')
+         where
+           ArrVal a'    = envLookup env a
+           sh'          = case evalE env sh of
+                            ConstVal (I n)      -> [n]
+                            ConstVal (Tup is)   -> map (\(I i) -> i) is
+
+       --------------------------------------------------------------------------------
        -- Shave off leftmost dim in 'sh' list
        -- (the rightmost dim in the user's (Z :. :.) expression):
        S.Fold (S.Lam2 (v1,_) (v2,_) bodE) ex avr ->
@@ -309,7 +326,6 @@ evalSimpleAcc (S.Prog {progBinds, progResults}) =
        S.Scanr'    fn ex ae      -> error "UNFINISHED: Scanr'"
        S.Scanr1    fn    ae      -> error "UNFINISHED: Scanr1"
        S.Permute  fn1 ae1 fn2 ae2 -> error "UNFINISHED: Permute"
-       S.Backpermute  ex fn ae     -> error "UNFINISHED: Backpermute"
        S.Reshape      ex    ae     -> error "UNFINISHED: Reshape"
        S.Stencil      fn  bnd ae   -> error "UNFINISHED: Stencil"
        S.Stencil2  fn bnd1 ae1 bnd2 ae2 -> error "UNFINISHED: Stencil2"
