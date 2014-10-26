@@ -24,7 +24,8 @@ module Data.Array.Accelerate.BackendKit.CompilerPipeline
 import           Text.PrettyPrint.GenericPretty (Out(..))
 import           Text.PrettyPrint.HughesPJ (text)
 import           Debug.Trace (trace)
-import           Data.Array.Accelerate.Trafo
+import           Data.Array.Accelerate.Trafo                    hiding ( convertAcc )
+import           Data.Array.Accelerate.Trafo.Sharing            ( convertAcc )
 import           Data.Array.Accelerate.Tuple
 import           Data.Array.Accelerate.AST                      ( OpenAcc(..), OpenAfun, OpenExp, OpenFun, PreOpenExp(..), PreOpenFun(..), PreOpenAcc(..), PreOpenAfun(..) )
 import qualified Data.Array.Accelerate.AST                      as AST
@@ -137,7 +138,7 @@ phase1 prog =
 -- | This simply calls the Accelerate *front-end* with the default settings for a
 -- backend-kit compiler.
 phase0 :: Sug.Arrays a => Smt.Acc a -> AST.Acc a
-phase0 = undelayAcc . convertAccWith defaultTrafoConfig
+phase0 = convertAcc True True True
 
 -- NOTE: This is _NOT_ the same configuration as used by the CUDA backend:
 --
@@ -242,6 +243,7 @@ undelayAcc = cvtA
     cvtT :: Tuple (DelayedOpenExp env aenv) t -> Tuple (OpenExp env aenv) t
     cvtT NilTup        = NilTup
     cvtT (SnocTup t e) = cvtT t `SnocTup` cvtE e
+
 
 --------------------------------------------------------------------------------    
 -- Type Checking
