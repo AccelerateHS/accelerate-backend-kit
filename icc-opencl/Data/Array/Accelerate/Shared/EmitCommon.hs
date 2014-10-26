@@ -204,7 +204,7 @@ emitS e stmt =
     -- this list will match up with the args to Lam.
     -- Right now a hack, assume no tuples. 
     SWhile vr (Lam [(v,_,t)] sb@(ScalarBlock _ _ stms)) 
-              (Lam [(p,_,pt)] bod)  init -> 
+              (Lam [(p,_,pt)] bod@(ScalarBlock _ [out] _))  init -> 
         do 
           
            emitLine $ toSyntax $ fromSyntax (emitType e t) <+> fromSyntax (varSyn v) <> semi
@@ -221,10 +221,12 @@ emitS e stmt =
            block $ do 
               --[tmp] <- emitBlock e bod 
               --[c]  <- emitBlock e sb
-              mapM_ (emitS e) $ getStms bod 
+              mapM_ (emitS e) $ getStms bod
+              emitLine $ toSyntax $ fromSyntax (varSyn v) <+> "=" <+> fromSyntax (varSyn out) <> semi    
               mapM_ (emitS e) $ getStms sb
-              -- assign params  tmp 
-              emitLine $ toSyntax $ fromSyntax (varSyn p) <+> "=" <+> fromSyntax (varSyn tmp) <> semi
+              emitLine $ toSyntax $ fromSyntax (varSyn p) <+> "=" <+> fromSyntax (varSyn out) <> semi
+              -- assign params  tmp (not needed?)
+              -- emitLine $ toSyntax $ fromSyntax (varSyn vr) <+> "=" <+> fromSyntax (varSyn tmp) <> semi
              --   emitLine $ toSyntax $ fromSyntax (varSyn vr) <+> "=" <+> fromSyntax (varSyn c) <> semi
               return () 
 
