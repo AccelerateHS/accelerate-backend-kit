@@ -143,8 +143,8 @@ convertExps expr =
     EIndex indls             -> S.EIndex (L.map f indls)
     EIndexScalar (Vr _ v) ex -> S.EIndexScalar v (f ex)
     EShape (Vr _ v)          -> S.EShape v
-    EIndexScalar ae _ -> error$"AccClone.convertExps: expected EIndexScalar to have plain variable as array input, found: "++show ae
-    EShape       ae   -> error$"AccClone.convertExps: expected EShape" ++ " to have plain variable as array input, found: "++show ae
+    EIndexScalar ae _        -> error $ "AccClone.convertExps: expected EIndexScalar to have plain variable as array input, found: "++show ae
+    EShape       ae          -> error $ "AccClone.convertExps: expected EShape" ++ " to have plain variable as array input, found: "++show ae
 
     EIndexConsDynamic e1 e2 -> error "dynamic index manipulation not permitted in SimpleAcc IR"
     EIndexHeadDynamic ex    -> error "dynamic index manipulation not permitted in SimpleAcc IR"

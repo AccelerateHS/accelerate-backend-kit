@@ -317,7 +317,10 @@ convertAcc (OpenAcc cacc) =
                  <*> return (convertBoundary bndy2) <*> convertAcc acc2
 
 
-    -- TODO: Transform
+    Transform _sh _p _f _a      -> error "ToAccClone.convertAcc: Transform not supported"
+    Awhile _p _f _x             -> error "ToAccClone.convertAcc: Awhile not supported"
+    Aforeign _ff _afun _a       -> error "ToAccClone.convertAcc: Aforeign not supported"
+
 
 --------------------------------------------------------------------------------
 -- Convert Accelerate Scalar Expressions
@@ -432,12 +435,11 @@ convertExp e =
 
       return . T.ETuple $! replicate slix' sl'
 
-    ToIndex {} -> error "ToAccClone.hs: TODO: handle ToIndex"
-    FromIndex {} -> error "ToAccClone.hs: TODO: handle FromIndex"
-    LinearIndex {} -> error "ToAccClone.hs: TODO: handle LinearIndex"
-    Intersect {} -> error "ToAccClone.hs: TODO: handle Intersect"
---    Iterate {}  -> error "ToAccClone.hs: TODO: handle Iterate"
---    ForeignExp {}  -> error "ToAccClone.hs: TODO: handle ForeignExp"
+    ToIndex{}     -> error "ToAccClone.hs: TODO: handle ToIndex"
+    FromIndex{}   -> error "ToAccClone.hs: TODO: handle FromIndex"
+    LinearIndex{} -> error "ToAccClone.hs: TODO: handle LinearIndex"
+    Intersect{}   -> error "ToAccClone.hs: TODO: handle Intersect"
+    Foreign{}     -> error "ToAccClone.hs: TODO: handle ForeignExp"
 
     Cond c t ex -> T.ECond <$> convertExp c
                            <*> convertExp t
@@ -1083,6 +1085,7 @@ instance Show (Sug.ArraysR a') where
        Sug.ArraysRpair r1 r2 -> "("++ loop r1 ++", "++ loop r2++")"
        Sug.ArraysRarray -> "Array"
 
+mkArrayTuple :: a -> [T.AExp a] -> T.AExp a
 mkArrayTuple ty [one] = one
 mkArrayTuple ty ls    = T.ArrayTuple ty ls
 
