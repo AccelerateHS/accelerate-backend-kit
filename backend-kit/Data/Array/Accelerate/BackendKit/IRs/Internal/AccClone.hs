@@ -1,12 +1,11 @@
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE FlexibleInstances #-}
-
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 -- | In the process of Accelerate AST simplification, we don't go
 -- straight from Data.Array.Accelerate.AST to the SimpleAcc AST.
 -- Rather, there are intermediate steps.  This module contains
--- intermediate representation(s) used by other passes in the compiler 
+-- intermediate representation(s) used by other passes in the compiler
 -- but NOT exported for external consumption.
 --
 -- In particular this module contains an isomorphic representation of
@@ -15,14 +14,14 @@
 module Data.Array.Accelerate.BackendKit.IRs.Internal.AccClone
    (
      -- * Intermediate representations.
-     AExp(..), getAnnot, 
+     AExp(..), getAnnot,
      Exp(..), -- Fun1(..), Fun2(..),
      convertAExps,
-     convertExps, 
+     convertExps,
      convertFun1, convertFun2,
-                  
-     -- reverseConvertExps, reverseConvertFun1, reverseConvertFun2, reverseConvertAExps -- TEMP                  
-                  
+
+     -- reverseConvertExps, reverseConvertFun1, reverseConvertFun2, reverseConvertAExps -- TEMP
+
    )
        where
 
@@ -37,23 +36,23 @@ import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 --------------------------------------------------------------------------------
 
 
--- | Array-level expressions.  
--- 
+-- | Array-level expressions.
+--
 --   This is an intermediate datatype that is isomorphic to the the
 --   Accelerate frontend AST type ("Data.Array.Accelerate.AST")
 --   enabling direct translation.  It is also used as the IR for
 --   subsequent lowerings (e.g. staticTuples or liftComplexRands).
--- 
+--
 --   See documentation for SimpleAcc AST.  Not reproducing it here.
 --   This type differs by including ArrayTuple, TupleRefFromRight, and Apply.
--- 
+--
 --   This type is parameterized by an arbitrary annotation, which
 --   usually includes the type.
-data AExp a = 
+data AExp a =
     ArrayTuple a [AExp a]           -- Tuple of arrays.
-  | TupleRefFromRight a Int (AExp a)  -- Dereference tuple 
+  | TupleRefFromRight a Int (AExp a)  -- Dereference tuple
   | Apply a (Fun1 (AExp a)) (AExp a)      -- Apply a known array-level function.
-  ------------------------------  
+  ------------------------------
   | Vr   a Var
   | Unit a Exp
   | Let  a (Var,Type,(AExp a)) (AExp a)
@@ -61,37 +60,37 @@ data AExp a =
   | Use  a AccArray
   | Generate  a Exp (Fun1 Exp)
   | Replicate a SliceType Exp (AExp a)
-  | Index     a SliceType (AExp a) Exp 
+  | Index     a SliceType (AExp a) Exp
   | Map       a (Fun1 Exp) (AExp a)
   | ZipWith   a (Fun2 Exp) (AExp a) (AExp a)
-  | Fold      a (Fun2 Exp) Exp (AExp a) 
-  | Fold1     a (Fun2 Exp) (AExp a)     
+  | Fold      a (Fun2 Exp) Exp (AExp a)
+  | Fold1     a (Fun2 Exp) (AExp a)
   | FoldSeg   a (Fun2 Exp) Exp (AExp a) (AExp a)
   | Fold1Seg  a (Fun2 Exp)     (AExp a) (AExp a)
-  | Scanl     a (Fun2 Exp) Exp (AExp a)     
-  | Scanl'    a (Fun2 Exp) Exp (AExp a)      
-  | Scanl1    a (Fun2 Exp)     (AExp a)     
-  | Scanr     a (Fun2 Exp) Exp (AExp a)    
-  | Scanr'    a (Fun2 Exp) Exp (AExp a)   
-  | Scanr1    a (Fun2 Exp)     (AExp a)  
-  | Permute   a (Fun2 Exp) (AExp a) (Fun1 Exp) (AExp a) 
-  | Backpermute a Exp (Fun1 Exp) (AExp a)   
-  | Reshape     a Exp      (AExp a)   
+  | Scanl     a (Fun2 Exp) Exp (AExp a)
+  | Scanl'    a (Fun2 Exp) Exp (AExp a)
+  | Scanl1    a (Fun2 Exp)     (AExp a)
+  | Scanr     a (Fun2 Exp) Exp (AExp a)
+  | Scanr'    a (Fun2 Exp) Exp (AExp a)
+  | Scanr1    a (Fun2 Exp)     (AExp a)
+  | Permute   a (Fun2 Exp) (AExp a) (Fun1 Exp) (AExp a)
+  | Backpermute a Exp (Fun1 Exp) (AExp a)
+  | Reshape     a Exp      (AExp a)
   | Stencil     a (Fun1 Exp) Boundary (AExp a)
-  | Stencil2    a (Fun2 Exp) Boundary (AExp a) Boundary (AExp a) 
+  | Stencil2    a (Fun2 Exp) Boundary (AExp a) Boundary (AExp a)
  deriving (Read,Show,Eq,Generic)
 
 --------------------------------------------------------------------------------
--- Scalar Expressions 
+-- Scalar Expressions
 --------------------------------------------------------------------------------
 
 -- | Scalar expressions
--- 
+--
 --   This differs from `SimpleAcc` in that it includes dynamic
 --   list-like treatment of indices.
--- 
+--
 data Exp =
-  -- All four of the following forms evaluate to an "Index":
+  -- All six of the following forms evaluate to an "Index":
     EIndex [Exp] -- An index into a multi-dimensional array:
   | EIndexConsDynamic Exp Exp -- Add to the front of an index expression.
   | EIndexHeadDynamic Exp     -- Project just the first dimension of an index.
@@ -104,10 +103,10 @@ data Exp =
   | EPrimApp Type Prim [Exp]
   | EConst Const
   | ECond Exp Exp Exp
-  | EWhile (Fun1 Exp) (Fun1 Exp) Exp 
-  | EIndexScalar (AExp Type) Exp 
+  | EWhile (Fun1 Exp) (Fun1 Exp) Exp
+  | EIndexScalar (AExp Type) Exp
   | EShape (AExp Type)
-  | EShapeSize Exp 
+  | EShapeSize Exp
  deriving (Read,Show,Eq,Generic)
 
 --------------------------------------------------------------------------------
@@ -128,17 +127,17 @@ instance Out a => Out (AExp a)
 -- | Convert scalar expressions /that meet the restrictions/ to the
 -- final SimpleAcc type.
 convertExps :: Exp -> S.Exp
-convertExps expr = 
+convertExps expr =
   let f = convertExps in
   case expr of
     -- Good old boilerplate:
     EVr  v                   -> S.EVr  v
     ELet (vr,_ty,lhs) bod    -> S.ELet (vr, _ty, f lhs) (f bod)
     ETuple es                -> S.ETuple (L.map f es)
-    EConst c                 -> S.EConst c              
+    EConst c                 -> S.EConst c
     ECond e1 e2 e3           -> S.ECond (f e1) (f e2) (f e3)
     EWhile f1 f2 e3          -> S.EWhile (convertFun1 f1) (convertFun1 f2) (f e3)
-    EShapeSize ex            -> S.EShapeSize (f ex)         
+    EShapeSize ex            -> S.EShapeSize (f ex)
     EPrimApp ty p es         -> S.EPrimApp ty p (L.map f es)
     ETupProject ind len ex   -> S.ETupProject ind len (f ex)
     EIndex indls             -> S.EIndex (L.map f indls)
@@ -161,17 +160,17 @@ convertFun2 (Lam2 bnd1 bnd2 bod) = Lam2 bnd1 bnd2 $ convertExps bod
 --   final SimpleAcc AST type.
 convertAExps :: AExp Type -> S.AExp
 convertAExps aex =
-  let cE  = convertExps 
+  let cE  = convertExps
       cF  = convertFun1
       cF2 = convertFun2
       f   = convertAExps
   in
-  case aex of 
+  case aex of
      Cond _ a (Vr _ v1) (Vr _ v2) -> S.Cond (cE a) v1 v2
      Unit _ ex                    -> S.Unit (cE ex)
      Use _ arr                    -> S.Use arr
      Generate _ ex fn             -> S.Generate (cE ex) (cF fn)
-     ZipWith _ fn (Vr _ v1) (Vr _ v2) -> S.ZipWith (cF2 fn) v1 v2 
+     ZipWith _ fn (Vr _ v1) (Vr _ v2) -> S.ZipWith (cF2 fn) v1 v2
      Map     _ fn (Vr _ v)            -> S.Map     (cF fn)  v
      Replicate _aty slice ex (Vr _ v) -> S.Replicate slice (cE ex) v
      Index     _ slc (Vr _ v)    ex    -> S.Index slc v (cE ex)
@@ -188,7 +187,7 @@ convertAExps aex =
      Permute _ fn2 (Vr _ v1) fn1 (Vr _ v2)   -> S.Permute (cF2 fn2) v1 (cF fn1) v2
      Backpermute _ ex fn  (Vr _ v)     -> S.Backpermute (cE ex) (cF fn) v
      Reshape     _ ex     (Vr _ v)     -> S.Reshape     (cE ex)         v
-     Stencil   _ fn bndry (Vr _ v)     -> S.Stencil     (cF fn) bndry   v 
+     Stencil   _ fn bndry (Vr _ v)     -> S.Stencil     (cF fn) bndry   v
      Stencil2  _ fn bnd1 (Vr _ v1) bnd2 (Vr _ v2) -> S.Stencil2 (cF2 fn) bnd1 v1 bnd2 v2
      Vr _ _                  -> error$"convertAExps: input doesn't meet constraints, Vr encountered."
      Let _ _ _               -> error$"convertAExps: input doesn't meet constraints, Let encountered."
@@ -198,8 +197,8 @@ convertAExps aex =
      oth -> error$"convertAExps: invariants not matched: "++show oth
 
 -- | Extract the annotation component from an AExp:
-getAnnot :: AExp a -> a 
-getAnnot ae = 
+getAnnot :: AExp a -> a
+getAnnot ae =
   case ae of
      Vr a _                      -> a
      Let a _ _                   -> a
@@ -233,20 +232,20 @@ getAnnot ae =
 
 -- TEMP: shouldn't need this:
 reverseConvertExps :: S.Exp -> Exp
-reverseConvertExps expr = 
-  let f = reverseConvertExps 
+reverseConvertExps expr =
+  let f = reverseConvertExps
       dt = TTuple [] -- Dummy type
   in
-  case expr of 
+  case expr of
     S.EVr  v                -> EVr  v
     S.ELet (vr,_ty,lhs) bod -> ELet (vr, _ty, f lhs) (f bod)
     S.ETuple es             -> ETuple (L.map f es)
-    S.EConst c              -> EConst c              
+    S.EConst c              -> EConst c
     S.ECond e1 e2 e3        -> ECond (f e1) (f e2) (f e3)
     S.EWhile f1 f2 e3       -> EWhile (reverseConvertFun1 f1) (reverseConvertFun1 f2) (f e3)
     S.EIndexScalar v ex     -> EIndexScalar (Vr dt v) (f ex)
     S.EShape v              -> EShape (Vr dt v)
-    S.EShapeSize ex         -> EShapeSize (f ex)         
+    S.EShapeSize ex         -> EShapeSize (f ex)
     S.EPrimApp ty p es      -> EPrimApp ty p (L.map f es)
     S.ETupProject ind len ex -> ETupProject ind len (f ex)
     S.EIndex indls          -> EIndex (L.map f indls)
@@ -254,7 +253,7 @@ reverseConvertExps expr =
 reverseConvertFun1 :: S.Fun1 S.Exp -> S.Fun1 Exp
 reverseConvertFun1 (S.Lam1 bnd bod) = Lam1 bnd $ reverseConvertExps bod
 
-reverseConvertFun2 :: S.Fun2 S.Exp -> S.Fun2 Exp 
+reverseConvertFun2 :: S.Fun2 S.Exp -> S.Fun2 Exp
 reverseConvertFun2 (S.Lam2 bnd1 bnd2 bod) = Lam2 bnd1 bnd2 $ reverseConvertExps bod
 
 -- TEMPORARY! -- THIS PUTS IN NONSENSE TYPES!
@@ -266,7 +265,7 @@ reverseConvertAExps aex =
       f   = reverseConvertAExps
       dt  = TTuple [] -- Dummy type
   in
-  case aex of 
+  case aex of
      S.Vr v                      -> Vr dt v
 --     S.Let (v,ty,lhs) bod        -> Let dt (v,ty, f lhs) (f bod)
      S.Cond a b c                -> Cond dt (cE a) (Vr dt b) (Vr dt c)
@@ -292,3 +291,4 @@ reverseConvertAExps aex =
      S.Reshape     ex     (v)    -> Reshape     dt (cE ex)         (Vr dt v)
      S.Stencil   fn bndry (v)    -> Stencil     dt (cF fn) bndry   (Vr dt v)
      S.Stencil2  fn bnd1 v bnd2 v2 -> Stencil2 dt (cF2 fn) bnd1 (Vr dt v) bnd2 (Vr dt v2)
+
