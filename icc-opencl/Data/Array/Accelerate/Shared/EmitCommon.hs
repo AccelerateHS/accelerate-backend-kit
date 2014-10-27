@@ -205,29 +205,21 @@ emitS e stmt =
     -- Right now a hack, assume no tuples. 
     SWhile vr (Lam [(v,_,t)] sb@(ScalarBlock _ _ stms)) 
               (Lam [(p,_,pt)] bod@(ScalarBlock _ [out] _))  init -> 
-        do 
-          
-           emitLine $ toSyntax $ fromSyntax (emitType e t) <+> fromSyntax (varSyn v) <> semi
-           emitLine $ toSyntax $ fromSyntax (emitType e pt) <+> fromSyntax (varSyn p) <> semi
-           emitLine $ toSyntax $ fromSyntax (varSyn v) <+> "=" <+> (fromSyntax (emitE e init)) <> semi
-           emitLine $ toSyntax $ fromSyntax (varSyn p) <+> "=" <+> (fromSyntax (emitE e init)) <> semi
+        do E.varinit (emitType e t) (varSyn v) (emitE e init)
+           E.varinit (emitType e pt) (varSyn p) (varSyn v)
+           
            -- evaluate condition before loop
            [tmp] <- emitBlock e sb
                 
-  --           return () 
-          
            -- ready to write our while loop 
            emitLine $ toSyntax $ "while " <> PP.parens (fromSyntax (varSyn vr))
            block $ do 
-              --[tmp] <- emitBlock e bod 
-              --[c]  <- emitBlock e sb
               mapM_ (emitS e) $ getStms bod
-              emitLine $ toSyntax $ fromSyntax (varSyn v) <+> "=" <+> fromSyntax (varSyn out) <> semi    
+              -- This assignment has to happen before the condition test!
+              emitStmt $ toSyntax $ fromSyntax (varSyn v) <+> "=" <+> fromSyntax (varSyn out)
               mapM_ (emitS e) $ getStms sb
-              emitLine $ toSyntax $ fromSyntax (varSyn p) <+> "=" <+> fromSyntax (varSyn out) <> semi
+              emitStmt $ toSyntax $ fromSyntax (varSyn p) <+> "=" <+> fromSyntax (varSyn out)
               -- assign params  tmp (not needed?)
-              -- emitLine $ toSyntax $ fromSyntax (varSyn vr) <+> "=" <+> fromSyntax (varSyn tmp) <> semi
-             --   emitLine $ toSyntax $ fromSyntax (varSyn vr) <+> "=" <+> fromSyntax (varSyn c) <> semi
               return () 
 
               -- mapM_ (emitS e) stms
