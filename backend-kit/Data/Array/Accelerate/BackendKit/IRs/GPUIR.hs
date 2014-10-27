@@ -149,7 +149,7 @@ data Stmt =
            forincr :: Exp,
            forbody :: [Stmt]
            }                    -- for (init,test,incr) { body }
-  | SWhile Var (Fun ScalarBlock)  (Fun ScalarBlock) Exp  
+  | SWhile Var (Fun ScalarBlock) (Fun ScalarBlock) ScalarBlock
   | SNoOp                       -- no operation
   | SSynchronizeThreads
 

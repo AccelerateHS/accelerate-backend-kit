@@ -144,7 +144,7 @@ data ScalarBlock = ScalarBlock [(Var,Type)] [Var] [Stmt]
 --    SCond Exp ScalarBlock ScalarBlock
 data Stmt = SCond Exp [Stmt] [Stmt]
           --       condvar  cond                 body       init  
-          | SWhile Var (Fun ScalarBlock)  (Fun ScalarBlock) Exp  
+          | SWhile Var (Fun ScalarBlock)  (Fun ScalarBlock) ScalarBlock --Exp
           | SSet Var Exp
  deriving (Read,Show,Eq,Ord,Generic)               
           
@@ -195,12 +195,13 @@ fvStmt (SCond e1 s1 s2) = S.union (fvE e1)
 
 --ScalarBlock [(Var,Type)] [Var] [Stmt]
 fvStmt (SWhile v (Lam binds1 (ScalarBlock locals1 v1 stms1) )
-                   (Lam binds2 (ScalarBlock locals2 v2 stms2))  e) = 
-    let fv_e = fvE e
-        fv_sb1 = S.unions $ L.map fvStmt stms1
-        fv_sb2 = S.unions $ L.map fvStmt stms2 
-        tmp =  fv_e `S.union` fv_sb1 `S.union` fv_sb2 
-        dels = S.fromList $ map fst (binds1 L.++ binds2 L.++ locals1 L.++ locals2)
+        (Lam binds2 (ScalarBlock locals2 v2 stms2))
+        (ScalarBlock locals3 v3 stms3)) = 
+    let fv_sb1 = S.unions $ L.map fvStmt stms1
+        fv_sb2 = S.unions $ L.map fvStmt stms2
+        fv_sb3 = S.unions $ L.map fvStmt stms3
+        tmp =  fv_sb1 `S.union` fv_sb2 `S.union` fv_sb3
+        dels = S.fromList $ map fst (binds1 L.++ binds2 L.++ locals1 L.++ locals2 L.++ locals3)
     in  S.difference tmp dels 
 
 

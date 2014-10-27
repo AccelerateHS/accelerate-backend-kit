@@ -32,7 +32,7 @@ import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import           Data.Array.Accelerate.BackendKit.IRs.Metadata  (FreeVars(..))
 import           Data.Array.Accelerate.Shared.EasyEmit hiding (var)
 import qualified Data.Array.Accelerate.Shared.EasyEmit as E
-import           Data.Array.Accelerate.Shared.EmitHelpers (builderName)
+import           Data.Array.Accelerate.Shared.EmitHelpers (builderName, fragileZip)
 
 import           Data.Array.Accelerate.BackendKit.IRs.GPUIR      as G
 import           Text.PrettyPrint.HughesPJ      (text, comma)
@@ -203,22 +203,29 @@ emitS e stmt =
     -- Need to replace init with a list of Exp
     -- this list will match up with the args to Lam.
     -- Right now a hack, assume no tuples. 
-    SWhile vr (Lam [(v,_,t)] sb@(ScalarBlock _ _ stms)) 
-              (Lam [(p,_,pt)] bod@(ScalarBlock _ [out] _))  init -> 
-        do E.varinit (emitType e t) (varSyn v) (emitE e init)
-           E.varinit (emitType e pt) (varSyn p) (varSyn v)
-           
+    SWhile vr (Lam vbinds sb@(ScalarBlock _ _ stms)) 
+              (Lam pbinds bod@(ScalarBlock _ out _)) init -> 
+        do initOut <- emitBlock e init
+           mapM_ (\ ((v, _, t), o) -> E.varinit (emitType e t) (varSyn v) (varSyn o)) $ fragileZip vbinds initOut
+           mapM_ (\ ((p, _, t), o) -> E.varinit (emitType e t) (varSyn p) (varSyn o)) $ fragileZip pbinds initOut
+
            -- evaluate condition before loop
-           [tmp] <- emitBlock e sb
+           tmpLst <- emitBlock e sb
                 
            -- ready to write our while loop 
            emitLine $ toSyntax $ "while " <> PP.parens (fromSyntax (varSyn vr))
            block $ do 
               mapM_ (emitS e) $ getStms bod
               -- This assignment has to happen before the condition test!
-              emitStmt $ toSyntax $ fromSyntax (varSyn v) <+> "=" <+> fromSyntax (varSyn out)
+              mapM_ (\ ((v, _, _), o) -> emitStmt $
+                                         toSyntax $ fromSyntax (varSyn v) <+> "=" <+>
+                                         fromSyntax (varSyn o)) $ fragileZip vbinds out
+              -- emitStmt $ toSyntax $ fromSyntax (varSyn v) <+> "=" <+> fromSyntax (varSyn out)
               mapM_ (emitS e) $ getStms sb
-              emitStmt $ toSyntax $ fromSyntax (varSyn p) <+> "=" <+> fromSyntax (varSyn out)
+              mapM_ (\ ((p, _, _), o) -> emitStmt $
+                                         toSyntax $ fromSyntax (varSyn p) <+> "=" <+>
+                                         fromSyntax (varSyn o)) $ fragileZip pbinds out
+              --emitStmt $ toSyntax $ fromSyntax (varSyn p) <+> "=" <+> fromSyntax (varSyn out)
               -- assign params  tmp (not needed?)
               return () 
 

@@ -149,21 +149,20 @@ doStmts k env ex =
     ECond a b c -> fmap sing $ 
       LL.SCond (doE env a) <$> doStmts k env b <*> doStmts k env c
 
-    -- Handle While here ?
+    -- Handle While here
     -- Previously this was in doE (so used the fallthrough below) 
-    EWhile (Lam1 (v1,t1) bod1) (Lam1 (v2,t2) bod2) e -> do 
-        
-       --(binds1,cont1) <- lift$ makeResultWriterCont t1 
-       --(binds2,cont2) <- lift$ makeResultWriterCont t2
-       
+    EWhile (Lam1 (v1,t1) bod1) (Lam1 (v2,t2) bod2) bod3 -> do 
+
+       -- The two lambdas need to be recursed on with extended environments.
        let env1 = M.insert v1 (t1,[v1],Nothing) env
-       --   subcomps1 = L.map fst binds1
-       --     a'   = doE env a   
- 
            env2 = M.insert v2 (t2,[v2],Nothing) env
-       --   subcomps2 = L.map fst binds2
-           -- dosomething         
-                 
+
+       -- Each lambda needs to be handled like this:
+       -- * recover the type of the scalar block body
+       -- * generate a new continuation
+       -- * recurse on the scalar block with the new continuation
+       -- * construct a LL.Lam with an LL.ScalarBlock
+           
        let ty1 = recoverExpType (unliftEnv env1) bod1
        (binds1,cont1)   <- lift $ makeResultWriterCont ty1
        (stmts1,binds1') <- lift $ runWriterT$ doStmts cont1 env1 bod1
@@ -174,13 +173,17 @@ doStmts k env ex =
        (stmts2,binds2') <- lift $ runWriterT$ doStmts cont2 env2 bod2
        let f2 = LL.Lam [(v2,t2)] $ LL.ScalarBlock (binds2++binds2') (L.map fst binds2) stmts2
 
-       let e' = doE env e  
+       -- bod3 is a stand-alone scalar block (no function parameters)
+
+       let ty3 = recoverExpType (unliftEnv env) bod3
+       (binds3,cont3)   <- lift $ makeResultWriterCont ty3
+       (stmts3,binds3') <- lift $ runWriterT$ doStmts cont3 env bod3
+       let bod3' = LL.ScalarBlock (binds3++binds3') (L.map fst binds3) stmts3
+       
        mytell $ binds2
                
-       return $ [LL.SWhile ((fst . head) binds1) f1 f2  e'] ++ 
+       return $ [LL.SWhile ((fst . head) binds1) f1 f2  bod3'] ++ 
                 hackAssign (L.map fst binds2) k  
-
-       --  return $ (prestuff : LL.SWhile something something) 
 
     -- An ETuple in tail position:                                 
     ETuple ls -> return$ k$ L.map (doE env) ls 

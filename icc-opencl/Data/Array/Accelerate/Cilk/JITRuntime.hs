@@ -137,7 +137,7 @@ compileToFile pm name prog = do
   -- TODO, obey the $CC environment variable:
   let pickCC onfail = do
         -- UPDATE: -ww13397 to downgrade to warning, and -wd13397 to disable entirely.  NICE!        
-        let icc_args    = ["-fast","-ww13397"] ++ stripOptFlag cOptLvl ++ report_args
+        let icc_args    = ["-fast","-ww13397","-fPIC"] ++ stripOptFlag cOptLvl ++ report_args
             report_args
               | dbg >= 1  = ["-opt-report=2", "-opt-report-phase=vec"]
               | otherwise = []
