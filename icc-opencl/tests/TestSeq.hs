@@ -58,7 +58,7 @@ knownProblemsOld = words $ ""
   ++ " p13k p13i "
  --  ++ " p50b " 
   ++ "p50c"
-  ++ " p60e " 
+  ++ " p60e p60f p60g" 
   
 
 

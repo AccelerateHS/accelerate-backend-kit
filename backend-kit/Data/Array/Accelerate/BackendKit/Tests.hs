@@ -41,7 +41,7 @@ module Data.Array.Accelerate.BackendKit.Tests
     -- Iteration
     p50a, p50b, p50c,
     
-    p60a, p60b, p60c, p60d, p60e, 
+    p60a, p60b, p60c, p60d, p60e, p60f, p60g, p60h, p60i,
     
     -- * Reexports to make life easier:
     doc, convertToSimpleProg,
@@ -177,7 +177,8 @@ otherProgs =
   go "p50c" p50c,
 
   -- Tuple experimentation 
-  go "p60a" p60a, go "p60b" p60b,   go "p60c" p60c, go "p60d" p60d, go "p60e" p60e
+  go "p60a" p60a, go "p60b" p60b,   go "p60c" p60c, go "p60d" p60d, 
+  go "p60e" p60e, go "p60f" p60f, go "p60g" p60g, go "p60h" p60h, go "p60i" p60i
   ]
 
 makeTestEntry :: forall a . (Show a, Arrays a) => String -> Acc a -> TestEntry
@@ -1051,11 +1052,37 @@ p60d = let xs = use$ fromList (Z :. (10::Int)) [1..10::Int]
        in  A.uncurry A.zip (lift (xs,ys))
 
 -- fails: There are simpler ways to recreate the failure 
---  only use needed to cause it. 
+--  only 'use' needed to cause it. 
 p60e :: Acc (Array DIM1 (Int,Int)) 
 p60e = let xs = fromList (Z :. (10::Int)) [1..10::Int]
            ys = fromList (Z :. (10::Int)) [10..20::Int]
        in  A.uncurry A.zip (use (xs,ys)) 
+
+
+p60f :: Acc (Array DIM1 ((Int,Int),Int)) 
+p60f = let xs = use $ fromList (Z :. (10::Int)) [100..110::Int]
+       in  A.zip p60e xs
+
+p60g :: Acc (Array DIM1 (Int,Int)) 
+p60g = A.map (\x -> let (x' :: Exp (Int,Int) ,x3 ::Exp Int) = unlift x 
+                        (x1 :: Exp Int ,x2 :: Exp Int ) = unlift x'
+                    in  lift (x1,x2 + x3)) p60f
+
+-- there are tuples at one point 
+p60h :: Acc (Array DIM1 Int) 
+p60h = let xs = use $ fromList (Z :. (10::Int)) [1..10::Int]
+           f x = let (a :: Exp Int ,b :: Exp Int) = unlift x 
+                 in a + b 
+       in  A.map (\x -> f (lift (x,constant 1) :: Exp (Int,Int))) xs
+
+-- there are nested tuples at one point 
+p60i :: Acc (Array DIM1 Int) 
+p60i = let xs = use $ fromList (Z :. (10::Int)) [1..10::Int]
+           f x = let (a' :: Exp (Int,Int) ,b :: Exp Int) = unlift x 
+                     (a :: Exp Int, c :: Exp Int) = unlift a'
+                 in a + b + c 
+       in  A.map (\x -> f (lift ((lift (x, constant 2):: Exp (Int,Int) ,constant 1)) :: Exp ((Int,Int),Int))) xs
+
 
  
 --------------------------------------------------------------------------------
