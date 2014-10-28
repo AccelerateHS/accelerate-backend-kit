@@ -41,6 +41,8 @@ module Data.Array.Accelerate.BackendKit.Tests
     -- Iteration
     p50a, -- p50b, 
     
+    p60a, p60b, p60c, p60d, p60e, 
+    
     -- * Reexports to make life easier:
     doc, convertToSimpleProg,
 
@@ -170,8 +172,11 @@ otherProgs =
   go "p40a" p40a, go "p40b" p40b, go "p41a" p41a, go "p41b" p41b,
 
   -- Iteration
-  go "p50a" p50a
+  go "p50a" p50a,
 --  go "p50b" p50b
+
+  -- Tuple experimentation 
+  go "p60a" p60a, go "p60b" p60b,   go "p60c" p60c, go "p60d" p60d, go "p60e" p60e
   ]
 
 makeTestEntry :: forall a . (Show a, Arrays a) => String -> Acc a -> TestEntry
@@ -577,7 +582,6 @@ p9e = unit$
       -- v :: Exp (Int,Int,Int)
       -- v = lift (b,c,d)
   in mid
-
 
 
 --------------------------------------------------------------------------------
@@ -1006,6 +1010,43 @@ p50a = A.unit $ A.while (<* 100) (+ 1) 90
 
 -- p50b :: Acc (Array DIM0 (Int,Int))
 -- p50b = A.unit $ A.while (<* 100) (+ 1) (90,1) 
+
+---------------------------------------------------------------------------
+-- Explore Tuples 
+--------------------------------------------------------------------------- 
+
+-- zip seems to have problem (accelerate-nofib)  
+-- Should parameterise these over shapes... 
+
+p60a :: Acc (Array DIM0 (Int,Int)) 
+p60a = let xs = unit $ constant 1
+           ys = unit $ constant 2 
+       in  A.zip xs ys 
+
+p60b :: Acc (Array DIM0 (Int,Int))
+p60b = let xs = unit $ constant 1
+           ys = unit $ constant 2 
+       in  A.uncurry A.zip (lift (xs,ys))
+
+
+p60c :: Acc (Array DIM1 (Int,Int)) 
+p60c = let xs = use$ fromList (Z :. (10::Int)) [1..10::Int]
+           ys = use$ fromList (Z :. (10::Int)) [10..20::Int]
+       in  A.zip xs ys
+
+p60d :: Acc (Array DIM1 (Int,Int)) 
+p60d = let xs = use$ fromList (Z :. (10::Int)) [1..10::Int]
+           ys = use$ fromList (Z :. (10::Int)) [10..20::Int]
+       in  A.uncurry A.zip (lift (xs,ys))
+
+-- fails: There are simpler ways to recreate the failure 
+--  only use needed to cause it. 
+p60e :: Acc (Array DIM1 (Int,Int)) 
+p60e = let xs = fromList (Z :. (10::Int)) [1..10::Int]
+           ys = fromList (Z :. (10::Int)) [10..20::Int]
+       in  A.uncurry A.zip (use (xs,ys)) 
+ 
+
 
 
 --------------------------------------------------------------------------------
