@@ -174,6 +174,7 @@ otherProgs =
   -- Iteration
   go "p50a" p50a,
   go "p50b" p50b,
+  go "p50c" p50c,
 
   -- Tuple experimentation 
   go "p60a" p60a, go "p60b" p60b,   go "p60c" p60c, go "p60d" p60d, go "p60e" p60e

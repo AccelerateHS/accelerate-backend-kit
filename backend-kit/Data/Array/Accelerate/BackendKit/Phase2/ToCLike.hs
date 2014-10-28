@@ -152,10 +152,20 @@ doStmts k env ex =
     -- Handle While here
     -- Previously this was in doE (so used the fallthrough below) 
     EWhile (Lam1 (v1,t1) bod1) (Lam1 (v2,t2) bod2) bod3 -> do 
-
+            
+       let ft1s = S.flattenTy t1
+           ft2s = S.flattenTy t2
+       v1s' <- lift $ genUniques v1 (length ft1s)
+       v2s' <- lift $ genUniques v2 (length ft2s)
+       let env1 = M.insert v1 (t1,v1s',Nothing) env
+           env2 = M.insert v2 (t2,v2s',Nothing) env     
+            
+       let vt1 = zip v1s' ft1s 
+           vt2 = zip v2s' ft2s 
+  
        -- The two lambdas need to be recursed on with extended environments.
-       let env1 = M.insert v1 (t1,[v1],Nothing) env
-           env2 = M.insert v2 (t2,[v2],Nothing) env
+       -- let env1 = M.insert v1 (t1,[v1],Nothing) env
+       --    env2 = M.insert v2 (t2,[v2],Nothing) env
 
        -- Each lambda needs to be handled like this:
        -- * recover the type of the scalar block body
@@ -166,12 +176,12 @@ doStmts k env ex =
        let ty1 = recoverExpType (unliftEnv env1) bod1
        (binds1,cont1)   <- lift $ makeResultWriterCont ty1
        (stmts1,binds1') <- lift $ runWriterT$ doStmts cont1 env1 bod1
-       let f1 = LL.Lam [(v1,t1)] $ LL.ScalarBlock (binds1++binds1') (L.map fst binds1) stmts1
+       let f1 = LL.Lam vt1 {- [(v1,t1)]-} $ LL.ScalarBlock (binds1++binds1') (L.map fst binds1) stmts1
 
        let ty2 = recoverExpType (unliftEnv env2) bod2
        (binds2,cont2)   <- lift $ makeResultWriterCont ty2
        (stmts2,binds2') <- lift $ runWriterT$ doStmts cont2 env2 bod2
-       let f2 = LL.Lam [(v2,t2)] $ LL.ScalarBlock (binds2++binds2') (L.map fst binds2) stmts2
+       let f2 = LL.Lam vt2 {-[(v2,t2)]-} $ LL.ScalarBlock (binds2++binds2') (L.map fst binds2) stmts2
 
        -- bod3 is a stand-alone scalar block (no function parameters)
 
