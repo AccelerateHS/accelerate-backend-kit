@@ -1050,9 +1050,8 @@ p60e :: Acc (Array DIM1 (Int,Int))
 p60e = let xs = fromList (Z :. (10::Int)) [1..10::Int]
            ys = fromList (Z :. (10::Int)) [10..20::Int]
        in  A.uncurry A.zip (use (xs,ys)) 
+
  
-
-
 --------------------------------------------------------------------------------
 -- Let's print matrices nicely.
 
