@@ -19,7 +19,7 @@ import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import Data.Array.Accelerate.BackendKit.Phase2.NormalizeExps (wrapLets)
 import Data.Array.Accelerate.BackendKit.IRs.Metadata (ArraySizeEstimate(..), SubBinds(..), Stride(..))
 import Data.Array.Accelerate.BackendKit.Utils.Helpers (mkPrj, mapMAEWithGEnv, isTupleTy, fragileZip, fragileZip3, (#), isTrivialE, sizeName)
-import Debug.Trace
+
 ----------------------------------------------------------------------------------------------------
 
 -- | Map the original possibly-tuple-valued variable names to the
@@ -162,7 +162,7 @@ doBind env (ProgBind v t dec (Right ae)) = do
 -- | Process along the spine (which will become Stmts in the CLike LLIR).
 --   Note that this INCLUDES scalar args to array ops (e.g. init value for Fold).   
 doSpine :: Env -> Exp -> GensymM Exp
-doSpine env ex =
+doSpine env ex = -- trace (printf "doSpine of %s\n" (show ex)) $
   case ex of
     EVr vr                -> return$ mkETuple $ handleVarref env vr
 
@@ -177,17 +177,17 @@ doSpine env ex =
 
     -- In tail (or "spine") position multiple values may be returned by the branches:
     ECond e1 e2 e3        -> ECond <$> (unsing <$> doE env e1) <*> doSpine env e2 <*> doSpine env e3
-    EWhile (Lam1 (v1,t1) bod1) (Lam1 (v2,t2) bod2) e -> 
-        do 
-          let env1 = M.insert v1 (t1,Nothing) env 
-              env2 = M.insert v2 (t2,Nothing) env 
-                     
-          bod1' <- doSpine env1 bod1 
-          bod2' <- doSpine env2 bod2 
 
-          e' <- doE env e 
+    EWhile (Lam1 (v1,t1) bod1) (Lam1 (v2,t2) bod2) e ->
+        do
+          let env1 = M.insert v1 (t1,Nothing) env
+              env2 = M.insert v2 (t2,Nothing) env
+
+          bod1' <- doSpine env1 bod1
+          bod2' <- doSpine env2 bod2
+          e'    <- doE env e
           return $ EWhile  (Lam1 (v1,t1) bod1') (Lam1 (v2,t2) bod2') (mkETuple e')
-      
+
 
     -- EConds in the RHS of a let are still on the "spine" (don't untuple):
     ELet (v,t,ECond a b c) bod -> do
@@ -222,7 +222,10 @@ doSpine env ex =
 blowUpVarref :: Var -> Type -> [Exp]
 blowUpVarref vr ty = 
   let size = length $ flattenOnlyScalar ty 
-  in reverse [ mkPrj ind 1 size (EVr vr) | ind <- [ 0 .. size-1 ]]
+      res  = reverse [ mkPrj ind 1 size (EVr vr) | ind <- [ 0 .. size-1 ]]
+  in
+  res
+--  trace (printf "blowUpVarref of var=%s type=%s gave result=%s" (show vr) (show ty) (show res)) res
 
 -- | A variable reference either uses the old name or uses one of the
 -- fresh gensyms that refer to the components of a tuple.
@@ -231,12 +234,21 @@ handleVarref env vr =
   case M.lookup vr env of
     Just (ty,Nothing)   -> blowUpVarref vr ty
     Just (_,Just subVs) -> map EVr subVs
-    Nothing -> error$"UnzipETups.hs: internal error, var not in env: "++show vr 
-  
+    Nothing             ->
+      error (unlines msg)
+      where
+        msg     = [ "UnzipETups.hs: internal error"
+                  , "  var not found: " ++ show vr
+                  , "  in environment: "
+                  ] ++
+                  map (\x -> "    " ++ show x) (M.toList env)
+
+--      error $ printf "UnzipETups.hs: internal error\n  not found: %s\n     in env: %s\n " (show vr) (show env)
+
 -- | When processing non-spine expressions no ETuple's may survive.
 -- This function returns a detupled (flattened) list of expressions.
 doE :: Env -> Exp -> GensymM [Exp]
-doE env ex = 
+doE env ex = -- trace (printf "doE on %s\n" (show ex)) $
   case ex of
     EConst c             -> return $ map EConst (flattenConst c)
     ETuple []            -> return []
@@ -264,9 +276,9 @@ doE env ex =
 
     EWhile (Lam1 (v1,t1) f1) (Lam1 (v2,t2) f2) e1 -> do
       e1' <- doE env e1
-      f1' <- doE (M.insert v1 (t1, Nothing) env) f1
-      f2' <- doE (M.insert v2 (t2, Nothing) env) f2
-      return [EWhile (Lam1 (v1,t1) (mkETuple f1')) (Lam1 (v2,t2) (mkETuple f2')) (mkETuple e1')]
+      f1' <- doSpine (M.insert v1 (t1, Nothing) env) f1
+      f2' <- doSpine (M.insert v2 (t2, Nothing) env) f2
+      return [EWhile (Lam1 (v1,t1) f1') (Lam1 (v2,t2) f2') (mkETuple e1')]
 
     -- None of the primitives operate on tuples (in or out):
     EPrimApp ty p els     -> (sing . EPrimApp ty p) <$> mapM (fmap unsing . doE env) els
