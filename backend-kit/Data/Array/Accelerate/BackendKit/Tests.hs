@@ -39,7 +39,7 @@ module Data.Array.Accelerate.BackendKit.Tests
     p40a, p40b, p41a, p41b, 
 
     -- Iteration
-    p50a, -- p50b, 
+    p50a, p50b, 
     
     p60a, p60b, p60c, p60d, p60e, 
     
@@ -173,7 +173,7 @@ otherProgs =
 
   -- Iteration
   go "p50a" p50a,
---  go "p50b" p50b
+  go "p50b" p50b,
 
   -- Tuple experimentation 
   go "p60a" p60a, go "p60b" p60b,   go "p60c" p60c, go "p60d" p60d, go "p60e" p60e
@@ -1008,6 +1008,11 @@ p41b = let xs = use$ fromList (Z :. (10::Int)) [1..10::Int]
 p50a :: Acc (Array DIM0 Int)
 p50a = A.unit $ A.while (<* 100) (+ 1) 90
 
+p50b :: Acc (Array DIM1 Int) 
+p50b = let xs = use$ fromList (Z :. (10::Int)) [1..10::Int] 
+           f i = A.iterate i (+1) 0
+       in  map f xs 
+
 -- p50b :: Acc (Array DIM0 (Int,Int))
 -- p50b = A.unit $ A.while (<* 100) (+ 1) (90,1) 
 
@@ -1046,7 +1051,6 @@ p60e = let xs = fromList (Z :. (10::Int)) [1..10::Int]
            ys = fromList (Z :. (10::Int)) [10..20::Int]
        in  A.uncurry A.zip (use (xs,ys)) 
  
-
 
 
 --------------------------------------------------------------------------------

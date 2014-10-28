@@ -56,6 +56,7 @@ knownProblemsOld = words $ ""
 
   -- [2014.02.27] New breakage from reglueArrayofTups, need to come back to:
   ++ " p13k p13i "
+  ++ " p50b " 
   ++ " p60e " 
   
 
