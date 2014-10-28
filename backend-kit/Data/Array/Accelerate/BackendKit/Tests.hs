@@ -39,7 +39,7 @@ module Data.Array.Accelerate.BackendKit.Tests
     p40a, p40b, p41a, p41b, 
 
     -- Iteration
-    p50a, p50b, 
+    p50a, p50b, p50c,
     
     p60a, p60b, p60c, p60d, p60e, 
     
@@ -1012,6 +1012,11 @@ p50b :: Acc (Array DIM1 Int)
 p50b = let xs = use$ fromList (Z :. (10::Int)) [1..10::Int] 
            f i = A.iterate i (+1) 0
        in  map f xs 
+
+p50c :: Acc (Vector Int)
+p50c = A.map f (use $ fromList (Z:.10) [0..])
+  where
+    f i = A.while (<* i) (+1) (constant 0)
 
 -- p50b :: Acc (Array DIM0 (Int,Int))
 -- p50b = A.unit $ A.while (<* 100) (+ 1) (90,1) 

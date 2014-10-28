@@ -14,14 +14,11 @@ module Data.Array.Accelerate.BackendKit.Phase2.UnzipETups (unzipETups, flattenEi
 import Control.Monad.State.Strict
 import Control.Applicative ((<$>),(<*>))
 import qualified Data.Map              as M
-import Text.PrettyPrint.GenericPretty (Out(doc))
 
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import Data.Array.Accelerate.BackendKit.Phase2.NormalizeExps (wrapLets)
 import Data.Array.Accelerate.BackendKit.IRs.Metadata (ArraySizeEstimate(..), SubBinds(..), Stride(..))
-import Data.Array.Accelerate.BackendKit.Utils.Helpers
-       (GensymM, genUnique, genUniqueWith, mkPrj, mapMAEWithGEnv, isTupleTy, fragileZip, fragileZip3, (#),
-        isTrivialE, sizeName)
+import Data.Array.Accelerate.BackendKit.Utils.Helpers (mkPrj, mapMAEWithGEnv, isTupleTy, fragileZip, fragileZip3, (#), isTrivialE, sizeName)
 import Debug.Trace
 ----------------------------------------------------------------------------------------------------
 
@@ -171,7 +168,7 @@ doSpine env ex =
 
     -- Normalize the representation of tuple constants at this point:
     EConst (Tup c)        -> return$ mkETuple $ map EConst (flattenConst (Tup c))
-    EConst c              -> return ex
+    EConst _              -> return ex
     
     -- In all three of the following we allow tuples to remain:
     ETuple els            -> (mkETuple . concat) <$> mapM (doE env) els
@@ -264,12 +261,20 @@ doE env ex =
                                 [e2'] <- doE env e2
                                 [e3'] <- doE env e3
                                 return [ECond e1' e2' e3']
+
+    EWhile (Lam1 (v1,t1) f1) (Lam1 (v2,t2) f2) e1 -> do
+      e1' <- doE env e1
+      f1' <- doE (M.insert v1 (t1, Nothing) env) f1
+      f2' <- doE (M.insert v2 (t2, Nothing) env) f2
+      return [EWhile (Lam1 (v1,t1) (mkETuple f1')) (Lam1 (v2,t2) (mkETuple f2')) (mkETuple e1')]
+
     -- None of the primitives operate on tuples (in or out):
     EPrimApp ty p els     -> (sing . EPrimApp ty p) <$> mapM (fmap unsing . doE env) els
     EShape     _ -> err ex
     EShapeSize _ -> err ex
     EIndex     _ -> err ex
     ELet    _  _ -> error$"UnzipETups.hs: ELet should not occur off the programs spine: "++ show ex
+
 
 -- | This does the projection statically if possible, but (due to
 -- blowUpVarref above), it may actually return an ETupProject.
