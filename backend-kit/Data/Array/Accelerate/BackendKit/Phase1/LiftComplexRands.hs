@@ -109,6 +109,9 @@ liftComplexRands orig_aex =
                                   T.EIndexScalar (T.Vr (getAnnot ae) tmp) <$> exp ex
        T.EShape       ae    -> do tmp <- addbind ae
                                   return$ T.EShape (T.Vr (getAnnot ae) tmp)
+       -- BJS adding cases here: 
+       -- not sure what to do with f1 f2
+       T.EWhile f1 f2 e -> T.EWhile <$> cF f1 <*> cF f2 <*> exp e 
        -- The rest is BOILERPLATE:
        ------------------------------------------------------------
        T.EVr vr                      -> return$ T.EVr vr
