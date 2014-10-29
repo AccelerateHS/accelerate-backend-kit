@@ -43,6 +43,9 @@ module Data.Array.Accelerate.BackendKit.Tests
     
     p60a, p60b, p60c, p60d, p60e, p60f, p60g, p60h, p60i,
     
+    -- Naughty tuples 
+    p70, p70a,     
+
     -- * Reexports to make life easier:
     doc, convertToSimpleProg,
 
@@ -178,7 +181,8 @@ otherProgs =
 
   -- Tuple experimentation 
   go "p60a" p60a, go "p60b" p60b,   go "p60c" p60c, go "p60d" p60d, 
-  go "p60e" p60e, go "p60f" p60f, go "p60g" p60g, go "p60h" p60h, go "p60i" p60i
+  go "p60e" p60e, go "p60f" p60f, go "p60g" p60g, go "p60h" p60h, go "p60i" p60i,
+  go "p70" p70,   go "p70a" p70a 
   ]
 
 makeTestEntry :: forall a . (Show a, Arrays a) => String -> Acc a -> TestEntry
@@ -1083,8 +1087,22 @@ p60i = let xs = use $ fromList (Z :. (10::Int)) [1..10::Int]
                  in a + b + c 
        in  A.map (\x -> f (lift ((lift (x, constant 2):: Exp (Int,Int) ,constant 1)) :: Exp ((Int,Int),Int))) xs
 
+---------------------------------------------------------------------------
+-- 
+p70 :: Acc (Array DIM1 (((Int,Int), Int), Int))
+p70 = let a = p60f 
+          xs = use $ fromList (Z :. (10::Int)) [1..10::Int]
+      in A.zipWith (\x y -> lift (x,y) :: Exp (((Int,Int),Int),Int)) a xs  
 
+p70a :: Acc (Array DIM1 ((Int, (Int,Int)), Int))
+p70a = let a = p60f 
+           xs = use $ fromList (Z :. (10::Int)) [1..10::Int]
+       in A.zipWith (\x y -> 
+                     let (a :: Exp (Int,Int) ,b :: Exp Int ) = unlift x 
+                         ba = lift (b,a) :: Exp (Int,(Int,Int))
+                     in  lift (ba,y) :: Exp ((Int,(Int,Int)),Int))   a xs  
  
+
 --------------------------------------------------------------------------------
 -- Let's print matrices nicely.
 
