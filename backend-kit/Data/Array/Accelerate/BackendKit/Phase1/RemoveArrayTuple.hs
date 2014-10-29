@@ -129,7 +129,7 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
      let (macc',thisbnd) = 
            case L.map Right $ flattenTT rhs' of
              [ae] -> (macc, [(vr,ty,ae)]) -- No fresh names.
-             unpacked -> 
+             unpacked ->
                let subnames  = freshNames vr (length unpacked)
                    types     = deepDetupleTy ty
                    flattened = 
@@ -159,6 +159,12 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
    dorhs eenv aex = 
      case aex of
        
+       T.Use ty arr | isTupledTy ty -> 
+              let --flatTy = deepDetupleTy ty 
+                  newArrays = S.unzipAccArray arr
+              in return $ listToTT $ L.map (TLeaf . S.Use) newArrays 
+       T.Use ty arr -> return$ TLeaf$ S.Use arr
+       
        -- Variable references to tuples need to be deconstructed.
        -- The original variable will disappear.
        T.Vr _ vr -> case M.lookup vr eenv of  
@@ -167,6 +173,7 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
 
        -- Have to consider flattening of nested array tuples here:
        -- T.ArrayTuple ls -> concatMap (dorhs eenv) $ ls
+       -- BJS + MV: returns a tree, why call it flatten
        T.ArrayTuple _ ls -> listToTT <$> mapM (dorhs eenv) ls      
 
        T.TupleRefFromRight _ ind ae -> do
@@ -206,7 +213,7 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
        -- The rest is BOILERPLATE:      
        ----------------------------------------      
        T.Unit _ty ex               -> return$ TLeaf$ S.Unit (cE ex)
-       T.Use ty arr                -> return$ TLeaf$ S.Use arr
+       
        T.Generate aty ex fn        -> return$ TLeaf$ S.Generate (cE ex) (cF fn)
        T.ZipWith _ fn (T.Vr _ v1) (T.Vr _ v2)  -> lfr$ S.ZipWith (cF2 fn) v1 v2 
        T.Map     _ fn (T.Vr _ v)               -> lfr$ S.Map     (cF fn)  v

@@ -55,7 +55,10 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
      -- * Type recovery and type checking:
      constToType, recoverExpType, topLevelExpType,
      typeByteSize,
-     accArrayToType, payloadToType
+     accArrayToType, payloadToType,
+
+     -- Acc array unzipping 
+     unzipAccArray
     )
  where
 
@@ -576,6 +579,13 @@ showsRawData p a
 
 deriving instance Eq  (RawData e)
 deriving instance Ord (RawData e)
+
+---------------------------------------------------------------------------
+-- unzip an AccArray
+-- data AccArray = AccArray { arrDim :: [Int], arrPayloads :: [ArrayPayload] }
+
+unzipAccArray :: AccArray -> [AccArray] 
+unzipAccArray (AccArray dim payloads) = [ AccArray dim [p] | p <- payloads]  
 
 -- This will only report a FLAT tuple structure.  It does not keep additional type
 -- information.
