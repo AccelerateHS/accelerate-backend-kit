@@ -395,7 +395,7 @@ convertExp e =
                       nom = Sug.expType ex 
                       len = tupleNumLeaves ty
                   in
-                   trace ("TUPLE NUM LEAVES: e:"++show ty++ " " ++ show len ++ " " ++ show n) $
+                   -- maybtrace ("TUPLE NUM LEAVES: e:"++show ty++ " " ++ show len ++ " " ++ show n) $
                    T.ETupProject n len <$> convertExp ex
 
     -- This would seem to force indices to be LISTS at runtime??
@@ -625,8 +625,11 @@ convertArrayType origty =
        -- Again, here we reify information from types (phantom type
        -- parameters) into a concrete data-representation:
        Sug.ArraysRarray | (_ :: Sug.ArraysR (Sug.Array sh e)) <- ty ->
-          let ety = Sug.eltType ((error"This shouldn't happen (3)")::e) in
-          S.TArray (Sug.dim (Sug.ignore :: sh)) (convertType ety)
+          let ety = Sug.eltType ((error"This shouldn't happen (3)")::e) 
+              res = S.TArray (Sug.dim (Sug.ignore :: sh)) (convertType ety)
+          in
+            -- trace ("convertType: ety = " ++ show ety  ++ " result=" ++ show res) 
+            res
 
        Sug.ArraysRpair t0 t1 -> S.TTuple [loop t0, loop t1]
 
