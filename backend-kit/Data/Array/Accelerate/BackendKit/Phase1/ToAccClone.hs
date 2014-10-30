@@ -201,12 +201,25 @@ convertAcc (OpenAcc cacc) =
                                 <*> convertFun1 f
 
     -- This is real live runtime array data:
-    Use (arrrepr :: Sug.ArrRepr a) ->
-         -- This is rather odd, but we need to have a dummy return
-         -- value to avoid errors about ArrRepr type functions not
-         -- being injective.
-         let (ty,arr,_::Phantom a) = unpackArray arrrepr in
-         return$ T.Use ty arr
+    -- Handle tuples of arrays by 'unrolling' a single Use into many.
+    -- mkArrayTuple fixes the case where there was only one array by [one] -> one case. 
+    Use (arrrepr :: Sug.ArrRepr a) -> 
+        return $ mkArrayTuple (getAccTypePre eacc) arrys
+        
+        where arrys = doIt (Sug.arrays (undefined ::  a )) arrrepr 
+              -- Traverse over representation and 'arrays' in lockstep. 
+              doIt :: forall b . Sug.ArraysR b -> b -> [TAExp] 
+              doIt Sug.ArraysRunit ()  = [] 
+              doIt Sug.ArraysRarray a  = [let (ty,arr,_::Phantom b) = unpackArray (Sug.fromArr a)
+                                          in  T.Use ty arr] 
+              doIt (Sug.ArraysRpair r1 r2) (a1,a2) = doIt r1 a1 ++ doIt r2 a2 
+
+    -- Use (arrrepr :: Sug.ArrRepr a) ->
+    --      -- This is rather odd, but we need to have a dummy return
+    --      -- value to avoid errors about ArrRepr type functions not
+    --      -- being injective.
+    --      let (ty,arr,_::Phantom a) = unpackArray arrrepr in
+    --      return$ T.Use ty arr
 
     -- End Array creation prims.
     ------------------------------------------------------------

@@ -46,6 +46,9 @@ module Data.Array.Accelerate.BackendKit.Tests
     -- Naughty tuples 
     p70, p70a,     
 
+    -- Use Tuples 
+    p80, p80a, -- p80b, 
+
     -- * Reexports to make life easier:
     doc, convertToSimpleProg,
 
@@ -182,7 +185,10 @@ otherProgs =
   -- Tuple experimentation 
   go "p60a" p60a, go "p60b" p60b,   go "p60c" p60c, go "p60d" p60d, 
   go "p60e" p60e, go "p60f" p60f, go "p60g" p60g, go "p60h" p60h, go "p60i" p60i,
-  go "p70" p70,   go "p70a" p70a 
+  go "p70" p70,   go "p70a" p70a ,
+
+  -- Use tuples 
+  go "p80" p80 , go "p80a" p80a -- , go "p80b" p80b
   ]
 
 makeTestEntry :: forall a . (Show a, Arrays a) => String -> Acc a -> TestEntry
@@ -1089,6 +1095,7 @@ p60i = let xs = use $ fromList (Z :. (10::Int)) [1..10::Int]
 
 ---------------------------------------------------------------------------
 -- 
+
 p70 :: Acc (Array DIM1 (((Int,Int), Int), Int))
 p70 = let a = p60f 
           xs = use $ fromList (Z :. (10::Int)) [1..10::Int]
@@ -1101,7 +1108,34 @@ p70a = let a = p60f
                      let (a :: Exp (Int,Int) ,b :: Exp Int ) = unlift x 
                          ba = lift (b,a) :: Exp (Int,(Int,Int))
                      in  lift (ba,y) :: Exp ((Int,(Int,Int)),Int))   a xs  
+
+
+---------------------------------------------------------------------------
+-- 
+p80 :: Acc (Array DIM1 (Int,Int)) 
+p80 = let xs = fromList (Z :. (10::Int)) [1..10::Int]
+          ys = fromList (Z :. (10::Int)) [11..20::Int]
+          arrs = use (xs,ys) 
+          (xs',ys') = unlift arrs 
+      in A.zip xs' ys'
+
+p80a :: Acc (Array DIM1 (Int,Int)) 
+p80a = let xs = fromList (Z :. (10::Int)) [1..10::Int]
+           ys = fromList (Z :. (5::Int)) [1..5::Int]
+           arrs = use (xs,ys) 
+           (xs',ys') = unlift arrs 
+       in A.zip xs' ys'
  
+
+-- completely explodes!
+--p80b :: Acc (Array DIM1 Int,Array DIM2 Int)
+--p80b = let xs = fromList (Z :. (10::Int)) [1..10::Int]
+--           ys = fromList (Z :. (2::Int) :. (5::Int)) [1..10::Int]
+--           arrs = use (xs,ys)
+--       in arrs
+
+
+               
 
 --------------------------------------------------------------------------------
 -- Let's print matrices nicely.
