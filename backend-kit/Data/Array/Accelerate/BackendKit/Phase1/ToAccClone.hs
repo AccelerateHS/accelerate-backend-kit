@@ -42,6 +42,7 @@ import           Text.PrettyPrint.GenericPretty (Out(doc), Generic)
 import           Data.Array.Accelerate.Type
 import           Data.Array.Accelerate.Array.Data
 import           Data.Array.Accelerate.Array.Representation  hiding (sliceIndex)
+import qualified Data.Array.Accelerate.Analysis.Type as Sug 
 import           Data.Array.Accelerate.AST         as AST
 import           Data.Array.Accelerate.Tuple
 import qualified Data.Array.Accelerate.Smart       as Sug
@@ -335,12 +336,26 @@ convertSliceIndex (SliceFixed sliceIdx) = S.Fixed : convertSliceIndex sliceIdx
 
 
 -- For now I'm leaving it as an index from the right with no length:
-convertTupleIdx :: TupleIdx t e -> Int
-convertTupleIdx tix = loop tix
- where
-  loop :: TupleIdx t e -> Int
-  loop ZeroTupIdx       = 0
-  loop (SuccTupIdx idx) = 1 + loop idx
+-- BJS + T: Fixing this to take tuple structure into consideration. 
+convertTupleIdx :: TupleIdx t e ->  TupleType a -> Int
+convertTupleIdx = prjToInt 
+
+prjToInt :: TupleIdx t e -> TupleType a -> Int
+prjToInt ZeroTupIdx     _                 = 0
+prjToInt (SuccTupIdx i) (b `PairTuple` a) = sizeTupleType a + prjToInt i b
+prjToInt _              _                 = error "prjToInt: inconsistent valuation"
+
+sizeTupleType :: TupleType a -> Int
+sizeTupleType UnitTuple       = 0
+sizeTupleType (SingleTuple _) = 1
+sizeTupleType (PairTuple a b) = sizeTupleType a + sizeTupleType b
+
+
+-- loop tix
+--  where
+--   loop :: TupleIdx t e -> Int
+--   loop ZeroTupIdx       = 0
+--   loop (SuccTupIdx idx) = 1 + loop idx
 
 convertBoundary :: Boundary a -> S.Boundary
 convertBoundary = error "convertBoundary: implement me" -- FIXME TODO
@@ -375,11 +390,12 @@ convertExp e =
                  convertConst (Sug.eltType (typeOnlyErr "convertExp" ::ans)) c
 
     -- NOTE: The incoming AST indexes tuples FROM THE RIGHT:
-    Prj idx ex -> let n = convertTupleIdx idx
+    Prj idx ex -> let n = convertTupleIdx idx nom 
                       ty = getExpType e
+                      nom = Sug.expType ex 
                       len = tupleNumLeaves ty
                   in
---                   maybtrace ("TUPLE NUM LEAVES: "++show ty++" "++show len) $
+                   trace ("TUPLE NUM LEAVES: e:"++show ty++ " " ++ show len ++ " " ++ show n) $
                    T.ETupProject n len <$> convertExp ex
 
     -- This would seem to force indices to be LISTS at runtime??

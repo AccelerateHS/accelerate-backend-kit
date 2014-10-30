@@ -339,7 +339,8 @@ data Exp =
       tupexpr        :: Exp   -- ^ tuple value to extract from
     } -- ^ Project a consecutive series of fields from a tuple.
       -- This is an odd one because projlen is counted in terms of LEAVES of the tuple,
-      -- if it is a nested tuple.  But the effect is always to
+      -- if it is a nested tuple.  But the effect is always to 
+      -- *** The above comment is half ? 
  deriving (Read,Show,Eq,Ord,Generic)
 
 -- | Trivial expressions.
