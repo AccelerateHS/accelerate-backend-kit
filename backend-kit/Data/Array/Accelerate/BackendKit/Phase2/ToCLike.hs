@@ -309,7 +309,6 @@ doE env ex =
                           oth   -> LL.EConst c
     EPrimApp ty p ls -> LL.EPrimApp ty p $ L.map (doE env) ls
     ECond a b c      -> LL.ECond (doE env a) (doE env b) (doE env c)
-                                                                     (doE env e) 
 
     -- 'While' used to be here, but it can't be, because this function returns an LL.Exp, 
     -- of which 'while' is not. There is an incomplete case error that pops up here,
