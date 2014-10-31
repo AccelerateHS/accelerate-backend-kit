@@ -169,11 +169,8 @@ doStmts k env ex =
         -- Currently very sceptical to this 
                    
         letBody' <- doStmts k env letBody
-        return $ (LL.SWhile (fst binds_a) fsb_a fsb_b bod') : letBody' 
-        
         -- The 'Let' should dissapear here
-        --return $ [LL.SWhile ((fst . head) binds1) f1 f2  bod3'] ++ 
-        --        hackAssign (L.map fst binds2) k  
+        return $ (LL.SWhile (fst binds_a) fsb_a fsb_b bod') : letBody' 
         
     ELet (vr,ty,rhs) bod ->
       do 
