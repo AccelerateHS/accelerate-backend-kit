@@ -200,21 +200,32 @@ emitS e stmt =
     SArrSet a ix rhs -> arrset (varSyn a) (emitE e ix) (emitE e rhs)
     SNoOp            -> return ()
     -- SWhile Var (Fun ScalarBlock)  (Fun ScalarBlock) Exp  
-    -- Need to replace init with a list of Exp
-    -- this list will match up with the args to Lam.
-    -- Right now a hack, assume no tuples. 
-    SWhile vr (Lam vbinds sb@(ScalarBlock _ _ stms)) 
-              (Lam pbinds bod@(ScalarBlock _ out _)) init -> 
-        do initOut <- emitBlock e init
+    SWhile vr (Lam vbinds sb@(ScalarBlock sb_binds _ stms)) 
+              (Lam pbinds bod@(ScalarBlock bod_binds out _)) init@(ScalarBlock init_binds initOut _) -> 
+        do 
+           -- declare all vars used in body  
+           --let all_vars = sb_binds ++ bod_binds -- ++ init_binds 
+           --forM_ all_vars $ \ (vr,_, ty) ->
+           --    E.var (emitType e ty) (varSyn vr)
+          
+          
+           -- compute the initial values 
+           mapM_ (emitS e) $ getStms init
+
+           
+           
            mapM_ (\ ((v, _, t), o) -> E.varinit (emitType e t) (varSyn v) (varSyn o)) $ fragileZip vbinds initOut
            mapM_ (\ ((p, _, t), o) -> E.varinit (emitType e t) (varSyn p) (varSyn o)) $ fragileZip pbinds initOut
 
+           
            -- evaluate condition before loop
-           tmpLst <- emitBlock e sb
+           -- tmpLst <- emitBlock e sb
+           mapM_ (emitS e) $ getStms sb
 
            mapM_ (\ ((v, _, _), o) -> emitStmt $
                                       toSyntax $ fromSyntax (varSyn o) <+> "=" <+>
                                       fromSyntax (varSyn v)) $ fragileZip vbinds out
+           
            
            -- ready to write our while loop 
            emitLine $ toSyntax $ "while " <> PP.parens (fromSyntax (varSyn vr))

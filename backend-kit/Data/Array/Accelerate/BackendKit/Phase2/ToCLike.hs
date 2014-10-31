@@ -175,8 +175,8 @@ doStmts k env ex =
     -- Previously this was in doE (so used the fallthrough below)
     EWhile p f x -> do
       -- The function bodies
-      ([bnd1], p') <- lift $ doLam1 env p       -- result type is Bool
-      (bnd2,   f') <- lift $ doLam1 env f
+      (bnd1, p') <- doLam1 env p      
+      (bnd2, f') <- doLam1 env f
 
       -- The initial value needs to be wrapped in a standalone scalar block
       (bnd3, k')   <- lift $ makeResultWriterCont (recoverExpType (unliftEnv env) x)
@@ -185,11 +185,12 @@ doStmts k env ex =
 
       -- Need to declare the bindings for the predicate function and body of the
       -- loop outside of the while block.
-      mytell bnd2
-
+      mytell (bnd1 ++ bnd2 ++ bnd3)
+      --mytell bnd3 
+                      
       -- Just below the loop body, assign the final loop values to some fresh
       -- variables.
-      return $ LL.SWhile (fst bnd1) p' f' x''
+      return $ LL.SWhile ((fst . head) bnd1) p' f' x''
              : hackAssign (L.map fst bnd2) k
 
       
@@ -198,11 +199,12 @@ doStmts k env ex =
 
     -- Anything else had better be just an expression in the new IR:
     oth -> return$ k [doE env oth]
- where
-   mytell ls =
-     if any isTupleTy (map snd ls)
-     then error$"ToCLike.hs: internal error, tupled type still remaining in bindings: "++show ls
-     else tell ls
+--  where
+   
+mytell ls =
+    if any isTupleTy (map snd ls)
+    then error$"ToCLike.hs: internal error, tupled type still remaining in bindings: "++show ls
+    else tell ls
 
 -- Turn a 'Lam1 Exp' into a 'Lam1 ScalarBlock' given an env. Each lambda needs
 -- to be handled like this:
@@ -212,18 +214,20 @@ doStmts k env ex =
 -- * recurse on the scalar block with the new continuation
 -- * construct a LL.Lam with an LL.ScalarBlock
 --
-doLam1 :: Env -> S.Fun1 S.Exp -> GensymM ([(Var,Type)], LL.Fun LL.ScalarBlock)
+doLam1 :: Env -> S.Fun1 S.Exp -> WriterT [(Var, Type)]  GensymM ([(Var,Type)], LL.Fun LL.ScalarBlock)
 doLam1 env (Lam1 (v,t) bod) =
   do let ft = S.flattenTy t
-     vs <- genUniques v (length ft)
+     vs <- lift $ genUniques v (length ft)
      let env' = M.insert v (t,vs,Nothing) env
          vt   = zip vs ft
 
+     -- mytell vt
+
      let ty = recoverExpType (unliftEnv env') bod
-     (binds,cont)   <- makeResultWriterCont ty
-     (stmts,binds') <- runWriterT $ doStmts cont env' bod
+     (binds,cont)   <- lift $ makeResultWriterCont ty
+     (stmts,binds') <- lift $ runWriterT $ doStmts cont env' bod
      -- trace ("doLam1: " ++ show vt ++ "\n" ++ show binds ++ "\n" ++ show binds') 
-     return (binds, LL.Lam vt $ LL.ScalarBlock (binds ++ binds') (L.map fst binds) stmts)
+     return (binds++binds', LL.Lam vt $ LL.ScalarBlock (binds ++ binds') (L.map fst binds) stmts)
 
 
 doBind :: Env -> ProgBind FullMeta -> GensymM (LL.LLProgBind FullMeta)
