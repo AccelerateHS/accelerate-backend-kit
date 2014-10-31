@@ -281,7 +281,7 @@ instance Num Syntax where
   (Syn a) + (Syn b) = Syn (PP.parens $ a <> " + " <> b )
   (Syn a) * (Syn b) = Syn (PP.parens $ a <> " * " <> b )
   (Syn a) - (Syn b) = Syn (PP.parens $ a <> " - " <> b )
-  abs    (Syn a) = Syn ("abs" <> PP.parens a )
+  abs    (Syn a) = Syn ("fabs" <> PP.parens a )
   negate (Syn a) = Syn (PP.parens ("-" <> PP.parens a))
   fromInteger n = Syn (text $ show n)
   -- Could implement this I suppose...

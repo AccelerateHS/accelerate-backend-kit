@@ -361,7 +361,7 @@ emitPrimApp e outTy prim args =
               Asinh -> unary "asinh"
               Acosh -> unary "acosh"
               Atanh -> unary "atanh"
-              ExpFloating -> unary "expf"
+              ExpFloating -> unary "exp"
               Sqrt  -> case outTy of
                          TFloat  -> unary "sqrtf"
                          TDouble -> unary "sqrt"
