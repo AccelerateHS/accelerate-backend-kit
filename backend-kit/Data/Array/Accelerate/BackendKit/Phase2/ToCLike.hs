@@ -140,8 +140,46 @@ doStmts k env ex =
       bod' <- doStmts k env' bod
       return$ LL.SCond a' b' c' :  bod'
 
+    -- In the case of a while in the RHS of a Let, 
+    -- ty can be a tuple type at this point. 
+    ELet (vr, ty, (EWhile a b bod )) letBody -> 
+      -- Assumption: ty == recoverExpType bod 
+      do
+        let  (Lam1 (v1,t1) bod1) = a 
+             (Lam1 (v2,t2) bod2) = b 
+
+        -- Introduce new temp vars
+        -- For the result of the 'While' loop
+        (binds, cont) <- lift$ makeResultWriterCont ty 
+        mytell$ binds 
+        
+        -- binds_a the cond variable 
+        ([binds_a], fsb_a) <- doLam1 env a 
+        (binds_b, fsb_b) <- doLam1 env b 
+        
+        -- process the while bod 
+        -- bod is a stand-alone scalar block (no function parameters)
+
+        --let bty = recoverExpType (unliftEnv env) bod
+        --(binds,cont)   <- lift $ makeResultWriterCont bty
+        -- 'binds' are Temporaries inside of the while loop. 
+        (stmts,binds') <- lift $ runWriterT$ doStmts cont env bod
+        let bod' = LL.ScalarBlock (binds++binds') (L.map fst binds) stmts
+              
+        -- Currently very sceptical to this 
+                   
+        letBody' <- doStmts k env letBody
+        return $ (LL.SWhile (fst binds_a) fsb_a fsb_b bod') : letBody' 
+        
+        -- The 'Let' should dissapear here
+        --return $ [LL.SWhile ((fst . head) binds1) f1 f2  bod3'] ++ 
+        --        hackAssign (L.map fst binds2) k  
+        
     ELet (vr,ty,rhs) bod ->
-      do mytell [(vr,ty)]
+      do 
+         if (isTupleTy ty) 
+         then error $"ToCLike.hs: internal error, tupled type still remaining in bindings  ***Let case*** : "++show ty ++ " RHS=" ++ show rhs 
+         else mytell [(vr,ty)]
          let env' = M.insert vr (ty,[vr],Nothing) env
          rest <- doStmts k env' bod
          return (LL.SSet vr (doE env rhs) : rest)
@@ -190,7 +228,9 @@ doStmts k env ex =
        (stmts3,binds3') <- lift $ runWriterT$ doStmts cont3 env bod3
        let bod3' = LL.ScalarBlock (binds3++binds3') (L.map fst binds3) stmts3
        
-       mytell $ binds2
+       if (any isTupleTy (map snd binds2))
+       then error $"ToCLike.hs: internal error, tupled type still remaining in bindings  ***While case*** : "++show binds2
+       else mytell $ binds2
                
        return $ [LL.SWhile ((fst . head) binds1) f1 f2  bod3'] ++ 
                 hackAssign (L.map fst binds2) k  
@@ -205,6 +245,22 @@ doStmts k env ex =
      if any isTupleTy (map snd ls)
      then error$"ToCLike.hs: internal error, tupled type still remaining in bindings: "++show ls
      else tell ls
+
+-- Turn a 'Lam1 Exp' into a 'Lam1 ScalarBlock' given an env
+-- TODO: Add type sig here.
+doLam1 env (Lam1 (v,t) bod) = 
+  do let ft = S.flattenTy t 
+     vs <- lift $ genUniques v (length ft) 
+     let env' = M.insert v (t,vs,Nothing) env 
+         vt   = zip vs ft 
+
+     let ty = recoverExpType (unliftEnv env') bod
+     (binds,cont) <- lift $ makeResultWriterCont ty 
+     (stmts,binds') <- lift $ runWriterT $ doStmts cont env' bod
+
+     return (binds, LL.Lam vt $ LL.ScalarBlock (binds ++ binds') (L.map fst binds) stmts)
+    
+
 
 doBind :: Env -> ProgBind FullMeta -> GensymM (LL.LLProgBind FullMeta)
 doBind env (ProgBind _ ty decor@(OpInputs vis, (SubBinds vos _, (foldstride, _))) rhs) = do 
