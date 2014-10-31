@@ -211,7 +211,7 @@ doSpine env ex = -- trace (printf "doSpine of %s\n" (show ex)) $
       return  $ ELet (v,t,rhs') bod'
 
       -- Here's where we split the variable if we can:
-    ELet (v,t,rgs) bod -> d
+    ELet (v,t,rhs) bod -> do
       case rhs of
         ECond{}         -> error "UnzipETups: unexpected ECond"
         EWhile{}        -> error "UnzipETups: unexpected EWhile"

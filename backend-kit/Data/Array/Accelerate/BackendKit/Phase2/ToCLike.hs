@@ -152,7 +152,7 @@ doStmts k env ex =
       let env'          = M.insert vr (ty,subcomps,Nothing) env
           subcomps      = L.map fst binds
 
-      -- trace (printf "doStmts: ELet/EWhile binds = %s\n" (show binds)) $ return ()
+      trace (printf "doStmts: ELet/EWhile binds = %s\n" (show binds)) $ return ()
       -- trace (printf "doStmts: ELet/EWhile processing loop:\n  %s\n" (show bnd)) $ return ()
 
       bnd' <- doStmts k' env  bnd
