@@ -152,7 +152,7 @@ doStmts k env ex =
       let env'          = M.insert vr (ty,subcomps,Nothing) env
           subcomps      = L.map fst binds
 
-      trace (printf "doStmts: ELet/EWhile binds = %s\n" (show binds)) $ return ()
+      -- trace (printf "doStmts: ELet/EWhile binds = %s\n" (show binds)) $ return ()
       -- trace (printf "doStmts: ELet/EWhile processing loop:\n  %s\n" (show bnd)) $ return ()
 
       bnd' <- doStmts k' env  bnd
@@ -192,6 +192,7 @@ doStmts k env ex =
       return $ LL.SWhile (fst bnd1) p' f' x''
              : hackAssign (L.map fst bnd2) k
 
+      
     -- An ETuple in tail position:
     ETuple ls -> return$ k$ L.map (doE env) ls
 
@@ -221,7 +222,7 @@ doLam1 env (Lam1 (v,t) bod) =
      let ty = recoverExpType (unliftEnv env') bod
      (binds,cont)   <- makeResultWriterCont ty
      (stmts,binds') <- runWriterT $ doStmts cont env' bod
-
+     -- trace ("doLam1: " ++ show vt ++ "\n" ++ show binds ++ "\n" ++ show binds') 
      return (binds, LL.Lam vt $ LL.ScalarBlock (binds ++ binds') (L.map fst binds) stmts)
 
 
