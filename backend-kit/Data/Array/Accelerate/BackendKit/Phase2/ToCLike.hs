@@ -27,6 +27,7 @@ import           Data.Array.Accelerate.BackendKit.Utils.Helpers
 import           Data.Array.Accelerate.BackendKit.Phase2.UnzipETups (flattenEither)
 
 import Debug.Trace (trace)
+import Text.Printf
 
 ----------------------------------------------------------------------------------------------------
 
@@ -126,51 +127,37 @@ doStmts :: Cont -> Env -> Exp ->
            WriterT [(Var,Type)] GensymM [LL.Stmt]
 doStmts k env ex =
   case ex of
-    ELet (vr,ty, ECond a b c) bod  -> do
+    ELet (vr,ty, bnd@ECond{}) bod  -> do
       -- Introduce a new temporaries and a continuation for the non-tail conditional:
-      (binds,cont) <- lift$ makeResultWriterCont ty
-      mytell$ binds
+      (binds,k') <- lift $ makeResultWriterCont ty
+      mytell binds
 
-      let env' = M.insert vr (ty,subcomps,Nothing) env
-          subcomps = L.map fst binds
-          a'   = doE env a
-      b'   <- doStmts cont env b
-      c'   <- doStmts cont env c
-      -- These are only partial continuations.  Still need to call ours, 'k':
-      bod' <- doStmts k env' bod
-      return$ LL.SCond a' b' c' :  bod'
+      let env'          = M.insert vr (ty,subcomps,Nothing) env
+          subcomps      = L.map fst binds
+
+      bnd' <- doStmts k' env  bnd
+      bod' <- doStmts k  env' bod
+      return $ bnd' ++ bod'
 
     -- In the case of a while in the RHS of a Let,
     -- ty can be a tuple type at this point.
-    ELet (vr, ty, (EWhile a b bod )) letBody ->
+    ELet (vr, ty, bnd@EWhile{}) bod -> do
       -- Assumption: ty == recoverExpType bod
-      do
-        let  (Lam1 (v1,t1) bod1) = a
-             (Lam1 (v2,t2) bod2) = b
+--      let  (Lam1 (v1,t1) bod1) = a
+--           (Lam1 (v2,t2) bod2) = b
 
-        -- Introduce new temp vars
-        -- For the result of the 'While' loop
-        (binds, cont) <- lift$ makeResultWriterCont ty
-        mytell$ binds
+      -- Introduce new temp vars For the result of the 'While' loop
+      (binds, k') <- lift $ makeResultWriterCont ty
+      mytell binds
+      let env'          = M.insert vr (ty,subcomps,Nothing) env
+          subcomps      = L.map fst binds
 
-        -- binds_a the cond variable
-        ([binds_a], fsb_a) <- lift $ doLam1 env a
-        (binds_b, fsb_b) <- lift $ doLam1 env b
+      -- trace (printf "doStmts: ELet/EWhile binds = %s\n" (show binds)) $ return ()
+      -- trace (printf "doStmts: ELet/EWhile processing loop:\n  %s\n" (show bnd)) $ return ()
 
-        -- process the while bod
-        -- bod is a stand-alone scalar block (no function parameters)
-
-        --let bty = recoverExpType (unliftEnv env) bod
-        --(binds,cont)   <- lift $ makeResultWriterCont bty
-        -- 'binds' are Temporaries inside of the while loop.
-        (stmts,binds') <- lift $ runWriterT$ doStmts cont env bod
-        let bod' = LL.ScalarBlock (binds++binds') (L.map fst binds) stmts
-
-        -- Currently very sceptical to this
-
-        letBody' <- doStmts k env letBody
-        -- The 'Let' should dissapear here
-        return $ (LL.SWhile (fst binds_a) fsb_a fsb_b bod') : letBody'
+      bnd' <- doStmts k' env  bnd
+      bod' <- doStmts k  env' bod
+      return $ bnd' ++ bod'
 
     ELet (vr,ty,rhs) bod ->
       do
@@ -186,51 +173,24 @@ doStmts k env ex =
 
     -- Handle While here
     -- Previously this was in doE (so used the fallthrough below)
-    EWhile (Lam1 (v1,t1) bod1) (Lam1 (v2,t2) bod2) bod3 -> do
+    EWhile p f x -> do
+      -- The function bodies
+      ([bnd1], p') <- lift $ doLam1 env p       -- result type is Bool
+      (bnd2,   f') <- lift $ doLam1 env f
 
-       let ft1s = S.flattenTy t1
-           ft2s = S.flattenTy t2
-       v1s' <- lift $ genUniques v1 (length ft1s)
-       v2s' <- lift $ genUniques v2 (length ft2s)
-       let env1 = M.insert v1 (t1,v1s',Nothing) env
-           env2 = M.insert v2 (t2,v2s',Nothing) env
+      -- The initial value needs to be wrapped in a standalone scalar block
+      (bnd3, k')   <- lift $ makeResultWriterCont (recoverExpType (unliftEnv env) x)
+      (x',bnd3')   <- lift $ runWriterT (doStmts k' env x)
+      let x''       = LL.ScalarBlock (bnd3++bnd3') (L.map fst bnd3) x'
 
-       let vt1 = zip v1s' ft1s
-           vt2 = zip v2s' ft2s
+      -- Need to declare the bindings for the predicate function and body of the
+      -- loop outside of the while block.
+      mytell bnd2
 
-       -- The two lambdas need to be recursed on with extended environments.
-       -- let env1 = M.insert v1 (t1,[v1],Nothing) env
-       --    env2 = M.insert v2 (t2,[v2],Nothing) env
-
-       -- Each lambda needs to be handled like this:
-       -- * recover the type of the scalar block body
-       -- * generate a new continuation
-       -- * recurse on the scalar block with the new continuation
-       -- * construct a LL.Lam with an LL.ScalarBlock
-
-       let ty1 = recoverExpType (unliftEnv env1) bod1
-       (binds1,cont1)   <- lift $ makeResultWriterCont ty1
-       (stmts1,binds1') <- lift $ runWriterT$ doStmts cont1 env1 bod1
-       let f1 = LL.Lam vt1 {- [(v1,t1)]-} $ LL.ScalarBlock (binds1++binds1') (L.map fst binds1) stmts1
-
-       let ty2 = recoverExpType (unliftEnv env2) bod2
-       (binds2,cont2)   <- lift $ makeResultWriterCont ty2
-       (stmts2,binds2') <- lift $ runWriterT$ doStmts cont2 env2 bod2
-       let f2 = LL.Lam vt2 {-[(v2,t2)]-} $ LL.ScalarBlock (binds2++binds2') (L.map fst binds2) stmts2
-
-       -- bod3 is a stand-alone scalar block (no function parameters)
-
-       let ty3 = recoverExpType (unliftEnv env) bod3
-       (binds3,cont3)   <- lift $ makeResultWriterCont ty3
-       (stmts3,binds3') <- lift $ runWriterT$ doStmts cont3 env bod3
-       let bod3' = LL.ScalarBlock (binds3++binds3') (L.map fst binds3) stmts3
-
-       if (any isTupleTy (map snd binds2))
-       then error $"ToCLike.hs: internal error, tupled type still remaining in bindings  ***While case*** : "++show binds2
-       else mytell $ binds2
-
-       return $ [LL.SWhile ((fst . head) binds1) f1 f2  bod3'] ++
-                hackAssign (L.map fst binds2) k
+      -- Just below the loop body, assign the final loop values to some fresh
+      -- variables.
+      return $ LL.SWhile (fst bnd1) p' f' x''
+             : hackAssign (L.map fst bnd2) k
 
     -- An ETuple in tail position:
     ETuple ls -> return$ k$ L.map (doE env) ls
@@ -243,7 +203,14 @@ doStmts k env ex =
      then error$"ToCLike.hs: internal error, tupled type still remaining in bindings: "++show ls
      else tell ls
 
--- Turn a 'Lam1 Exp' into a 'Lam1 ScalarBlock' given an env
+-- Turn a 'Lam1 Exp' into a 'Lam1 ScalarBlock' given an env. Each lambda needs
+-- to be handled like this:
+--
+-- * recover the type of the scalar block body
+-- * generate a new continuation
+-- * recurse on the scalar block with the new continuation
+-- * construct a LL.Lam with an LL.ScalarBlock
+--
 doLam1 :: Env -> S.Fun1 S.Exp -> GensymM ([(Var,Type)], LL.Fun LL.ScalarBlock)
 doLam1 env (Lam1 (v,t) bod) =
   do let ft = S.flattenTy t
@@ -252,11 +219,10 @@ doLam1 env (Lam1 (v,t) bod) =
          vt   = zip vs ft
 
      let ty = recoverExpType (unliftEnv env') bod
-     (binds,cont) <- makeResultWriterCont ty
+     (binds,cont)   <- makeResultWriterCont ty
      (stmts,binds') <- runWriterT $ doStmts cont env' bod
 
      return (binds, LL.Lam vt $ LL.ScalarBlock (binds ++ binds') (L.map fst binds) stmts)
-
 
 
 doBind :: Env -> ProgBind FullMeta -> GensymM (LL.LLProgBind FullMeta)
@@ -351,7 +317,8 @@ doE env ex =
                          Nothing -> error$"ToCLike.hs/doE: internal error, var not in env: "++show vr
     ETupProject ind 1 (EVr vr) ->
       case M.lookup vr env of
-        Just (_,ls,_) -> LL.EVr$ (reverse ls) !! ind
+        Just (_,ls,_) -> LL.EVr $ (reverse ls) !! ind
+          -- trace (printf "trying to project tuple index %d from variables %s\n" ind (show ls))
         oth -> error$"ToCLike.hs/doE: internal error, tuple project of field "++show ind++
                      " of var: "++show vr++", env binding: "++show oth
 

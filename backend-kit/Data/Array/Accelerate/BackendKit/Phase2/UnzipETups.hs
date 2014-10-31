@@ -192,7 +192,8 @@ doSpine env ex = -- trace (printf "doSpine of %s\n" (show ex)) $
       e'    <- doE env e
       return $ EWhile (Lam1 (v1,t1) bod1') (Lam1 (v2,t2) bod2') (mkETuple e')
 
-    -- EConds on the RHS of a Let are still on the "spine": don't untuple.
+    -- EConds and EWhile on the RHS of a Let are still on the "spine": don't
+    -- untuple these
     --
     ELet (v,t,bnd@ECond{}) body -> do
       bnd'      <- doSpine env bnd
@@ -204,30 +205,26 @@ doSpine env ex = -- trace (printf "doSpine of %s\n" (show ex)) $
       body'     <- doSpine (M.insert v (t,Nothing) env) body
       return $ ELet (v,t,bnd') body'
 
-    ELet (v,t,rhs) bod
-      | not (isTupleTy t)
-      -> do
-            [rhs'] <- doE env rhs
-            bod'   <- doSpine (M.insert v (t,Nothing) env) bod
-            return  $ ELet (v,t,rhs') bod'
+    ELet (v,t,rhs) bod | not (isTupleTy t) -> do
+      [rhs'] <- doE env rhs
+      bod'   <- doSpine (M.insert v (t,Nothing) env) bod
+      return  $ ELet (v,t,rhs') bod'
 
       -- Here's where we split the variable if we can:
-      | otherwise
-      ->
-         case rhs of
-           ECond{}      -> error "UnzipETups: unexpected ECond"
-           EWhile{}     -> error "UnzipETups: unexpected EWhile"
+    ELet (v,t,rgs) bod -> d
+      case rhs of
+        ECond{}         -> error "UnzipETups: unexpected ECond"
+        EWhile{}        -> error "UnzipETups: unexpected EWhile"
+        _               -> do
+          let tyLs   = flattenOnlyScalar t
+          gensyms    <- sequence $ replicate (length tyLs) genUnique
+          rhsLs      <- doE env rhs
 
-           _            -> do
-             let tyLs   = flattenOnlyScalar t
-             gensyms    <- sequence $ replicate (length tyLs) genUnique
-             rhsLs      <- doE env rhs
-
-             case fragileZip3 gensyms tyLs rhsLs of
-               Just ls  -> wrapLets ls <$> doSpine (M.insert v (t,Just gensyms) env) bod
-               Nothing  -> error
-                         $ printf "UnzipETups.hs: expected tuple-producing expression to break down %d expressions, instead got:\n   %s"
-                                  (length gensyms) (show rhsLs)
+          case fragileZip3 gensyms tyLs rhsLs of
+            Just ls  -> wrapLets ls <$> doSpine (M.insert v (t,Just gensyms) env) bod
+            Nothing  -> error
+                      $ printf "UnzipETups.hs: expected tuple-producing expression to break down %d expressions, instead got:\n   %s"
+                               (length gensyms) (show rhsLs)
 
     -- No PrimApp's expect tuple arguments:
     EPrimApp ty p els ->  EPrimApp ty p <$> mapM (fmap unsing . doE env) els
