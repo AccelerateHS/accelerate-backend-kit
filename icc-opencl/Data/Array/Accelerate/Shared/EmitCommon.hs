@@ -211,7 +211,11 @@ emitS e stmt =
 
            -- evaluate condition before loop
            tmpLst <- emitBlock e sb
-                
+
+           mapM_ (\ ((v, _, _), o) -> emitStmt $
+                                      toSyntax $ fromSyntax (varSyn o) <+> "=" <+>
+                                      fromSyntax (varSyn v)) $ fragileZip vbinds out
+           
            -- ready to write our while loop 
            emitLine $ toSyntax $ "while " <> PP.parens (fromSyntax (varSyn vr))
            block $ do 
