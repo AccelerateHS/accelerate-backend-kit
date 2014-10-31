@@ -309,9 +309,13 @@ doE env ex =
                           oth   -> LL.EConst c
     EPrimApp ty p ls -> LL.EPrimApp ty p $ L.map (doE env) ls
     ECond a b c      -> LL.ECond (doE env a) (doE env b) (doE env c)
- --   EWhile (Lam1 (v1,t1) bod1) (Lam1 (v2,t2) bod2) e   -> LL.EWhile (LL.Lam [(v1,t1)] (doE env bod1))
- --                                                                   (LL.Lam [(v2,t2)] (doE env bod2)) 
- --                                                                  (doE env e) 
+                                                                     (doE env e) 
+
+    -- 'While' used to be here, but it can't be, because this function returns an LL.Exp, 
+    -- of which 'while' is not. There is an incomplete case error that pops up here,
+    -- which is unfortunate; at some point in the code, doE is being called on a while,
+    -- which is not correct.
+
     EIndexScalar v e -> LL.EIndexScalar v (doE env e) 0
     EIndex _     -> err
     EShapeSize _ -> err 
