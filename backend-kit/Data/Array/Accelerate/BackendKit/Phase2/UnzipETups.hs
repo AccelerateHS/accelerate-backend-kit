@@ -1,10 +1,10 @@
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE NamedFieldPuns   #-}
 {-# LANGUAGE ParallelListComp #-}
+{-# LANGUAGE TupleSections    #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 -- | This file contains a pass for removing scalar tuples.
--- 
+--
 -- It assumes a number of invariants on the input grammar: that
 -- several forms have been desugared by previous passes, and that all
 -- ELet's are lifted so that they will never be passed as an argument
@@ -12,13 +12,16 @@
 
 module Data.Array.Accelerate.BackendKit.Phase2.UnzipETups (unzipETups, flattenEither) where
 import Control.Monad.State.Strict
-import Control.Applicative ((<$>),(<*>))
+import Control.Applicative ((<$>))
+import Text.Printf
 import qualified Data.Map              as M
 
 import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import Data.Array.Accelerate.BackendKit.Phase2.NormalizeExps (wrapLets)
 import Data.Array.Accelerate.BackendKit.IRs.Metadata (ArraySizeEstimate(..), SubBinds(..), Stride(..))
 import Data.Array.Accelerate.BackendKit.Utils.Helpers (mkPrj, mapMAEWithGEnv, isTupleTy, fragileZip, fragileZip3, (#), isTrivialE, sizeName)
+
+import Debug.Trace
 
 ----------------------------------------------------------------------------------------------------
 
@@ -36,8 +39,8 @@ type Env = M.Map Var (Type,Maybe [Var])
 --
 --    (1) A single ETuple is permitted in the tail position of each kernel (Lam).
 --    (2) A single ETupProject is permitted around EIndexScalar expressions.
---    (3) ETuple's are also allowed in the tail of "spine" conditionals 
---        (i.e. in RHS of Let).  In this case the ELet IS still allowed to 
+--    (3) ETuple's are also allowed in the tail of "spine" conditionals
+--        (i.e. in RHS of Let).  In this case the ELet IS still allowed to
 --        bind a tuple variable, and specific (ETupProject _ 1 (EVr _)) forms
 --        will refer to its components.
 --    (4) ETuple may occur directly as an argument to EIndexScalar.
@@ -58,7 +61,7 @@ type Env = M.Map Var (Type,Maybe [Var])
 --  returning them in the SubBinds decorator -- the same way unzipped
 --  top-level scalar binds are stored.  This pass also does the work of
 --  computing the sizes for [new] array bindings.)
--- 
+--
 --  While EIndexScalar still refers to zipped array variables, all
 --  references to top-level scalar variables are ELIMINATED.  They are
 --  redirected to the finer grained detupled names stored in SubBinds.  The
@@ -70,14 +73,14 @@ unzipETups prog@Prog{progBinds, uniqueCounter, typeEnv, progResults} =
     prog'
  where
   WithShapes pR = progResults
-  prog' = prog{ progBinds= map addSubBinds binds, 
+  prog' = prog{ progBinds= map addSubBinds binds,
                 uniqueCounter= newCounter2,
                 progResults= WithShapesUnzipped $ map (\ (av,v) -> (av,lkup v)) pR,
                 -- After this pass we keep type entries for BOTH tupled and detupled versions:
                 typeEnv = M.union typeEnv $
                           M.fromList$
-                          concatMap (\(v,t) -> 
-                                      -- trace ("TEMP FLATTENED TYPE: "++show t++" -> "++show (flattenEither t)++" names "++show(lkup v))$ 
+                          concatMap (\(v,t) ->
+                                      -- trace ("TEMP FLATTENED TYPE: "++show t++" -> "++show (flattenEither t)++" names "++show(lkup v))$
                                       fragileZip (lkup v) (flattenEither t)) $
                           M.toList typeEnv
                 }
@@ -86,7 +89,7 @@ unzipETups prog@Prog{progBinds, uniqueCounter, typeEnv, progResults} =
   addSubBinds (ProgBind v t dec@(_,sz) op) =
     let v' = if S.hasArrayType t then v else nukedVar in
     ProgBind v' t (newDecor v t sz,dec) op
-  
+
   -- From the perspective of THIS pass, only the top-level scalar binds are detupled:
   topenv = M.mapWithKey mp typeEnv
   mp _  ty@(TArray _ _) = (ty,Nothing)
@@ -115,8 +118,8 @@ unzipETups prog@Prog{progBinds, uniqueCounter, typeEnv, progResults} =
                               return (vr,tmps)
   nextenv :: M.Map Var [Var]
   (nextenv, newCounter1)  = runState envM uniqueCounter
-  -- Map old names onto detupled names:  
-  lkup vo = 
+  -- Map old names onto detupled names:
+  lkup vo =
     case M.lookup vo nextenv of
       Nothing -> error $"UnzipETups.hs: could not find \""++show vo++"\" in:\n"++show nextenv
       Just vos -> vos
@@ -150,7 +153,7 @@ doBind env (ProgBind v t dec (Right ae)) = do
             (Just (StrideConst e),sz) -> do
               [e'] <- doE env e
               return (Just (StrideConst e'),sz)
-   ProgBind v t (dec') . Right <$> 
+   ProgBind v t (dec') . Right <$>
      -- The following MUST be *Nothing* because we have no way to detuple
      -- the input to kernels (i.e. array elements) at this point.
      -- (The environment is only extended by mapMAEWithGEnv at one point: Lam1/Lam2 kernel args.)
@@ -158,9 +161,9 @@ doBind env (ProgBind v t dec (Right ae)) = do
                     doSpine ae
 
  where
-   
+
 -- | Process along the spine (which will become Stmts in the CLike LLIR).
---   Note that this INCLUDES scalar args to array ops (e.g. init value for Fold).   
+--   Note that this INCLUDES scalar args to array ops (e.g. init value for Fold).
 doSpine :: Env -> Exp -> GensymM Exp
 doSpine env ex = -- trace (printf "doSpine of %s\n" (show ex)) $
   case ex of
@@ -169,50 +172,64 @@ doSpine env ex = -- trace (printf "doSpine of %s\n" (show ex)) $
     -- Normalize the representation of tuple constants at this point:
     EConst (Tup c)        -> return$ mkETuple $ map EConst (flattenConst (Tup c))
     EConst _              -> return ex
-    
+
     -- In all three of the following we allow tuples to remain:
     ETuple els            -> (mkETuple . concat) <$> mapM (doE env) els
-    ETupProject i l e     -> mkETuple <$> doProject env i l e 
+    ETupProject i l e     -> mkETuple <$> doProject env i l e
+
     EIndexScalar avr indE -> (EIndexScalar avr . mkETuple) <$> doE env indE
 
     -- In tail (or "spine") position multiple values may be returned by the branches:
-    ECond e1 e2 e3        -> ECond <$> (unsing <$> doE env e1) <*> doSpine env e2 <*> doSpine env e3
+    ECond e1 e2 e3        -> do
+      [e1']     <- doE env e1
+      e2'       <- doSpine env e2
+      e3'       <- doSpine env e3
+      return $ ECond e1' e2' e3'
 
-    EWhile (Lam1 (v1,t1) bod1) (Lam1 (v2,t2) bod2) e ->
-        do
-          let env1 = M.insert v1 (t1,Nothing) env
-              env2 = M.insert v2 (t2,Nothing) env
+    EWhile (Lam1 (v1,t1) bod1) (Lam1 (v2,t2) bod2) e -> do
+      bod1' <- doSpine (M.insert v1 (t1,Nothing) env) bod1
+      bod2' <- doSpine (M.insert v2 (t2,Nothing) env) bod2
+      e'    <- doE env e
+      return $ EWhile (Lam1 (v1,t1) bod1') (Lam1 (v2,t2) bod2') (mkETuple e')
 
-          bod1' <- doSpine env1 bod1
-          bod2' <- doSpine env2 bod2
-          e'    <- doE env e
-          return $ EWhile  (Lam1 (v1,t1) bod1') (Lam1 (v2,t2) bod2') (mkETuple e')
+    -- EConds on the RHS of a Let are still on the "spine": don't untuple.
+    --
+    ELet (v,t,bnd@ECond{}) body -> do
+      bnd'      <- doSpine env bnd
+      body'     <- doSpine (M.insert v (t,Nothing) env) body
+      return $ ELet (v,t,bnd') body'
 
+    ELet (v,t, bnd@EWhile{}) body -> do
+      bnd'      <- doSpine env bnd
+      body'     <- doSpine (M.insert v (t,Nothing) env) body
+      return $ ELet (v,t,bnd') body'
 
-    -- EConds in the RHS of a let are still on the "spine" (don't untuple):
-    ELet (v,t,ECond a b c) bod -> do
-      [a'] <- doE env a
-      b'   <- doSpine env b
-      c'   <- doSpine env c
-      let env' = M.insert v (t,Nothing) env
-      ELet (v,t,ECond a' b' c') <$> doSpine env' bod
-    
-    ELet (v,t,rhs) bod | not (isTupleTy t) -> do
-                          [rhs'] <- doE env rhs
-                          let env' = M.insert v (t,Nothing) env
-                          ELet (v,t,rhs') <$> doSpine env' bod
-                       | otherwise -> -- Here's where we split the variable if we can:
-                         case rhs of
-                           ECond _ _ _ -> error"UnzipETups.hs: this should be impossible."
-                           _ -> do let tyLs = flattenOnlyScalar t
-                                   gensyms <- sequence$ replicate (length tyLs) genUnique
-                                   rhsLs <- doE env rhs
-                                   let env' = M.insert v (t,Just gensyms) env
-                                   case fragileZip3 gensyms tyLs rhsLs of
-                                     Just ls -> wrapLets ls <$> doSpine env' bod
-                                     Nothing -> error$"UnzipETups.hs: expected tuple-producing expression to break down "
-                                                ++show(length gensyms)++" expressions, instead got: "++show rhsLs
-    -- No PrimApp's expect tuple arguments:                                
+    ELet (v,t,rhs) bod
+      | not (isTupleTy t)
+      -> do
+            [rhs'] <- doE env rhs
+            bod'   <- doSpine (M.insert v (t,Nothing) env) bod
+            return  $ ELet (v,t,rhs') bod'
+
+      -- Here's where we split the variable if we can:
+      | otherwise
+      ->
+         case rhs of
+           ECond{}      -> error "UnzipETups: unexpected ECond"
+           EWhile{}     -> error "UnzipETups: unexpected EWhile"
+
+           _            -> do
+             let tyLs   = flattenOnlyScalar t
+             gensyms    <- sequence $ replicate (length tyLs) genUnique
+             rhsLs      <- doE env rhs
+
+             case fragileZip3 gensyms tyLs rhsLs of
+               Just ls  -> wrapLets ls <$> doSpine (M.insert v (t,Just gensyms) env) bod
+               Nothing  -> error
+                         $ printf "UnzipETups.hs: expected tuple-producing expression to break down %d expressions, instead got:\n   %s"
+                                  (length gensyms) (show rhsLs)
+
+    -- No PrimApp's expect tuple arguments:
     EPrimApp ty p els ->  EPrimApp ty p <$> mapM (fmap unsing . doE env) els
     EShape     _ -> err ex
     EShapeSize _ -> err ex
@@ -220,8 +237,8 @@ doSpine env ex = -- trace (printf "doSpine of %s\n" (show ex)) $
 
 -- | Expand a (scalar) varref to a tuple to a tuple of varrefs to the components.
 blowUpVarref :: Var -> Type -> [Exp]
-blowUpVarref vr ty = 
-  let size = length $ flattenOnlyScalar ty 
+blowUpVarref vr ty =
+  let size = length $ flattenOnlyScalar ty
       res  = reverse [ mkPrj ind 1 size (EVr vr) | ind <- [ 0 .. size-1 ]]
   in
   res
@@ -253,12 +270,16 @@ doE env ex = -- trace (printf "doE on %s\n" (show ex)) $
     EConst c             -> return $ map EConst (flattenConst c)
     ETuple []            -> return []
     ETuple els           -> concat <$> mapM (doE env) els
-    -- Remember: ETupProject operates on the flattened list-of-scalars structure, which is what we have here:
+
+    -- Remember:
+    --   ETupProject operates on the flattened list-of-scalars structure, which
+    --   is what we have here.
+
     ETupProject i l e    -> doProject env i l e
     EVr vr               -> return$ handleVarref env vr
     --------------------------------------------------------------------------------
     -- As long as arrays remain multidimensional, array derefs can remain tuples:
-    -- EIndexScalar avr indE -> (sing . EIndexScalar avr . mkETuple) <$> doE env indE 
+    -- EIndexScalar avr indE -> (sing . EIndexScalar avr . mkETuple) <$> doE env indE
 
     EIndexScalar avr indE
       -- Maintain invariant that this function return a list of the correct length.
@@ -288,16 +309,18 @@ doE env ex = -- trace (printf "doE on %s\n" (show ex)) $
     ELet    _  _ -> error$"UnzipETups.hs: ELet should not occur off the programs spine: "++ show ex
 
 
--- | This does the projection statically if possible, but (due to
--- blowUpVarref above), it may actually return an ETupProject.
+-- | This does the projection statically if possible, but (due to blowUpVarref
+-- above), it may actually return an ETupProject.
+--
 doProject :: Env -> Int -> Int -> Exp -> GensymM [Exp]
-doProject env i l e = 
-  do ls <- doE env e
-     let haul = reverse$ take l$ drop i$ reverse ls
-     return$ if length haul == l
-             then haul
-             else error$"UnzipETups.hs/doProject: not enough elements in tuple: "
-                  ++show ls++", needed offset/len "++show (i,l)++", expression "++show e
+doProject env i l tup = do
+  tup'   <- doE env tup
+  let prj = reverse . take l . drop i . reverse
+      e   = prj tup'
+  if length e == l
+     then return e
+     else error $ printf "UnzipETups.hs/doProject: not enough elements in tuple:\n  %s\n\nNeeded offset=%d length=%d in expression:\n  %s\n"
+                         (show e) i l (show tup)
 
 --------------------------------------------------------------------------------
 -- Little helpers:

@@ -55,10 +55,10 @@ doSpine env ex =
   case ex of
     EVr _vr               -> return ex
     ETuple els            -> runDischarge (mapM (doE env) els) ETuple
-    ETupProject i l e     -> runDischarge (doE env e)       (ETupProject i l)
+    ETupProject i l e     -> runDischarge (doE env e) (ETupProject i l)
+
     --------------------------------------------------------------------------------
     EConst _c             -> return ex
-    -- EIndexScalar avr indE -> makeTriv env (EIndexScalar avr) indE
     EIndexScalar avr indE -> makeTriv env (EIndexScalar avr) indE
 
     -- In tail (or "spine") position this conditional is fine.
@@ -73,13 +73,10 @@ doSpine env ex =
     -- Maybe need to doSpine on bod1 and bod2
     EWhile (Lam1 (v1,t1) bod1) (Lam1 (v2,t2) bod2) e ->
         do
-          let env1 = M.insert v1 t1 env
-          (bod1', bnds1) <- runWriterT$ doE env1 bod1
-
-          let env2 = M.insert v2 t2 env
-          (bod2', bnds2) <- runWriterT$ doE env2 bod2
-
+          (bod1', bnds1) <- runWriterT$ doE (M.insert v1 t1 env) bod1
+          (bod2', bnds2) <- runWriterT$ doE (M.insert v2 t2 env) bod2
           (e', bnds )    <- runWriterT$ doE env e
+
           return (discharge bnds$ EWhile (Lam1 (v1,t1) (discharge bnds1 bod1'))
                                          (Lam1 (v2,t2) (discharge bnds2 bod2')) e')
 
@@ -141,15 +138,19 @@ doE env ex =
                                     tell [(gensym, recoverExpType env ex, enew)]
                                     return (EVr gensym)
 
-    -- Not a dummy anymore
-    EWhile (Lam1 (v1,t1)  bod1) (Lam1 (v2,t2) bod2) e ->
-        do
-          (bod1',bnd1) <- lift $ runWriterT $ doE (M.insert v1 t1 env) bod1
-          (bod2',bnd2) <- lift $ runWriterT $ doE (M.insert v2 t2 env) bod2
-          e'        <- doE env e
-          return $ EWhile (Lam1 (v1,t1) (discharge bnd1 bod1'))
-                          (Lam1 (v2,t2) (discharge bnd2 bod2'))
-                          e'
+    -- If the while loop is not on the spine, lift it out.
+    EWhile (Lam1 (v1,t1)  bod1) (Lam1 (v2,t2) bod2) e -> do
+      bod1'     <- lift $ doSpine (M.insert v1 t1 env) bod1
+      bod2'     <- lift $ doSpine (M.insert v2 t2 env) bod2
+      e'        <- doE env e
+
+      let loop = EWhile (Lam1 (v1,t1) bod1') (Lam1 (v2,t2) bod2') e'
+      --
+      case S.flattenTy t2 of
+        [_] -> return loop
+        _   -> do v' <- lift genUnique
+                  tell [(v', t2, loop)]
+                  return (EVr v')
 
     -- Non-spine ELet's are lifted out:
     ELet (v,t,rhs) bod    -> do rhs' <- doE env rhs
