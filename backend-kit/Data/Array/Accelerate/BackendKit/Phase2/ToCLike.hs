@@ -154,8 +154,8 @@ doStmts k env ex =
         mytell$ binds 
         
         -- binds_a the cond variable 
-        ([binds_a], fsb_a) <- doLam1 env a 
-        (binds_b, fsb_b) <- doLam1 env b 
+        ([binds_a], fsb_a) <- lift $ doLam1 env a 
+        (binds_b, fsb_b) <- lift $ doLam1 env b 
         
         -- process the while bod 
         -- bod is a stand-alone scalar block (no function parameters)
@@ -247,16 +247,16 @@ doStmts k env ex =
      else tell ls
 
 -- Turn a 'Lam1 Exp' into a 'Lam1 ScalarBlock' given an env
--- TODO: Add type sig here.
+doLam1 :: Env -> S.Fun1 S.Exp -> GensymM ([(Var,Type)], LL.Fun LL.ScalarBlock)
 doLam1 env (Lam1 (v,t) bod) = 
   do let ft = S.flattenTy t 
-     vs <- lift $ genUniques v (length ft) 
+     vs <- genUniques v (length ft) 
      let env' = M.insert v (t,vs,Nothing) env 
          vt   = zip vs ft 
 
      let ty = recoverExpType (unliftEnv env') bod
-     (binds,cont) <- lift $ makeResultWriterCont ty 
-     (stmts,binds') <- lift $ runWriterT $ doStmts cont env' bod
+     (binds,cont) <- makeResultWriterCont ty 
+     (stmts,binds') <- runWriterT $ doStmts cont env' bod
 
      return (binds, LL.Lam vt $ LL.ScalarBlock (binds ++ binds') (L.map fst binds) stmts)
     
