@@ -1,6 +1,6 @@
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TupleSections       #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 -- | This pass does the final conversion to CLike IR format.  Unfortunately it
@@ -54,10 +54,10 @@ type FullMeta = (OpInputs,(SubBinds,(Maybe (Stride Exp), ArraySizeEstimate)))
 --   IR, and it does the final conversion.
 convertToCLike :: Prog FullMeta -> LL.LLProg ()
 convertToCLike Prog{progBinds,progResults,progType,uniqueCounter,typeEnv} =
-  let WithShapesUnzipped pR = progResults in 
+  let WithShapesUnzipped pR = progResults in
   LL.LLProg
   {
-    LL.progBinds    = map (fmap (const ())) binds, 
+    LL.progBinds    = map (fmap (const ())) binds,
 --    LL.progResults  = map (copyProp finalEnv) progResults,
     LL.progResults  = pR,
     LL.progType     = progType,
@@ -67,7 +67,7 @@ convertToCLike Prog{progBinds,progResults,progType,uniqueCounter,typeEnv} =
   where
     m = mapM (doBind initEnv) progBinds
     -- ((finalEnv,binds),newCounter) = runState m uniqueCounter
-    (binds,newCounter) = runState m uniqueCounter    
+    (binds,newCounter) = runState m uniqueCounter
 
     -- Bindings for (detupled) scalar and array top-level variables:
     initEnv :: Env
@@ -83,11 +83,11 @@ convertToCLike Prog{progBinds,progResults,progType,uniqueCounter,typeEnv} =
     -- FIXME: Scanl' breaks the assumption about TArray for array ops:
     red acc (ProgBind _ (TArray _ elt) (_,(SubBinds vrs szE,_)) _) =
       let Just triv = szE in
-      M.union (M.fromList [ (vr,(ty,triv)) 
+      M.union (M.fromList [ (vr,(ty,triv))
                           | (vr,ty) <- fragileZip vrs (gentlyFlatten elt) ])
               acc
     red acc _ = acc
-      
+
 gentlyFlatten :: Type -> [Type]
 gentlyFlatten (TTuple [])  = [TTuple []]
 gentlyFlatten (TTuple ls)  = concatMap gentlyFlatten ls
@@ -104,17 +104,17 @@ doBlock env ex = do
 
 -- | Create temporary bindings and the callback/continuation that writes them.
 makeResultWriterCont :: Type -> GensymM ([(Var,Type)], Cont)
-makeResultWriterCont ty = do 
+makeResultWriterCont ty = do
   tmps <- sequence$ replicate (S.countTyScalars ty) genUnique
   let binds = zip tmps (S.flattenTy ty)
       cont results =
         L.zipWith (\ tmp result -> LL.SSet tmp (result))
           tmps results
   return (binds,cont)
-  
 
--- 
-hackAssign :: [Var] -> Cont -> [LL.Stmt] 
+
+--
+hackAssign :: [Var] -> Cont -> [LL.Stmt]
 hackAssign vs f = f (L.map LL.EVr vs)
 
 -- | This takes a continuation for where to write the results.
@@ -125,79 +125,79 @@ hackAssign vs f = f (L.map LL.EVr vs)
 doStmts :: Cont -> Env -> Exp ->
            WriterT [(Var,Type)] GensymM [LL.Stmt]
 doStmts k env ex =
-  case ex of    
+  case ex of
     ELet (vr,ty, ECond a b c) bod  -> do
       -- Introduce a new temporaries and a continuation for the non-tail conditional:
       (binds,cont) <- lift$ makeResultWriterCont ty
       mytell$ binds
-      
+
       let env' = M.insert vr (ty,subcomps,Nothing) env
           subcomps = L.map fst binds
-          a'   = doE env a   
+          a'   = doE env a
       b'   <- doStmts cont env b
       c'   <- doStmts cont env c
       -- These are only partial continuations.  Still need to call ours, 'k':
       bod' <- doStmts k env' bod
       return$ LL.SCond a' b' c' :  bod'
 
-    -- In the case of a while in the RHS of a Let, 
-    -- ty can be a tuple type at this point. 
-    ELet (vr, ty, (EWhile a b bod )) letBody -> 
-      -- Assumption: ty == recoverExpType bod 
+    -- In the case of a while in the RHS of a Let,
+    -- ty can be a tuple type at this point.
+    ELet (vr, ty, (EWhile a b bod )) letBody ->
+      -- Assumption: ty == recoverExpType bod
       do
-        let  (Lam1 (v1,t1) bod1) = a 
-             (Lam1 (v2,t2) bod2) = b 
+        let  (Lam1 (v1,t1) bod1) = a
+             (Lam1 (v2,t2) bod2) = b
 
         -- Introduce new temp vars
         -- For the result of the 'While' loop
-        (binds, cont) <- lift$ makeResultWriterCont ty 
-        mytell$ binds 
-        
-        -- binds_a the cond variable 
-        ([binds_a], fsb_a) <- lift $ doLam1 env a 
-        (binds_b, fsb_b) <- lift $ doLam1 env b 
-        
-        -- process the while bod 
+        (binds, cont) <- lift$ makeResultWriterCont ty
+        mytell$ binds
+
+        -- binds_a the cond variable
+        ([binds_a], fsb_a) <- lift $ doLam1 env a
+        (binds_b, fsb_b) <- lift $ doLam1 env b
+
+        -- process the while bod
         -- bod is a stand-alone scalar block (no function parameters)
 
         --let bty = recoverExpType (unliftEnv env) bod
         --(binds,cont)   <- lift $ makeResultWriterCont bty
-        -- 'binds' are Temporaries inside of the while loop. 
+        -- 'binds' are Temporaries inside of the while loop.
         (stmts,binds') <- lift $ runWriterT$ doStmts cont env bod
         let bod' = LL.ScalarBlock (binds++binds') (L.map fst binds) stmts
-              
-        -- Currently very sceptical to this 
-                   
+
+        -- Currently very sceptical to this
+
         letBody' <- doStmts k env letBody
         -- The 'Let' should dissapear here
-        return $ (LL.SWhile (fst binds_a) fsb_a fsb_b bod') : letBody' 
-        
+        return $ (LL.SWhile (fst binds_a) fsb_a fsb_b bod') : letBody'
+
     ELet (vr,ty,rhs) bod ->
-      do 
-         if (isTupleTy ty) 
-         then error $"ToCLike.hs: internal error, tupled type still remaining in bindings  ***Let case*** : "++show ty ++ " RHS=" ++ show rhs 
+      do
+         if (isTupleTy ty)
+         then error $"ToCLike.hs: internal error, tupled type still remaining in bindings  ***Let case*** : "++show ty ++ " RHS=" ++ show rhs
          else mytell [(vr,ty)]
          let env' = M.insert vr (ty,[vr],Nothing) env
          rest <- doStmts k env' bod
          return (LL.SSet vr (doE env rhs) : rest)
 
-    ECond a b c -> fmap sing $ 
+    ECond a b c -> fmap sing $
       LL.SCond (doE env a) <$> doStmts k env b <*> doStmts k env c
 
     -- Handle While here
-    -- Previously this was in doE (so used the fallthrough below) 
-    EWhile (Lam1 (v1,t1) bod1) (Lam1 (v2,t2) bod2) bod3 -> do 
-            
+    -- Previously this was in doE (so used the fallthrough below)
+    EWhile (Lam1 (v1,t1) bod1) (Lam1 (v2,t2) bod2) bod3 -> do
+
        let ft1s = S.flattenTy t1
            ft2s = S.flattenTy t2
        v1s' <- lift $ genUniques v1 (length ft1s)
        v2s' <- lift $ genUniques v2 (length ft2s)
        let env1 = M.insert v1 (t1,v1s',Nothing) env
-           env2 = M.insert v2 (t2,v2s',Nothing) env     
-            
-       let vt1 = zip v1s' ft1s 
-           vt2 = zip v2s' ft2s 
-  
+           env2 = M.insert v2 (t2,v2s',Nothing) env
+
+       let vt1 = zip v1s' ft1s
+           vt2 = zip v2s' ft2s
+
        -- The two lambdas need to be recursed on with extended environments.
        -- let env1 = M.insert v1 (t1,[v1],Nothing) env
        --    env2 = M.insert v2 (t2,[v2],Nothing) env
@@ -207,7 +207,7 @@ doStmts k env ex =
        -- * generate a new continuation
        -- * recurse on the scalar block with the new continuation
        -- * construct a LL.Lam with an LL.ScalarBlock
-           
+
        let ty1 = recoverExpType (unliftEnv env1) bod1
        (binds1,cont1)   <- lift $ makeResultWriterCont ty1
        (stmts1,binds1') <- lift $ runWriterT$ doStmts cont1 env1 bod1
@@ -224,16 +224,16 @@ doStmts k env ex =
        (binds3,cont3)   <- lift $ makeResultWriterCont ty3
        (stmts3,binds3') <- lift $ runWriterT$ doStmts cont3 env bod3
        let bod3' = LL.ScalarBlock (binds3++binds3') (L.map fst binds3) stmts3
-       
+
        if (any isTupleTy (map snd binds2))
        then error $"ToCLike.hs: internal error, tupled type still remaining in bindings  ***While case*** : "++show binds2
        else mytell $ binds2
-               
-       return $ [LL.SWhile ((fst . head) binds1) f1 f2  bod3'] ++ 
-                hackAssign (L.map fst binds2) k  
 
-    -- An ETuple in tail position:                                 
-    ETuple ls -> return$ k$ L.map (doE env) ls 
+       return $ [LL.SWhile ((fst . head) binds1) f1 f2  bod3'] ++
+                hackAssign (L.map fst binds2) k
+
+    -- An ETuple in tail position:
+    ETuple ls -> return$ k$ L.map (doE env) ls
 
     -- Anything else had better be just an expression in the new IR:
     oth -> return$ k [doE env oth]
@@ -245,22 +245,22 @@ doStmts k env ex =
 
 -- Turn a 'Lam1 Exp' into a 'Lam1 ScalarBlock' given an env
 doLam1 :: Env -> S.Fun1 S.Exp -> GensymM ([(Var,Type)], LL.Fun LL.ScalarBlock)
-doLam1 env (Lam1 (v,t) bod) = 
-  do let ft = S.flattenTy t 
-     vs <- genUniques v (length ft) 
-     let env' = M.insert v (t,vs,Nothing) env 
-         vt   = zip vs ft 
+doLam1 env (Lam1 (v,t) bod) =
+  do let ft = S.flattenTy t
+     vs <- genUniques v (length ft)
+     let env' = M.insert v (t,vs,Nothing) env
+         vt   = zip vs ft
 
      let ty = recoverExpType (unliftEnv env') bod
-     (binds,cont) <- makeResultWriterCont ty 
+     (binds,cont) <- makeResultWriterCont ty
      (stmts,binds') <- runWriterT $ doStmts cont env' bod
 
      return (binds, LL.Lam vt $ LL.ScalarBlock (binds ++ binds') (L.map fst binds) stmts)
-    
+
 
 
 doBind :: Env -> ProgBind FullMeta -> GensymM (LL.LLProgBind FullMeta)
-doBind env (ProgBind _ ty decor@(OpInputs vis, (SubBinds vos _, (foldstride, _))) rhs) = do 
+doBind env (ProgBind _ ty decor@(OpInputs vis, (SubBinds vos _, (foldstride, _))) rhs) = do
   rhs' <- case rhs of
             Left  ex -> LL.ScalarCode <$> doBlock env ex
             Right ae -> doAE ae
@@ -291,8 +291,8 @@ doBind env (ProgBind _ ty decor@(OpInputs vis, (SubBinds vos _, (foldstride, _))
        -- TODO: Implement greedy fold/generate fusion RIGHT HERE:
        Fold  lam2 ex _     -> foldHelp (head vis) (doStride foldstride) lam2
                                        =<< (LL.Fold <$> doBlock env ex)
-       FoldSeg lam2 ex _ _ -> do let [inVs,segVs] = vis                                 
-                                 initSB <- doBlock env ex 
+       FoldSeg lam2 ex _ _ -> do let [inVs,segVs] = vis
+                                 initSB <- doBlock env ex
                                  foldHelp inVs (doStride foldstride) lam2
                                    (LL.FoldSeg initSB (LL.Manifest segVs))
        Fold1 lam2 _    -> foldHelp (head vis) LL.StrideAll lam2 LL.Fold1
@@ -318,8 +318,8 @@ doBind env (ProgBind _ ty decor@(OpInputs vis, (SubBinds vos _, (foldstride, _))
       err = error$"ToCLike.hs/doAE: this form should be desugared by now: "++show ae
 
    doStride (Just (StrideConst ex)) = LL.StrideConst$ doE env ex
-   doStride (Just (StrideAll))      = LL.StrideAll 
-   
+   doStride (Just (StrideAll))      = LL.StrideAll
+
    foldHelp inVs' stride (Lam2 (v,t) (w,u) bod) variant = do
       let vtys = S.flattenTy t
           wtys = S.flattenTy u
@@ -356,24 +356,24 @@ doE env ex =
                      " of var: "++show vr++", env binding: "++show oth
 
     ETupProject _ _ _ -> error"FINISHME -- ETupProject"
-    
+
     EConst c         -> case c of
                           Tup _ -> error$"ToCLike.hs: should not have remaining tuple constants: "++show c
                           oth   -> LL.EConst c
     EPrimApp ty p ls -> LL.EPrimApp ty p $ L.map (doE env) ls
     ECond a b c      -> LL.ECond (doE env a) (doE env b) (doE env c)
 
-    -- 'While' used to be here, but it can't be, because this function returns an LL.Exp, 
+    -- 'While' used to be here, but it can't be, because this function returns an LL.Exp,
     -- of which 'while' is not. There is an incomplete case error that pops up here,
     -- which is unfortunate; at some point in the code, doE is being called on a while,
     -- which is not correct.
 
     EIndexScalar v e -> LL.EIndexScalar v (doE env e) 0
     EIndex _     -> err
-    EShapeSize _ -> err 
+    EShapeSize _ -> err
     ELet _ _     -> err
     EShape _     -> err
-    ETuple _     -> err    
+    ETuple _     -> err
   where err = error$"ToCLike.hs/doE: this form should not occur in a non-spine expression: "++show ex
 
 
@@ -400,7 +400,7 @@ t1 :: (LL.ScalarBlock, Int)
 t1 = runState (doBlock M.empty p1) 1000
 
 t2 :: (LL.ScalarBlock, Int)
-t2 = (`runState` 1000) $ 
+t2 = (`runState` 1000) $
   doBlock M.empty $
     ECond (EConst (B False))
           (EConst (I 32)) p1
