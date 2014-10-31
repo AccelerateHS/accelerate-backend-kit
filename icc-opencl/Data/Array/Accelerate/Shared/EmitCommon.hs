@@ -219,7 +219,7 @@ emitS e stmt =
            -- ready to write our while loop 
            emitLine $ toSyntax $ "while " <> PP.parens (fromSyntax (varSyn vr))
            block $ do 
-              mapM_ (emitS e) $ getStms bod
+              _ <- emitBlock e bod
               -- This assignment has to happen before the condition test!
               mapM_ (\ ((v, _, _), o) -> emitStmt $
                                          toSyntax $ fromSyntax (varSyn v) <+> "=" <+>
