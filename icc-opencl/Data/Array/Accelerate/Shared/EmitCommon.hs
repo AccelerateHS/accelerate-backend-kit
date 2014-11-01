@@ -344,7 +344,10 @@ emitPrimApp e outTy prim args =
               Sub -> binop "-"
               Mul -> binop "*"
               Neg -> unary "-"
-              Abs -> unary "abs"
+              Abs -> case outTy of
+                       TFloat  -> unary "fabsf"
+                       TDouble -> unary "fabs"
+                       _       -> unary "abs"   -- all integral types?
               -- Warning, potential for code duplication here.  Should ensure that args are trivial:
               Sig ->  (arg E.> 0) E..| (- (arg E.< 0))
     IP ip -> case ip of
@@ -383,8 +386,13 @@ emitPrimApp e outTy prim args =
               FDiv    -> binop "/"
 --              FPow    -> binfun "expt"
               FPow    -> binfun "pow"
-              LogBase -> binop "log"
-              Atan2   -> unary "atan2"
+              LogBase -> E.parens
+                       $ toSyntax
+                       $ PP.parens (text "log" <> PP.parens rightD)
+                      <> text "/"
+                      <> PP.parens (text "log" <> PP.parens leftD)
+
+              Atan2   -> binfun "atan2"
               Round   -> unary "round"
               Floor   -> unary "floor"
               Ceiling -> unary "ceil"

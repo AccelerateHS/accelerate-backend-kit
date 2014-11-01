@@ -420,17 +420,19 @@ primArity p = case M.lookup p mp of
    zip unaries  (repeat 1)
   binaries =
     [BP And, BP Or] ++
-    [NP Add, NP Sub, NP Mul, IP BNot] ++
+    [NP Add, NP Sub, NP Mul] ++
 --    [ BAnd , BOr | BXor | BNot | BShiftL | BShiftR | BRotateL | BRotateR
     map IP [Quot, Rem, IDiv, Mod, BShiftL, BShiftR, BRotateL, BRotateR,
             BOr, BXor, BAnd ] ++
-    map FP [FDiv, FPow, LogBase, Atan2, Truncate, Round, Floor, Ceiling] ++
+    map FP [FDiv, FPow, LogBase, Atan2] ++
     map SP [Lt, Gt, LtEq, GtEq, Eq, NEq, Max, Min]
+
   unaries =
-    [BP Not] ++
+    [BP Not, IP BNot] ++
     map OP [Ord, Chr, BoolToInt, FromIntegral] ++
     map NP [Neg, Abs, Sig] ++
-    map FP [Recip, Sin, Cos, Tan, Asin, Acos, Atan, Asinh, Acosh, Atanh, ExpFloating, Sqrt, Log]
+    map FP [ Recip, Sin, Cos, Tan, Asin, Acos, Atan, Asinh, Acosh, Atanh
+           , ExpFloating, Sqrt, Log, Truncate, Round, Floor, Ceiling]
 
 --------------------------------------------------------------------------------
 -- Accelerate Types
