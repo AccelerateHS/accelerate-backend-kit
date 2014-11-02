@@ -227,7 +227,7 @@ doSpine env ex = -- trace (printf "doSpine of %s\n" (show ex)) $
                                (length gensyms) (show rhsLs)
 
     -- No PrimApp's expect tuple arguments:
-    EPrimApp ty p els ->  EPrimApp ty p <$> mapM (fmap unsing . doE env) els
+    EPrimApp ty p els ->  EPrimApp ty p <$> mapM (fmap (unsing "EPrimApp") . doE env) els
     EShape     _ -> err ex
     EShapeSize _ -> err ex
     EIndex     _ -> err ex
@@ -287,9 +287,9 @@ doE env ex = -- trace (printf "doE on %s\n" (show ex)) $
 
     -- Because of the normalization phase, we know this conditional
     -- has no Lets in its branches, AND it does *not* have a tuple return type:
-    ECond e1 e2 e3        -> do [e1'] <- doE env e1
-                                [e2'] <- doE env e2
-                                [e3'] <- doE env e3
+    ECond e1 e2 e3        -> do e1' <- unsing "ECond/test"  <$> doE env e1
+                                e2' <- unsing "ECond/true"  <$> doE env e2
+                                e3' <- unsing "ECond/false" <$> doE env e3
                                 return [ECond e1' e2' e3']
 
     EWhile (Lam1 (v1,t1) f1) (Lam1 (v2,t2) f2) e1 -> do
@@ -299,7 +299,7 @@ doE env ex = -- trace (printf "doE on %s\n" (show ex)) $
       return [EWhile (Lam1 (v1,t1) f1') (Lam1 (v2,t2) f2') (mkETuple e1')]
 
     -- None of the primitives operate on tuples (in or out):
-    EPrimApp ty p els     -> (sing . EPrimApp ty p) <$> mapM (fmap unsing . doE env) els
+    EPrimApp ty p els     -> (sing . EPrimApp ty p) <$> mapM (fmap (unsing "EPrimApp") . doE env) els
     EShape     _ -> err ex
     EShapeSize _ -> err ex
     EIndex     _ -> err ex
@@ -347,9 +347,9 @@ flattenOnlyScalar ty = S.flattenTy ty
 err :: Show a => a -> t
 err ex = error$"UnzipETups.hs: this form should have been desugared before this pass: "++show ex
 
-unsing :: Show a => [a] -> a
-unsing [x] = x
-unsing ls  = error$"UnzipETups.hs: expected singleton list, got: "++show ls
+unsing :: Show a => String -> [a] -> a
+unsing _ [x] = x
+unsing s ls  = error $ printf "UnzipETups.hs (%s): expected singleton list, got: %s\n" s (show ls)
 
 sing :: a -> [a]
 sing x = [x]
