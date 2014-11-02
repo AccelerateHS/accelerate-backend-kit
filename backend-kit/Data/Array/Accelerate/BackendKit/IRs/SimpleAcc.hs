@@ -906,7 +906,7 @@ recoverExpType env exp =
         EShape vr             -> let (dim,_) = arrayType vr in
                                  mkTTuple$ take dim (repeat TInt)
         EIndexScalar vr _ex   -> snd (arrayType vr)
-        ETupProject indR len ex -> let TTuple ls = recoverExpType env ex in
+        ETupProject indR len ex -> let ls = flattenTy $ recoverExpType env ex in
                                    mkTTuple$ reverse $ take len $ drop indR $ reverse ls
         -- Indices are represented as Tuples:
         EIndex es             -> mkTTuple $ map (recoverExpType env) es
