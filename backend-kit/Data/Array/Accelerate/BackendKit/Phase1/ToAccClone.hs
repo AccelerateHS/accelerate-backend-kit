@@ -436,7 +436,14 @@ convertExp e =
       -- return T.EIndexAny
 
     -- New, unhandled cases:
-    IndexSlice sliceIndex slix sh       -> do
+    -- ---------------------
+
+    -- TLM: the conversion of IndexSlice and IndexFull needs to be done later in
+    --      the pipeline, after at least UnzipETups.
+    --
+    IndexSlice _sliceIndex _slix _sh -> do
+      error "ToAccClone: TODO: handle IndexSlice"
+{--
       let restrict :: SliceIndex slix sl co sh -> [T.Exp] -> [T.Exp] -> [T.Exp]
           restrict SliceNil              _       _       = []
           restrict (SliceAll   sliceIdx) slx     (sz:sl) = sz : restrict sliceIdx slx sl
@@ -445,13 +452,15 @@ convertExp e =
           --
           slice slix' sh' = reverse $ restrict sliceIndex (reverse slix') (reverse sh')
 
-      slix'     <- unfold <$> convertExp slix
-      sh'       <- unfold <$> convertExp sh
+      slix'     <- unzipETups <$> convertExp slix
+      sh'       <- unzipETups <$> convertExp sh
 
       return . T.ETuple $! slice slix' sh'
+--}
 
-
-    IndexFull sliceIndex slix sl        -> do
+    IndexFull _sliceIndex _slix _sl -> do
+      error "ToAccClone: TODO: handle IndexFull"
+{--
       let extend :: SliceIndex slix sl co sh -> [T.Exp] -> [T.Exp] -> [T.Exp]
           extend SliceNil              _        _       = []
           extend (SliceAll   sliceIdx) slx      (sz:sh) = sz : extend sliceIdx slx sh
@@ -459,10 +468,11 @@ convertExp e =
           --
           replicate slix' sl' = reverse $ extend sliceIndex (reverse slix') (reverse sl')
       --
-      slix'     <- unfold <$> convertExp slix
-      sl'       <- unfold <$> convertExp sl
+      slix'     <- unzipETups <$> convertExp slix
+      sl'       <- unzipETups <$> convertExp sl
 
       return . T.ETuple $! replicate slix' sl'
+--}
 
     ToIndex{}     -> error "ToAccClone.hs: TODO: handle ToIndex"
     FromIndex{}   -> error "ToAccClone.hs: TODO: handle FromIndex"
@@ -559,12 +569,6 @@ tupleNumLeaves :: S.Type -> Int
 tupleNumLeaves (S.TTuple ls) = L.sum $ L.map tupleNumLeaves ls
 tupleNumLeaves _             = 1
 
-
-unfold :: T.Exp -> [T.Exp]
-unfold e = case e of
-  T.EIndex ix   -> ix
-  T.ETuple tup  -> tup
-  _             -> [e]  -- TLM: I have no fucking idea what I am doing
 
 --------------------------------------------------------------------------------
 -- Convert types
