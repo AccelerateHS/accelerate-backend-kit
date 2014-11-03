@@ -403,9 +403,9 @@ convertExp e =
                  convertConst (Sug.eltType (typeOnlyErr "convertExp" ::ans)) c
 
     -- NOTE: The incoming AST indexes tuples FROM THE RIGHT:
-    Prj idx ex -> let n = convertTupleIdx idx nom 
-                      ty = getExpType e
-                      nom = Sug.expType ex 
+    Prj idx ex -> let n   = convertTupleIdx idx nom
+                      ty  = getExpType e
+                      nom = Sug.expType ex
                       len = tupleNumLeaves ty
                   in
                    -- maybtrace ("TUPLE NUM LEAVES: e:"++show ty++ " " ++ show len ++ " " ++ show n) $
@@ -1082,12 +1082,18 @@ repackAcc dummy simpls =
            let (res2,rst)  = cvt r2 simpls
                (res1,rst') = cvt r1 rst
            in ((res1,res2), rst')
+
        Sug.ArraysRarray | (rep :: Sug.ArraysR (Sug.Array sh elt)) <- arrR ->
          -- maybtrace (" [repackAcc] In ArraysRarray case..." ) $
          case simpls of
-           [] -> error$"repackAcc2: ran out of input arrays.\n"
-           ls ->
-               -- Once we have peeled off "one" array, we still need to unzip the tupled elements.
+           []   -> error$"repackAcc2: ran out of input arrays.\n"
+           l:ls -> (packArray l :: Sug.Array sh elt, ls)
+
+{-- TLM: I believe this is no longer necessary, as it looks that
+ --      SimpleArray.reglueArrayofTups is already tupling the arrays.
+ --
+               -- Once we have peeled off "one" array, we still need to unzip
+               -- the tupled elements.
                let elTy   = Sug.eltType (undefined::elt)
                    elWid  = eltWidth elTy
                    zipped = SA.concatAccArrays$ take elWid ls
@@ -1095,6 +1101,7 @@ repackAcc dummy simpls =
                  -- maybtrace (" ... about to zip "++show (elTy, elWid, rep)) $
                  ((packArray zipped) :: (Sug.Array sh elt),
                    drop elWid ls)
+--}
 
    -- How many scalar components are there in an element type?
    eltWidth :: forall a . TupleType a -> Int
