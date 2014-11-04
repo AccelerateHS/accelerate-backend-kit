@@ -112,14 +112,14 @@ doE env ex =
     ETupProject i l e     -> ETupProject  i l <$> doE env e
 
     -- TODO: Dedup this code:
-    EIndexScalar avr indE
+    -- BJS: It's not actually Duped.
+    EIndexScalar avr indE 
       | isTrivialE indE -> EIndexScalar avr <$> doE env indE
       | otherwise       -> do let indTy = recoverExpType env indE
                               gensym <- lift$ genUniqueWith "liftEIndScl"
-                              _      <- doE env indE
-                              tell [(gensym,indTy,ex)]
+                              indE'  <- doE env indE
+                              tell [(gensym,indTy,indE')]
                               return $ EIndexScalar avr (EVr gensym)
-
 
     -- We leave let's inside conditionals, but we might need to lift the conditional itself.
     ECond e1 e2 e3 -> do e1' <- doE env e1
