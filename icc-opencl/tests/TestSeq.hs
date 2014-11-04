@@ -60,7 +60,10 @@ knownProblemsOld = words $ ""
 --  ++ " p50c "
 --  ++ " p60e p60f p60g" 
   -- ++ " p80a " -- p80b "
-  
+  -- Breaks in ExplicitShapes 
+  ++ " p90a p90b p90c "
+  -- Breaks in C compiler ("aLt37" has already been declared in the current scope)
+  -- ++ " p91 " 
 
 
 --------------------------------------------------------------------------------  

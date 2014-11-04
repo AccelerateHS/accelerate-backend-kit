@@ -47,8 +47,14 @@ module Data.Array.Accelerate.BackendKit.Tests
     p70, p70a,     
 
     -- Use Tuples 
-    p80, p80a, -- p80b, 
+    p80, p80a, p80b,  p80c, p80d, p80e,
 
+    p90, p90a, p90b, p90c,
+
+    p91, p91a, p91b ,p91c ,p91d,
+
+    p92, p92a, 
+ 
     -- * Reexports to make life easier:
     doc, convertToSimpleProg,
 
@@ -188,7 +194,16 @@ otherProgs =
   go "p70" p70,   go "p70a" p70a ,
 
   -- Use tuples 
-  go "p80" p80 , go "p80a" p80a -- , go "p80b" p80b
+  go "p80" p80 , go "p80a" p80a , go "p80b" p80b , go "p80c" p80c , go "p80d" p80d , go "p80e" p80e ,
+
+  -- More ~nasty~ tuples
+  go "p90" p90 , go "p90a" p90a , go "p90b" p90b , go "p90c" p90c ,
+
+  go "p91" p91 , go "p91a" p91a , go "p91b" p91b , go "p91c" p91c , go "p91d" p91d
+
+  --,
+  -- These two send the backend-kit into infinite loop.  
+  -- go "p92" p92,  go "p92a" p92a
   ]
 
 makeTestEntry :: forall a . (Show a, Arrays a) => String -> Acc a -> TestEntry
@@ -1121,6 +1136,45 @@ p80 = let xs = fromList (Z :. (10::Int)) [1..10::Int]
 
 p80a :: Acc (Array DIM1 (Int,Int)) 
 p80a = let xs = fromList (Z :. (10::Int)) [1..10::Int]
+           ys = fromList (Z :. (10::Int)) [11..20::Int]
+           arrs = use (xs,ys) 
+           (xs',ys') = unlift arrs 
+       in A.zip ys' xs'
+         
+p80b :: Acc (Array DIM1 (Int,Int,Int)) 
+p80b = let xs = fromList (Z :. (10::Int)) [1..10::Int]
+           ys = fromList (Z :. (10::Int)) [11..20::Int]
+           zs = fromList (Z :. (10::Int)) [21..30::Int]
+           arrs = use (xs,ys,zs) 
+           (xs',ys', zs') = unlift arrs 
+       in map (\x -> let (x1' :: Exp (Int,Int),z1 :: Exp Int) = unlift x
+                         (x1 :: Exp Int, y1 :: Exp Int) = unlift x1'
+                     in lift (x1,y1,z1) :: Exp (Int,Int,Int)) (A.zip (A.zip xs' ys') zs') 
+
+p80c :: Acc (Array DIM1 (Int,Int,Int)) 
+p80c = let xs = fromList (Z :. (10::Int)) [1..10::Int]
+           ys = fromList (Z :. (10::Int)) [11..20::Int]
+           zs = fromList (Z :. (10::Int)) [21..30::Int]
+           arrs = use (xs,ys,zs) 
+           (xs',ys', zs') = unlift arrs 
+       in map (\x -> let (x1' :: Exp (Int,Int),z1 :: Exp Int) = unlift x
+                         (x1 :: Exp Int, y1 :: Exp Int) = unlift x1'
+                     in lift (x1,y1,z1) :: Exp (Int,Int,Int)) (A.zip (A.zip ys' zs') xs')
+
+p80d :: Acc (Array DIM1 (Int,Int,Int)) 
+p80d = let xs = fromList (Z :. (10::Int)) [1..10::Int]
+           ys = fromList (Z :. (10::Int)) [11..20::Int]
+           zs = fromList (Z :. (10::Int)) [21..30::Int]
+           arrs = use (xs,ys,zs) 
+           (xs',ys', zs') = unlift arrs 
+       in map (\x -> let (x1' :: Exp (Int,Int),z1 :: Exp Int) = unlift x
+                         (x1 :: Exp Int, y1 :: Exp Int) = unlift x1'
+                     in lift (x1,y1,z1) :: Exp (Int,Int,Int)) (A.zip (A.zip zs' xs') ys')
+
+
+
+p80e :: Acc (Array DIM1 (Int,Int)) 
+p80e = let xs = fromList (Z :. (10::Int)) [1..10::Int]
            ys = fromList (Z :. (5::Int)) [1..5::Int]
            arrs = use (xs,ys) 
            (xs',ys') = unlift arrs 
@@ -1135,7 +1189,132 @@ p80a = let xs = fromList (Z :. (10::Int)) [1..10::Int]
 --       in arrs
 
 
-               
+p90 :: Acc ((Array DIM1 Int)
+            ,(Array DIM1 Int)
+            ,(Array DIM1 Int)) 
+p90 = let xs = fromList (Z :. (10::Int)) [1..10::Int]
+          ys = fromList (Z :. (10::Int)) [11..20::Int]
+          zs = fromList (Z :. (10::Int)) [21..30::Int]
+          arrs = lift (use xs, use ys, use zs)
+      in arrs
+
+p90a :: Acc (Array DIM1 Int)
+p90a = let xs = fromList (Z :. (10::Int)) [1..10::Int]
+           ys = fromList (Z :. (10::Int)) [11..20::Int]
+           zs = fromList (Z :. (10::Int)) [21..30::Int]
+           arrs :: Acc ((Array DIM1 Int)
+                        ,(Array DIM1 Int)
+                        ,(Array DIM1 Int)) = lift (use xs, use ys, use zs) 
+           (x,y,z) :: ( Acc (Array DIM1 Int)
+                      , Acc (Array DIM1 Int)
+                      , Acc (Array DIM1 Int)) = unlift arrs
+       in x
+
+p90b :: Acc (Array DIM1 Int)
+p90b = let xs = fromList (Z :. (10::Int)) [1..10::Int]
+           ys = fromList (Z :. (10::Int)) [11..20::Int]
+           zs = fromList (Z :. (10::Int)) [21..30::Int]
+           arrs :: Acc ((Array DIM1 Int)
+                        ,(Array DIM1 Int)
+                        ,(Array DIM1 Int)) = lift (use xs, use ys, use zs) 
+           (x,y,z) :: ( Acc (Array DIM1 Int)
+                      , Acc (Array DIM1 Int)
+                      , Acc (Array DIM1 Int)) = unlift arrs
+       in y
+p90c :: Acc (Array DIM1 Int)
+p90c = let xs = fromList (Z :. (10::Int)) [1..10::Int]
+           ys = fromList (Z :. (10::Int)) [11..20::Int]
+           zs = fromList (Z :. (10::Int)) [21..30::Int]
+           arrs :: Acc ((Array DIM1 Int)
+                        ,(Array DIM1 Int)
+                        ,(Array DIM1 Int)) = lift (use xs, use ys, use zs)
+           (x,y,z) :: ( Acc (Array DIM1 Int)
+                      , Acc (Array DIM1 Int)
+                      , Acc (Array DIM1 Int)) = unlift arrs
+       in z
+---------------------------------------------------------------------------
+-- 
+
+
+p91 :: Acc (Array DIM1 (Int,Int), 
+            Array DIM1 (Int,Int) ) 
+p91 = let xs = fromList (Z :. (10::Int)) [1..10::Int]
+          ys = fromList (Z :. (10::Int)) [11..20::Int]
+          zs = fromList (Z :. (10::Int)) [21..30::Int]
+          ws = fromList (Z :. (10::Int)) [31..40::Int]
+          arrs1 = use (xs,ys)
+          arrs2 = use (zs,ws) 
+          (xs',ys') = unlift arrs1
+          (zs',ws') = unlift arrs2 
+      in lift (A.zip xs' ys', A.zip zs' ws')
+
+p91a :: Acc (Array DIM1 (Int,Int), 
+            Array DIM1 (Int,Int) ) 
+p91a = let xs = fromList (Z :. (10::Int)) [1..10::Int]
+           ys = fromList (Z :. (10::Int)) [11..20::Int]
+           zs = fromList (Z :. (10::Int)) [21..30::Int]
+           ws = fromList (Z :. (10::Int)) [31..40::Int]
+           arrs1 = use (xs,ys)
+           arrs2 = use (zs,ws) 
+           (xs',ys') = unlift arrs1
+           (zs',ws') = unlift arrs2 
+       in lift (A.zip zs' ys', A.zip xs' ws')
+
+p91b :: Acc (Array DIM1 (Int,Int), 
+            Array DIM1 (Int,Int) ) 
+p91b = let xs = fromList (Z :. (10::Int)) [1..10::Int]
+           ys = fromList (Z :. (10::Int)) [11..20::Int]
+           zs = fromList (Z :. (10::Int)) [21..30::Int]
+           ws = fromList (Z :. (10::Int)) [31..40::Int]
+           arrs1 = use (xs,ys)
+           arrs2 = use (zs,ws) 
+           (xs',ys') = unlift arrs1
+           (zs',ws') = unlift arrs2 
+       in lift (A.zip xs' ws', A.zip zs' ys')
+
+p91c :: Acc (Array DIM1 (Int,Int), 
+            Array DIM1 (Int,Int) ) 
+p91c = let xs = fromList (Z :. (10::Int)) [1..10::Int]
+           ys = fromList (Z :. (10::Int)) [11..20::Int]
+           zs = fromList (Z :. (10::Int)) [21..30::Int]
+           ws = fromList (Z :. (10::Int)) [31..40::Int]
+           arrs1 = use (xs,ys)
+           arrs2 = use (zs,ws) 
+           (xs',ys') = unlift arrs1
+           (zs',ws') = unlift arrs2 
+       in lift (A.zip ws' ys', A.zip zs' xs')
+
+p91d :: Acc (Array DIM1 (Int,Int), 
+             Array DIM1 (Int,Int) ) 
+p91d = let xs = fromList (Z :. (10::Int)) [1..10::Int]
+           ys = fromList (Z :. (10::Int)) [11..20::Int]
+           zs = fromList (Z :. (10::Int)) [21..30::Int]
+           ws = fromList (Z :. (10::Int)) [31..40::Int]
+           xs' = use xs
+           ys' = use ys
+           zs' = use zs
+           ws' = use ws
+       in lift (A.zip xs' ys', A.zip zs' ws')
+
+
+-- This program sends backendkit into infinite loop. 
+p92 :: Acc (Array DIM1 (Int,Int),
+            Array DIM1 (Int,Int))
+p92 = let xs = fromList (Z :. (10::Int)) (Prelude.zip [1..10::Int] [11..20::Int])
+          ys = fromList (Z :. (10::Int)) (Prelude.zip [21..30::Int] [31..40::Int])
+          arrs1 = use xs
+          arrs2 = use ys
+          (xs',ys') :: (Acc (Array DIM1 Int), Acc (Array DIM1 Int)) = A.unzip arrs1 
+          (zs',ws') :: (Acc (Array DIM1 Int), Acc (Array DIM1 Int)) = A.unzip arrs2 
+      in lift (A.zip xs' ys', A.zip zs' ws')
+
+p92a :: Acc (Array DIM1 (Int,Int))
+p92a = let xs = fromList (Z :. (10::Int)) (Prelude.zip [1..10::Int] [11..20::Int])
+           arrs1 = use xs
+           (xs',ys') :: (Acc (Array DIM1 Int), Acc (Array DIM1 Int)) = A.unzip arrs1 
+       in A.zip xs' ys'
+
+
 
 --------------------------------------------------------------------------------
 -- Let's print matrices nicely.
