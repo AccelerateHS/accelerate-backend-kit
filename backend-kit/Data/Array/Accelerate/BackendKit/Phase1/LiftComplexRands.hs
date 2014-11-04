@@ -158,7 +158,7 @@ liftComplexRands orig_aex =
               rand' <- lift$ loop ae
               abod' <- lift$ loop abod
               return$ T.Apply rt (S.Lam1 (v,ty) abod') rand'
-        T.TupleRefFromRight a ind ae -> T.TupleRefFromRight a ind <$> flat ae
+        T.TupleRefFromRight a n m ae -> T.TupleRefFromRight a n m <$> flat ae
         T.Index     a slc ae ex      -> T.Index a slc <$> flat ae <*> exp   ex
 --        T.Index     a slc ae ex -> (\ ae' -> T.Index a slc ae' ex) <$> flat ae
         T.ZipWith a fn2 ae1 ae2       -> T.ZipWith a <$> cF2 fn2  <*> flat ae1 <*> flat ae2

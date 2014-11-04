@@ -50,7 +50,9 @@ import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 --   usually includes the type.
 data AExp a =
     ArrayTuple a [AExp a]           -- Tuple of arrays.
-  | TupleRefFromRight a Int (AExp a)  -- Dereference tuple
+  -- attempt same approach as with ETuples here
+  -- That is: Project a consecutive series of fields from a tuple.
+  | TupleRefFromRight a Int Int (AExp a)  -- Dereference tuple
   | Apply a (Fun1 (AExp a)) (AExp a)      -- Apply a known array-level function.
   ------------------------------
   | Vr   a Var
@@ -193,7 +195,7 @@ convertAExps aex =
      Let _ _ _               -> error$"convertAExps: input doesn't meet constraints, Let encountered."
      Apply _ _ _             -> error$"convertAExps: input doesn't meet constraints, Apply encountered."
      ArrayTuple _  _         -> error$"convertAExps: input doesn't meet constraints, ArrayTuple encountered."
-     TupleRefFromRight _ _ _ -> error$"convertAExps: input doesn't meet constraints, TupleRefFromRight encountered."
+     TupleRefFromRight _ _ _ _ -> error$"convertAExps: input doesn't meet constraints, TupleRefFromRight encountered."
      oth -> error$"convertAExps: invariants not matched: "++show oth
 
 -- | Extract the annotation component from an AExp:
@@ -227,7 +229,7 @@ getAnnot ae =
      Stencil2    a _ _ _ _ _     -> a
      Apply       a _ _           -> a
      ArrayTuple  a _             -> a
-     TupleRefFromRight a _ _     -> a
+     TupleRefFromRight a _ _ _   -> a
 
 
 -- TEMP: shouldn't need this:
