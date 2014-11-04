@@ -53,7 +53,9 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
      freshenExpNames, substExp, GensymM, genUnique, genUniqueWith,
 
      -- * Type recovery and type checking:
-     constToType, recoverExpType, topLevelExpType,
+     constToType,
+     recoverExpType, topLevelExpType,
+     recoverFun1Type, recoverFun2Type,
      typeByteSize,
      accArrayToType, payloadToType,
 
@@ -884,6 +886,20 @@ progToEnv :: Prog a -> M.Map Var Type
 -- Note this is highly INEFFICIENT -- it creates a map from the list every time:
 -- Caching this when its needed repeatedly would be good.
 progToEnv p = M.fromList$ map (\(ProgBind v ty _ _) -> (v,ty)) (progBinds p)
+
+
+-- | Recover the output type of a unaray scalar function
+--
+recoverFun1Type :: M.Map Var Type -> Fun1 Exp -> Type
+recoverFun1Type env (Lam1 (v,t) e) =
+  recoverExpType (M.insert v t env) e
+
+-- | Recover the output type of a binary scalar function
+--
+recoverFun2Type :: M.Map Var Type -> Fun2 Exp -> Type
+recoverFun2Type env (Lam2 (v1,t1) (v2,t2) e) =
+  recoverExpType (M.insert v2 t2 (M.insert v1 t1 env)) e
+
 
 -- | Recover the type of an expression, given an environment.  The
 -- environment must include bindings for any free scalar AND array
