@@ -31,6 +31,7 @@ doAE :: LL.TopLvlForm -> S.Set SA.Var
 doAE ae =
   case ae of
     LL.Use _            -> S.empty
+    LL.Use _            -> S.empty
     LL.Cond _ _  _      -> S.empty
     LL.ScalarCode blk   -> doBlk blk
     -- The free vars for a generate binding refer to the body of the

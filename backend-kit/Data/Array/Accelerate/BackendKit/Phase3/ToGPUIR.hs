@@ -65,6 +65,7 @@ doBinds sizeEnv evEnv (LLProgBind vartys (FreeVars fvs) toplvl : rest) = do
 
   let -- shared code for cases below:
       -- Create a new progbind that lifts out a scalarblock:
+    {--
       liftSB :: ScalarBlock -> GensymM (G.GPUProgBind FreeVars, [S.Var])
       liftSB sb = do
          let (ScalarBlock bnds rets _) = sb
@@ -78,7 +79,7 @@ doBinds sizeEnv evEnv (LLProgBind vartys (FreeVars fvs) toplvl : rest) = do
                        G.decor   = defaultDec,
                        G.op      = G.ScalarCode (doSB sb) }
          return (sbBnd, newVs)
-
+      --}
       -- Lift out an SB AND repack it as a new SB.
       -- goSB sb = do (pb,vrs) <- liftSB sb
       --              sb' <- G.expsToBlock (zip (map G.EVr vrs)
@@ -98,10 +99,11 @@ doBinds sizeEnv evEnv (LLProgBind vartys (FreeVars fvs) toplvl : rest) = do
           Scan dir sb      -> do let sb' = doSB sb -- (pb,sb') <- goSB sb
                                  return ([], Scan dir sb')
           Scan1 dir        -> return ([], Scan1 dir) -- nothing to do? 
-          Permute lam mgen -> return ([], Permute (doLam lam) (doMGen mgen))
+          Permute lam mgen -> return ([], Permute (doLam lam) (doMGen mgen))          
   
   case toplvl of
     Use arr       -> return$ rebind [] (G.Use arr)                       : rst
+    Use' arr      -> return$ rebind [] (G.Use arr)                       : rst
     Cond e v1 v2  -> return$ rebind (evs [v1,v2]) (G.Cond (doE e) v1 v2) : rst
     ScalarCode sb -> return$ rebind (evs fvs) (G.ScalarCode (doSB sb))   : rst
 
@@ -131,9 +133,9 @@ doBinds sizeEnv evEnv (LLProgBind vartys (FreeVars fvs) toplvl : rest) = do
     _ -> error$"ToGPUIR.hs: Incomplete, must handle top level form:\n "++show(doc toplvl)
 
  where
-   (nm,ty) = case vartys of -- Touch this and you make the one-output-array assumption!
-              [x] -> x 
-              oth -> error$"ConvertGPUIR.hs: expected one output from op:\n  "++show toplvl
+   (_nm,_ty) = case vartys of -- Touch this and you make the one-output-array assumption!
+     [x] -> x 
+     _oth -> error$"ConvertGPUIR.hs: expected one output from op:\n  "++show toplvl
 
    genEvt = genUniqueWith "evt"
 

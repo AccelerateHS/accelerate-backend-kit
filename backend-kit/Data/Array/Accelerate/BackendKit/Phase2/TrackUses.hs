@@ -69,6 +69,7 @@ doAE :: AExp -> UseMap -> UseMap
 doAE ae mp =
   case ae of
     Use arr -> mp
+    Use' arr -> mp
     Vr v                -> addArrRef v mp
     Map fn vr           -> addArrRef vr $ doFn1 fn mp
     ZipWith fn2 v1 v2   -> addArrRef v1 $ addArrRef v2 $ doFn2 fn2 mp

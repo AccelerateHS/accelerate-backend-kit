@@ -60,17 +60,18 @@ evalStmt st =
 
     -- This is a *profoundly* inefficient way of evaluating array assignment,
     -- but the AccArray representation needs to be changed from immutable UArray to fix this:
-    SArrSet v ix rhs -> do
+    SArrSet _v _ix _rhs -> do
       error $ "GPUIRInterp.hs/evalStmt: not supporting array assignment in CPU-interpreted code"
       -- env <- get
       -- put (M.insert v (ArrayVal$ evalExp env e) env)
 
-    SFor v initE testE incrE bodS ->
+    SFor _v _initE _testE _incrE _bodS ->
       error $ "GPUIRInterp.hs/evalStmt: not supporting array assignment in CPU-interpreted code"
 
     SSynchronizeThreads -> error "GPUIR/Interpreter:evalStmt: does not handle SSynchronizeThreads yet."
     SNoOp               -> return ()
-    
+    SWhile _ _ _ _      -> error "FINISH ME"
+    SComment _          -> error "FINISH ME"
 
 -- | Evaluate a scalar expression to a value, using Const as the value representation.
 --   Note that this only allows scalar results.
@@ -89,14 +90,15 @@ evalExp env expr =
 
     EGetLocalID  _ -> error $ "GPUIRInterp.hs/evalExp: not supporting EGetLocalID in CPU-interpreted code"
     EGetGlobalID _ -> error $ "GPUIRInterp.hs/evalExp: not supporting EGetGlobalID in CPU-interpreted code"    
+    EUnInitArray _ _ -> error "FINISH ME"
 
-
-evalProg :: Prog a -> Value
-evalProg = error "FINISHME GPUIR/Interpreter.hs -- evalProg"
+--evalProg :: Prog a -> Value
+--evalProg = error "FINISHME GPUIR/Interpreter.hs -- evalProg"
 
 -- Actually respecting SSynchronizeThreads is very difficult here,
 -- evaluating sequentially requires using CPS to stop all threads at
 -- the barrier, and work groups (aka "blocks") must be respected.
+{--
 evalPB :: GPUProgBind a -> EnvM ()
 evalPB GPUProgBind{ outarrs, op } =
   case op of
@@ -111,7 +113,7 @@ evalPB GPUProgBind{ outarrs, op } =
       env <- get
       let dims = map (evalExp env . snd) dimEs
       error "FINISHME GPUIR/Interpreter.hs -- evalPB, Kernel case"
-
+--}
 -- GPUProgBind {
 --       evtid   :: EvtId,
 --       evtdeps :: [EvtId], 

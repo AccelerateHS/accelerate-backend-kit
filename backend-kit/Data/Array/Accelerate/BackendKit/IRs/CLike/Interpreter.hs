@@ -15,7 +15,7 @@ module Data.Array.Accelerate.BackendKit.IRs.CLike.Interpreter
        )
        where
        
-import           Data.Array.Accelerate.BackendKit.IRs.Metadata
+import           Data.Array.Accelerate.BackendKit.IRs.Metadata()
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc             hiding (Exp(..))
 import           Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter (evalPrim, Value(..), unConstVal, unArrVal)
 import           Data.Array.Accelerate.BackendKit.IRs.CLike
@@ -58,6 +58,7 @@ evalStmt (SCond a bs cs) = do
 evalStmt (SSet v e) = do
   env <- get
   put (M.insert v (ConstVal$ evalExp env e) env)
+evalStmt oth = error "FINISH ME"
 
 -- | Evaluate a scalar expression to a value, using Const as the value representation.
 --   Note that this only allows scalar results.

@@ -57,8 +57,11 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
      typeByteSize,
      accArrayToType, payloadToType,
 
-     -- Acc array unzipping 
+     -- * Acc array unzipping 
      unzipAccArray
+
+     -- * Operate on lists of ProgBinds
+     --findFree, freeBindFunc
     )
  where
 
@@ -272,6 +275,7 @@ data AExp =
   | Unit Exp                         -- ^ Turn an element into a singleton array
   | Cond Exp Var Var                 -- ^ Array-level if statements
   | Use       AccArray               -- ^ A real live ARRAY goes here!
+  | Use'      AccArray
   | Generate  Exp (Fun1 Exp)         -- ^ Generate an array by applying a function to every index in shape
 --  | AWhile  (Fun1 [ProgBind ()]) (Fun1 [ProgBind ()]) Var
   | Replicate SliceType Exp Var      -- ^ Replicate array across one or more dimensions.
@@ -477,6 +481,42 @@ data SliceComponent = Fixed | All
 -- They read left-to-right, in the same
 -- order that one would write `(Z :. 3 :. 4 :. All)` in the source code.
 -- That particular example would translate to `[Fixed, Fixed, All]`.
+
+-------------------------------------------------------------------------------
+-- Accelerate ProgBind array manipulation
+-------------------------------------------------------------------------------
+
+-- | The runtime system may split Accelerate programs into multiple sections,
+--   and expect these sections to compile and run independent of each other.
+--
+--   This requires some manipulation, such as idenfitying free variables in
+--   a list of ProgBinds and wrapping those free variable references in
+--   `use` statements.
+
+
+-- | findFree will attempt to return a set of all free vars in a list of ProgBinds.
+--   These vars will need to be set somehow before this ProgBind list can stand
+--   alone as a complete program.
+{-- 
+findFree :: Prog a -> S.Set (Var, Type)
+findFree Prog{progBinds} = S.difference allFreeVars $ S.intersection allFreeVars allTopVars
+  where
+    allFreeVars = foldr accFreeVars S.empty progBinds
+    allTopVars = foldr accTopVars S.empty progBinds
+
+    -- The heavy lifting is done by the existing expFreeVars and aexpFreeVars functions.
+    pbFreeVars :: ProgBind a -> S.Set Var
+    pbFreeVars (ProgBind _ _ _ (Left ex)) = expFreeVars ex
+    pbFreeVars (ProgBind _ _ _ (Right ae)) = aexpFreeVars ae
+
+    accFreeVars :: ProgBind a -> S.Set Var -> S.Set Var
+    accFreeVars pb s = S.union s $ pbFreeVars pb
+
+    accTopVars :: ProgBind a -> S.Set Var -> S.Set Var
+    accTopVars (ProgBind v _ _ _) s = S.insert v s
+--}
+-- | TODO: Another function needs to go here to insert use nodes as "placeholders"
+--   in order to bound free variables.
 
 -------------------------------------------------------------------------------
 -- Accelerate Runtime Array Data
@@ -1029,6 +1069,7 @@ aexpFreeVars ae =
     Unit e           -> g e
     Cond e v1 v2     -> S.insert v1 $ S.insert v2 $ g e
     Use     _        -> S.empty
+    Use'    _        -> S.empty
     Generate  e f1   -> g e `S.union` fn1 f1
     Replicate _ e v  -> S.insert v $ g e
     Index    _ v e   -> S.insert v $ g e
@@ -1058,6 +1099,7 @@ aexpOpName ae =
     Unit e           -> "Unit"
     Cond e v1 v2     -> "Cond"
     Use     _        -> "Use"
+    Use'    _        -> "Use"
     Generate  e f1   -> "Generate"
     Replicate _ e v  -> "Replicate"
     Index    _ v e   -> "Index"
@@ -1150,6 +1192,7 @@ aexpASTSize ae =
     Unit e           -> 1 + g e
     Cond e  _ _      -> 1 + g e
     Use     _        -> 1 -- Could add in array size here, but that should probably be reported separately.
+    Use'    _        -> 1
     Generate  e f1   -> 1 + g e + fn1 f1         -- Generate an array by applying a function to every index in shape
     Replicate _ e _  -> 1 + g e
     Index    _ _ e   -> 1 + g e

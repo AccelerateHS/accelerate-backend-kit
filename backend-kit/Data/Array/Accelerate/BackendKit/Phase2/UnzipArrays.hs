@@ -44,6 +44,9 @@ unzipArrays prog@Prog{progBinds,progResults = WithShapesUnzipped pR, uniqueCount
     env = M.fromList$
           map (\(ProgBind v _ (SubBinds vrs _,_) _) -> (v,vrs)) progBinds
 
+-- Unhandled cases for prog:
+unzipArrays prog = error "FINISH ME"
+
 -- | For this pass every top level binding is tracked in the environment which is
 -- passed throuh the helper functions.
 type Env = M.Map Var [Var]
@@ -83,6 +86,7 @@ doAE :: TEnv -> Env -> AExp -> GensymM ([[Var]], AExp)
 doAE tenv env ae = 
   case ae of
     Use _               -> return ([],ae)
+    Use' _              -> return ([],ae)
     Cond a b c          -> do a' <- (exp a)
                               return ([sp b,sp c], Cond a' nukedVar nukedVar)
     Generate e lam1     -> do l1 <- doLam1 tenv lam1

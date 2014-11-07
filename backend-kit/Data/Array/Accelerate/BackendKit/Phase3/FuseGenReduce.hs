@@ -63,7 +63,8 @@ doBinds inlines binds = loop [] [] binds
     loop bacc vacc (pb@GPUProgBind { op, decor=FreeVars fvs } : rest) = do  
       let skip  = loop (pb:bacc) vacc rest
       case op of
-         Use  _        -> skip         
+         Use  _        -> skip
+         Use' _        -> skip
          -- TODO: We have the option here to turn array level conditionals into
          -- scalar conditionals:
          Cond _ _ _    -> skip

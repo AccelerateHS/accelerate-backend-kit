@@ -35,6 +35,10 @@ doAE mp ae =
     -- This is an easy one!  We have the array, thus we know it's size:
     Use arr -> KnownSize (arrDim arr)
 
+    -- This is a hack. We might or might not know the exact size of this array.
+    -- What's the worst that will happen if we pretend we never know?
+    Use' _ -> UnknownSize
+
     -- CASE 1: Derivative arrays, look upstream:
     --------------------------------------------
     Vr v             -> useSizeof v

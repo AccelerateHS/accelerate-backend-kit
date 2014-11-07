@@ -308,20 +308,20 @@ evalSimpleAcc (S.Prog {progBinds, progResults})
                    evalE (M.insert v1 acc $
                           M.insert v2 (ConstVal$ lookup offset) env)
                          bodE
-        S.Index     slcty  ae ex  -> error "UNFINISHED: Index"
-        S.Fold1     fn ae         -> error "UNFINISHED: Foldl1"
-        S.FoldSeg   fn ex ae1 ae2 -> error "UNFINISHED: FoldSeg"
-        S.Fold1Seg  fn    ae1 ae2 -> error "UNFINISHED: Fold1Seg"
-        S.Scanl     fn ex ae      -> error "UNFINISHED: Scanl"
-        S.Scanl'    fn ex ae      -> error "UNFINISHED: Scanl'"
-        S.Scanl1    fn    ae      -> error "UNFINISHED: Scanl1"
-        S.Scanr     fn ex ae      -> error "UNFINISHED: Scanr"
-        S.Scanr'    fn ex ae      -> error "UNFINISHED: Scanr'"
-        S.Scanr1    fn    ae      -> error "UNFINISHED: Scanr1"
-        S.Permute  fn1 ae1 fn2 ae2 -> error "UNFINISHED: Permute"
-        S.Reshape      ex    ae     -> error "UNFINISHED: Reshape"
-        S.Stencil      fn  bnd ae   -> error "UNFINISHED: Stencil"
-        S.Stencil2  fn bnd1 ae1 bnd2 ae2 -> error "UNFINISHED: Stencil2"
+        S.Index     _slcty  _ae _ex   -> error "UNFINISHED: Index"
+        S.Fold1     _fn _ae           -> error "UNFINISHED: Foldl1"
+        S.FoldSeg   _fn _ex _ae1 _ae2 -> error "UNFINISHED: FoldSeg"
+        S.Fold1Seg  _fn    _ae1 _ae2  -> error "UNFINISHED: Fold1Seg"
+        S.Scanl     _fn _ex _ae       -> error "UNFINISHED: Scanl"
+        S.Scanl'    _fn _ex _ae       -> error "UNFINISHED: Scanl'"
+        S.Scanl1    _fn    _ae        -> error "UNFINISHED: Scanl1"
+        S.Scanr     _fn _ex _ae       -> error "UNFINISHED: Scanr"
+        S.Scanr'    _fn _ex _ae       -> error "UNFINISHED: Scanr'"
+        S.Scanr1    _fn    _ae        -> error "UNFINISHED: Scanr1"
+        S.Permute  _fn1 ae1 fn2 ae2   -> error "UNFINISHED: Permute"
+        S.Reshape      _ex    _ae     -> error "UNFINISHED: Reshape"
+        S.Stencil      _fn  _bnd _ae  -> error "UNFINISHED: Stencil"
+        S.Stencil2  _fn _bnd1 _ae1 _bnd2 _ae2 -> error "UNFINISHED: Stencil2"
         _ -> error$"Accelerate array expression breaks invariants: "++ show aexp
 
 
@@ -436,7 +436,7 @@ evalPrim :: Type -> Prim -> [Const] -> Const
 --   case p of
 --     NP Add -> ConstVal (I 0)
 
-evalPrim ty p [x,y] =
+evalPrim _ty p [x,y] =
   case p of
 --    NP Add -> ConstVal (foldl1 add (map valToConst es))
 --    NP Mul -> ConstVal (foldl1 mul (map valToConst es))

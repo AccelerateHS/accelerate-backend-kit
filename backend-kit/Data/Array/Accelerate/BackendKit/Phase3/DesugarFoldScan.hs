@@ -50,6 +50,7 @@ doBinds sizeEnv prog (pb@GPUProgBind { decor=(FreeVars arrayOpFvs), op } : rest)
                  return $ pb : rst
   case op of
      Use  _        -> deflt
+     Use' _        -> deflt
      Cond _ _ _    -> deflt
      ScalarCode _  -> deflt
      GenManifest _ -> deflt

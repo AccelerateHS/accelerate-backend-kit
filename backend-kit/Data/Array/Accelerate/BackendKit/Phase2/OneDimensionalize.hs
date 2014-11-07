@@ -76,11 +76,12 @@ compute1DSize ndim ex =
    -- The one-dimensional size is just the product of the dimensions:   
    deflt = foldl mulI (EConst (I 1))
            [ mkPrj i 1 ndim ex | i <- reverse[0 .. ndim-1] ]
-
+{--
 -- | This version also may introduce let bindings.
 compute1DSizeM :: Int -> Exp -> MyM Exp
 compute1DSizeM ndim eShp = do
    lift$ maybeLetAllowETups eShp (mkIndTy ndim) (compute1DSize ndim)
+--}
 
 -- | After the other processing is done, this goes back and adds the scalar bindings
 -- to hold the (1D) sizes.
@@ -111,14 +112,14 @@ getFoldStride env allbinds (ProgBind vo outTy osz eith) =
      case ae of 
        Fold _ _ vi       -> Just$ deftl vi
        Fold1 _  vi       -> Just$ deftl vi
-       FoldSeg  _ _ vi _ -> Just$ error "OneDimensionalize.hs: UNFINISHED need to compute strides for foldsegs"
-       Fold1Seg _   vi _ -> Just$ error "OneDimensionalize.hs: UNFINISHED need to compute strides for foldsegs"
-       Scanl    _ _ vi   -> Just$ StrideAll 
-       Scanl'   _ _ vi   -> Just$ StrideAll 
-       Scanl1   _   vi   -> Just$ StrideAll 
-       Scanr    _ _ vi   -> Just$ StrideAll 
-       Scanr'   _ _ vi   -> Just$ StrideAll 
-       Scanr1   _   vi   -> Just$ StrideAll 
+       FoldSeg  _ _ _ _  -> Just$ error "OneDimensionalize.hs: UNFINISHED need to compute strides for foldsegs"
+       Fold1Seg _   _ _  -> Just$ error "OneDimensionalize.hs: UNFINISHED need to compute strides for foldsegs"
+       Scanl    _ _ _    -> Just$ StrideAll 
+       Scanl'   _ _ _    -> Just$ StrideAll 
+       Scanl1   _   _    -> Just$ StrideAll 
+       Scanr    _ _ _    -> Just$ StrideAll 
+       Scanr'   _ _ _    -> Just$ StrideAll 
+       Scanr1   _   _    -> Just$ StrideAll 
        _                 -> Nothing
 
  deftl inArr =
@@ -176,6 +177,7 @@ doBind env pb@(ProgBind vo aty sz (Right ae)) =
     ------------------------------------------------------------
     Generate e lam1         -> Generate <$> doE e <*> doLam1 lam1
     Use (AccArray dims payls) -> return$ Use$ AccArray [product dims] payls
+    Use' (AccArray dims payls)-> return$ Use'$ AccArray [product dims] payls
     Vr _                    -> return ae
     Unit ex                 -> Unit <$> doE ex
     Cond a b c              -> Cond <$> doE a <*> return b <*> return c
@@ -266,7 +268,7 @@ unFlatIDX :: ProgBind ArraySizeEstimate -> Exp -> MyM Exp
 unFlatIDX pb@(ProgBind _ aty _ _) flatidxE = do
     tmps <- lift$ sequence $ replicate (2*ndim) (genUniqueWith "idx1D")
     let loop [] [] _ acc = return (ETuple$ map EVr acc)
-        loop (tmp1:tmp2:tmpsRst) (coef1:coefsRst) leftover acc =
+        loop (_tmp1:_tmp2:tmpsRst) (coef1:coefsRst) leftover acc =
           -- Inefficient: no combined quotient/remainder operation.
           maybeLetM TInt (quotI leftover coef1) $ \ tmp1 -> 
            maybeLetM TInt (remI  leftover coef1) $ \ tmp2 -> 
