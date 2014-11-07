@@ -275,7 +275,7 @@ unFlatIDX pb@(ProgBind _ aty _ _) flatidxE = do
             loop tmpsRst coefsRst (EVr tmp2) (tmp1:acc)
         loop _ _ _ _ = error "OneDimensionalize.hs: the impossible happened."
     loop tmps (reverse coefs) flatidxE []
-  where    
+  where
     TArray ndim _ = aty
     coefs = getIdxCoefs pb    
 

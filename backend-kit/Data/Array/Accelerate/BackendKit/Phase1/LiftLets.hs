@@ -70,7 +70,7 @@ gatherLets prog = (reverse binds, prog')
        T.Generate _ _ _              -> return aex
        T.ZipWith a fn ae1 ae2        -> T.ZipWith a fn <$> loop ae1 <*> loop ae2 
        T.Map     a fn ae             -> T.Map     a fn <$> loop ae
-       T.TupleRefFromRight a ind ae  -> T.TupleRefFromRight a ind <$> loop ae
+       T.TupleRefFromRight a i l ae  -> T.TupleRefFromRight a i l  <$> loop ae
        T.Cond a ex ae1 ae2           -> T.Cond a ex <$> loop ae1 <*> loop ae2 
        T.Replicate aty slice ex ae   -> T.Replicate aty slice ex <$> loop ae
        T.Index    a slc      ae ex   -> T.Index a slc         <$> loop ae <*> return ex

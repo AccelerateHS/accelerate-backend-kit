@@ -117,7 +117,7 @@ staticTuples origae = aexp M.empty origae
        T.Map     rt fn ae       -> T.Map rt (lam1 tenv fn) (aexp tenv ae)
        T.Cond rt ex ae1 ae2     -> T.Cond rt (exp tenv ex) (aexp tenv ae1) (aexp tenv ae2)
        T.ArrayTuple rty aes     -> T.ArrayTuple rty $ L.map (aexp tenv) aes
-       T.TupleRefFromRight rt ind ae -> T.TupleRefFromRight rt ind (aexp tenv ae)
+       T.TupleRefFromRight rt i l ae -> T.TupleRefFromRight rt i l (aexp tenv ae)
        T.Replicate aty slice ex ae -> T.Replicate aty slice (exp tenv ex) (aexp tenv ae)
        T.Index     rt slc ae ex    -> T.Index rt slc (aexp tenv ae) (exp tenv ex)
        T.Fold  rt fn einit ae         -> T.Fold  rt (lam2 tenv fn) (exp tenv einit) (aexp tenv ae)

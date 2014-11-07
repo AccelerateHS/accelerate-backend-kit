@@ -245,12 +245,43 @@ convertAcc (OpenAcc cacc) =
       in do ls <- loop atup
             return$ mkArrayTuple (getAccTypePre eacc) (reverse ls)
 
-    Aprj ind expr ->
-      let len :: TupleIdx tr a -> Int
-          len ZeroTupIdx     = 0
-          len (SuccTupIdx x) = 1 + len x
-      in T.TupleRefFromRight (getAccTypePre eacc) (len ind) <$> convertAcc expr
+    -- Aprj ind expr ->
+    --   let len :: TupleIdx tr a -> Int
+    --       len ZeroTupIdx     = 0
+    --       len (SuccTupIdx x) = 1 + len x
+    --   in T.TupleRefFromRight (getAccTypePre eacc) (len ind) <$> convertAcc expr
+    Aprj idx ex -> doAprj idx ex 
+      where
 
+        doAprj :: forall aenv arrs a . (Sug.Arrays a, Sug.Arrays arrs)
+                  => TupleIdx (TupleRepr arrs) a
+                  -> OpenAcc aenv arrs
+                  -> EnvM TAExp 
+        doAprj idx ex = do 
+          let n = convertATupleIdx idx arrR
+              len = aTupleNumLeaves arrRTop
+          ex' <- convertAcc ex
+          return $ T.TupleRefFromRight (getAccType ex) n len ex' 
+          where
+            arrR = Sug.arrays (undefined :: arrs) :: Sug.ArraysR (Sug.ArrRepr arrs)
+            arrRTop = Sug.arrays (undefined :: a) :: Sug.ArraysR (Sug.ArrRepr a)
+          
+          -- = Sug.arrays (undefined :: a
+      -- let n = convertATupleIdx (idx 
+      --                  ty = getAccTypePre eacc
+      --                  nom = convertToTupleType $ getAccTypePre ex -- Sug.expType ex
+      --                  len = tupleNumLeaves ty
+      --              in T.TupleRefFromRight (getAccTypePre eacc) n len <$> T.convertAExps ex  
+-- Prj idx ex -> let n   = convertTupleIdx idx nom
+--                       ty  = getExpType e
+--                       nom = Sug.expType ex
+--                       len = tupleNumLeaves ty
+--                   in
+--                    -- maybtrace ("TUPLE NUM LEAVES: e:"++show ty++ " " ++ show len ++ " " ++ show n) $
+--                    T.ETupProject n len <$> convertExp ex
+
+ 
+ 
     Unit e        -> T.Unit (getAccTypePre eacc) <$> convertExp e
 
     Map     f acc       -> T.Map (getAccTypePre eacc) <$> convertFun1 f
@@ -347,6 +378,19 @@ convertSliceIndex (SliceNil)            = []
 convertSliceIndex (SliceAll   sliceIdx) = S.All   : convertSliceIndex sliceIdx
 convertSliceIndex (SliceFixed sliceIdx) = S.Fixed : convertSliceIndex sliceIdx
 
+-- convert Array Tuple indices
+convertATupleIdx :: TupleIdx t e -> Sug.ArraysR a -> Int
+convertATupleIdx ZeroTupIdx  _  = 0
+convertATupleIdx (SuccTupIdx i) (Sug.ArraysRpair r2 r1)  = sizeATup r1 + convertATupleIdx i r2
+
+sizeATup :: Sug.ArraysR a -> Int 
+sizeATup Sug.ArraysRunit         = 0
+sizeATup (Sug.ArraysRpair r1 r2) = sizeATup r1  + sizeATup r2 
+sizeATup Sug.ArraysRarray        = 1
+
+-- Compute Number of leaves in a Array Tuple
+aTupleNumLeaves :: Sug.ArraysR a -> Int
+aTupleNumLeaves = sizeATup 
 
 -- For now I'm leaving it as an index from the right with no length:
 -- BJS + T: Fixing this to take tuple structure into consideration. 

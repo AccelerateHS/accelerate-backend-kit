@@ -44,7 +44,7 @@ module Data.Array.Accelerate.DynamicAcc2 (
 
    -- * INTERNAL: Syntax-constructing functions, operating over
    -- `Sealed`, dynamic representations.
-   constantE, useD, unitD, mapD, generateD, foldD, dbgtrace
+   constantE, dbgtrace,
 
 ) where
 
@@ -61,8 +61,7 @@ import qualified Data.Array.Accelerate.AST                      as AST
 import qualified Data.Array.Accelerate.Type                     as T
 import qualified Data.Array.Accelerate.Array.Sugar              as Sugar
 
-import Control.Exception                                        ( assert )
-import Data.Dynamic                                             ( Typeable, Dynamic, fromDynamic, toDyn, typeOf )
+import Data.Dynamic                                             ( Typeable, Dynamic, fromDynamic, toDyn )
 import Data.Map                                                 as M
 import Prelude                                                  as P hiding ( exp )
 import Text.PrettyPrint.GenericPretty                           ( Out(doc) )
@@ -110,6 +109,12 @@ data SealedExp = SealedExp
   }
   deriving Show
 
+data SealedFun = SealedFun
+  { funTyIn     :: [S.Type]
+  , funTyOut    :: S.Type
+  , funDyn      :: Dynamic
+  } deriving Show
+
 data SealedAcc = SealedAcc
   { arrTy       :: ArrTy
   , accDyn      :: Dynamic
@@ -128,6 +133,12 @@ sealExp :: forall a. (Elt a, Typeable a) => A.Exp a -> SealedExp
 sealExp x = SealedExp ety (toDyn x)
  where
   ety = expType (undefined :: AST.Exp () a)
+
+sealFun1 :: forall a b. (Elt a, Elt b) => (A.Exp a -> A.Exp b) -> SealedFun
+sealFun1 f = SealedFun [ta] tb (toDyn f)
+  where
+    ta = expType (undefined :: AST.Exp () a)
+    tb = expType (undefined :: AST.Exp () b)
 
 sealAcc :: (Arrays a, Typeable a) => Acc a -> SealedAcc
 sealAcc x =
@@ -149,12 +160,25 @@ downcastE (SealedExp _ d) =
       error$"Attempt to unpack SealedExp "++show d
          ++ ", expecting type Exp "++ show (toDyn (unused::a))
 
-downcastF1 :: forall a b. (Typeable a, Typeable b) => SealedExp -> (A.Exp a -> A.Exp b)
-downcastF1 (SealedExp _ d) =
+downcastF1
+    :: forall a b. (Typeable a, Typeable b)
+    => SealedFun
+    -> (A.Exp a -> A.Exp b)
+downcastF1 (SealedFun _ _ d) =
   case fromDynamic d of
     Just e      -> e
-    Nothing     -> error $ printf "Attempt to unpack SealedExp %s, expecting type Exp %s"
+    Nothing     -> error $ printf "Attempt to unpack SealedFun %s, expecting type Exp %s"
                               (show d) (show (toDyn (unused :: a -> b)))
+
+downcastF2
+    :: forall a b c. (Typeable a, Typeable b, Typeable c)
+    => SealedFun
+    -> (A.Exp a -> A.Exp b -> A.Exp c)
+downcastF2 (SealedFun _ _ d) =
+  case fromDynamic d of
+    Just e      -> e
+    Nothing     -> error $ printf "Attempt to unpack SealedFun %s, expecting type Exp %s"
+                              (show d) (show (toDyn (unused :: a -> b -> c)))
 
 unused :: a
 unused = error "This dummy value should not be used"
@@ -230,7 +254,7 @@ data SealedShapeType where
   SealedShapeType :: Shape sh => Phantom sh -> SealedShapeType
 
 data SealedSliceType where
-  SealedSliceType :: (Sugar.Slice s, Elt s) => Phantom s -> SealedSliceType
+  SealedSliceType :: (Sugar.Slice sl, Elt sl) => Phantom sl -> SealedSliceType
   deriving Typeable
 
 -- data SliceIndex ix slice coSlice sliceDim where
@@ -319,158 +343,221 @@ arrayTypeD oth = error$"arrayTypeD: expected array type, got "++show oth
 arrayTypeD' :: ArrTy -> SealedArrayType
 arrayTypeD' (ArrTy t d) = arrayTypeD (TArray d t)
 
--- | Construct a Haskell type from an Int!  Why not?
+
+-- | Construct a Haskell type from an Int!  Why not?!
+--
 shapeTypeD :: Int -> SealedShapeType
-shapeTypeD 0 = SealedShapeType (Phantom :: Phantom Z)
 shapeTypeD n | n < 0 = error "shapeTypeD: Cannot take a negative number!"
-shapeTypeD n =
-  case shapeTypeD (n-1) of
-    SealedShapeType (Phantom :: Phantom sh) ->
-      SealedShapeType (Phantom :: Phantom (sh :. Int))
+shapeTypeD 0 = SealedShapeType (Phantom :: Phantom Z)
+shapeTypeD n
+  | SealedShapeType (Phantom :: Phantom sh) <- shapeTypeD (n-1)
+  = SealedShapeType (Phantom :: Phantom (sh :. Int))
 
 
 -- | Dynamically construct an inhabitant of the Slice class.
+--
 sliceTypeD :: S.SliceType -> SealedSliceType
-sliceTypeD [] = SealedSliceType (Phantom :: Phantom Z)
-sliceTypeD (S.Fixed:rst) =
-  case sliceTypeD rst of
-    SealedSliceType (_ :: Phantom slc) ->
-      SealedSliceType (Phantom :: Phantom (slc :. Int))
-sliceTypeD (S.All:rst) =
-  case sliceTypeD rst of
-    SealedSliceType (_ :: Phantom slc) ->
-      SealedSliceType (Phantom :: Phantom (slc :. All))
+sliceTypeD []
+  = SealedSliceType (Phantom :: Phantom Z)
+
+sliceTypeD (S.Fixed : sl)
+  | SealedSliceType (_ :: Phantom sl) <- sliceTypeD sl
+  = SealedSliceType (Phantom :: Phantom (sl :. Int))
+
+sliceTypeD (S.All : sl)
+  | SealedSliceType (_ :: Phantom sl) <- sliceTypeD sl
+  = SealedSliceType (Phantom :: Phantom (sl :. All))
+
 
 --------------------------------------------------------------------------------
 -- AST Construction
 --------------------------------------------------------------------------------
 
+-- | Convert a closed `SimpleAcc` expression (no free vars) into a fully-typed
+--   (but sealed) Accelerate expression.
+--
+convertAcc :: S.AExp -> SealedAcc
+convertAcc = convertOpenAcc emptyEnvPack
 
--- | Dynamically typed variant of `Data.Array.Accelerate.unit`.
-unitD :: SealedEltTuple -> SealedExp -> SealedAcc
-unitD elt exp =
-  dbgtrace (" ** starting unitD: "++show (elt,exp)) $
-  case elt of
-    SealedEltTuple (t :: EltTuple et) ->
-      case t of
-        UnitTuple -> sealAcc$ unit$ constant ()
-        SingleTuple (_ :: T.ScalarType s) ->
-          sealAcc$ unit (downcastE exp :: A.Exp  s)
-        PairTuple (_ :: EltTuple l) (_ :: EltTuple r) ->
-          sealAcc$ unit (downcastE exp :: A.Exp  (l,r))
-        ThreeTuple (_ :: EltTuple a) (_ :: EltTuple b) (_ :: EltTuple c) ->
-          sealAcc$ unit (downcastE exp :: A.Exp  (a,b,c))
+convertOpenAcc :: EnvPack -> S.AExp -> SealedAcc
+convertOpenAcc env@(EnvPack _ _ mp) ae =
+  let getAVr v = let (_,sa) = mp # v in expectAVar sa
+  in
+  case ae of
+    S.Vr vr                     -> getAVr vr
+    S.Use accarr                -> useD accarr
+    S.Unit e                    -> unitD env e
+    S.Map f a                   -> mapD env f a
+    S.ZipWith f a b             -> zipWithD env f a b
+    S.Generate sh f             -> generateD env sh f
+    S.Backpermute sh p a        -> backpermuteD env sh p a
+    S.Fold f z a                -> foldD env f z a
 
--- | Dynamically-typed variant of `Data.Array.Accelerate.use`.  However, this version
--- is less powerful, it only takes a single, logical array, not a tuple of arrays.
+--    S.Replicate slc inE inA ->
+--      replicateD (sliceTypeD slc) (convertOpenExp env inE) (getAVr inA)
+
+    _ -> error$"FINISHME/DynamicAcc: convertOpenAcc: unhandled array operation: " ++show ae
+
+
+-- Dynamic conversion of array operations
+-- --------------------------------------
+
+unitD :: EnvPack -> S.Exp -> SealedAcc
+unitD env@(EnvPack _ _ mp) e
+  | SealedEltTuple (_ :: EltTuple e)    <- scalarTypeD te
+  = let
+        e' :: Exp e
+        e' = downcastE (convertOpenExp env e)
+    in
+    sealAcc $ A.unit e'
+  where
+    typeEnv     = M.map P.fst mp
+    te          = S.recoverExpType typeEnv e
+
+
+-- | Dynamically-typed variant of `Data.Array.Accelerate.use`.  However, this
+-- version is less powerful, it only takes a single, logical array, not a tuple
+-- of arrays.
+--
 useD :: S.AccArray -> SealedAcc
-useD arr =
-  case sty of
-    SealedArrayType (Phantom :: Phantom aT) ->
-      sealAcc$ A.use$
-      repackAcc (unused::Acc aT) [arr]
- where
-   dty = S.accArrayToType arr
-   sty = arrayTypeD dty
+useD arr
+  | SealedArrayType (Phantom :: Phantom a) <- arrayTypeD (S.accArrayToType arr)
+  = sealAcc $ A.use (repackAcc (unused:: Acc a) [arr])
 
-generateD :: SealedExp -> (SealedExp -> SealedExp) ->
-        S.Type -> SealedAcc
-generateD indSealed bodfn outArrTy =
-  dbgtrace (" ** starting generateD fun: outArrTy "++show (outArrTy)) $
-      let (TArray dims outty) = outArrTy in
-       case (shapeTypeD dims, scalarTypeD outty) of
-         (SealedShapeType (_ :: Phantom shp),
-          SealedEltTuple (outET :: EltTuple outT)) ->
-          let
-            rawfn :: Exp shp -> Exp outT
-            rawfn x =
-              dbgtrace (" ** Inside generate scalar fun, downcasting bod "++
-                     show (bodfn (sealExp x))++" to "++ show (typeOf (undefined::outT))) $
-              downcastE (bodfn (sealExp x))
-            dimE :: Exp shp
-            dimE = dbgtrace (" ** Generate: downcasting dim "++show indSealed++" Expecting Z-based index of dims "++show dims) $
-                   downcastE indSealed
-            acc = A.generate dimE rawfn
+-- | Dynamically-typed variant of `Data.Array.Accelerate.generate`.
+--
+-- TLM: Backend kit doesn't represent indices properly, so we need can't use the
+--      usual 'convertFun1'. Instead, we need to insert a type conversion from
+--      indices to tuples manually.
+--
+generateD :: EnvPack -> S.Exp -> S.Fun1 S.Exp -> SealedAcc
+generateD env@(EnvPack _ _ mp) sh f@(S.Lam1 (vix,tix) body)
+  | SealedShapeType (_ :: Phantom sh)   <- shapeTypeD dim
+  , SealedEltTuple  (_ :: EltTuple e)   <- scalarTypeD te
+  = let
+        f' :: Exp sh -> Exp e
+        f' x =
+          let ix    = indexToTup tix $ sealExp x
+              env'  = extendE vix tix ix env
           in
-           dbgtrace (" ** .. Body of generateD: raw acc: "++show acc) $
-           sealAcc acc
+          downcastE $ convertOpenExp env' body
+
+        sh' :: Exp sh
+        sh' = downcastE (tupToIndex tsh (convertOpenExp env sh))
+    in
+    sealAcc $ A.generate sh' f'
+  where
+    typeEnv     = M.map P.fst mp
+    dim         = shapeTyLen tsh
+    tsh         = S.recoverExpType typeEnv sh
+    te          = S.recoverFun1Type typeEnv f
+
+mapD :: EnvPack -> S.Fun1 S.Exp -> S.Var -> SealedAcc
+mapD (EnvPack _ _ mp) f avar
+  | SealedShapeType (_ :: Phantom sh)   <- shapeTypeD dim
+  , SealedEltTuple  (_ :: EltTuple a)   <- scalarTypeD ta
+  , SealedEltTuple  (_ :: EltTuple b)   <- scalarTypeD tb
+  = let
+        f' :: Exp a -> Exp b
+        f' = downcastF1 (convertFun1 f tb)
+
+        acc :: Acc (Array sh a)
+        acc = downcastA (expectAVar sa)
+    in
+    sealAcc $ A.map f' acc
+  where
+    typeEnv             = M.map P.fst mp
+    (arrTy, sa)         = mp # avar
+    TArray dim ta       = arrTy
+    tb                  = S.recoverFun1Type typeEnv f
+
+zipWithD :: EnvPack -> S.Fun2 S.Exp -> S.Var -> S.Var -> SealedAcc
+zipWithD (EnvPack _ _ mp) f avar1 avar2
+  | SealedShapeType (_ :: Phantom sh)   <- shapeTypeD dim
+  , SealedEltTuple  (_ :: EltTuple a)   <- scalarTypeD ta
+  , SealedEltTuple  (_ :: EltTuple b)   <- scalarTypeD tb
+  , SealedEltTuple  (_ :: EltTuple c)   <- scalarTypeD tc
+  = let
+        f' :: Exp a -> Exp b -> Exp c
+        f' = downcastF2 (convertFun2 f tc)
+
+        acc1 :: Acc (Array sh a)
+        acc1 = downcastA (expectAVar sa1)
+
+        acc2 :: Acc (Array sh b)
+        acc2 = downcastA (expectAVar sa2)
+    in
+    sealAcc $ A.zipWith f' acc1 acc2
+  where
+    typeEnv                     = M.map P.fst mp
+    (TArray dim ta, sa1)        = mp # avar1
+    (TArray _   tb, sa2)        = mp # avar2
+    tc                          = S.recoverFun2Type typeEnv f
 
 
-mapD :: (SealedExp -> SealedExp) -> SealedAcc -> S.Type -> SealedAcc
-mapD bodfn sealedInArr outElmTy =
-      let (ArrTy inty dims) = arrTy sealedInArr
-          newAty = arrayTypeD (TArray dims outElmTy)
-      in
-       -- TODO: Do we really need outElmTy here?
-       case (shapeTypeD dims, scalarTypeD inty, scalarTypeD outElmTy) of
-         (SealedShapeType (_ :: Phantom shp),
-          SealedEltTuple (inET  :: EltTuple inT),
-          SealedEltTuple (outET :: EltTuple outT)) ->
-          let
-            rawfn :: Exp inT -> Exp outT
-            rawfn x = downcastE (bodfn (sealExp x))
-            realIn :: Acc (Array shp inT)
-            realIn = downcastA sealedInArr
+{--
+replicateD :: EnvPack -> S.SliceType -> S.Exp -> S.Var -> SealedAcc
+replicateD env@(EnvPack _ _ mp) sliceIndex slix avar
+  | SealedSliceType (_ :: Phantom slix)         <- sliceTypeD sliceIndex
+  , SealedEltTuple  (_ :: EltTuple slix)        <- scalarTypeD tslix
+  , SealedEltTuple  (_ :: EltTuple a)           <- scalarTypeD ta
+  = let
+        slix' :: Exp slix
+        slix' = downcastE (convertOpenExp env slix)
+
+        acc :: Acc (Array (Sugar.SliceShape slix) a)
+        acc = downcastA (expectAVar sa)
+    in
+    sealAcc $ A.replicate slix' acc
+  where
+    typeEnv             = M.map P.fst mp
+    (TArray dim ta, sa) = mp # avar
+    tslix               = S.recoverExpType typeEnv slix
+--}
+
+backpermuteD :: EnvPack -> S.Exp -> S.Fun1 S.Exp -> S.Var -> SealedAcc
+backpermuteD env@(EnvPack _ _ mp) sh' (S.Lam1 (vix,tix) body) avar
+  | SealedShapeType (_ :: Phantom sh)   <- shapeTypeD dim
+  , SealedShapeType (_ :: Phantom sh')  <- shapeTypeD dim'
+  , SealedEltTuple  (_ :: EltTuple e)   <- scalarTypeD ta
+  = let
+        sh'' :: Exp sh'
+        sh'' = downcastE (tupToIndex tix (convertOpenExp env sh'))
+
+        p' :: Exp sh' -> Exp sh
+        p' x =
+          let ix'       = indexToTup tix $ sealExp x
+              env'      = extendE vix tix ix' env
           in
-           -- Here we suffer PAIN to recover the Elt/Typeable instances:
-           case (inET, outET) of
-             (UnitTuple,     UnitTuple)     -> sealAcc $ A.map rawfn realIn
-             (SingleTuple _, UnitTuple)     -> sealAcc $ A.map rawfn realIn
-             (PairTuple _ _, UnitTuple)     -> sealAcc $ A.map rawfn realIn
-             (ThreeTuple {}, UnitTuple)     -> sealAcc $ A.map rawfn realIn
-             (UnitTuple,     SingleTuple _) -> sealAcc $ A.map rawfn realIn
-             (SingleTuple _, SingleTuple _) -> sealAcc $ A.map rawfn realIn
-             (PairTuple _ _, SingleTuple _) -> sealAcc $ A.map rawfn realIn
-             (ThreeTuple {}, SingleTuple _) -> sealAcc $ A.map rawfn realIn
-             (UnitTuple,     PairTuple _ _) -> sealAcc $ A.map rawfn realIn
-             (SingleTuple _, PairTuple _ _) -> sealAcc $ A.map rawfn realIn
-             (PairTuple _ _, PairTuple _ _) -> sealAcc $ A.map rawfn realIn
-             (ThreeTuple {}, PairTuple _ _) -> sealAcc $ A.map rawfn realIn
-             (UnitTuple,     ThreeTuple {}) -> sealAcc $ A.map rawfn realIn
-             (SingleTuple _, ThreeTuple {}) -> sealAcc $ A.map rawfn realIn
-             (PairTuple _ _, ThreeTuple {}) -> sealAcc $ A.map rawfn realIn
-             (ThreeTuple {}, ThreeTuple {}) -> sealAcc $ A.map rawfn realIn
+          downcastE $ tupToIndex tix (convertOpenExp env' body)
 
-zipWithD :: (SealedExp -> SealedExp -> SealedExp) -> SealedAcc -> SealedAcc ->
-            S.Type -> S.Type  -> S.Type -> SealedAcc
-zipWithD bodfn sealedInArr1 sealedInArr2 inArrTy1 inArrTy2 outElmTy =
-  error "FINISHME/DynamicAcc - zipWithD"
+        acc :: Acc (Array sh e)
+        acc = downcastA (expectAVar sa)
+    in
+    sealAcc $ A.backpermute sh'' p' acc
+  where
+    typeEnv             = M.map P.fst mp
+    (TArray dim ta, sa) = mp # avar
+    dim'                = shapeTyLen tix
 
 
-replicateD :: SealedSliceType -> SealedExp -> SealedAcc -> SealedAcc
-replicateD slc exp arr =
-  case (slc) of  -- , scalarTypeD (expTy exp)
-    (SealedSliceType (_::Phantom slc)) ->
---     SealedEltTuple (inET  :: EltTuple inT) ) ->
-     let e :: Exp slc
-         e = error "FINISHME/DynamicAcc - replicateD"
---         _ = A.replicate e
-     in
-      error "FINISHME/DynamicAcc - replicateD"
+foldD :: EnvPack -> S.Fun2 S.Exp -> S.Exp -> S.Var -> SealedAcc
+foldD env@(EnvPack _ _ mp) f z avar
+  | SealedShapeType (_ :: Phantom sh)   <- shapeTypeD (dim-1)
+  , SealedEltTuple  (_ :: EltTuple a)   <- scalarTypeD ta
+  = let
+        f' :: Exp a -> Exp a -> Exp a
+        f' = downcastF2 (convertFun2 f ta)
 
-foldD :: (SealedExp -> SealedExp -> SealedExp) -> SealedExp -> SealedAcc ->
-         S.Type -> SealedAcc
-foldD bodfn initE sealedInArr inArrTy =
-      let (TArray dims inty) = inArrTy
-          -- Knock off one dimension:
-          newAty = arrayTypeD (TArray (dims - 1) inty)
-      in
-       case (shapeTypeD (dims - 1), scalarTypeD inty) of
-         (SealedShapeType (_ :: Phantom shp),
-          SealedEltTuple (inET  :: EltTuple inT)) ->
-           let
-               rawfn :: Exp inT -> Exp inT -> Exp inT
-               rawfn x y = downcastE (bodfn (sealExp x) (sealExp y))
-               realIn :: Acc (Array (shp :. Int) inT)
-               realIn = downcastA sealedInArr
-               init :: Exp inT
-               init = downcastE initE
-           in
-            case inET of
-              (UnitTuple    )     -> sealAcc $ A.fold rawfn init realIn
-              (SingleTuple _)     -> sealAcc $ A.fold rawfn init realIn
-              (PairTuple _ _)     -> sealAcc $ A.fold rawfn init realIn
-              (ThreeTuple _ _ _)  -> sealAcc $ A.fold rawfn init realIn
+        z' :: Exp a
+        z' = downcastE (convertOpenExp env z)
+
+        acc :: Acc (Array (sh :. Int) a)
+        acc = downcastA (expectAVar sa)
+    in
+    sealAcc $ A.fold f' z' acc
+  where
+    (TArray dim ta, sa) = mp # avar
 
 
 --------------------------------------------------------------------------------
@@ -542,15 +629,53 @@ resealTup components =
 
 -- | Convert open scalar functions
 --
-convertOpenFun1 :: S.Fun1 S.Exp -> EnvPack -> SealedExp -> SealedExp
-convertOpenFun1 (S.Lam1 (var,ty) body) env x =
-  convertOpenExp (extendE var ty x env) body
+convertFun1 :: S.Fun1 S.Exp -> S.Type -> SealedFun
+convertFun1 = convertOpenFun1 emptyEnvPack
 
-convertOpenFun2 :: S.Fun2 S.Exp -> EnvPack -> SealedExp -> SealedExp -> SealedExp
-convertOpenFun2 (S.Lam2 (var1,ty1) (var2,ty2) body) env x1 x2 =
-  convertOpenExp (extendE var2 ty2 x2 (extendE var1 ty1 x1 env)) body
+convertFun2 :: S.Fun2 S.Exp -> S.Type -> SealedFun
+convertFun2 = convertOpenFun2 emptyEnvPack
+
+
+-- | Convert open scalar functions
+--
+convertOpenFun1 :: EnvPack -> S.Fun1 S.Exp -> S.Type -> SealedFun
+convertOpenFun1 env (S.Lam1 (va,ta) body) tb
+  | SealedEltTuple (_ :: EltTuple a) <- scalarTypeD ta
+  , SealedEltTuple (_ :: EltTuple b) <- scalarTypeD tb
+  = let
+        f :: A.Exp a -> A.Exp b
+        f x =
+          let x'   = sealExp x
+              env' = extendE va ta x' env
+          in
+          downcastE $ convertOpenExp env' body
+    in
+    SealedFun [ta] tb (toDyn f)
+
+
+convertOpenFun2 :: EnvPack -> S.Fun2 S.Exp -> S.Type -> SealedFun
+convertOpenFun2 env (S.Lam2 (va,ta) (vb,tb) body) tc
+  | SealedEltTuple (_ :: EltTuple a) <- scalarTypeD ta
+  , SealedEltTuple (_ :: EltTuple b) <- scalarTypeD tb
+  , SealedEltTuple (_ :: EltTuple c) <- scalarTypeD tc
+  = let
+        f :: A.Exp a -> A.Exp b -> A.Exp c
+        f x y =
+          let x'   = sealExp x
+              y'   = sealExp y
+              env' = extendE vb tb y' (extendE va ta x' env)    -- TLM: which order to push things in?
+          in
+          downcastE $ convertOpenExp env' body
+    in
+    SealedFun [ta,tb] tc (toDyn f)
+
 
 -- | Convert a closed scalar expression
+--
+-- TLM: Note that SimpleAcc does not do what you would expect it to do. What is
+--      a closed scalar expression in properly typed Accelerate, often needs to
+--      be sealed with the environment ('convertOpenExp'). This seems wrong to
+--      me...
 --
 convertExp :: S.Exp -> SealedExp
 convertExp = convertOpenExp emptyEnvPack
@@ -565,8 +690,8 @@ convertOpenExp ep@(EnvPack envE envA mp) ex
   $ dbgtrace(printf " @ Converted exp result: %s " (show result))
   $ result
   where
-    cvtF1 :: S.Fun1 S.Exp -> SealedExp -> SealedExp
-    cvtF1 f = convertOpenFun1 f ep
+    cvtF1 :: S.Fun1 S.Exp -> S.Type -> SealedFun
+    cvtF1 = convertOpenFun1 ep
 
     cvtE :: S.Exp -> SealedExp
     cvtE e =
@@ -704,12 +829,13 @@ convertOpenExp ep@(EnvPack envE envA mp) ex
     --
     ewhile :: S.Fun1 S.Exp -> S.Fun1 S.Exp -> S.Exp -> SealedExp
     ewhile p f e
-      | SealedEltTuple (_ :: EltTuple e) <- scalarTypeD (S.recoverExpType typeEnv e)
+      | te                               <- S.recoverExpType typeEnv e
+      , SealedEltTuple (_ :: EltTuple e) <- scalarTypeD te
       = let p' :: Exp e -> Exp Bool
-            p' = downcastF1 (cvtF1 p undefined)
+            p' = downcastF1 (cvtF1 p S.TBool)
 
             f' :: Exp e -> Exp e
-            f' = downcastF1 (cvtF1 f undefined)
+            f' = downcastF1 (cvtF1 f te)
 
             e' :: Exp e
             e' = downcastE (cvtE e)
@@ -861,10 +987,10 @@ convertOpenExp ep@(EnvPack envE envA mp) ex
 -- this distinction, which involves "casting" indices to tuples and
 -- tuples to indices at the appropriate places.
 indexToTup :: S.Type -> SealedExp -> SealedExp
-indexToTup ty ex =
-  dbgtrace (" -- starting indexToTup... ")$
-  dbgtrace (" -- indexTo tup, converting "++show (ty,ex)++" to "++ show res)
-   res
+indexToTup ty ex
+  = dbgtrace (" -- starting indexToTup... ")
+  $ dbgtrace (" -- indexTo tup, converting "++show (ty,ex)++" to "++ show res)
+  $ res
   where
     res =
      case ty of
@@ -949,72 +1075,6 @@ shapeTyLen TInt        = 1
 shapeTyLen (TTuple ls) | P.all (==TInt) ls = P.length ls
 shapeTyLen ty = error $ "shapeTyLen: invalid shape type: "++show ty
 
-convertAcc :: S.AExp -> SealedAcc
-convertAcc = convertOpenAcc emptyEnvPack
-
--- | Convert a closed `SimpleAcc` expression (no free vars) into a fully-typed (but
--- sealed) Accelerate one.
-convertOpenAcc :: EnvPack -> S.AExp -> SealedAcc
-convertOpenAcc env@(EnvPack _ _ mp) ae =
-  let typeEnv  = M.map P.fst mp
-      getAVr v = let (_,sa) = mp # v in expectAVar sa
-  in
-  case ae of
-    S.Vr vr      -> getAVr vr
-    S.Use accarr -> useD accarr
-    S.Unit ex ->
-      let ex' = convertOpenExp env ex
-          ty  = S.recoverExpType (M.map P.fst mp) ex
-      in unitD (scalarTypeD ty) ex'
-
-    S.Generate initE (S.Lam1 (vr,ty) bod) ->
-      let indexTy = tupTyToIndex ty -- "ty" is a plain tuple.
-          bodfn ex  = let env' = extendE vr ty (indexToTup ty ex) env in
-                      dbgtrace ("Generate/bodyfun called: extended environment to: "++show env')$
-                      convertOpenExp env' bod
-          bodty     = S.recoverExpType (M.insert vr ty typeEnv) bod
-          -- TODO: Replace this by simply passing in the result type to convertAcc:
-          dims = shapeTyLen$ S.recoverExpType typeEnv initE
-          outArrTy  = TArray dims bodty
-          init' = tupToIndex ty$ convertOpenExp env initE
-      in
-       dbgtrace ("Generate: computed body type: "++show bodty) $
-       generateD init' bodfn outArrTy
-
-    S.Map (S.Lam1 (vr,ty) bod) inA ->
-      let bodfn ex    = convertOpenExp (extendE vr ty ex env) bod
-          bodty       = S.recoverExpType (M.insert vr ty $ M.map P.fst mp) bod
-      in mapD bodfn (getAVr inA) bodty
-
-    S.ZipWith (S.Lam2 (vr1,ty1) (vr2,ty2) bod) inA inB ->
-      let bodfn e1 e2 = let env' = extendE vr2 ty2 e2 $
-                                   extendE vr1 ty1 e1 env
-                        in convertOpenExp env' bod
-          aty1@(TArray dims1 _) = P.fst (mp # inA)
-          aty2@(TArray dims2 _) = P.fst (mp # inB)
-          mp' = M.insert vr2 ty2 $
-                M.insert vr1 ty1 typeEnv
-          bodty = S.recoverExpType mp' bod
-      in
-      assert (dims1 == dims2) $
-      zipWithD bodfn (getAVr inA) (getAVr inB) aty1 aty2 bodty
-
-    S.Fold (S.Lam2 (v1,ty) (v2,ty2) bod) initE inA ->
-      dbgtrace ("FOLD CASE.. fold of "++show (mp # inA))$
-       let init' = convertOpenExp env initE
-           bodfn x y = convertOpenExp (extendE v1 ty x$ extendE v2 ty y env) bod
-           aty@(TArray _ inty) = P.fst (mp # inA)
-           sealedInArr = getAVr inA
-       in
-        if ty /= ty2 || ty2 /= inty
-        then error "Mal-formed Fold.  Input types to Lam2 must match eachother and array input."
-        else foldD bodfn init' sealedInArr aty
-
-    S.Replicate slc inE inA ->
-      replicateD (sliceTypeD slc) (convertOpenExp env inE) (getAVr inA)
-
-
-    _ -> error$"FINISHME/DynamicAcc: convertOpenAcc: unhandled array operation: " ++show ae
 
 -- | Convert an entire SimpleAcc `Prog` into a complete, closed, fully
 -- typed Accelerate AST.  To use this AST, however, you will need to

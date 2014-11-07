@@ -83,7 +83,10 @@ doBinds (ProgBind vo voty sz (Right ae) : rest) = do
                  ProgBind vo voty sz (Right ae') :
                  rest'      
   where
-    TArray vo_ndims _ = voty
+    vo_ndims = case voty of
+                TArray n _ -> n
+                a -> error $ "explicitShapes: doBinds got unexpected =" ++ show voty
+--    TArray vo_ndims _ = voty
 
     -- handleUnknownSize returns:
     --   (1) a list of new binds

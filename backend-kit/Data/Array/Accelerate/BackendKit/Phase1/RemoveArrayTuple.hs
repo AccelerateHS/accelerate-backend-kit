@@ -74,7 +74,8 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
                  unVar x = error$ "removeArrayTuple: expecting the final result expressions "++
                                   "to be varrefs at this point, instead received: "++show x
              return $ S.Prog { progBinds   = finalbinds,
-                               progResults = WithoutShapes (L.map unVar $ flattenTT newbod),
+                              --progResults = WithoutShapes (L.map unVar $ flattenTT newbod),
+                               progResults = WithoutShapes (L.map unVar $ newbod),
                                progType    = (getAnnot bod),
                                typeEnv     = M.fromList$ L.map (\(S.ProgBind v t _ _) -> (v,t)) finalbinds,
                                -- FIXME: variables have ALREADY been generated before
@@ -127,7 +128,8 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
      rhsScalars <- dischargeNewScalarBinds 
      
      let (macc',thisbnd) = 
-           case L.map Right $ flattenTT rhs' of
+           --case L.map Right $ flattenTT rhs' of
+           case L.map Right $ rhs' of 
              [ae] -> (macc, [(vr,ty,ae)]) -- No fresh names.
              unpacked ->
                let subnames  = freshNames vr (length unpacked)
@@ -153,7 +155,7 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
    
    -- Process the right hand side of a binding, breakup up Conds and
    -- rewriting variable references to their new detupled targets.
-   dorhs :: M.Map S.Var [S.Var] -> TAExp -> CollectM (TempTree S.AExp)
+   dorhs :: M.Map S.Var [S.Var] -> TAExp -> CollectM [S.AExp] -- TempTree S.AExp
    -- The eenv here maps old names onto a list of new "subnames" for
    -- tuple components.  
    dorhs eenv aex = 
@@ -162,23 +164,36 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
        T.Use ty arr | isTupledTy ty -> 
               let --flatTy = deepDetupleTy ty 
                   newArrays = S.unzipAccArray arr
-              in return $ listToTT $ L.map (TLeaf . S.Use) newArrays 
-       T.Use ty arr -> return$ TLeaf$ S.Use arr
+              in return $ L.map S.Use newArrays
+                 -- listToTT $ L.map (TLeaf . S.Use) newArrays 
+       T.Use ty arr -> return [S.Use arr]  -- TLeaf$ S.Use arr
        
        -- Variable references to tuples need to be deconstructed.
        -- The original variable will disappear.
        T.Vr _ vr -> case M.lookup vr eenv of  
-                     Just names -> return $ listToTT (L.map (TLeaf . S.Vr) names)
-                     Nothing    -> return $ TLeaf (S.Vr vr)
+                     Just names -> return $ L.map S.Vr names 
+                                   -- listToTT (L.map (TLeaf . S.Vr) names)
+                     Nothing    -> return [S.Vr vr]    -- TLeaf (S.Vr vr)
 
        -- Have to consider flattening of nested array tuples here:
        -- T.ArrayTuple ls -> concatMap (dorhs eenv) $ ls
        -- BJS + MV: returns a tree, why call it flatten
-       T.ArrayTuple _ ls -> listToTT <$> mapM (dorhs eenv) ls      
+       T.ArrayTuple _ ls -> do
+        ls' <- mapM (dorhs eenv) ls
+        return $ L.concat ls' 
+         -- listToTT <$> mapM (dorhs eenv) ls      
 
-       T.TupleRefFromRight _ ind ae -> do
-         rhs' <- dorhs eenv ae
-         return $ indexTT rhs' ind 
+       -- T.TupleRefFromRight _ ind ae -> do
+       --   rhs' <- dorhs eenv ae
+       --   return $ indexTT rhs' ind 
+
+       T.TupleRefFromRight _ i l ae -> do 
+         rhs' <- dorhs eenv ae --tuple
+         let prj = reverse . take l . drop i . reverse
+             e   = prj rhs'
+         when (length e /= l) $
+            error $ "RemoveArrayTuple: TupleRefFromRight: e=" ++ show e ++ " l=" ++ show l ++ " i=" ++ show i ++ " ae=" ++ show ae
+         return $ e -- indexTT rhs' ind 
 
        -- Conditionals with tuples underneath need to be broken up:
        T.Cond ty ex ae1 ae2 | isTupledTy ty -> 
@@ -201,20 +216,25 @@ removeArrayTuple (binds, bod) = evalState main (0,[])
                 ex' = if triv then ex' else S.EVr fresh
                 unVar (S.Vr v) = v
                 unVar _ = error "Accelerate backend invariant-broken."
-                ls1 = L.map unVar (flattenTT ae1') -- These must be fully flattened if there are nested tuples.
-                ls2 = L.map unVar (flattenTT ae2')
-                result = listOfLeaves $ L.map (uncurry $ S.Cond ex') (zip ls1 ls2)
+                ls1 = L.map unVar ae1' --(flattenTT ae1') -- These must be fully flattened if there are nested tuples.
+                ls2 = L.map unVar ae2' -- (flattenTT ae2')
+                --result = listOfLeaves $ L.map (uncurry $ S.Cond ex') (zip ls1 ls2)
+                result = L.map (uncurry $ S.Cond ex') (zip ls1 ls2)
             return result          
 
        T.Cond _ty ex (T.Vr _ v1) (T.Vr _ v2) -> 
 --            return$ TLeaf$ S.Cond (cE ex) (fromLeaf (S.Vr v1) (fromLeaf (S.Vr v2)))
-              return$ TLeaf$ S.Cond (cE ex) v1 v2
+              --return$ TLeaf$ S.Cond (cE ex) v1 v2
+              return$ [S.Cond (cE ex) v1 v2]
          
        -- The rest is BOILERPLATE:      
        ----------------------------------------      
-       T.Unit _ty ex               -> return$ TLeaf$ S.Unit (cE ex)
+       --T.Unit _ty ex               -> return$ TLeaf$ S.Unit (cE ex)
+       T.Unit _ty ex               -> return$ [S.Unit (cE ex)]
        
-       T.Generate aty ex fn        -> return$ TLeaf$ S.Generate (cE ex) (cF fn)
+       --T.Generate aty ex fn        -> return$ TLeaf$ S.Generate (cE ex) (cF fn)
+       T.Generate aty ex fn        -> return$ [S.Generate (cE ex) (cF fn)]
+       
        T.ZipWith _ fn (T.Vr _ v1) (T.Vr _ v2)  -> lfr$ S.ZipWith (cF2 fn) v1 v2 
        T.Map     _ fn (T.Vr _ v)               -> lfr$ S.Map     (cF fn)  v
        T.Replicate aty slice ex (T.Vr _ v)     -> lfr$ S.Replicate slice (cE ex) v
@@ -273,12 +293,17 @@ isTrivial (T.EConst _) = True
 isTrivial _            = False
 -- This will pretty much always be false for any realistic Cond condition...
 
-lf :: Functor f => f a -> f (TempTree a)
-lf x = TLeaf <$> x
+-- lf :: Functor f => f a -> f (TempTree a)
+-- lf x = TLeaf <$> x
+
+-- lfr = lf . return
+
+lf :: a -> [a]
+lf x = [x]
+
+lfr a = return $ lf a 
 
 cE :: T.Exp -> S.Exp
-lfr = lf . return
-
 cE  = convertExps    
 cF  = convertFun1
 cF2 = convertFun2
