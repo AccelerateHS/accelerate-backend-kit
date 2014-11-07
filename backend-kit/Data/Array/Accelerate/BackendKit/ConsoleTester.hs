@@ -33,8 +33,8 @@ import           System.Console.GetOpt
 
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as SimpleAcc
 
-import GHC.Conc (threadDelay)
-import Debug.Trace        (trace)
+import GHC.Conc()
+import Debug.Trace()
 --------------------------------------------------------------------------------  
 
 -- | Everything needed to run tests for a given backend.
@@ -66,7 +66,7 @@ options =
      ]
 
 makeMain :: BackendTestConf -> IO ()
-makeMain BackendTestConf{backend,sbackend,knownTests,extraTests,frontEndFusion} = do
+makeMain BackendTestConf{backend,sbackend,knownTests,frontEndFusion} = do
  args <- getArgs
  let (opts,nonopts,unrecog,errs) = getOpt' Permute options args
  -- let (opts,nonopts,errs) = getOpt Permute options args 
@@ -168,7 +168,7 @@ makeMain BackendTestConf{backend,sbackend,knownTests,extraTests,frontEndFusion} 
 -- | Run a complete Accelerate program through the front-end, and the given backend.
 --   Optionally takes a name associated with the program.
 runWith :: (BC.Backend b, A.Arrays a) => b -> Bool -> Maybe String -> A.Acc a -> a
-runWith bkend frontEndFusion nm prog = unsafePerformIO $ do 
+runWith bkend _frontEndFusion _nm prog = unsafePerformIO $ do 
 --  let cvtd = convertAcc True True True prog
   let cvtd = phase0 prog
 --  let cvtd = convertAccWith config prog
@@ -190,9 +190,6 @@ nameHack = (++":")
 
 nameHackTE :: TestEntry -> TestEntry
 nameHackTE (te@TestEntry{name}) = te { name = nameHack name }
-
-unNameHack :: String -> String
-unNameHack = init 
 
 ------------------------------------------------------------
 -- Helpers copied from elsewhere:

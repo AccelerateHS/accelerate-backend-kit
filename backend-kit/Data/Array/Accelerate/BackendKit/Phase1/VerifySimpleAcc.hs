@@ -53,18 +53,13 @@ verifySimpleAcc cfg@(VerifierConfig{dimMode}) prog@Prog{progBinds, progResults, 
     expectedTys = flattenTy progType
     env         = progToEnv prog
 
-    topBinds = []
-
-
--- verifyUnique = error "verifyUnique"
-
 mismatchErr :: (Show a, Show a1) => String -> a -> a1 -> String
 mismatchErr msg got expected = msg++" does not match expected. "++
                                "\nGot:      "++show got ++
                                "\nExpected: "++show expected
 
 assertTyEqual :: DimCheckMode -> String -> Type -> Type -> Maybe String
-assertTyEqual NoDim msg (TArray d1 e1) (TArray d2 e2) = assertTyEqual NoDim msg e1 e2
+assertTyEqual NoDim msg (TArray _d1 e1) (TArray _d2 e2) = assertTyEqual NoDim msg e1 e2
 assertTyEqual _ msg got expected =
   if got == expected
   then Nothing
@@ -73,7 +68,7 @@ assertTyEqual _ msg got expected =
 
 doBinds :: VerifierConfig -> Env -> [ProgBind t] -> Maybe ErrorMessage
 doBinds _cfg _env [] = Nothing
-doBinds cfg env (ProgBind vo ty _ (Right ae) :rst) =
+doBinds cfg env (ProgBind _vo ty _ (Right ae) :rst) =
   doAE cfg ty env ae `or`
   doBinds cfg env rst
 doBinds cfg@(VerifierConfig{dimMode}) env (ProgBind vo ty _ (Left ex) :rst) =
@@ -123,12 +118,9 @@ doAE VerifierConfig{dimMode} outTy env ae =
       assertEq "Unit output dimension" out_dim 0 `or`
       expr "Unit input expression" e1 out_elty
     Replicate tmplt e1 vr | dimMode==NDim ->
-      let numFixed = length$ P.filter (==Fixed) tmplt
-          numAll   = length$ P.filter (==All) tmplt
-          exprTy   = recoverExpType env e1 
-      in
-       arrVariable vr (TArray numAll out_elty) `or`
-       assertEq "Template length in Replicate" (length tmplt) out_dim 
+      let numAll   = length$ P.filter (==All) tmplt
+      in arrVariable vr (TArray numAll out_elty) `or`
+         assertEq "Template length in Replicate" (length tmplt) out_dim 
 
 -- FIXME: The encoding has the obnoxious problem that it ELIDES unit entries on one end:
        -- (shapeType exprTy $ \ len -> 
@@ -151,13 +143,13 @@ doAE VerifierConfig{dimMode} outTy env ae =
 
 
     -- TODO: FINISHME:
-    Reshape e1 vr     -> Nothing
-    Index tmplt vr e1 -> Nothing
+    Reshape _e1 _vr     -> Nothing
+    Index _tmplt _vr _e1 -> Nothing
 
-    Scanl  fn2 e1  vr -> Nothing -- addArrRef vr $ doE e1       $ doFn2 fn2 mp
-    Scanr  fn2 e1  vr -> Nothing -- addArrRef vr $ doE e1       $ doFn2 fn2 mp
-    Scanl1 fn2     vr -> Nothing
-    Scanr1 fn2     vr -> Nothing
+    Scanl  _fn2 _e1  _vr -> Nothing -- addArrRef vr $ doE e1       $ doFn2 fn2 mp
+    Scanr  _fn2 _e1  _vr -> Nothing -- addArrRef vr $ doE e1       $ doFn2 fn2 mp
+    Scanl1 _fn2     _vr -> Nothing
+    Scanr1 _fn2     _vr -> Nothing
 
 --     FoldSeg fn e1 v1 v2 -> addArrRef v1 $ addArrRef v2 $
 --                            doE e1       $ doFn2 fn mp 

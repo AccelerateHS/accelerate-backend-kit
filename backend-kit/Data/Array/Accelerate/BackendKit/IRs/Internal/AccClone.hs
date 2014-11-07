@@ -148,9 +148,9 @@ convertExps expr =
     EIndexScalar ae _        -> error $ "AccClone.convertExps: expected EIndexScalar to have plain variable as array input, found: "++show ae
     EShape       ae          -> error $ "AccClone.convertExps: expected EShape" ++ " to have plain variable as array input, found: "++show ae
 
-    EIndexConsDynamic e1 e2 -> error "dynamic index manipulation not permitted in SimpleAcc IR"
-    EIndexHeadDynamic ex    -> error "dynamic index manipulation not permitted in SimpleAcc IR"
-    EIndexTailDynamic ex    -> error "dynamic index manipulation not permitted in SimpleAcc IR"
+    EIndexConsDynamic _e1 _e2 -> error "dynamic index manipulation not permitted in SimpleAcc IR"
+    EIndexHeadDynamic _ex    -> error "dynamic index manipulation not permitted in SimpleAcc IR"
+    EIndexTailDynamic _ex    -> error "dynamic index manipulation not permitted in SimpleAcc IR"
 
 convertFun1 :: S.Fun1 Exp -> S.Fun1 S.Exp
 convertFun1 (Lam1 bnd bod) = Lam1 bnd $ convertExps bod
@@ -165,7 +165,6 @@ convertAExps aex =
   let cE  = convertExps
       cF  = convertFun1
       cF2 = convertFun2
-      f   = convertAExps
   in
   case aex of
      Cond _ a (Vr _ v1) (Vr _ v2) -> S.Cond (cE a) v1 v2
@@ -230,67 +229,4 @@ getAnnot ae =
      Apply       a _ _           -> a
      ArrayTuple  a _             -> a
      TupleRefFromRight a _ _ _   -> a
-
-
--- TEMP: shouldn't need this:
-reverseConvertExps :: S.Exp -> Exp
-reverseConvertExps expr =
-  let f = reverseConvertExps
-      dt = TTuple [] -- Dummy type
-  in
-  case expr of
-    S.EVr  v                -> EVr  v
-    S.ELet (vr,_ty,lhs) bod -> ELet (vr, _ty, f lhs) (f bod)
-    S.ETuple es             -> ETuple (L.map f es)
-    S.EConst c              -> EConst c
-    S.ECond e1 e2 e3        -> ECond (f e1) (f e2) (f e3)
-    S.EWhile f1 f2 e3       -> EWhile (reverseConvertFun1 f1) (reverseConvertFun1 f2) (f e3)
-    S.EIndexScalar v ex     -> EIndexScalar (Vr dt v) (f ex)
-    S.EShape v              -> EShape (Vr dt v)
-    S.EShapeSize ex         -> EShapeSize (f ex)
-    S.EPrimApp ty p es      -> EPrimApp ty p (L.map f es)
-    S.ETupProject ind len ex -> ETupProject ind len (f ex)
-    S.EIndex indls          -> EIndex (L.map f indls)
-
-reverseConvertFun1 :: S.Fun1 S.Exp -> S.Fun1 Exp
-reverseConvertFun1 (S.Lam1 bnd bod) = Lam1 bnd $ reverseConvertExps bod
-
-reverseConvertFun2 :: S.Fun2 S.Exp -> S.Fun2 Exp
-reverseConvertFun2 (S.Lam2 bnd1 bnd2 bod) = Lam2 bnd1 bnd2 $ reverseConvertExps bod
-
--- TEMPORARY! -- THIS PUTS IN NONSENSE TYPES!
-reverseConvertAExps :: S.AExp -> AExp Type
-reverseConvertAExps aex =
-  let cE  = reverseConvertExps
-      cF  = reverseConvertFun1
-      cF2 = reverseConvertFun2
-      f   = reverseConvertAExps
-      dt  = TTuple [] -- Dummy type
-  in
-  case aex of
-     S.Vr v                      -> Vr dt v
---     S.Let (v,ty,lhs) bod        -> Let dt (v,ty, f lhs) (f bod)
-     S.Cond a b c                -> Cond dt (cE a) (Vr dt b) (Vr dt c)
-     S.Unit ex                   -> Unit dt (cE ex)
-     S.Use arr                   -> Use  dt arr
-     S.Generate ex fn            -> Generate dt (cE ex) (cF fn)
-     S.ZipWith fn v1 v2          -> ZipWith dt (cF2 fn) (Vr dt v1) (Vr dt v2)
-     S.Map     fn v              -> Map     dt (cF fn)  (Vr dt v)
-     S.Replicate slice ex v      -> Replicate dt slice (cE ex) (Vr dt v)
-     S.Index     slc v     ex    -> Index dt slc (Vr dt v) (cE ex)
-     S.Fold  fn einit (v)        -> Fold     dt (cF2 fn) (cE einit) (Vr dt v)
-     S.Fold1 fn       (v)        -> Fold1    dt (cF2 fn)            (Vr dt v)
-     S.FoldSeg fn einit (v) (v2) -> FoldSeg  dt (cF2 fn) (cE einit) (Vr dt v) (Vr dt v2)
-     S.Fold1Seg fn      (v) (v2) -> Fold1Seg dt (cF2 fn)            (Vr dt v) (Vr dt v2)
-     S.Scanl    fn einit (v)     -> Scanl    dt (cF2 fn) (cE einit) (Vr dt v)
-     S.Scanl'   fn einit (v)     -> Scanl'   dt (cF2 fn) (cE einit) (Vr dt v)
-     S.Scanl1   fn       (v)     -> Scanl1   dt (cF2 fn)            (Vr dt v)
-     S.Scanr    fn einit (v)     -> Scanr    dt (cF2 fn) (cE einit) (Vr dt v)
-     S.Scanr'   fn einit (v)     -> Scanr'   dt (cF2 fn) (cE einit) (Vr dt v)
-     S.Scanr1   fn       (v)     -> Scanr1   dt (cF2 fn)            (Vr dt v)
-     S.Permute fn2 (v) fn1 (v2)  -> Permute  dt (cF2 fn2) (Vr dt v) (cF fn1) (Vr dt v2)
-     S.Backpermute ex fn  (v)    -> Backpermute dt (cE ex) (cF fn) (Vr dt v)
-     S.Reshape     ex     (v)    -> Reshape     dt (cE ex)         (Vr dt v)
-     S.Stencil   fn bndry (v)    -> Stencil     dt (cF fn) bndry   (Vr dt v)
-     S.Stencil2  fn bnd1 v bnd2 v2 -> Stencil2 dt (cF2 fn) bnd1 (Vr dt v) bnd2 (Vr dt v2)
 
