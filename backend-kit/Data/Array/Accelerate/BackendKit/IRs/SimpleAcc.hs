@@ -210,12 +210,12 @@ showProgSummary prg@Prog{progBinds,progResults,progType} = unlines $
   typeLines      = map (("    "++) . typeBind)      progBinds
 
   summarizeBind :: ProgBind a -> String
-  summarizeBind (ProgBind v t _ (Left ex)) =
+  summarizeBind (ProgBind v _t _ (Left ex)) =
     "scalar "++show v++
      (shorter (" = "++show ex)
               (", defined using "++show (S.toList (expFreeVars ex))))
 
-  summarizeBind (ProgBind v t _ (Right ae)) =
+  summarizeBind (ProgBind v _t _ (Right ae)) =
      "array "++show v++" = "++aexpOpName ae++
        (", defined using "++show (S.toList (aexpFreeVars ae)))
        -- case ae of
@@ -641,20 +641,20 @@ accArrayToType (AccArray ls payls) =
 payloadToType :: ArrayPayload -> Type
 payloadToType p =
   case p of
-    ArrayPayloadInt    arr -> TInt
-    ArrayPayloadInt8   arr -> TInt8
-    ArrayPayloadInt16  arr -> TInt16
-    ArrayPayloadInt32  arr -> TInt32
-    ArrayPayloadInt64  arr -> TInt64
-    ArrayPayloadWord   arr -> TWord
-    ArrayPayloadWord8  arr -> TWord8
-    ArrayPayloadWord16 arr -> TWord16
-    ArrayPayloadWord32 arr -> TWord32
-    ArrayPayloadWord64 arr -> TWord64
-    ArrayPayloadFloat  arr -> TFloat
-    ArrayPayloadDouble arr -> TDouble
-    ArrayPayloadChar   arr -> TChar
-    ArrayPayloadBool   arr -> TBool
+    ArrayPayloadInt    _arr -> TInt
+    ArrayPayloadInt8   _arr -> TInt8
+    ArrayPayloadInt16  _arr -> TInt16
+    ArrayPayloadInt32  _arr -> TInt32
+    ArrayPayloadInt64  _arr -> TInt64
+    ArrayPayloadWord   _arr -> TWord
+    ArrayPayloadWord8  _arr -> TWord8
+    ArrayPayloadWord16 _arr -> TWord16
+    ArrayPayloadWord32 _arr -> TWord32
+    ArrayPayloadWord64 _arr -> TWord64
+    ArrayPayloadFloat  _arr -> TFloat
+    ArrayPayloadDouble _arr -> TDouble
+    ArrayPayloadChar   _arr -> TChar
+    ArrayPayloadBool   _arr -> TBool
     ArrayPayloadUnit   _   -> TTuple []
 
 --------------------------------------------------------------------------------
@@ -1111,31 +1111,31 @@ aexpFreeVars ae =
 aexpOpName :: AExp -> String
 aexpOpName ae =
   case ae of
-    Vr v             -> "Vr"
-    Unit e           -> "Unit"
-    Cond e v1 v2     -> "Cond"
-    Use     _        -> "Use"
-    Use'    _        -> "Use"
-    Generate  e f1   -> "Generate"
-    Replicate _ e v  -> "Replicate"
-    Index    _ v e   -> "Index"
-    Map      f v     -> "Map"
-    ZipWith  f v1 v2 -> "ZipWith"
-    Fold     f e v   -> "Fold"
-    Fold1    f   v   -> "Fold1"
-    FoldSeg  f e v1 v2 -> "FoldSeg"
-    Fold1Seg f   v1 v2 -> "Fold1Seg"
-    Scanl    f e v     -> "Scanl"
-    Scanl'   f e v     -> "Scanl'"
-    Scanl1   f   v     -> "Scanl1"
-    Scanr    f e v     -> "Scanr"
-    Scanr'   f e v     -> "Scanr'"
-    Scanr1   f   v     -> "Scanr1"
-    Permute  f v1 f1 v2 -> "Permute"
-    Backpermute e f1 v  -> "Backpermute"
-    Reshape     e    v  -> "Reshape"
-    Stencil  f1 _bound v -> "Stencil"
-    Stencil2 f2 _b1 v1 _b2 v2 -> "Stencil2"
+    Vr _v                        -> "Vr"
+    Unit _e                      -> "Unit"
+    Cond _e _v1 _v2              -> "Cond"
+    Use     _                    -> "Use"
+    Use'    _                    -> "Use"
+    Generate  _e _f1             -> "Generate"
+    Replicate _ _e _v            -> "Replicate"
+    Index    _ _v _e             -> "Index"
+    Map      _f _v               -> "Map"
+    ZipWith  _f _v1 _v2          -> "ZipWith"
+    Fold     _f _e _v            -> "Fold"
+    Fold1    _f   _v             -> "Fold1"
+    FoldSeg  _f _e _v1 _v2       -> "FoldSeg"
+    Fold1Seg _f   _v1 _v2        -> "Fold1Seg"
+    Scanl    _f _e _v            -> "Scanl"
+    Scanl'   _f _e _v            -> "Scanl'"
+    Scanl1   _f   _v             -> "Scanl1"
+    Scanr    _f _e _v            -> "Scanr"
+    Scanr'   _f _e _v            -> "Scanr'"
+    Scanr1   _f   _v             -> "Scanr1"
+    Permute  _f _v1 _f1 _v2      -> "Permute"
+    Backpermute _e _f1 _v        -> "Backpermute"
+    Reshape     _e    _v         -> "Reshape"
+    Stencil  _f1 _bound _v       -> "Stencil"
+    Stencil2 _f2 _b1 _v1 _b2 _v2 -> "Stencil2"
 
 -- | Alpha-rename all variables to fresh names.
 freshenExpNames :: Exp -> GensymM Exp
@@ -1204,7 +1204,7 @@ aexpASTSize ae =
   let g = expASTSize
   in
   case ae of
-    Vr v             -> 1
+    Vr _v            -> 1
     Unit e           -> 1 + g e
     Cond e  _ _      -> 1 + g e
     Use     _        -> 1 -- Could add in array size here, but that should probably be reported separately.
@@ -1214,7 +1214,7 @@ aexpASTSize ae =
     Index    _ _ e   -> 1 + g e
     Map      f _     -> 1 + fn1 f
     ZipWith  f _ _   -> 1 + fn2 f
-    Fold     f e _   -> 1 + fn2 f
+    Fold     f _e _  -> 1 + fn2 f
     Fold1    f     _ -> 1 + fn2 f
     FoldSeg  f e _ _    -> 1 + fn2 f + g e
     Fold1Seg f     _ _  -> 1 + fn2 f
@@ -1232,7 +1232,7 @@ aexpASTSize ae =
 
 -- | How big is the AST of a program.
 progASTSize :: Prog a -> Int
-progASTSize Prog{progBinds, progResults} =
+progASTSize Prog{progBinds} =
     sum $ map pb progBinds
   where
     pb (ProgBind _ _ty _ (Right ae)) = aexpASTSize ae
@@ -1355,10 +1355,6 @@ newAssocsArray sh xs = do
   mapM_ (uncurry (MA.writeArray arr)) xs
   return arr
 
-test :: RawData Int
-test = read "array (1,5) [(1,200),(2,201),(3,202),(4,203),(5,204)]" :: StorableArray Int Int
-
-
 -- More ugly boilerplate for NFData
 ----------------------------------------------------------------------------------------------------
 
@@ -1377,43 +1373,15 @@ instance NFData a => NFData (ProgBind a) where
     seq (rnf rhs) ()
 
 instance NFData Type where
-  rnf ty = error "FINISH ME"
+  rnf _ty = error "FINISH ME"
 
 instance NFData Exp where
-  rnf ex = error "FINISH ME"
+  rnf _ex = error "FINISH ME"
 
 instance NFData AExp where
-  rnf ae = error "FINISH ME"
+  rnf _ae = error "FINISH ME"
 
 instance NFData ProgResults where
   rnf (WithShapes ls)    = rnf ls
   rnf (WithoutShapes ls) = rnf ls
   rnf (WithShapesUnzipped ls) = rnf ls
-
-----------------------------------------------------------------------------------------------------
-{--
--- Note: an alternate approach to the large sum of payload types would
--- be to cast them all to a UArray of bytes.  There is not direct
--- support for this in the UArray module, but we could accomplish it
--- with something like the following:
-castUArray :: forall ix a b . (Ix ix, IArray UArray a, IArray UArray b,
-                               IA.MArray IA.IOUArray a IO, IA.MArray IA.IOUArray b IO)
-           => UArray ix a -> UArray ix b
-castUArray uarr = unsafePerformIO $
-  do thawed :: IA.IOUArray ix a <- Un.unsafeThaw uarr
-     cast   :: IA.IOUArray ix b <- Un.castIOUArray thawed
-     froze  :: UArray ix b      <- Un.unsafeFreeze cast
-     return froze
-
--- Like Data.Vector.generate, but for `UArray`s.  Unfortunately, this
--- requires extra class constraints for `IOUArray` as well.
-uarrGenerate :: (IArray UArray a, IA.MArray IA.IOUArray a IO)
-             => Int -> (Int -> a) -> UArray Int a
-uarrGenerate len fn = unsafePerformIO $
-  do marr :: IA.IOUArray Int a <- MA.newArray_ (0,len)
-     let loop (-1) = Un.unsafeFreeze marr
-         loop i = do MA.writeArray marr i (fn i)
-                     loop (i-1)
-     loop (len-1)
---}
-

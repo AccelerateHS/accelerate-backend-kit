@@ -279,14 +279,11 @@ testPartialCompiler oracle eval tests = P.map mk (P.zip [0..] tests)
 p0 :: Acc (Array DIM2 Int64)
 -- The innermost (fastest changing) dimension is size 5:
 p0 = use $ fromList (Z :. (2::Int) :. (5::Int)) [1..10::Int64]
-t0 = convertToSimpleProg p0
 r0 = I.run p0
 
 -- | Sharing recovery will create a Let here:
 p1 :: Acc (Scalar Int)
 p1 = fold (+) 0 (zipWith (*) p1aa p1aa)
-t1 = convertToSimpleProg p1
-r1 = I.run p1
 
 -- | Just generate 
 p1aa :: Acc (Vector Int)
@@ -450,16 +447,12 @@ p3 :: Acc (Array DIM3 Int32)
 p3 = let arr = generate  (constant (Z :. (5::Int))) (\_ -> 33)
          xs  = replicate (constant$ Z :. (2::Int) :. All :. (3::Int)) arr
      in xs 
-t3 = convertToSimpleProg p3
-r3 = I.run p3
 
 -- Test 4, a program that creates an IndexScalar:
 p4 :: Acc (Scalar Int64)
 p4 = let arr = generate (constant (Z :. (5::Int))) (\_ -> 33) in
      unit $ arr ! (index1 (2::Exp Int))
         -- (Lang.constant (Z :. (3::Int)))  
-t4 = convertToSimpleProg p4         
-r4 = I.run p4
 
 -- Ditto with more dimensions:
 p4b :: Acc (Scalar Int64)
@@ -467,7 +460,6 @@ p4b = let arr = generate (constant (Z :. (3::Int) :. (3::Int))) (\_ -> 33)
               :: Acc (Array DIM2 Int64)
       in
      unit $ arr ! (index2 (1::Exp Int) (2::Exp Int))
-t4b = convertToSimpleProg p4b
 
 -- This one is expensive, to resist inlineCheap:
 p4c :: Acc (Scalar Int)
@@ -481,12 +473,10 @@ p4c = let arr = generate (constant (Z :. (5::Int)))
 -- This one generates EIndex. It creates an array containing a slice descriptor.
 p5 :: Acc (Scalar (((Z :. All) :. Int) :. All))
 p5 = unit$ lift $ Z :. All :. (2::Int) :. All
-t5 = convertToSimpleProg p5
-r5 = I.run p5
 
 ------------------------------------------------------------
 -- Scalar tuples and projection:
---------------------------------
+------------------------------------------------------------
 
 -- This one generates ETupProjectFromRight:
 -- (But it requires an array-of-tuples internally:)
@@ -497,8 +487,6 @@ p6 = map go (use xs)
     xs = fromList sh [(1,10),(2,20)]
     sh = Z :. (2::Int)
     go x = let (a,b) = unlift x   in a*b
-t6 = convertToSimpleProg p6
-r6 = I.run p6
 
 -- Use a simple test that doesn't have any tuples-of-arrays, but DOES have a scalar level tuple internally.
 p6b :: Acc (Scalar Int)
@@ -509,11 +497,10 @@ p6b = unit y
     x :: Exp (Int,Int)
     x = lift (2::Int, 3::Int)
 
-
-
-
 ------------------------------------------------------------
 -- | Transpose a matrix.
+------------------------------------------------------------
+    
 transposeAcc :: Array DIM2 Float -> Acc (Array DIM2 Float)
 transposeAcc mat =
   let mat' = use mat
@@ -525,19 +512,6 @@ transposeAcc mat =
 -- This one uses dynamic index head/tail (but not cons):
 p7 :: Acc (Array DIM2 Float)
 p7 = transposeAcc (fromList (Z :. (2::Int) :. (2::Int)) [1..4])
-t7 = convertToSimpleProg p7
-r7 = I.run p7
--- Evaluating "doc t7" prints:
--- Let a0
---     (TArray TFloat)
---     (Use "Array (Z :. 2) :. 2 [1.0,2.0,3.0,4.0]")
---     (Backpermute (EIndex [EIndexHeadDynamic (EIndexTailDynamic (EShape (Vr a0))),
---                           EIndexHeadDynamic (EShape (Vr a0))])
---                  (Lam [(v1, TTuple [TInt,TInt])]
---                       (EIndex [EIndexHeadDynamic (EIndexTailDynamic (EVr v1)),
---                                EIndexHeadDynamic (EVr v1)]))
---                  (Vr a0))
-
 -- TODO -- still need to generate an IndexCons node.
 
 ----------------------------------------
@@ -546,9 +520,6 @@ r7 = I.run p7
 p8 :: Acc (Scalar Float)
 p8 = unit$ pi + (constant pi :: Exp Float) *
            negate (negate (abs (signum pi)))
-
-t8 = convertToSimpleProg p8
-r8 = I.run p8
 
 -- Prim arguments don't need to directly be tuple expressions:
 -- unit ((+) (let x0 = pi in (x0, 3.1415927 * x0)))

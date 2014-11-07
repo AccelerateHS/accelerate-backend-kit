@@ -127,15 +127,6 @@ runTimedSimple bkend nm _config prog = do
       d3 = fromRational$ toRational$ diffUTCTime t3 t2
   return $! (AccTiming d1 d2 d3, res)
 
-
--- | Remove exotic characters to yield a filename
---
--- TLM: Should really do something like Z-encode the string.
---      See 'Data.Array.Accelerate.CUDA.Persistent.zEncodeString'
---
-stripFileName :: String -> String
-stripFileName name = Prelude.filter isAlphaNum name
-
 -- | A timed run includes compile time, runtime, and copying time.  Both compile time
 -- and copying time may be zero if these were not needed.  All times are in seconds.
 --

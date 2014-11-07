@@ -118,9 +118,11 @@ valToConst (ArrVal a)    = error$ "cannot convert Array value to Const: "++show 
 
 unConstVal :: Value -> Const
 unConstVal (ConstVal c) = c
+unConstVal _ = error "FIX ME"
 
 unArrVal :: Value -> AccArray
 unArrVal   (ArrVal v)   = v
+unArrVal _ = error "FIX ME"
 
 --------------------------------------------------------------------------------
 -- Evaluation:
@@ -146,8 +148,8 @@ evalSimpleAcc (S.Prog {progBinds, progResults})
     -- A binding simply extends an environment of values.
     loop :: M.Map Var Value -> [ProgBind a] -> M.Map AVar Value
     loop env []                                  = env
-    loop env (ProgBind vr ty _ (Left rhs)  :rst) = loop (M.insert vr (evalE env rhs) env) rst
-    loop env (ProgBind vr ty _ (Right rhs) :rst) = loop (evalA env vr ty rhs) rst
+    loop env (ProgBind vr _ty _ (Left rhs)  :rst) = loop (M.insert vr (evalE env rhs) env) rst
+    loop env (ProgBind vr  ty _ (Right rhs) :rst) = loop (evalA env vr ty rhs) rst
 
     evalA :: M.Map Var Value -> Var -> Type -> AExp -> M.Map Var Value
     evalA env atype (TArray _dim elty) aexp =
@@ -246,8 +248,8 @@ evalSimpleAcc (S.Prog {progBinds, progResults})
           -- TODO: Handle the case where the resulting array is an array of tuples:
           else ArrVal$ AccArray dims1 final
           where
-            ArrVal (a1@(AccArray dims1 pays1)) = envLookup env vr1
-            ArrVal (a2@(AccArray dims2 pays2)) = envLookup env vr2
+            ArrVal ((AccArray dims1 pays1)) = envLookup env vr1
+            ArrVal ((AccArray dims2 pays2)) = envLookup env vr2
             final = concatMap payloadsFromList1 $
                     L.transpose $
                     zipWith evaluator
@@ -295,7 +297,6 @@ evalSimpleAcc (S.Prog {progBinds, progResults})
 
                 buildFolded :: Int -> (Int -> Const) -> [Const]
                 buildFolded _ lookup =
---                   tracePrint "\nbuildFOLDED : "$
                    [ valToConst (innerloop lookup (innerdim * i) innerdim initacc)
                    | i <- [0..newlen] ]
 
@@ -303,7 +304,6 @@ evalSimpleAcc (S.Prog {progBinds, progResults})
                 innerloop :: (Int -> Const) -> Int -> Int -> Value -> Value
                 innerloop _ _ 0 acc = acc
                 innerloop lookup offset count acc =
---                  trace ("Inner looping "++show(offset,count,acc))$
                   innerloop lookup (offset+1) (count-1) $
                    evalE (M.insert v1 acc $
                           M.insert v2 (ConstVal$ lookup offset) env)
@@ -318,12 +318,13 @@ evalSimpleAcc (S.Prog {progBinds, progResults})
         S.Scanr     _fn _ex _ae       -> error "UNFINISHED: Scanr"
         S.Scanr'    _fn _ex _ae       -> error "UNFINISHED: Scanr'"
         S.Scanr1    _fn    _ae        -> error "UNFINISHED: Scanr1"
-        S.Permute  _fn1 ae1 fn2 ae2   -> error "UNFINISHED: Permute"
+        S.Permute   _fn1 _ae1 _fn2 _ae2   -> error "UNFINISHED: Permute"
         S.Reshape      _ex    _ae     -> error "UNFINISHED: Reshape"
         S.Stencil      _fn  _bnd _ae  -> error "UNFINISHED: Stencil"
         S.Stencil2  _fn _bnd1 _ae1 _bnd2 _ae2 -> error "UNFINISHED: Stencil2"
         _ -> error$"Accelerate array expression breaks invariants: "++ show aexp
-
+    
+    evalA _env _atype _oth _aexp = error "FIX ME"
 
 evalF1 :: Env -> Fun1 Exp -> Const -> Const
 evalF1 env (S.Lam1 (v1,t1) body) x
@@ -363,7 +364,7 @@ evalE env expr =
       case (ind, len, evalE env ex) of
         (_,_,ConstVal (Tup ls)) -> ConstVal$ tuple$  slice ls
         -- TODO -- check if this makes sense ... how can we run into this kind of tuple?:
-        (ind,_,TupVal ls)       -> tupleVal$ slice ls
+        (_ind,_,TupVal ls)      -> tupleVal$ slice ls
         (0,1,ConstVal scalar)   -> ConstVal$ scalar
         (_,_,const) -> error$ "ETupProjectFromRight: could not index "++show len++" elements at position "
                        ++ show ind ++ " in tuple " ++ show const

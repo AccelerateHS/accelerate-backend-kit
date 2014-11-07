@@ -331,8 +331,8 @@ arrayTypeD (TArray ndim elty) =
 
        INSERT_CTY_ERR_CASES
 
-       TTuple ls -> (case scalarTypeD elty of
-                      SealedEltTuple (et :: EltTuple etty) ->
+       TTuple _ls -> (case scalarTypeD elty of
+                      SealedEltTuple (_et :: EltTuple etty) ->
                        SealedArrayType (Phantom:: Phantom(Array sh etty)));
        TArray _ _ -> error$"arrayTypeD: nested array type, not allowed in Accelerate: "++show(TArray ndim elty)
      }

@@ -487,36 +487,9 @@ convertExp e =
     --
     IndexSlice _sliceIndex _slix _sh -> do
       error "ToAccClone: TODO: handle IndexSlice"
-{--
-      let restrict :: SliceIndex slix sl co sh -> [T.Exp] -> [T.Exp] -> [T.Exp]
-          restrict SliceNil              _       _       = []
-          restrict (SliceAll   sliceIdx) slx     (sz:sl) = sz : restrict sliceIdx slx sl
-          restrict (SliceFixed sliceIdx) (_:slx) ( _:sl) =      restrict sliceIdx slx sl
-          restrict _ _ _ = error "IndexSlice: unexpected shapes"
-          --
-          slice slix' sh' = reverse $ restrict sliceIndex (reverse slix') (reverse sh')
-
-      slix'     <- unzipETups <$> convertExp slix
-      sh'       <- unzipETups <$> convertExp sh
-
-      return . T.ETuple $! slice slix' sh'
---}
 
     IndexFull _sliceIndex _slix _sl -> do
       error "ToAccClone: TODO: handle IndexFull"
-{--
-      let extend :: SliceIndex slix sl co sh -> [T.Exp] -> [T.Exp] -> [T.Exp]
-          extend SliceNil              _        _       = []
-          extend (SliceAll   sliceIdx) slx      (sz:sh) = sz : extend sliceIdx slx sh
-          extend (SliceFixed sliceIdx) (sz:slx) sh      = sz : extend sliceIdx slx sh
-          --
-          replicate slix' sl' = reverse $ extend sliceIndex (reverse slix') (reverse sl')
-      --
-      slix'     <- unzipETups <$> convertExp slix
-      sl'       <- unzipETups <$> convertExp sl
-
-      return . T.ETuple $! replicate slix' sl'
---}
 
     ToIndex{}     -> error "ToAccClone.hs: TODO: handle ToIndex"
     FromIndex{}   -> error "ToAccClone.hs: TODO: handle FromIndex"
@@ -1168,13 +1141,9 @@ instance Show (Sug.ArraysR a') where
     loop arrR =
      case arrR of
        Sug.ArraysRunit       -> "()"
---       Sug.ArraysRpair Sug.ArraysRunit r -> "(() "++loop r ++")"
        Sug.ArraysRpair r1 r2 -> "("++ loop r1 ++", "++ loop r2++")"
        Sug.ArraysRarray -> "Array"
 
 mkArrayTuple :: a -> [T.AExp a] -> T.AExp a
 mkArrayTuple ty [one] = one
 mkArrayTuple ty ls    = T.ArrayTuple ty ls
-
---------------------------------------------------------------------------------
-
