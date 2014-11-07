@@ -91,6 +91,23 @@ getUseBinds GPUProg{progBinds} = concatMap fn progBinds
      in [(vr,arrty,arr)]
    fn _ = []
 
+-- | So, we now have two types of use nodes. Use and Use' (which you should read as
+--   use*, but apparently that's not a valid Haskell identifier). They're pretty much
+--   identical at this point, except Use' nodes are never present in the original
+--   Accelerate program. The idea is, they will be inserted by the fissioning backend,
+--   and they represent data that was computed by prior kernels and must be passed in.
+
+-- | I just copied the above function and changed one character. I am ashamed,
+--   but we only have a few days left, so corners will be cut.
+getUsePrimeBinds :: GPUProg a -> [(Var,Type,AccArray)]
+getUsePrimeBinds GPUProg{progBinds} = concatMap fn progBinds
+ where
+   fn (GPUProgBind{ outarrs, op= Use' arr }) =
+     let [(vr,_,arrty)] = outarrs
+     in [(vr,arrty,arr)]
+   fn _ = []
+
+
 -- | `progResults` is not a set, the same variable may be returned at different
 -- locations in the output "tuple".  This makes it into a set and returns it in a
 -- canonical order.
@@ -423,9 +440,10 @@ instance EmitBackend CEmitter where
   emitMain e prog@GPUProg{progBinds, progResults, sizeEnv} = do
 
     let useBinds   = getUseBinds prog
+        usePBinds  = getUsePrimeBinds prog
         allResults = standardResultOrder progResults
         shapeSet   = S.toList $ S.fromList$ concatMap P.snd allResults
-        allUses    = S.fromList $ map (\(a,b,c) -> a) useBinds
+        allUses    = S.fromList $ map (\(a,b,c) -> a) $ useBinds ++ usePBinds
     ----------------------------------------
     ------    Argument Initialization  -----
     cppStruct "ArgRecord" "" $ do
