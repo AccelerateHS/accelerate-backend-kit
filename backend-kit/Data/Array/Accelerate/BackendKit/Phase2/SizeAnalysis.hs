@@ -37,7 +37,7 @@ doAE mp ae =
 
     -- This is a hack. We might or might not know the exact size of this array.
     -- What's the worst that will happen if we pretend we never know?
-    Use' _ -> UnknownSize
+    Use' _ _ -> UnknownSize
 
     -- CASE 1: Derivative arrays, look upstream:
     --------------------------------------------

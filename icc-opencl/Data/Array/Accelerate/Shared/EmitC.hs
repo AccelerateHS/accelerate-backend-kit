@@ -13,7 +13,7 @@
 -- See `emitC` below and `emitOpenCL` for details.
 
 module Data.Array.Accelerate.Shared.EmitC
-       (emitC, ParMode(..), getUseBinds, standardResultOrder,
+       (emitC, ParMode(..), getUseBinds, standardResultOrder, getUsePrimeBinds,
         DbgConf(..), defaultConf) where
 
 import           Control.Monad (forM_, when)
@@ -97,14 +97,15 @@ getUseBinds GPUProg{progBinds} = concatMap fn progBinds
 --   Accelerate program. The idea is, they will be inserted by the fissioning backend,
 --   and they represent data that was computed by prior kernels and must be passed in.
 
--- | I just copied the above function and changed one character. I am ashamed,
---   but we only have a few days left, so corners will be cut.
-getUsePrimeBinds :: GPUProg a -> [(Var,Type,AccArray)]
+-- | I just copied the above function and changed a few characters. I am ashamed,
+--   but we only have a few days left, so corners will be cut. That's just the
+--   way it is sometimes.
+getUsePrimeBinds :: GPUProg a -> [(Var,Type,Var,AccArray)]
 getUsePrimeBinds GPUProg{progBinds} = concatMap fn progBinds
  where
-   fn (GPUProgBind{ outarrs, op= Use' arr }) =
+   fn (GPUProgBind{ outarrs, op= Use' v arr }) =
      let [(vr,_,arrty)] = outarrs
-     in [(vr,arrty,arr)]
+     in [(vr,arrty,v,arr)] -- return the use' var name in this tuple
    fn _ = []
 
 
@@ -440,7 +441,7 @@ instance EmitBackend CEmitter where
   emitMain e prog@GPUProg{progBinds, progResults, sizeEnv} = do
 
     let useBinds   = getUseBinds prog
-        usePBinds  = getUsePrimeBinds prog
+        usePBinds  = map (\(a,b,_,c) -> (a,b,c)) $ getUsePrimeBinds prog -- strip v
         allResults = standardResultOrder progResults
         shapeSet   = S.toList $ S.fromList$ concatMap P.snd allResults
         allUses    = S.fromList $ map (\(a,b,c) -> a) $ useBinds ++ usePBinds

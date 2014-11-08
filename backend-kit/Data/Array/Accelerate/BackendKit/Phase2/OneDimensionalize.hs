@@ -176,8 +176,8 @@ doBind env pb@(ProgBind vo aty sz (Right ae)) =
     -- BOILERPLATE:
     ------------------------------------------------------------
     Generate e lam1         -> Generate <$> doE e <*> doLam1 lam1
-    Use (AccArray dims payls) -> return$ Use$ AccArray [product dims] payls
-    Use' (AccArray dims payls)-> return$ Use'$ AccArray [product dims] payls
+    Use    (AccArray dims payls) -> return$ Use $ AccArray [product dims] payls
+    Use' v (AccArray dims payls) -> return$ Use' v $ AccArray [product dims] payls
     Vr _                    -> return ae
     Unit ex                 -> Unit <$> doE ex
     Cond a b c              -> Cond <$> doE a <*> return b <*> return c

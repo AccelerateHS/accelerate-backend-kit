@@ -7,14 +7,14 @@
 -- backend.
 module Data.Array.Accelerate.Cilk.JITRuntime
        (run, runNamed,
-        compileToFile, rawRunIO, CBlob(..)) where 
+        compileToFile, rawRunIO, rawRunIO', CBlob(..)) where 
 
 import           Data.Array.Accelerate (Acc)
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
 import qualified Data.Array.Accelerate.BackendKit.SimpleArray     as SA
 import           Data.Array.Accelerate.BackendKit.Utils.Helpers (maybtrace, dbg)
 import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0, phase1, phase2, repackAcc)
-import           Data.Array.Accelerate.Shared.EmitC (emitC, ParMode(..), getUseBinds, standardResultOrder)
+import           Data.Array.Accelerate.Shared.EmitC (emitC, ParMode(..), getUseBinds, getUsePrimeBinds, standardResultOrder)
 import           Data.Array.Accelerate.BackendKit.SimpleArray (payloadsFromList, payloadFromPtr)
 import           Data.Array.Accelerate.Shared.EmitHelpers ((#))
 
@@ -85,7 +85,8 @@ stripOptFlag = filter (not . (`elem` ["-O0","-O1","-O2","-O3"]))
 -- | Run an Accelerate computation using a C backend in the given
 --   parallelism mode.
 run :: forall a . Sug.Arrays a => ParMode -> Acc a -> a
-run = runNamed "" 
+run = runNamed ""
+
 
 -- | Identical to `run` but provide an identifying name for this program for
 -- debugging purposes.
@@ -101,7 +102,11 @@ runNamed name pm acc =
    arrays = unsafePerformIO $ do
             blob <- compileToFile pm name simple
             rawRunIO blob
-   
+
+compileSProg :: ParMode -> S.Prog () -> IO CBlob
+compileSProg pm sprog = compileToFile pm "sprog" cprog
+  where cprog = phase2 sprog
+
 -- | For the C backends, a blob is the name of a shared library file (plus a copy of
 -- the final IR to provide some type information).
 -- 
@@ -188,10 +193,10 @@ compileToFile pm name prog = do
     ExitSuccess -> return $! CBlob prog2 ("./" ++ output)
     ExitFailure c -> error$"C Compiler failed with code "++show c
 
-
--- | (Internal) Takes a program for which "phase2" has already been run.
-rawRunIO :: CBlob -> IO [S.AccArray]
-rawRunIO (CBlob prog2 path) = do
+-- | MV: Factoring this out into a new function
+--   (internal) run a blob, potentially with extra bindings
+internalRawRunIO :: CBlob -> M.Map S.Var S.AccArray -> IO [S.AccArray]
+internalRawRunIO (CBlob prog2 path) extraBinds = do 
 #ifdef EXE_OUTPUT
 -- First (WIP) design.  Run the program and capture its output:
   dbgPrint 1$ "[JIT] Invoking external executable: "++ path
@@ -202,7 +207,7 @@ rawRunIO (CBlob prog2 path) = do
   return$ parseMultiple result elts
 #else
   dbgPrint 2 $ "[JIT]: Working directory: " ++ (unsafePerformIO $ readProcess "pwd" [] [])
-  ls <- loadAndRunSharedObj prog2 path -- ("./" ++ thisprog++".so")
+  ls <- loadAndRunSharedObj prog2 extraBinds path -- ("./" ++ thisprog++".so")
   return $! SA.reglueArrayofTups (G.progType prog2) ls
 #endif
  where
@@ -218,13 +223,17 @@ rawRunIO (CBlob prog2 path) = do
    tyToElts (TTuple ls)    = concatMap tyToElts ls
    tyToElts oth            = error$"expecting array types only as Accelerate return values, not: "++show oth
 
-
-
+-- | Takes a program for which "phase2" has already been run.
+rawRunIO :: CBlob -> IO [S.AccArray]
+rawRunIO b = internalRawRunIO b M.empty
+  
+-- | Like rawRunIO', but takes extraBinds map.
+rawRunIO' :: CBlob -> M.Map S.Var S.AccArray -> IO [S.AccArray]
+rawRunIO' b extraBinds = internalRawRunIO b extraBinds
 
 -- | Remove exotic characters to yield a filename
 stripFileName :: String -> String
 stripFileName name = filter isAlphaNum name
-
 
 -- | Read an AccArray from a string
 readPayload :: S.Type -> String -> ([Const],String)
@@ -272,9 +281,10 @@ dbgPrint lvl str = if dbg < lvl then return () else do
 -- 
 -- This returns only a flat list of array-of-scalar results.  If these originated
 -- from array-of-tuple values, they need to be reassociated by the caller of this function.
-loadAndRunSharedObj :: G.GPUProg a -> FilePath -> IO [S.AccArray]
-loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv, G.progType } soName =
-  let useBinds   = getUseBinds prog 
+loadAndRunSharedObj :: G.GPUProg a -> M.Map S.Var S.AccArray -> FilePath -> IO [S.AccArray]
+loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv, G.progType } extraBinds soName =
+  let useBinds   = getUseBinds prog
+      usePBinds  = getUsePrimeBinds prog
       allResults = standardResultOrder progResults
 
   in withDL soName [RTLD_LOCAL, RTLD_LAZY] $ \ dl ->  do 
@@ -285,7 +295,9 @@ loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv, G.progType } soNam
     drr  <- dlsym dl "DestroyResultRecord"
 
     argsRec    <- mkCreateRecord car
-    resultsRec <- mkCreateRecord crr    
+    resultsRec <- mkCreateRecord crr
+
+    -- Handle usual Use bindings
     forM_ (zip [1..] useBinds) $ \ (ix,(vr,ty,S.AccArray { S.arrDim, S.arrPayloads })) -> do
 
       dbgPrint 2 $ "[JIT] Attempting to load Use array arg of type "++show ty++" and size "++show arrDim
@@ -301,6 +313,27 @@ loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv, G.progType } soNam
           (mkLoadArg oneLoad) argsRec len ptr
           dbgPrint 2$"[JIT] successfully loaded Use arg "++show ix++", type "++show ty          
           return ()
+
+    -- Handle use' bindings, if there are any
+    forM_ (zip [1..] usePBinds) $ \ (ix,(vr,ty,k,usePArr)) -> do
+
+      -- look up use' var in map
+      let S.AccArray { S.arrDim, S.arrPayloads } = M.findWithDefault usePArr k extraBinds
+      
+      dbgPrint 2 $ "[JIT] Attempting to load Use* array arg of type "++show ty++" and size "++show arrDim
+      
+      oneLoad <- dlsym dl ("LoadArg_"++show vr) 
+      case arrPayloads of
+        [] -> error $ "loadAndRunSharedObj: empty payload list for array " ++ show vr
+        _:_:_ -> error$ "loadAndRunSharedObj: cannot handle multi-payload arrays presently: "
+                 ++show vr++" with payloads: "++show (length arrPayloads)
+        [payload] -> do          
+          let ptr = SA.payloadToPtr payload
+              [len] = arrDim
+          (mkLoadArg oneLoad) argsRec len ptr
+          dbgPrint 2$"[JIT] successfully loaded Use arg "++show ix++", type "++show ty          
+          return ()
+    
 
     ----------RUN IT------------
     t1 <- getCurrentTime
@@ -333,7 +366,6 @@ loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv, G.progType } soNam
     dbgPrint 3 $ "[JIT] FULL RESULTS read back to Haskell (type "++show progType
                  ++"):\n  "++take 1000 (show results)
     return results
-
 
 -- | Shared for CreateArgRecord and CreateResultRecord
 type CreateRecordT = IO (Ptr ())

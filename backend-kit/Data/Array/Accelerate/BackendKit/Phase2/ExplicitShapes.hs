@@ -219,9 +219,9 @@ doBinds (ProgBind vo voty sz (Right ae) : rest) = do
         -- Cannot handle Scanl' because of it's tuple return type.  It's not really an "array variable":
         Scanl'   _ _ _     -> error$ "ExplicitShapes: cannot handle Scanl' because of its tuple return type"
         Scanr'   _ _ _     -> error$ "ExplicitShapes: cannot handle Scanr' because of its tuple return type"
-        Use _  -> error$"ExplicitShapes: it should not be possible to find a Use with Unknown size: "++ show vo
-        Use' _ -> error$"ExplicitShapes: it should not be possible to find a Use' with Unknown size: "++ show vo        
-        Unit _ -> error$"ExplicitShapes: it should not be possible to find a Unit with Unknown size: "++ show vo
+        Use      _         -> error$"ExplicitShapes: it should not be possible to find a Use with Unknown size: "++ show vo
+        Use'     _ _       -> error$"ExplicitShapes: it should not be possible to find a Use' with Unknown size: "++ show vo        
+        Unit     _         -> error$"ExplicitShapes: it should not be possible to find a Unit with Unknown size: "++ show vo
       ) -- End handleUnknownSize
 
 doE :: Exp -> MyM Exp
@@ -275,7 +275,7 @@ doAE ae =
     -- EVERYTHING BELOW IS BOILERPLATE:
     ------------------------------------------------------------
     Use _                             -> return ae
-    Use' _                            -> return ae
+    Use' _ _                            -> return ae
     Vr _                              -> return ae
     Unit ex                           -> Unit <$> doE ex
     Cond a b c                        -> Cond <$> doE a <*> return b <*> return c

@@ -31,10 +31,10 @@ doBind (ProgBind v t a (Right ae)) = ProgBind v t (a,Cost (doAE ae)) (Right ae)
 doAE :: AExp -> Int
 doAE ae =
   case ae of
-    Use _            -> 0
-    Use' _           -> 0
-    Vr _             -> 0
-    Cond _ _  _      -> 0
+    Use _                      -> 0
+    Use' _ _                   -> 0
+    Vr _                       -> 0
+    Cond _ _  _                -> 0
     Map (Lam1 _ e) _           -> doE e
     ZipWith (Lam2 _ _ e) _ _   -> doE e
     Backpermute _ (Lam1 _ e) _ -> doE e
