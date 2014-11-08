@@ -60,10 +60,12 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
      accArrayToType, payloadToType,
 
      -- * Acc array unzipping 
-     unzipAccArray
+     unzipAccArray,
 
      -- * Operate on lists of ProgBinds
      --findFree, freeBindFunc
+
+     remMetaData
     )
  where
 
@@ -193,6 +195,12 @@ resultShapeNames :: ProgResults -> [Var]
 resultShapeNames (WithoutShapes _ls)     = []
 resultShapeNames (WithShapes ls)         = L.map snd ls
 resultShapeNames (WithShapesUnzipped ls) = concatMap snd ls
+
+remMetaData :: Prog a -> Prog ()
+remMetaData Prog{progBinds,progResults,progType,uniqueCounter} =
+  Prog {progBinds=newProgBinds, progResults, progType, uniqueCounter}
+  where newProgBinds = map remDecor progBinds
+        remDecor (ProgBind v t _ e) = ProgBind v t () e
 
 -- | Print the binding structure and metadata of a program as a
 -- multi-line string, without the contents of each array operation.

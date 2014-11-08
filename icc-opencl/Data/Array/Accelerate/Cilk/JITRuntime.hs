@@ -7,7 +7,7 @@
 -- backend.
 module Data.Array.Accelerate.Cilk.JITRuntime
        (run, runNamed,
-        compileToFile, rawRunIO, rawRunIO', CBlob(..)) where 
+        compileToFile, compileSProg, rawRunIO, rawRunIO', CBlob(..)) where 
 
 import           Data.Array.Accelerate (Acc)
 import qualified Data.Array.Accelerate.Array.Sugar as Sug
@@ -103,10 +103,10 @@ runNamed name pm acc =
             blob <- compileToFile pm name simple
             rawRunIO blob
 
-compileSProg :: ParMode -> S.Prog () -> IO CBlob
-compileSProg pm sprog = compileToFile pm "sprog" cprog
-  where cprog = phase2 sprog
-
+compileSProg :: S.Prog ArraySizeEstimate -> IO CBlob
+compileSProg sprog = compileToFile CilkParallel "sprog" cprog
+  where cprog = phase2 $ S.remMetaData sprog
+       
 -- | For the C backends, a blob is the name of a shared library file (plus a copy of
 -- the final IR to provide some type information).
 -- 
