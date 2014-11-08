@@ -197,8 +197,8 @@ resultShapeNames (WithShapes ls)         = L.map snd ls
 resultShapeNames (WithShapesUnzipped ls) = concatMap snd ls
 
 remMetaData :: Prog a -> Prog ()
-remMetaData Prog{progBinds,progResults,progType,uniqueCounter} =
-  Prog {progBinds=newProgBinds, progResults, progType, uniqueCounter}
+remMetaData Prog{progBinds,progResults,progType,uniqueCounter,typeEnv} =
+  Prog {progBinds=newProgBinds, progResults, progType, uniqueCounter, typeEnv}
   where newProgBinds = map remDecor progBinds
         remDecor (ProgBind v t _ e) = ProgBind v t () e
 
