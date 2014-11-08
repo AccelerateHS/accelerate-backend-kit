@@ -35,9 +35,10 @@ doAE mp ae =
     -- This is an easy one!  We have the array, thus we know it's size:
     Use arr -> KnownSize (arrDim arr)
 
-    -- This is a hack. We might or might not know the exact size of this array.
-    -- What's the worst that will happen if we pretend we never know?
-    Use' _ _ -> UnknownSize
+    -- FIXME: This is a hack. We might or might not know the exact size of this array.
+    -- ExplicitShapes breaks if we don't know the size of Use, so we'll borrow
+    -- the size of the dummy array.
+    Use' _ arr -> KnownSize (arrDim arr)
 
     -- CASE 1: Derivative arrays, look upstream:
     --------------------------------------------

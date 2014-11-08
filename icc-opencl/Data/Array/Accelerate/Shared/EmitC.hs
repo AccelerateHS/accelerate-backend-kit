@@ -582,10 +582,14 @@ execBind e GPUProg{sizeEnv} (_ind, GPUProgBind {evtid, outarrs, op, decor=(FreeV
   case op of
 
     -- Nothing to do here because the ArgRecord will already contain Use
-    Use _ -> do comm$ "'Use'd arrays are already available in the arguments record:"
-                let [(outV,_,ty)] = outarrs -- Only one output Use's at this point.
-                varinit (emitType e ty) (varSyn outV) (strToSyn globalArgs `arrow` (varSyn outV))
-                return ()
+    Use _    -> do comm$ "'Use'd arrays are already available in the arguments record:"
+                   let [(outV,_,ty)] = outarrs -- Only one output Use's at this point.
+                   varinit (emitType e ty) (varSyn outV) (strToSyn globalArgs `arrow` (varSyn outV))
+                   return ()
+    Use' _ _ -> do comm$ "'Use'd arrays are already available in the arguments record:"
+                   let [(outV,_,ty)] = outarrs -- Only one output Use's at this point.
+                   varinit (emitType e ty) (varSyn outV) (strToSyn globalArgs `arrow` (varSyn outV))
+                   return ()
     
     -- In the case of array conditionals we need to run the scalar
     -- code, then assign the result accordingly.  TODO: this is a
