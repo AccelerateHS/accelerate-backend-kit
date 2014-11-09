@@ -103,7 +103,7 @@ doBinds sizeEnv evEnv (LLProgBind vartys (FreeVars fvs) toplvl : rest) = do
   
   case toplvl of
     Use arr       -> return$ rebind [] (G.Use arr)                       : rst
-    Use' v arr    -> return$ rebind [] (G.Use' v arr)                    : rst
+    Use' v dim ty -> return$ rebind [] (G.Use' v dim ty)                 : rst
     Cond e v1 v2  -> return$ rebind (evs [v1,v2]) (G.Cond (doE e) v1 v2) : rst
     ScalarCode sb -> return$ rebind (evs fvs) (G.ScalarCode (doSB sb))   : rst
 

@@ -92,7 +92,7 @@ data TopLvlForm =
     ScalarCode ScalarBlock -- A block of Scalar code binding one or more variables.
   | Cond Exp Var Var
   | Use          AccArray
-  | Use'     Var AccArray -- dummy use
+  | Use'     Var [Int] Type
 
   -- | Create a new array of the specified # elements:
   | NewArray Exp 

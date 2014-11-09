@@ -285,9 +285,9 @@ data AExp =
   | Unit Exp                         -- ^ Turn an element into a singleton array
   | Cond Exp Var Var                 -- ^ Array-level if statements
   | Use       AccArray               -- ^ A real live ARRAY goes here!
-  | Use'      Var AccArray
+  -- This is the third re-write of Use' in as many days.
+  | Use'      Var [Int] Type         -- ^ A dummy Use node that needs to know dimension and type.
   | Generate  Exp (Fun1 Exp)         -- ^ Generate an array by applying a function to every index in shape
---  | AWhile  (Fun1 [ProgBind ()]) (Fun1 [ProgBind ()]) Var
   | Replicate SliceType Exp Var      -- ^ Replicate array across one or more dimensions.
                                      --     Exp must return a shape value matching up with the to the SliceType.
   | Index     SliceType Var Exp      -- ^ Generalized indexing that can project a slice from an array.
@@ -1093,7 +1093,7 @@ aexpFreeVars ae =
     Unit e           -> g e
     Cond e v1 v2     -> S.insert v1 $ S.insert v2 $ g e
     Use     _        -> S.empty
-    Use' _   _       -> S.empty
+    Use' _ _ _       -> S.empty
     Generate  e f1   -> g e `S.union` fn1 f1
     Replicate _ e v  -> S.insert v $ g e
     Index    _ v e   -> S.insert v $ g e
@@ -1122,8 +1122,8 @@ aexpOpName ae =
     Vr _v                        -> "Vr"
     Unit _e                      -> "Unit"
     Cond _e _v1 _v2              -> "Cond"
-    Use     _                    -> "Use"
-    Use' _  _                    -> "Use"
+    Use  _                       -> "Use"
+    Use' _ _ _                   -> "Use"
     Generate  _e _f1             -> "Generate"
     Replicate _ _e _v            -> "Replicate"
     Index    _ _v _e             -> "Index"
@@ -1216,7 +1216,7 @@ aexpASTSize ae =
     Unit e           -> 1 + g e
     Cond e  _ _      -> 1 + g e
     Use     _        -> 1 -- Could add in array size here, but that should probably be reported separately.
-    Use' _  _        -> 1
+    Use' _ _ _       -> 1
     Generate  e f1   -> 1 + g e + fn1 f1         -- Generate an array by applying a function to every index in shape
     Replicate _ e _  -> 1 + g e
     Index    _ _ e   -> 1 + g e

@@ -315,10 +315,10 @@ loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv, G.progType } extra
           return ()
 
     -- Handle use' bindings, if there are any
-    forM_ (zip [1..] usePBinds) $ \ (ix,(vr,ty,k,usePArr)) -> do
+    forM_ (zip [1..] usePBinds) $ \ (ix,(vr,ty,k)) -> do
 
       -- look up use' var in map
-      let S.AccArray { S.arrDim, S.arrPayloads } = M.findWithDefault usePArr k extraBinds
+      let Just (S.AccArray { S.arrDim, S.arrPayloads }) = M.lookup k extraBinds
       
       dbgPrint 2 $ "[JIT] Attempting to load Use* array arg of type "++show ty++" and size "++show arrDim
       

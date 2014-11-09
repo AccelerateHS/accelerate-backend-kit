@@ -244,7 +244,7 @@ mapMAEWithGEnv :: Applicative f => M.Map Var v ->
 mapMAEWithGEnv env lift fn0 ae =
   case ae of
     Use _                    -> pure ae
-    Use' _ _                 -> pure ae
+    Use' _ _ _               -> pure ae
     Vr _                     -> pure ae
     Cond a b c               -> Cond     <$> fn a <*> pure b <*> pure c
     Generate e lam1          -> Generate <$> fn e <*> doLam1 lam1

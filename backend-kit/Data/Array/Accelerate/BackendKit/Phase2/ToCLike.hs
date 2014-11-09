@@ -250,7 +250,7 @@ doBind env (ProgBind _ ty decor@(OpInputs vis, (SubBinds vos _, (foldstride, _))
            [[b'],[c']] -> return$ LL.Cond (doE env a) b' c'
            _           -> error$"ToCLike.hs: cannot yet handle array Cond with array-of-tuples in branches: "++show vis
        Use  arr      -> return$ LL.Use  arr
-       Use' v arr    -> return$ LL.Use' v arr
+       Use' v dim ty -> return$ LL.Use' v dim ty
 
        Generate ex (Lam1 (vr,ty) bod) -> do
          -- Because arrays are 1D at this point, ex and vr are scalar.

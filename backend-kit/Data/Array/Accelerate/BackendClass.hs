@@ -56,6 +56,7 @@ import Control.Concurrent.MVar                                  ( newMVar, withM
 import Data.Char                                                ( isAlphaNum )
 import Data.Maybe                                               ( fromMaybe )
 import Data.Time.Clock                                          ( getCurrentTime, diffUTCTime )
+import qualified Data.Map                                       as M
 import Data.Typeable                                            ( eqT, (:~:)(..), Typeable, typeOf )
 import System.IO.Unsafe                                         ( unsafePerformIO )
 import System.Random                                            ( randomIO )
@@ -384,6 +385,21 @@ class (Show b, Typeable b) => SimpleBackend b where
   -- program.
   --
   simpleUseRemote :: b -> SimpleRemote b -> IO SACC.AExp
+
+  -------------------------- Passing in data ------------------------------------
+
+  -- | A program can have Use' nodes, which denote data that will be bound later.
+  --   This function accepts a map from Var to AccArray, where the Vars
+  --   correspond to the Use' nodes where the data should reside.
+  --   A blob is optionally passed in, because we might have compiled this
+  --   prog before.
+
+  simpleRunStar :: b
+                -> DebugName
+                -> SACC.Prog ()
+                -> Maybe (SimpleBlob b)
+                -> M.Map SACC.Var SACC.AccArray
+                -> IO [SimpleRemote b]
 
   -------------------------- Configuration Flags --------------------------------
 

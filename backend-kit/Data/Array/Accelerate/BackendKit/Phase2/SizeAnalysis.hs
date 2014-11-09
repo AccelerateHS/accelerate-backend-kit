@@ -38,7 +38,7 @@ doAE mp ae =
     -- FIXME: This is a hack. We might or might not know the exact size of this array.
     -- ExplicitShapes breaks if we don't know the size of Use, so we'll borrow
     -- the size of the dummy array.
-    Use' _ arr -> KnownSize (arrDim arr)
+    Use' _ dim _ -> KnownSize dim
 
     -- CASE 1: Derivative arrays, look upstream:
     --------------------------------------------

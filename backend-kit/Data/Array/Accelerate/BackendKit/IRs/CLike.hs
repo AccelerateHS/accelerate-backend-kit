@@ -76,7 +76,7 @@ data TopLvlForm =
     ScalarCode ScalarBlock -- A block of Scalar code binding one or more variables.
   | Cond Exp Var Var
   | Use          AccArray
-  | Use'     Var AccArray -- Part of my Use* hack. I'm still upset that I can't use * at the end of a name.
+  | Use'     Var [Int] Type
 
   -- | Generate an array, storing it in memory
   | GenManifest (Generator (Fun ScalarBlock))

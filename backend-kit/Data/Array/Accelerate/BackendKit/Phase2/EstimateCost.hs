@@ -32,7 +32,7 @@ doAE :: AExp -> Int
 doAE ae =
   case ae of
     Use _                      -> 0
-    Use' _ _                   -> 0
+    Use' _ _ _                 -> 0
     Vr _                       -> 0
     Cond _ _  _                -> 0
     Map (Lam1 _ e) _           -> doE e

@@ -181,7 +181,9 @@ instance SimpleBackend BKEND where
        return$ [ [arr] | arr <- arrs ]
 
   -- simpleRunRawFun1 -- FIXME/TODO
-
+  simpleRunStar _ mname prog Nothing map = undefined
+  simpleRunStar _ mname prog (Just blob) map = undefined
+  
   -- These do EFFECTIVELY NOTHING for now:
   simpleCopyToHost _b [arr] = return arr
   simpleCopyToDevice _b arr = return [arr]

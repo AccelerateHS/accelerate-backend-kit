@@ -143,7 +143,7 @@ emitBindDef e (_ind, pb@GPUProgBind{ evtid, op, outarrs } ) =
      -- Cond does not create a *kernel* just more work for the driver/launcher:
      Cond _ _ _ -> return ()
      Use      _ -> return () -- This is also the job of the driver.
-     Use' _   _ -> return ()
+     Use' _ _ _ -> return ()
      NewArray _ -> return () -- ditto
 
      ---------------------------------------------------------------------- 

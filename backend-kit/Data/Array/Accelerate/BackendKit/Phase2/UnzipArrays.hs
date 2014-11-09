@@ -86,7 +86,7 @@ doAE :: TEnv -> Env -> AExp -> GensymM ([[Var]], AExp)
 doAE tenv env ae = 
   case ae of
     Use _               -> return ([],ae)
-    Use' _ _            -> return ([],ae)
+    Use' _ _ _          -> return ([],ae)
     Cond a b c          -> do a' <- (exp a)
                               return ([sp b,sp c], Cond a' nukedVar nukedVar)
     Generate e lam1     -> do l1 <- doLam1 tenv lam1

@@ -44,7 +44,7 @@ doBinds prog (pb@GPUProgBind { outarrs, evtid, evtdeps,
                  return $ pb{decor=FreeVars arrayOpFvs} : rst
   case op of
      Use  _       -> deflt
-     Use' _ _     -> deflt
+     Use' _ _ _   -> deflt
      Cond _ _ _   -> deflt
      ScalarCode _ -> deflt
      GenReduce {} -> deflt

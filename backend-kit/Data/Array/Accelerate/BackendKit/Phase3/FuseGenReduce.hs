@@ -64,7 +64,7 @@ doBinds inlines binds = loop [] [] binds
       let skip  = loop (pb:bacc) vacc rest
       case op of
          Use  _        -> skip
-         Use' _ _      -> skip
+         Use' _ _ _    -> skip
          -- TODO: We have the option here to turn array level conditionals into
          -- scalar conditionals:
          Cond _ _ _    -> skip

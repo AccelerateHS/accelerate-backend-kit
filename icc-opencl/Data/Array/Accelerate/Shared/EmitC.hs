@@ -100,12 +100,12 @@ getUseBinds GPUProg{progBinds} = concatMap fn progBinds
 -- | I just copied the above function and changed a few characters. I am ashamed,
 --   but we only have a few days left, so corners will be cut. That's just the
 --   way it is sometimes.
-getUsePrimeBinds :: GPUProg a -> [(Var,Type,Var,AccArray)]
+getUsePrimeBinds :: GPUProg a -> [(Var,Type,Var)]
 getUsePrimeBinds GPUProg{progBinds} = concatMap fn progBinds
  where
-   fn (GPUProgBind{ outarrs, op= Use' v arr }) =
+   fn (GPUProgBind{ outarrs, op= Use' v _ _ }) =
      let [(vr,_,arrty)] = outarrs
-     in [(vr,arrty,v,arr)] -- return the use' var name in this tuple
+     in [(vr,arrty,v)] -- return the use' var name in this tuple
    fn _ = []
 
 
@@ -441,22 +441,22 @@ instance EmitBackend CEmitter where
   emitMain e prog@GPUProg{progBinds, progResults, sizeEnv} = do
 
     let useBinds   = getUseBinds prog
-        usePBinds  = map (\(a,b,_,c) -> (a,b,c)) $ getUsePrimeBinds prog -- strip v
+        usePBinds  = map (\(a,b,c) -> (a,b)) $ getUsePrimeBinds prog -- strip v
         allResults = standardResultOrder progResults
         shapeSet   = S.toList $ S.fromList$ concatMap P.snd allResults
-        allBinds   =  useBinds ++ usePBinds
-        allUses    = S.fromList $ map (\(a,b,c) -> a) $ allBinds
+        allBinds   = usePBinds ++ map (\(a,b,c) -> (a,b)) useBinds
+        allUses    = S.fromList $ map (\(a,b) -> a) allBinds
     ----------------------------------------
     ------    Argument Initialization  -----
     cppStruct "ArgRecord" "" $ do
       comm "These are all the Use arrays gathered from the Acc computation:"
-      forM_ allBinds $ \ (vr,arrty,_) -> 
+      forM_ allBinds $ \ (vr,arrty) -> 
         E.emitStmt$ (emitType e arrty) +++ " " +++ varSyn vr
     rawFunDef "struct ArgRecord*" "CreateArgRecord" [] $ do
       return_ "malloc(sizeof(struct ArgRecord))"
     funDef "void" "DestroyArgRecord" ["struct ArgRecord*"] $ \arg -> do
       E.emitStmt$ function "free" [arg]
-    forM_ allBinds $ \ (vr,ty,_) -> 
+    forM_ allBinds $ \ (vr,ty) -> 
       funDef "void" ("LoadArg_" ++ show vr) ["struct ArgRecord*", "int", emitType e ty] $ \ (args,size,ptr) -> do
         comm$ "In the future we could do something with the size argument."
         let _ = size::Syntax
@@ -586,10 +586,10 @@ execBind e GPUProg{sizeEnv} (_ind, GPUProgBind {evtid, outarrs, op, decor=(FreeV
                    let [(outV,_,ty)] = outarrs -- Only one output Use's at this point.
                    varinit (emitType e ty) (varSyn outV) (strToSyn globalArgs `arrow` (varSyn outV))
                    return ()
-    Use' _ _ -> do comm$ "'Use'd arrays are already available in the arguments record:"
-                   let [(outV,_,ty)] = outarrs -- Only one output Use's at this point.
-                   varinit (emitType e ty) (varSyn outV) (strToSyn globalArgs `arrow` (varSyn outV))
-                   return ()
+    Use' _ _ _ -> do comm$ "'Use'd arrays are already available in the arguments record:"
+                     let [(outV,_,ty)] = outarrs -- Only one output Use's at this point.
+                     varinit (emitType e ty) (varSyn outV) (strToSyn globalArgs `arrow` (varSyn outV))
+                     return ()
     
     -- In the case of array conditionals we need to run the scalar
     -- code, then assign the result accordingly.  TODO: this is a
