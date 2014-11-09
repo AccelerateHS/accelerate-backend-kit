@@ -444,18 +444,19 @@ instance EmitBackend CEmitter where
         usePBinds  = map (\(a,b,_,c) -> (a,b,c)) $ getUsePrimeBinds prog -- strip v
         allResults = standardResultOrder progResults
         shapeSet   = S.toList $ S.fromList$ concatMap P.snd allResults
-        allUses    = S.fromList $ map (\(a,b,c) -> a) $ useBinds ++ usePBinds
+        allBinds   =  useBinds ++ usePBinds
+        allUses    = S.fromList $ map (\(a,b,c) -> a) $ allBinds
     ----------------------------------------
     ------    Argument Initialization  -----
     cppStruct "ArgRecord" "" $ do
       comm "These are all the Use arrays gathered from the Acc computation:"
-      forM_ useBinds $ \ (vr,arrty,_) -> 
+      forM_ allBinds $ \ (vr,arrty,_) -> 
         E.emitStmt$ (emitType e arrty) +++ " " +++ varSyn vr
     rawFunDef "struct ArgRecord*" "CreateArgRecord" [] $ do
       return_ "malloc(sizeof(struct ArgRecord))"
     funDef "void" "DestroyArgRecord" ["struct ArgRecord*"] $ \arg -> do
       E.emitStmt$ function "free" [arg]
-    forM_ useBinds $ \ (vr,ty,_) -> 
+    forM_ allBinds $ \ (vr,ty,_) -> 
       funDef "void" ("LoadArg_" ++ show vr) ["struct ArgRecord*", "int", emitType e ty] $ \ (args,size,ptr) -> do
         comm$ "In the future we could do something with the size argument."
         let _ = size::Syntax
@@ -496,10 +497,9 @@ instance EmitBackend CEmitter where
         
     ----------------------------------------
     mainBody P.False e prog 
-
-    when (null useBinds) $ do 
+    when (null allBinds) $ do 
       comm "As a bonus, we produce a normal main function when there are no Use AST nodes."
-      mainBody P.True e prog 
+      mainBody P.True e prog
 
 mainBody :: P.Bool -> CEmitter -> GPUProg FreeVars -> EasyEmit ()
 mainBody isCMain e prog@GPUProg{progBinds, progResults, sizeEnv} = do 
