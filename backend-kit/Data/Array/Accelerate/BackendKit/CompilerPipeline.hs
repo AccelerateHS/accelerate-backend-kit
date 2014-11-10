@@ -319,10 +319,17 @@ runSAPass1D msg pass input =
 
 optionalTC :: (S.Prog a -> S.Prog a) -> S.Prog a -> S.Prog a
 optionalTC tc prog =
-  -- if dbg > 0
-  -- then trace (" [dbg] Typechecking is TURNED OFF!")
-  --      prog
-  -- else prog
+  -- We have disabled the type-checker (again) because the compiler is
+  -- prematurely flattening tuples. If some expression returns a nested tuple,
+  -- the type checker will (now) know that the expression should be nested, but
+  -- the recovered type (recoverExpType) will be completely flattened because of
+  -- the way that ETupProject is defined. Boom.
+  --
+  if dbg > 0
+  then trace (" [dbg] Typechecking is TURNED OFF!")
+       prog
+  else prog
+{--
   let prog2 = if dbg>0
               then tc prog
               else prog
@@ -331,6 +338,7 @@ optionalTC tc prog =
                  ++", num binds "++show(length (S.progBinds prog)))
           prog2
      else prog2
+--}
 
 --------------------------------------------------------------------------------
 -- Misc:
