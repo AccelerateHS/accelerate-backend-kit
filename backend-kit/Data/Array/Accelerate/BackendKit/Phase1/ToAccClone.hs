@@ -142,20 +142,19 @@ envLookupArray i =
 
 --------------------------------------------------------------------------------
 
-getAccType :: forall aenv ans . Sug.Arrays ans => OpenAcc aenv ans -> S.Type
+getAccType :: forall aenv arrs . Sug.Arrays arrs => OpenAcc aenv arrs -> S.Type
 getAccType _ =
-   (\x -> maybtrace (" [ToAccClone] getAccType "++show ty2++" -> "++show x) x) $
-   convertArrayType ty2
+  maybtrace (" [ToAccClone] getAccType: "++show accType++"\n  -> "++show simpleType) simpleType
   where
-      ty2 = Sug.arrays (typeOnlyErr "getAccType" :: ans) :: Sug.ArraysR (Sug.ArrRepr ans)
+    simpleType  = convertArrayType (undefined :: arrs)
+    accType     = Sug.arrays (typeOnlyErr "getAccType" :: arrs) :: Sug.ArraysR (Sug.ArrRepr arrs)
 
-getAccTypePre :: Sug.Arrays ans => PreOpenAcc OpenAcc aenv ans -> S.Type
+getAccTypePre :: Sug.Arrays arrs => PreOpenAcc OpenAcc aenv arrs -> S.Type
 getAccTypePre acc =
    getAccType (OpenAcc acc)
 
-getExpType :: forall env aenv ans . Sug.Elt ans => OpenExp env aenv ans -> S.Type
-getExpType _ = convertType ty
-  where  ty  = Sug.eltType ((typeOnlyErr"getExpType")::ans)
+getExpType :: forall env aenv t . Sug.Elt t => OpenExp env aenv t -> S.Type
+getExpType _ = convertEltType (undefined :: t)
 
 {-# INLINE typeOnlyErr #-}
 typeOnlyErr msg = error$ msg++ ": This is a value that should never be evaluated.  It carries type information only."
@@ -591,103 +590,93 @@ tupleNumLeaves _             = 1
 -- Convert types
 -------------------------------------------------------------------------------
 
-convertType :: TupleType a -> S.Type
-convertType origty =
---  tracePrint ("CONVERTTYPE of "++show ty++":  ") $
-  tupleTy $ flattenTupTy $
-  loop origty
- where
-  loop :: TupleType a -> S.Type
-  loop ty =
-   case ty of
-     UnitTuple          -> S.TTuple []
-     PairTuple ty1 ty0  -> S.TTuple [loop ty1, loop ty0] -- First, just extract the binary tree.
-     SingleTuple scalar ->
-      case scalar of
-        NumScalarType (IntegralNumType typ) ->
-          case typ of
-            TypeInt   _  -> S.TInt
-            TypeInt8  _  -> S.TInt8
-            TypeInt16 _  -> S.TInt16
-            TypeInt32 _  -> S.TInt32
-            TypeInt64 _  -> S.TInt64
-            TypeWord   _ -> S.TWord
-            TypeWord8  _ -> S.TWord8
-            TypeWord16 _ -> S.TWord16
-            TypeWord32 _ -> S.TWord32
-            TypeWord64 _ -> S.TWord64
-            TypeCShort _ -> S.TCShort
-            TypeCInt   _ -> S.TCInt
-            TypeCLong  _ -> S.TCLong
-            TypeCLLong _ -> S.TCLLong
-            TypeCUShort _ -> S.TCUShort
-            TypeCUInt   _ -> S.TCUInt
-            TypeCULong  _ -> S.TCULong
-            TypeCULLong _ -> S.TCULLong
-        NumScalarType (FloatingNumType typ) ->
-          case typ of
-            TypeFloat _   -> S.TFloat
-            TypeDouble _  -> S.TDouble
-            TypeCFloat _  -> S.TCFloat
-            TypeCDouble _ -> S.TCDouble
-        NonNumScalarType typ ->
-          case typ of
-            TypeBool _   -> S.TBool
-            TypeChar _   -> S.TChar
-            TypeCChar _  -> S.TCChar
-            TypeCSChar _ -> S.TCSChar
-            TypeCUChar _ -> S.TCUChar
-
--- | Convert a reified representation of an Accelerate (front-end)
---   array type into the simple representation.  By convention this
---   ignores the extra unit type at the end ((),arr), which is produced
---   for any non-zero number of arrays by the ArrRepr type function.
+-- | Generate the simple type representation of a _surface_ type
 --
---   After this function, for example, an array of seven ints will come out as just
---   an array of ints with no extra fuss.
-convertArrayType :: forall arrs . Sug.ArraysR arrs -> S.Type
-convertArrayType origty =
-     maybtrace (" [ToAccClone] convertArrayType "++show origty++" -> "++show cvtd++" -> "++show flat) $
-     flat
+convertEltType :: forall a. Sug.Elt a => a -> S.Type
+convertEltType _ = reconstruct structure simpleType
   where
-    flat = tupleTy $ flattenTupTy cvtd
-    cvtd = loop origty
-    loop :: forall ar . Sug.ArraysR ar -> S.Type
-    loop ty =
+    (_, structure)      = Sug.reifyTupTree (undefined :: a)
+    simpleType          = cvt (Sug.eltType (undefined :: a))
+
+    reconstruct :: Sug.TupTree -> [S.Type] -> S.Type
+    reconstruct tree tys = snd $ go tree tys
+      where
+        go :: Sug.TupTree -> [S.Type] -> ([S.Type], S.Type)
+        go Sug.TupLeaf     []     = error "convertType: inconsistent valuation"
+        go Sug.TupLeaf     (x:xs) = (xs, x)
+        go (Sug.TupTree t) xs     = let (xs', t') = L.mapAccumL (flip go) xs t
+                                    in  (xs', mkTuple t')
+
+    cvt :: TupleType t -> [S.Type]
+    cvt UnitTuple         = []
+    cvt (PairTuple t1 t0) = cvt t1 ++ cvt t0
+    cvt (SingleTuple ty)  = return $
       case ty of
-       Sug.ArraysRunit  -> S.TTuple []
-       -- Again, here we reify information from types (phantom type
-       -- parameters) into a concrete data-representation:
-       Sug.ArraysRarray | (_ :: Sug.ArraysR (Sug.Array sh e)) <- ty ->
-          let ety = Sug.eltType ((error"This shouldn't happen (3)")::e) 
-              res = S.TArray (Sug.dim (Sug.ignore :: sh)) (convertType ety)
-          in
-            -- trace ("convertType: ety = " ++ show ety  ++ " result=" ++ show res) 
-            res
+        NumScalarType (IntegralNumType ty') ->
+          case ty' of
+            TypeInt{}     -> S.TInt
+            TypeInt8{}    -> S.TInt8
+            TypeInt16{}   -> S.TInt16
+            TypeInt32{}   -> S.TInt32
+            TypeInt64{}   -> S.TInt64
+            TypeWord{}    -> S.TWord
+            TypeWord8{}   -> S.TWord8
+            TypeWord16{}  -> S.TWord16
+            TypeWord32{}  -> S.TWord32
+            TypeWord64{}  -> S.TWord64
+            TypeCShort{}  -> S.TCShort
+            TypeCInt{}    -> S.TCInt
+            TypeCLong{}   -> S.TCLong
+            TypeCLLong{}  -> S.TCLLong
+            TypeCUShort{} -> S.TCUShort
+            TypeCUInt{}   -> S.TCUInt
+            TypeCULong{}  -> S.TCULong
+            TypeCULLong{} -> S.TCULLong
+        NumScalarType (FloatingNumType ty') ->
+          case ty' of
+            TypeFloat{}   -> S.TFloat
+            TypeDouble{}  -> S.TDouble
+            TypeCFloat{}  -> S.TCFloat
+            TypeCDouble{} -> S.TCDouble
+        NonNumScalarType ty' ->
+          case ty' of
+            TypeBool{}    -> S.TBool
+            TypeChar{}    -> S.TChar
+            TypeCChar{}   -> S.TCChar
+            TypeCSChar{}  -> S.TCSChar
+            TypeCUChar{}  -> S.TCUChar
 
-       Sug.ArraysRpair t0 t1 -> S.TTuple [loop t0, loop t1]
 
--- | Flatten the snoc-list representation of tuples, at the array as well as scalar level
-flattenTupTy :: S.Type -> [S.Type]
-flattenTupTy ty = loop ty
- where
-  -- When using the surface representation we reverse (cons instead of snoc):
-  mkTup = S.TTuple -- . reverse
-  isClosed (S.TTuple [S.TTuple [],_r]) = True
-  isClosed (S.TTuple [l,_r]) = isClosed l
-  isClosed _                = False
-  loop (S.TTuple [])        = []
-  -- isClosed means 'left' is a standalone tuple and 'right' does not extend it:
-  loop (S.TTuple [left,right]) | isClosed right = [mkTup [tupleTy (loop left), tupleTy (loop right)]]
---                               | otherwise      =  tupleTy (loop right) : loop left
-                               | otherwise      =  loop left ++ [tupleTy (loop right)]
-  loop (S.TTuple ls) = error$"flattenTupTy: expecting binary-tree tuples as input, recieved: "++show(S.TTuple ls)
-  loop oth           = [oth]
+-- | Generate the simple type representation of a _surface_ type
+--
+convertArrayType :: forall arrs. Sug.Arrays arrs => arrs -> S.Type
+convertArrayType _ = reconstruct structure simpleType
+  where
+    structure   = Sug.reifyArrTupTree (undefined :: arrs)
+    simpleType  = cvt (Sug.arrays (undefined :: arrs))
+
+    reconstruct :: Sug.TupTree -> [S.Type] -> S.Type
+    reconstruct tree tys = snd $ go tree tys
+      where
+        go :: Sug.TupTree -> [S.Type] -> ([S.Type], S.Type)
+        go Sug.TupLeaf     []     = error "convertType: inconsistent valuation"
+        go Sug.TupLeaf     (x:xs) = (xs, x)
+        go (Sug.TupTree t) xs     = let (xs', t') = L.mapAccumL (flip go) xs t
+                                    in  (xs', mkTuple t')
+
+    cvt :: Sug.ArraysR a -> [S.Type]
+    cvt Sug.ArraysRunit         = []
+    cvt (Sug.ArraysRpair a1 a0) = cvt a1 ++ cvt a0
+    cvt arr@Sug.ArraysRarray
+      | _ :: Sug.ArraysR (Sug.Array sh e) <- arr
+      = [S.TArray (Sug.dim (undefined::sh)) (convertEltType (undefined :: e))]
 
 
 -- | Constructor that refuses to make singleton tuple types.
-tupleTy [ty] = ty
-tupleTy ls = S.TTuple ls
+--
+mkTuple :: [S.Type] -> S.Type
+mkTuple [ty] = ty
+mkTuple ls = S.TTuple ls
 
 
 --------------------------------------------------------------------------------
@@ -874,8 +863,7 @@ convertFun =  loop []
    loop acc orig@(Lam f2) | (_:: OpenFun env aenv (arg -> res)) <- orig
                           = do
                                let (_:: OpenFun (env, arg) aenv res) = f2
-                                   ety = Sug.eltType ((error"This shouldn't happen (4)") :: arg)
-                                   sty = convertType ety
+                                   sty = convertEltType (undefined :: arg)
                                (_,x) <- withExtendedScalarEnv "v" $ do
                                           v <- envLookupScalar 0
                                           loop ((v,sty) : acc) f2
@@ -907,9 +895,8 @@ convertFun2 fn = do
 --
 --   Note that this does NOT need to do a deep copy, because the data
 --   payload representation stays the same.
-unpackArray :: forall a . (Sug.Arrays a) => Sug.ArrRepr a -> (S.Type, S.AccArray, Phantom a)
-unpackArray arrrepr = (ty, S.AccArray shp payloads,
-                        Phantom :: Phantom a)
+unpackArray :: forall a . Sug.Arrays a => Sug.ArrRepr a -> (S.Type, S.AccArray, Phantom a)
+unpackArray arrrepr = (ty, S.AccArray shp payloads, Phantom :: Phantom a)
   where
    shp = case L.group shps of
            [] -> []
@@ -917,7 +904,7 @@ unpackArray arrrepr = (ty, S.AccArray shp payloads,
            ls -> error$"Use: corrupt Accelerate array -- arrays components did not have identical shape:"
                  ++ show (concat ls)
    (shps, payloads)  = cvt2 repOf actualArr
-   ty        = convertArrayType repOf
+   ty        = convertArrayType (undefined :: a)
    repOf     = Sug.arrays actualArr  :: Sug.ArraysR (Sug.ArrRepr a)
    actualArr = Sug.toArr  arrrepr    :: a
 
@@ -1142,7 +1129,7 @@ instance Show (Sug.ArraysR a') where
      case arrR of
        Sug.ArraysRunit       -> "()"
        Sug.ArraysRpair r1 r2 -> "("++ loop r1 ++", "++ loop r2++")"
-       Sug.ArraysRarray -> "Array"
+       Sug.ArraysRarray      -> "Array"
 
 mkArrayTuple :: a -> [T.AExp a] -> T.AExp a
 mkArrayTuple ty [one] = one
