@@ -220,13 +220,29 @@ constantE c =
 -- | We enhance "Data.Array.Accelerate.Type.TupleType" with Elt constraints.
 --
 --   Further, we attempt to model SURFACE tuples here, not their binary-tree encoding.
+--
+-- TODO: Get rid of SingleTuple and possible just use the NilTup/SnocTup rep.
+--
 data EltTuple a where
-  UnitTuple   ::                                               EltTuple ()
-  SingleTuple :: (Elt a)        => T.ScalarType a           -> EltTuple a
-  PairTuple   :: (Elt a, Elt b) => EltTuple a -> EltTuple b -> EltTuple (a, b)
-  ThreeTuple  :: (Elt a, Elt b, Elt c) => EltTuple a -> EltTuple b -> EltTuple c -> EltTuple (a, b, c)
+  UnitTuple     :: EltTuple ()
+
+  SingleTuple   :: Elt a
+                => T.ScalarType a
+                -> EltTuple a
+
+  Tuple2        :: (Elt a, Elt b)
+                => EltTuple a -> EltTuple b
+                -> EltTuple (a, b)
+
+  Tuple3        :: (Elt a, Elt b, Elt c)
+                => EltTuple a -> EltTuple b -> EltTuple c
+                -> EltTuple (a, b, c)
+
+  Tuple4        :: (Elt a, Elt b, Elt c, Elt d)
+                => EltTuple a -> EltTuple b -> EltTuple c -> EltTuple d
+                -> EltTuple (a, b, c, d)
+
  deriving Typeable
--- TODO: ^^ Get rid of SingleTuple and possible just use the NilTup/SnocTup rep.
 
 -- | This GADT allows monomorphic value to carry a type inside.
 data SealedEltTuple where
@@ -290,27 +306,27 @@ scalarTypeD ty =
 
     -- Here we have a problem... we've lost the surface tuple
     -- representation.... What canonical tuple representation do we use?
-    TTuple []      -> SealedEltTuple UnitTuple
-    TTuple [sing]  -> scalarTypeD sing
-    TTuple [x,y]   ->
-        case (scalarTypeD x, scalarTypeD y) of
-        (SealedEltTuple (et1 :: EltTuple a),
-         SealedEltTuple (et2 :: EltTuple b)) ->
-          SealedEltTuple$ PairTuple et1 et2
+    TTuple []   -> SealedEltTuple UnitTuple
+    TTuple [_]  -> error "scalarTypeD: singleton tuple" -- scalarTypeD sing  TLM: should not happen
 
-    TTuple [x,y,z]   ->
-        case (scalarTypeD x, scalarTypeD y, scalarTypeD z) of
-        (SealedEltTuple (et1),
-         SealedEltTuple (et2),
-         SealedEltTuple (et3)) ->
-          SealedEltTuple$ ThreeTuple et1 et2 et3
+    TTuple [a,b]
+      | SealedEltTuple (ta :: EltTuple a) <- scalarTypeD a
+      , SealedEltTuple (tb :: EltTuple b) <- scalarTypeD b
+      -> SealedEltTuple $ Tuple2 ta tb
 
-    TTuple (hd:tl) ->
-      error ("scalarTypeD: unifinished: "++show ty) $
-      case (scalarTypeD hd, scalarTypeD (TTuple tl)) of
-        (SealedEltTuple (et1 :: EltTuple a),
-         SealedEltTuple (et2 :: EltTuple b)) ->
-          SealedEltTuple$ PairTuple et1 et2
+    TTuple [a,b,c]
+      | SealedEltTuple (ta :: EltTuple a) <- scalarTypeD a
+      , SealedEltTuple (tb :: EltTuple b) <- scalarTypeD b
+      , SealedEltTuple (tc :: EltTuple c) <- scalarTypeD c
+      -> SealedEltTuple $ Tuple3 ta tb tc
+
+    TTuple [a,b,c,d]
+      | SealedEltTuple (ta :: EltTuple a) <- scalarTypeD a
+      , SealedEltTuple (tb :: EltTuple b) <- scalarTypeD b
+      , SealedEltTuple (tc :: EltTuple c) <- scalarTypeD c
+      , SealedEltTuple (td :: EltTuple d) <- scalarTypeD d
+      -> SealedEltTuple $ Tuple4 ta tb tc td
+
     TArray {} -> error$"scalarTypeD: expected scalar type, got "++show ty
 
 -- | Almost dependent types!  Dynamically construct a type in a bottle
@@ -594,13 +610,11 @@ extendE vr ty sld (EnvPack eS eA mp) =
   EnvPack ((vr,ty):eS) eA
           (M.insert vr (ty,Left sld) mp)
 
-type AENV0 = ()
-
 
 resealTup :: [(SealedEltTuple, SealedExp)] -> SealedExp
 resealTup [] = sealExp$ A.constant ()
 
-resealTup [(_,sing)] = sing
+-- resealTup [(_,sing)] = sing
 
 resealTup [(SealedEltTuple (_ :: EltTuple aty), a'),
            (SealedEltTuple (_ :: EltTuple bty), b')] =
@@ -703,7 +717,7 @@ convertOpenExp ep@(EnvPack envE envA mp) ex
         S.EShapeSize sh         -> eshapeSize sh
         S.EIndex ix             -> eindex ix
         S.EIndexScalar var ix   -> eindexScalar var ix
-        S.ETupProject m n ix    -> prjT m n ix
+        S.ETupProject _ m n ix  -> prjT m n ix
         S.ETuple tup            -> etuple tup
         S.EPrimApp ty f xs      -> eprimApp ty f xs
         S.ECond p e1 e2         -> econd p e1 e2
@@ -806,7 +820,7 @@ convertOpenExp ep@(EnvPack envE envA mp) ex
                in
                sealExp exp'
 
-          PairTuple (ta :: EltTuple a) (tb :: EltTuple b)
+          Tuple2 (ta :: EltTuple a) (tb :: EltTuple b)
             -> let exp' :: Exp (a,b)
                    exp'  = downcastE $ cvtE exp
                    (a,b) = unlift exp'
@@ -814,16 +828,25 @@ convertOpenExp ep@(EnvPack envE envA mp) ex
                sliceT [SealedEltTuple ta, SealedEltTuple tb]
                       [sealExp a, sealExp b]
 
-          ThreeTuple (ta :: EltTuple a) (tb :: EltTuple b) (tc :: EltTuple c)
+          Tuple3 (ta :: EltTuple a) (tb :: EltTuple b) (tc :: EltTuple c)
             -> let exp' :: Exp (a,b,c)
                    exp'    = downcastE $ cvtE exp
                    (a,b,c) = unlift exp'
                in
                sliceT [SealedEltTuple ta, SealedEltTuple tb, SealedEltTuple tc]
                       [sealExp a, sealExp b, sealExp c]
+
+          Tuple4 (ta :: EltTuple a) (tb :: EltTuple b) (tc :: EltTuple c) (td :: EltTuple d)
+            -> let exp' :: Exp (a,b,c,d)
+                   exp'      = downcastE $ cvtE exp
+                   (a,b,c,d) = unlift exp'
+               in
+               sliceT [SealedEltTuple ta, SealedEltTuple tb, SealedEltTuple tc, SealedEltTuple td]
+                      [sealExp a, sealExp b, sealExp c, sealExp d]
+
       where
         tupTy           = S.recoverExpType typeEnv exp
-        sliceT ts es     = resealTup . P.take len . P.drop ind $ P.zip ts es
+        sliceT ts es    = resealTup . P.take len . P.drop ind $ P.zip ts es
 
     -- Scalar iteration
     --
@@ -1012,7 +1035,7 @@ indexToTup ty ex
 
 -- FINISHME: Go up to tuple size 9.
 
-       TTuple ls -> error$ "indexToTup: tuple type not handled: "++show(ty,ex)
+       TTuple{}  -> error$ "indexToTup: tuple type not handled: "++show(ty,ex)
        TArray{}  -> error$ "indexToTup: expected tuple-of-scalar type, got: "++show ty
        _ ->
          case scalarTypeD ty of
@@ -1054,8 +1077,7 @@ tupToIndex ty ex =
 
 -- FINISHME: Go up to tuple size 9.
 
-    TTuple _ -> error$"tupToIndex: unhandled tuple type: "++ show ty
-
+    TTuple{}  -> error$ "tupToIndex: unhandled tuple type: "++ show ty
     TArray{}  -> error$ "tupToIndex: expected tuple-of-scalar type, got: "++show ty
     _ ->
       case scalarTypeD ty of
@@ -1105,10 +1127,11 @@ convertProg S.Prog{progBinds,progResults} =
 --------------------------------------------------------------------------------
 
 instance Show (EltTuple a) where
-  show UnitTuple = "()"
+  show UnitTuple        = "()"
   show (SingleTuple st) = show st
-  show (PairTuple a b)  = "("++show a++","++show b++")"
-  show (ThreeTuple a b c)  = "("++show a++","++show b++","++show c++")"
+  show (Tuple2 a b)     = "("++show a++","++show b++")"
+  show (Tuple3 a b c)   = "("++show a++","++show b++","++show c++")"
+  show (Tuple4 a b c d) = printf "(%s,%s,%s,%s)" (show a) (show b) (show c) (show d)
 
 instance Show SealedEltTuple where
   show (SealedEltTuple x) = "Sealed:"++show x
