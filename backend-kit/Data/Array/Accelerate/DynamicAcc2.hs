@@ -717,7 +717,7 @@ convertOpenExp ep@(EnvPack envE envA mp) ex
         S.EShapeSize sh         -> eshapeSize sh
         S.EIndex ix             -> eindex ix
         S.EIndexScalar var ix   -> eindexScalar var ix
-        S.ETupProject _ m n ix  -> prjT m n ix
+        S.ETupProject t m n ix  -> prjT m n t ix
         S.ETuple tup            -> etuple tup
         S.EPrimApp ty f xs      -> eprimApp ty f xs
         S.ECond p e1 e2         -> econd p e1 e2
@@ -804,8 +804,8 @@ convertOpenExp ep@(EnvPack envE envA mp) ex
     --
     -- FIXME: This is having a FLATTING effect, which isn't valid for surface tuples
     --
-    prjT :: Int -> Int -> S.Exp -> SealedExp
-    prjT ind len exp
+    prjT :: Int -> Int -> S.Type -> S.Exp -> SealedExp
+    prjT ind len ty exp
       | dbgtrace (printf "ETupProject: ind=%d, len=%d, tup=%s\n" ind len (show exp)) False
       = undefined
 
@@ -825,32 +825,33 @@ convertOpenExp ep@(EnvPack envE envA mp) ex
                    exp'  = downcastE $ cvtE exp
                    (a,b) = unlift exp'
                in
-               doPrj  [sealExp a, sealExp b]
+               prj [sealExp a, sealExp b]
 
           Tuple3 (_ :: EltTuple a) (_ :: EltTuple b) (_ :: EltTuple c)
             -> let exp' :: Exp (a,b,c)
                    exp'    = downcastE $ cvtE exp
                    (a,b,c) = unlift exp'
                in
-               doPrj  [sealExp a, sealExp b, sealExp c]
+               prj [sealExp a, sealExp b, sealExp c]
 
           Tuple4 (_ :: EltTuple a) (_ :: EltTuple b) (_ :: EltTuple c) (_ :: EltTuple d)
             -> let exp' :: Exp (a,b,c,d)
                    exp'      = downcastE $ cvtE exp
                    (a,b,c,d) = unlift exp'
                in
-               doPrj  [sealExp a, sealExp b, sealExp c, sealExp d]
+               prj [sealExp a, sealExp b, sealExp c, sealExp d]
 
       where
-        doPrj :: [SealedExp] -> SealedExp
-        doPrj es        = P.reverse es P.!! toIdx ind (P.reverse tupTy)
-        TTuple tupTy    = S.recoverExpType typeEnv exp
+        prj :: [SealedExp] -> SealedExp
+        prj = go ind (P.reverse tupTy) . P.reverse
+          where go :: Int -> [Type] -> [SealedExp] -> SealedExp
+                go 0 (t:_)  (e:_)
+                  | len == P.length (S.flattenTy t), t == ty    = e
+                  | otherwise                                   = error "prjT: invalid projection"
+                go n (t:ts) (_:es)                              = go (n - P.length (S.flattenTy t)) ts es
+                go _ _ _                                        = error "prjT: inconsistent valuation"
 
-        toIdx :: Int -> [Type] -> Int
-        toIdx 0 (t:_) | len == P.length (S.flattenTy t) = 0
-                      | otherwise                       = error "prjT: invalid projection"
-        toIdx n (t:ts)                                  = 1 + toIdx (n - P.length (S.flattenTy t)) ts
-        toIdx _ _                                       = error "prjT: inconsistent valuation"
+        TTuple tupTy = S.recoverExpType typeEnv exp
 
     -- Scalar iteration
     --
