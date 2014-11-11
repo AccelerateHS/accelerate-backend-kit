@@ -44,7 +44,7 @@ doBind prog num (ProgBind avr outty (outsz,d) (Right ae)) =
            filter ((==All) . fst) $ 
            reverse $
            zip (reverse template) 
-               [ mkPrj i 1 ndims (EVr gensym) | i <- [0..] ]
+               [ mkPrj i 1 ndims (EVr gensym) TInt | i <- [0..] ]
           ) vr
 
     -- TODO/FIXME: ensure that all non-trivial expressions are lifted into top level bindings!!
@@ -64,9 +64,9 @@ doBind prog num (ProgBind avr outty (outsz,d) (Right ae)) =
          mkETuple $ 
           map (\ (t,i) ->
                 case t of
-                  All   -> mkPrj i 1 (dimsOut) (EVr gensym)
+                  All   -> mkPrj i 1 (dimsOut) (EVr gensym) TInt
                   -- This is very ugly business:
-                  Fixed -> mkPrj (hopExInd i exShp) 1 (length exShp) ex 
+                  Fixed -> mkPrj (hopExInd i exShp) 1 (length exShp) ex TInt
               )
             (reverse$ fn (0,0) (reverse template))
         )
@@ -110,9 +110,9 @@ getType prog v = ty
 
 -- Safely make a projection, taking care not to project from a ONE
 -- ELEMENT tuple (i.e. not a tuple):
-mkPrj :: Int -> Int -> Int -> Exp -> Exp
-mkPrj _ _ 1 e = e 
-mkPrj ind len _total e = ETupProject (error "DesugToBackperm: mkPrj") ind len e 
+mkPrj :: Int -> Int -> Int -> Exp -> Type -> Exp
+mkPrj _   _   1      e _ = e
+mkPrj ind len _total e t = ETupProject t ind len e
 
 
 
