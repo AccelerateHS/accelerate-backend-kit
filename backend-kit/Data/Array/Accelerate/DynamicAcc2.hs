@@ -614,12 +614,12 @@ extendE vr ty sld (EnvPack eS eA mp) =
 resealTup :: [(SealedEltTuple, SealedExp)] -> SealedExp
 resealTup [] = sealExp$ A.constant ()
 
--- resealTup [(_,sing)] = sing
+resealTup [(_,sing)] = sing
 
-resealTup [(SealedEltTuple (_ :: EltTuple aty), a'),
-           (SealedEltTuple (_ :: EltTuple bty), b')] =
-    sealExp$ tup2 (downcastE a' :: Exp aty,
-                   downcastE b' :: Exp bty)
+resealTup [(SealedEltTuple (_ :: EltTuple aty), a),
+           (SealedEltTuple (_ :: EltTuple bty), b)] =
+    sealExp$ tup2 (downcastE a :: Exp aty,
+                   downcastE b :: Exp bty)
 
 resealTup [(SealedEltTuple (_ :: EltTuple aty), a),
            (SealedEltTuple (_ :: EltTuple bty), b),
