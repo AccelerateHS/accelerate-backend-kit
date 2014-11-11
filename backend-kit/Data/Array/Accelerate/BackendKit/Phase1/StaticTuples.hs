@@ -50,7 +50,7 @@ staticTuples origae = aexp M.empty origae
 --             len = tupleNumLeaves ty1 + tupleNumLeaves ty2
              len2 = tupleNumLeaves ty2
              -- FIXME: Must let-bind to avoid code duplication:
-             newtup = mkTuple (e1' : [ mkProject ix 1 e2' ty
+             newtup = mkTuple (e1' : [ mkProject S.TInt ix 1 e2' ty     -- TLM: type??
                                      | ix <- [0 .. tupleSize ty2 - 1]
                                      | ty <- tupleToList ty2])
          in newtup
@@ -63,15 +63,18 @@ staticTuples origae = aexp M.empty origae
          let e'  = exp tenv e
              ty  = retrieveTy tenv e'
              len = tupleNumLeaves ty
-         in mkProject (len-1) 1 e' ty
+         in mkProject TInt (len-1) 1 e' ty
 
        T.EIndexTailDynamic e ->
          let e'  = exp tenv e
              ty  = retrieveTy tenv e'
+             rty = case replicate (len-1) TInt of
+                     [t] -> t
+                     ts  -> TTuple ts
              len = tupleNumLeaves ty
-         in mkProject 0 (len-1) e' ty
+         in mkProject rty 0 (len-1) e' ty
 
-       T.ETupProject ind ln ex -> mkProject ind ln (exp tenv ex) (retrieveTy tenv ex)
+       T.ETupProject ty ind ln ex -> mkProject ty ind ln (exp tenv ex) (retrieveTy tenv ex)
 
        -- The rest is BOILERPLATE:
        ------------------------------------------------------------
@@ -181,11 +184,11 @@ retrieveTy tenv e =
     T.EIndex ls            -> mkTupleTy$ L.map (retrieveTy tenv) ls
     T.ETuple ls            -> mkTupleTy$ L.map (retrieveTy tenv) ls
 
-    T.ETupProject ind len ex ->
-      case (ind,len,retrieveTy tenv ex) of
-        (_,_,S.TTuple ls) -> mkTupleTy$ reverse$ take len $ drop ind $ reverse ls
-        (0,1,oth)         -> oth
-        _                 -> error "retrieveTy: mismatch between indices and tuple type"
+    T.ETupProject ty _ _ _ -> ty
+--      case (ind,len,retrieveTy tenv ex) of
+--        (_,_,S.TTuple ls) -> mkTupleTy$ reverse$ take len $ drop ind $ reverse ls
+--        (0,1,oth)         -> oth
+--        _                 -> error "retrieveTy: mismatch between indices and tuple type"
 
     T.EIndexConsDynamic e1 e2 -> error "EIndexConsDynamic should have been desugared before calling retrieveTy"
     T.EIndexHeadDynamic ex    -> error "EIndexHeadDynamic should have been desugared before calling retrieveTy"
@@ -193,10 +196,10 @@ retrieveTy tenv e =
 
 -- | Create an ETupProject but avoid creating spurious ones.
 --   Index from RIGHT as with ETupProject
-mkProject :: Int -> Int -> T.Exp -> Type -> T.Exp
-mkProject ind len ex (S.TTuple ty) = T.ETupProject ind len ex
-mkProject 0 1 ex _ = ex  -- Eliminate silly ETupProject.
-mkProject ind len ex ty = error$"internal error: should not have this project on non-tuple type: "++show ty
+mkProject :: Type -> Int -> Int -> T.Exp -> Type -> T.Exp
+mkProject t ind len ex (S.TTuple ty) = T.ETupProject t ind len ex
+mkProject _ 0   1   ex _  = ex  -- Eliminate silly ETupProject.
+mkProject _ ind len ex ty = error$"internal error: should not have this project on non-tuple type: "++show ty
 
 mkTupleTy [one] = one
 mkTupleTy ls    = S.TTuple ls

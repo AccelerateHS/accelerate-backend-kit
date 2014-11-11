@@ -122,7 +122,7 @@ liftComplexRands orig_aex =
        T.ECond e1 e2 e3              -> T.ECond      <$> exp e1 <*> exp e2 <*> exp e3
        T.EShapeSize ex               -> T.EShapeSize <$> exp ex
        T.ETuple ls                   -> T.ETuple <$> mapM exp ls
-       T.ETupProject ind len ex      -> T.ETupProject ind len <$> exp ex
+       T.ETupProject ty ind len ex   -> T.ETupProject ty ind len <$> exp ex
        T.EIndex els                  -> T.EIndex <$> mapM exp els
        T.EIndexConsDynamic e1 e2     -> T.EIndexConsDynamic <$> exp e1 <*> exp e2
        T.EIndexHeadDynamic e         -> T.EIndexHeadDynamic <$> exp e

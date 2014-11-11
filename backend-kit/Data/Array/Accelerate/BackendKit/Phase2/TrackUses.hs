@@ -122,7 +122,7 @@ doE ex mp =
     EShape avr           -> err ex 
     EShapeSize ex        -> err ex
     EIndex els           -> doEs els mp
-    ETupProject _ _ ex   -> doE ex mp
+    ETupProject _ _ _ ex -> doE ex mp
 
 err :: Show a => a -> b
 err ex = error$"TrackUses.hs: this form should have been desugared by this point: "++show ex

@@ -145,7 +145,7 @@ doAE tenv env ae =
 doE :: TEnv -> Env -> Exp -> GensymM Exp
 doE tenv env ex =
   case ex of
-    ETupProject ix len (EIndexScalar avr ind) ->
+    ETupProject _ ix len (EIndexScalar avr ind) ->
       if len /= 1 then error$"UnzipArrays.hs: ETupProject with len/=1: "++show ex
       else
         maybtrace ("Projecting out of "++show (env # avr)++" for avr "++show avr++" want index "++show ix)$
@@ -157,7 +157,7 @@ doE tenv env ex =
          maybeLetE e' ixty $ \ e'' ->
            mkETuple [ EIndexScalar avr' e'' | avr' <- env#avr ]
           
-    ETupProject ix l e  -> ETupProject ix l <$> fn e
+    ETupProject t ix l e-> ETupProject t ix l <$> fn e
     EShape _            -> err ex
     EShapeSize _        -> err ex
     EIndex _            -> err ex

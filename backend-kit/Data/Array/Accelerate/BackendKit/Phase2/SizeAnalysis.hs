@@ -155,7 +155,7 @@ doE mp ex = -- doEWith (repeat Fixed) []
         KnownSize ls -> KnownSize [sum ls]
         UnknownSize  -> UnknownSize
 
-    ETupProject ind len tup -> 
+    ETupProject _ ind len tup -> 
       -- Here we try to press on.  This is silly but it could happen:
       case doE mp tup of 
         UnknownSize  -> UnknownSize

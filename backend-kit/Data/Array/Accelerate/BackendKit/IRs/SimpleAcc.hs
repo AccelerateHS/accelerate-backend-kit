@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE Rank2Types          #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
@@ -348,9 +349,10 @@ data Exp =
   | EIndex [Exp]              -- ^ An index into a multi-dimensional array.
   | ETuple [Exp]              -- ^ Build a tuple.  They are store in REVERSE of textual order in the IR.
   | ETupProject
-    { indexFromRight :: Int,  -- ^ where to start the slice
-      projlen        :: Int,  -- ^ how many scalars to extract
-      tupexpr        :: Exp   -- ^ tuple value to extract from
+    { tupResType     :: Type  -- ^ This flattened representation destroys the true structure of the type, so store it here
+    , indexFromRight :: Int   -- ^ where to start the slice
+    , projlen        :: Int   -- ^ how many scalars to extract
+    , tupexpr        :: Exp   -- ^ tuple value to extract from
     } -- ^ Project a consecutive series of fields from a tuple.
       -- This is an odd one because projlen is counted in terms of LEAVES of the tuple,
       -- if it is a nested tuple.  But the effect is always to 
@@ -970,8 +972,7 @@ recoverExpType env exp =
         EShape vr             -> let (dim,_) = arrayType vr in
                                  mkTTuple$ take dim (repeat TInt)
         EIndexScalar vr _ex   -> snd (arrayType vr)
-        ETupProject indR len ex -> let ls = flattenTy $ recoverExpType env ex in
-                                   mkTTuple$ reverse $ take len $ drop indR $ reverse ls
+        ETupProject t _ _ _   -> t
         -- Indices are represented as Tuples:
         EIndex es             -> mkTTuple $ map (recoverExpType env) es
  where
@@ -1075,7 +1076,7 @@ expFreeVars ex =
     ELet (v,_,rhs) bod  -> S.union (f rhs) $ S.delete v $ f bod
     EIndexScalar avr ex -> S.insert avr $ f ex
     EShapeSize ex       -> f ex
-    ETupProject _ _ ex  -> f ex
+    ETupProject{..}     -> f tupexpr
     ETuple els          -> fs els
     EPrimApp _ _ els    -> fs els
     EIndex els          -> fs els
@@ -1171,9 +1172,9 @@ freshenExpNames = lp M.empty
                                 f2 <- rfn1 f2
                                 e3 <- f e3
                                 return (EWhile f1 f2 e3)
-      EIndexScalar avr e  -> EIndexScalar avr <$> f e
-      EShapeSize e        -> EShapeSize       <$> f e
-      ETupProject i l e   -> ETupProject i l  <$> f e
+      EIndexScalar avr e  -> EIndexScalar avr  <$> f e
+      EShapeSize e        -> EShapeSize        <$> f e
+      ETupProject t i l e -> ETupProject t i l <$> f e
       ETuple els          -> ETuple       <$> mapM f els
       EPrimApp t p els    -> EPrimApp t p <$> mapM f els
       EIndex els          -> EIndex       <$> mapM f els
@@ -1192,7 +1193,7 @@ expASTSize ex0 =
     ELet (_,_,rhs) bod  -> 1 + f rhs + f bod
     EIndexScalar _av ex -> 1 + f ex
     EShapeSize ex       -> 1 + f ex
-    ETupProject _ _ ex  -> 1 + f ex
+    ETupProject{..}     -> 1 + f tupexpr
     ETuple els          -> 1 + sum (map f els)
     EPrimApp _ _ els    -> 1 + sum (map f els)
     EIndex els          -> 1 + sum (map f els)
@@ -1270,7 +1271,7 @@ substExp old new target = loop target
       EWhile f1 f2 e3     -> EWhile (rfn1 f1) (rfn1 f2) (loop e3)
       EIndexScalar avr e  -> EIndexScalar avr (loop e)
       EShapeSize e        -> EShapeSize  (loop e)
-      ETupProject i l e   -> ETupProject i l (loop e)
+      ETupProject t i l e -> ETupProject t i l (loop e)
       ETuple els          -> ETuple       (map loop els)
       EPrimApp t p els    -> EPrimApp t p (map loop els)
       EIndex els          -> EIndex       (map loop els)

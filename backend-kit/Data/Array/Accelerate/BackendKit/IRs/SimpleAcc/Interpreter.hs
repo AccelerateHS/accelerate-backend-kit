@@ -359,7 +359,7 @@ evalE env expr =
 
     T.EPrimApp ty p es  -> ConstVal$ evalPrim ty p (map (valToConst . evalE env) es)
 
-    T.ETupProject ind len ex ->
+    T.ETupProject _ ind len ex ->
       tracePrint ("[dbg]  ETupProject: "++show ind++" "++show len++": ") $
       case (ind, len, evalE env ex) of
         (_,_,ConstVal (Tup ls)) -> ConstVal$ tuple$  slice ls

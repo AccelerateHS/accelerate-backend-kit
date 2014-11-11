@@ -99,7 +99,7 @@ data Exp =
   | EIndexTailDynamic Exp     -- Retain all dimensions but the first.
   -----------------------------------
   | ETuple [Exp]            -- Build a tuple.  Stored in REVERSE of textual order in the IR.
-  | ETupProject Int Int Exp -- Project a consecutive series of fields from a tuple.
+  | ETupProject Type Int Int Exp -- Project a consecutive series of fields from a tuple.
   | EVr Var
   | ELet (Var,Type,Exp) Exp
   | EPrimApp Type Prim [Exp]
@@ -141,7 +141,7 @@ convertExps expr =
     EWhile f1 f2 e3          -> S.EWhile (convertFun1 f1) (convertFun1 f2) (f e3)
     EShapeSize ex            -> S.EShapeSize (f ex)
     EPrimApp ty p es         -> S.EPrimApp ty p (L.map f es)
-    ETupProject ind len ex   -> S.ETupProject ind len (f ex)
+    ETupProject ty ind len ex-> S.ETupProject ty ind len (f ex)
     EIndex indls             -> S.EIndex (L.map f indls)
     EIndexScalar (Vr _ v) ex -> S.EIndexScalar v (f ex)
     EShape (Vr _ v)          -> S.EShape v

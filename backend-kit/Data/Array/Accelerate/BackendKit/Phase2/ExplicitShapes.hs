@@ -99,8 +99,8 @@ doBinds (ProgBind vo voty sz (Right ae) : rest) = do
           knockOne v = maybtrace ("TEMPMSG - KNOCKING "++show v++" down to "++show (ndims-1)++" = "++ show x ++" sizeE "++show (getSizeE v))
                        x
             where
-              TArray ndims _ = typeEnv # v
-              x = [ mkPrj i 1 ndims (getSizeE v)
+              TArray ndims t = typeEnv # v
+              x = [ mkPrj i 1 ndims (getSizeE v) t
                   | i <- reverse [0..ndims-2]]
 --                  | i <- reverse [1..ndims-1] 
                     
@@ -115,13 +115,13 @@ doBinds (ProgBind vo voty sz (Right ae) : rest) = do
           -- Beware tricky intersection semantics:
           intersectShapes v1 v2 =
               maybtrace ("TEMPMSG[ExplicitShapes] - INTERSECT SHAPES "++show(v1,v2) ++" supposed sizes "++show((getSizeE v1),(getSizeE v2)) ) $            
-              let TArray v1Dims _ = typeEnv # v1
-                  TArray v2Dims _ = typeEnv # v2 in
+              let TArray v1Dims t1 = typeEnv # v1
+                  TArray v2Dims t2 = typeEnv # v2 in
               if v1Dims /= v2Dims || v1Dims /= vo_ndims then
                 error$"ExplicitShapes/intersectShapes: mismatched ranks: "++show (v1Dims, v2Dims, vo_ndims)
               else   
-                mkETuple$ [ let a = mkPrj i 1 v1Dims (getSizeE v1)
-                                b = mkPrj i 1 v2Dims (getSizeE v2)
+                mkETuple$ [ let a = mkPrj i 1 v1Dims (getSizeE v1) t1
+                                b = mkPrj i 1 v2Dims (getSizeE v2) t1
                             in EPrimApp TInt (SP Min) [a,b]
                           | i <- reverse [0 .. v1Dims-1]]
       case ae of
@@ -187,9 +187,9 @@ doBinds (ProgBind vo voty sz (Right ae) : rest) = do
                  -- Build up the individual components of the shape of Replicate's output:
                  ls = [ case pr of 
                           -- The 'ex' expression will retain slots for the Alls that are ():
-                          (Fixed,_indA,indF) -> mkPrj indF 1 numWithoutTrailing (EVr gensym)
+                          (Fixed,_indA,indF) -> mkPrj indF 1 numWithoutTrailing (EVr gensym) (error "ExplicitShapes: Replicate")
                           -- The shape of the upstream will be pure numbers, no 'All' business:
-                          (All,  indA,_indF) -> mkPrj indA 1 upDims (getSizeE upV)
+                          (All,  indA,_indF) -> mkPrj indA 1 upDims (getSizeE upV) (error "ExplicitShapes: Replicate")
                       | pr <- fromJust $ fragileZip3 template indsA indsF ]
                  -- Sum up the number of Alls seen so far to get the index into the original shape:
                  indsA = tail$reverse$scanl (\ ind x -> if x==All   then ind+1 else ind) 0 (reverse template)
@@ -206,7 +206,7 @@ doBinds (ProgBind vo voty sz (Right ae) : rest) = do
              let 
                  numAlls = length$ filter (==All) template
                  -- The number of remaining dimensions in the shape will be the number of All's
-                 ls = [ mkPrj i 1 numAlls (getSizeE vr)
+                 ls = [ mkPrj i 1 numAlls (getSizeE vr) (error "ExplicitShapes: Index")
                       | i <- indsF]
                  -- Get the index of the All entries within the original, pre-knockout shape:
                  loop []          = []
@@ -242,7 +242,7 @@ doE ex = do
                            maybtrace (" TEMPMSG[ExplicitShapes] ESHAPESIZE of "++ show ex1 ++" - we think it has ndims = "++show ndims) $ return() 
                            return$ 
                              ELet (tmp, TTuple ls, ex2) $
-                              foldl (\ acc i -> mulI acc (mkPrj i 1 ndims (EVr tmp)))
+                              foldl (\ acc i -> mulI acc (mkPrj i 1 ndims (EVr tmp) TInt))
                                     (EConst (I 1))
                                     (reverse [0..ndims - 1])
            ty -> error$"invariant broken: bad type for shape tuple: "++show ty
@@ -257,10 +257,10 @@ doE ex = do
                                                       <*> doE e3  
   
     ELet (v,t,rhs) bod  -> (\r b -> ELet (v,t,r) b) <$> doE rhs <*> doE bod
-    ETupProject i l e   -> ETupProject i l  <$> doE e
-    EPrimApp p t els    -> EPrimApp    p t  <$> mapM doE els
-    ETuple els          -> ETuple           <$> mapM doE els
-    EIndexScalar avr e  -> EIndexScalar avr <$> doE e
+    ETupProject t i l e -> ETupProject t i l <$> doE e
+    EPrimApp p t els    -> EPrimApp    p t   <$> mapM doE els
+    ETuple els          -> ETuple            <$> mapM doE els
+    EIndexScalar avr e  -> EIndexScalar avr  <$> doE e
     EIndex _            -> doerr ex
   where
     rfn1 (Lam1 (v,t) e ) = Lam1 (v,t) $ doE e 

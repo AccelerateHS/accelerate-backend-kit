@@ -321,14 +321,14 @@ doE env ex =
                          Just (_, ls , _) -> error$"ToCLike.hs/doE: uncaught raw reference to tuple-bound variable: "
                                                   ++show vr++" subcomponents "++show ls
                          Nothing -> error$"ToCLike.hs/doE: internal error, var not in env: "++show vr
-    ETupProject ind 1 (EVr vr) ->
+    ETupProject _ ind 1 (EVr vr) ->
       case M.lookup vr env of
         Just (_,ls,_) -> LL.EVr $ (reverse ls) !! ind
           -- trace (printf "trying to project tuple index %d from variables %s\n" ind (show ls))
         oth -> error$"ToCLike.hs/doE: internal error, tuple project of field "++show ind++
                      " of var: "++show vr++", env binding: "++show oth
 
-    ETupProject _ _ _ -> error"FINISHME -- ETupProject"
+    ETupProject{} -> error"FINISHME -- ETupProject"
 
     EConst c         -> case c of
                           Tup _ -> error$"ToCLike.hs: should not have remaining tuple constants: "++show c

@@ -112,7 +112,7 @@ getType prog v = ty
 -- ELEMENT tuple (i.e. not a tuple):
 mkPrj :: Int -> Int -> Int -> Exp -> Exp
 mkPrj _ _ 1 e = e 
-mkPrj ind len _total e = ETupProject ind len e 
+mkPrj ind len _total e = ETupProject (error "DesugToBackperm: mkPrj") ind len e 
 
 
 

@@ -55,7 +55,7 @@ doSpine env ex =
   case ex of
     EVr _vr               -> return ex
     ETuple els            -> runDischarge (mapM (doE env) els) ETuple
-    ETupProject i l e     -> runDischarge (doE env e) (ETupProject i l)
+    ETupProject t i l e   -> runDischarge (doE env e) (ETupProject t i l)
 
     --------------------------------------------------------------------------------
     EConst _c             -> return ex
@@ -109,7 +109,7 @@ doE env ex =
     EVr _vr               -> return ex
     EConst _c             -> return ex
     ETuple els            -> ETuple <$> mapM (doE env) els
-    ETupProject i l e     -> ETupProject  i l <$> doE env e
+    ETupProject t i l e   -> ETupProject t i l <$> doE env e
 
     -- TODO: Dedup this code:
     -- BJS: It's not actually Duped.

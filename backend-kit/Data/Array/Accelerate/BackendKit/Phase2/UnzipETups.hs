@@ -175,7 +175,7 @@ doSpine env ex = -- trace (printf "doSpine of %s\n" (show ex)) $
 
     -- In all three of the following we allow tuples to remain:
     ETuple els            -> (mkETuple . concat) <$> mapM (doE env) els
-    ETupProject i l e     -> mkETuple <$> doProject env i l e
+    ETupProject _ i l e   -> mkETuple <$> doProject env i l e
 
     EIndexScalar avr indE -> (EIndexScalar avr . mkETuple) <$> doE env indE
 
@@ -236,7 +236,7 @@ doSpine env ex = -- trace (printf "doSpine of %s\n" (show ex)) $
 blowUpVarref :: Var -> Type -> [Exp]
 blowUpVarref vr ty =
   let size = length $ flattenOnlyScalar ty
-      res  = reverse [ mkPrj ind 1 size (EVr vr) | ind <- [ 0 .. size-1 ]]
+      res  = reverse [ mkPrj ind 1 size (EVr vr) ty | ind <- [ 0 .. size-1 ]]
   in
   res
 --  trace (printf "blowUpVarref of var=%s type=%s gave result=%s" (show vr) (show ty) (show res)) res
@@ -272,7 +272,7 @@ doE env ex = -- trace (printf "doE on %s\n" (show ex)) $
     --   ETupProject operates on the flattened list-of-scalars structure, which
     --   is what we have here.
 
-    ETupProject i l e    -> doProject env i l e
+    ETupProject _ i l e  -> doProject env i l e
     EVr vr               -> return$ handleVarref env vr
     --------------------------------------------------------------------------------
     -- As long as arrays remain multidimensional, array derefs can remain tuples:
@@ -282,7 +282,7 @@ doE env ex = -- trace (printf "doE on %s\n" (show ex)) $
       -- Maintain invariant that this function return a list of the correct length.
       | isTrivialE indE -> do let (TArray _ elt,_) = env # avr
                                   width = length$ flattenOnlyScalar elt
-                              return [ ETupProject ix 1 (EIndexScalar avr indE) | ix <- reverse [0..width-1] ]
+                              return [ ETupProject elt ix 1 (EIndexScalar avr indE) | ix <- reverse [0..width-1] ]
       | otherwise -> error$ "UnzipETups.hs: Incoming grammar invariants not satisfied, EIndexScalar should have trivial index: "++show indE
 
     -- Because of the normalization phase, we know this conditional

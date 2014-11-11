@@ -71,7 +71,7 @@ doE ex =
     ECond e1 e2 e3      -> ifCost + doE e1 + doE e2 + doE e3
     EWhile (Lam1 _ bod1) (Lam1 _ bod2) e -> doE e + doE bod1 + doE bod2
     ELet (v,_,rhs) bod  -> doE rhs + doE bod
-    ETupProject _ _ ex  -> doE ex
+    ETupProject _ _ _ ex-> doE ex
     -- TODO: ideally we would estimate the different cost of primitives:
     EPrimApp p _ els    -> 1 + doEs els 
     EShapeSize ex       -> 1 + doE ex     

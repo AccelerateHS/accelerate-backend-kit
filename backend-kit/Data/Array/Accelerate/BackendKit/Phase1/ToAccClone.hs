@@ -441,7 +441,7 @@ convertExp e =
                       len = tupleNumLeaves ty
                   in
                    -- maybtrace ("TUPLE NUM LEAVES: e:"++show ty++ " " ++ show len ++ " " ++ show n) $
-                   T.ETupProject n len <$> convertExp ex
+                   T.ETupProject ty n len <$> convertExp ex
 
     -- This would seem to force indices to be LISTS at runtime??
     IndexNil       -> return$ T.EIndex []

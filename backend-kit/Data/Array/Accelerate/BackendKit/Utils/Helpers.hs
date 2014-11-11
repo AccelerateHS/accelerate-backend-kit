@@ -141,14 +141,14 @@ defaultDupThreshold = 5
 
 -- | Safely make a projection, taking care not to project from a ONE
 --   ELEMENT tuple (i.e. not a tuple):
-mkPrj :: Int -> Int -> Int -> Exp -> Exp
-mkPrj ind len total e | total P.<= 0 = 
-  error$"mkPrj: something's wrong, total tuple size should not be "++show total++" expr: "++show (ETupProject ind len e)
-mkPrj ind len total e | ind P.+ len P.> total = 
-  error$"mkPrj: out of bounds tuple index, from tuple of (supposed) size "++show total++", expr:\n  "++show (ETupProject ind len e)  
-mkPrj _ _ 1 e = e
-mkPrj ind len _total (ETuple ls) = mkETuple$ reverse $ take len $ drop ind $ reverse ls
-mkPrj ind len _total e = ETupProject ind len e 
+mkPrj :: Int -> Int -> Int -> Exp -> Type -> Exp
+mkPrj ind len total e t | total P.<= 0 = 
+  error$"mkPrj: something's wrong, total tuple size should not be "++show total++" expr: "++show (ETupProject t ind len e)
+mkPrj ind len total e t | ind P.+ len P.> total = 
+  error$"mkPrj: out of bounds tuple index, from tuple of (supposed) size "++show total++", expr:\n  "++show (ETupProject t ind len e)  
+mkPrj _ _ 1 e _ = e
+mkPrj ind len _total (ETuple ls) _ = mkETuple$ reverse $ take len $ drop ind $ reverse ls
+mkPrj ind len _total e           t = ETupProject t ind len e 
 
 -- Convenient integer operations
 addI :: Exp -> Exp -> Exp

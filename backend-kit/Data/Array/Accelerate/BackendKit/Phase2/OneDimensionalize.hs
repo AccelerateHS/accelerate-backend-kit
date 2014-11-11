@@ -75,7 +75,7 @@ compute1DSize ndim ex =
  where
    -- The one-dimensional size is just the product of the dimensions:   
    deflt = foldl mulI (EConst (I 1))
-           [ mkPrj i 1 ndim ex | i <- reverse[0 .. ndim-1] ]
+           [ mkPrj i 1 ndim ex (error "compute1DSize") | i <- reverse[0 .. ndim-1] ]
 {--
 -- | This version also may introduce let bindings.
 compute1DSizeM :: Int -> Exp -> MyM Exp
@@ -137,10 +137,10 @@ getFoldStride env allbinds (ProgBind vo outTy osz eith) =
        let shp   = shapeName inArr in
        -- Take the "last" of a tuple:
        case M.lookup shp env of
-         Just TInt       -> EVr shp
-         Just (TTuple _) -> ETupProject 0 1 (EVr shp)
-         Just ty         -> error$"OneDimensionalize.hs: Should not have a shape of this type: "++show ty
-         Nothing         -> error$"OneDimensionalize.hs: Could not find shapename "++show shp++" in env:\n"++show env
+         Just TInt         -> EVr shp
+         Just t@(TTuple _) -> ETupProject t 0 1 (EVr shp)
+         Just ty           -> error$"OneDimensionalize.hs: Should not have a shape of this type: "++show ty
+         Nothing           -> error$"OneDimensionalize.hs: Could not find shapename "++show shp++" in env:\n"++show env
 
 --------------------------------------------------------------------------------
 
@@ -244,9 +244,9 @@ doExp env ex =
                   <*> (Lam1 (v2,t2) <$> doExp (M.insert v2 t2 env) bod2) <*> doExp env e 
     ECond e1 e2 e3      -> ECond   <$> doExp env e1 <*> doExp env e2 <*> doExp env e3
     ELet (v,t,rhs) bod  -> (\r b -> ELet (v,t,r) b) <$> doExp env rhs <*> doExp (M.insert v t env) bod
-    ETupProject i l e   -> ETupProject i l  <$> doExp env e
-    EPrimApp p t els    -> EPrimApp    p t  <$> mapM (doExp env) els
-    ETuple els          -> ETuple           <$> mapM (doExp env) els
+    ETupProject t i l e -> ETupProject t i l <$> doExp env e
+    EPrimApp p t els    -> EPrimApp    p t   <$> mapM (doExp env) els
+    ETuple els          -> ETuple            <$> mapM (doExp env) els
     EIndex _            -> doerr ex
 
 -- | Construct a polynomial expression that computes the flat-index
@@ -259,7 +259,7 @@ makeFlatIDX pb@(ProgBind _ aty _ _) idxE = polynom
     coefs = getIdxCoefs pb
     TArray ndim _ = aty
     polynom = foldl addI (EConst (I 0))
-               [ mulI coef (mkPrj ind 1 ndim idxE) 
+               [ mulI coef (mkPrj ind 1 ndim idxE (error "makeFlatIDX")) 
                | ind  <- reverse [ 0 .. ndim - 1 ]
                | coef <- coefs ]
   
@@ -288,7 +288,7 @@ getIdxCoefs (ProgBind nm aty sz _) =
   case sz of
     KnownSize ls -> map (EConst . I ) $ init$ scanl (*) 1 ls
     UnknownSize  ->
-      let shapeLs = [ mkPrj i 1 ndims (EVr$ shapeName nm)
+      let shapeLs = [ mkPrj i 1 ndims (EVr$ shapeName nm) (error "getIdxCoefs")
                     | i <- reverse [0 .. ndims-1] ] in 
       init$ scanl (mulI) (EConst (I 1)) shapeLs
 

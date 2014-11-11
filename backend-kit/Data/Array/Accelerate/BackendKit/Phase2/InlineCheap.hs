@@ -87,9 +87,9 @@ doEx mp ex =
                                                      <*> (Lam1 a2 <$> doE bod2)  
                                                      <*> doE e
     ELet (v,t,rhs) bod  -> (\r b -> ELet (v,t,r) b) <$> doE rhs <*> doE bod
-    ETupProject i l e   -> ETupProject i l  <$> doE e
-    EPrimApp p t els    -> EPrimApp    p t  <$> mapM doE els
-    ETuple els          -> ETuple           <$> mapM doE els
+    ETupProject t i l e -> ETupProject t i l <$> doE e
+    EPrimApp p t els    -> EPrimApp    p t   <$> mapM doE els
+    ETuple els          -> ETuple            <$> mapM doE els
     EIndex _            -> doerr ex
     EShapeSize ex       -> doerr ex 
     EShape avr          -> doerr ex
