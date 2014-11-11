@@ -523,8 +523,8 @@ instance (SimpleBackend b) => Backend (LiftSimpleBackend b) where
 
   copyToDevice (LiftSimpleBackend b) (arr :: a) =
     case unpackArray arr of
-      [(_ty, arr')]     -> LSB_Remote . return <$> simpleCopyToDevice b arr'
-      _                 -> error "SimpleBackend.copyToDevice: can not handle tuples of arrays"
+      [arr'] -> LSB_Remote . return <$> simpleCopyToDevice b arr'
+      _      -> error "SimpleBackend.copyToDevice: can not handle tuples of arrays"
 
 --     let (repr :: Sug.ArrRepr a) = Sug.fromArr arr
 --
@@ -720,11 +720,11 @@ instance (Typeable b, Backend b) => SimpleBackend (DropBackend b) where
   simpleCopyToHost (DropBackend b) (SomeRemote _ _slc (_::Dyn.Phantom aty) (rem :: Remote b aty)) = do
     hsArr <- copyToHost b rem
     case unpackArray hsArr of
-      [(ty,accArr)] -> do dbgPrint 2 $ " [DropBackend] CopyToHost fetched accArray with type " ++ show ty
-                                     ++", and dims"++show (SA.arrDim accArr)
-                                     ++", and sizes: "++show (Prelude.map SA.payloadLength (SA.arrPayloads accArr))
-                          return accArr
-      _             -> error "SimpleBackend.simpleCopyToHost: can not handle tuples of arrays"
+      [accArr] -> do dbgPrint 2 $ " [DropBackend] CopyToHost fetched accArray" ++ show (SA.arrType accArr)
+                                ++", and dims"++show (SA.arrDim accArr)
+                                ++", and sizes: "++show (Prelude.map SA.payloadLength (SA.arrPayloads accArr))
+                     return accArr
+      _        -> error "SimpleBackend.simpleCopyToHost: can not handle tuples of arrays"
 
 --    let (repr :: Sug.ArrRepr aty) = Sug.fromArr hsarr
 --        (_,accArr,_::Dyn.Phantom aty) = unpackArray repr

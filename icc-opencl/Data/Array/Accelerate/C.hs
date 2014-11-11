@@ -138,7 +138,7 @@ hostCopy _ (CRemote arrays) =
 
 deviceCopy :: forall a . (Sug.Arrays a) => a -> IO (Remote BKEND a)
 deviceCopy acc =
-  return . CRemote . map snd $ unpackArray acc
+  return . CRemote $ unpackArray acc
 
 
 useRem :: forall a . (Sug.Arrays a) => Remote BKEND a -> IO (AST.Acc a)

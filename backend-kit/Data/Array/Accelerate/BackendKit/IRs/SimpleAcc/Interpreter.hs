@@ -174,7 +174,7 @@ evalSimpleAcc (S.Prog {progBinds, progResults})
         S.Map f a       -> ArrVal $ mapArray (evalF1 env f) (lookupArray a)
         S.Generate sh f ->
           ArrVal
-            $ AccArray sh'
+            $ AccArray (error "evalSimpleAcc") sh'
             $ payloadsFromList elty
             $ map (evalF1 env f) (indexSpace sh')
           where
@@ -202,7 +202,7 @@ evalSimpleAcc (S.Prog {progBinds, progResults})
           else if replicateDims == 0  -- This isn't a replication at all!
           then ArrVal $ inArray
 
-          else ArrVal $ AccArray newDims $
+          else ArrVal $ AccArray (error "evalSimpleAcc") newDims $
                payloadsFromList elty $
                map (\ ind -> let intind = map (fromIntegral . constToInteger) (untuple ind) in
                              indexArray inArray (unliftInd intind))
@@ -219,7 +219,7 @@ evalSimpleAcc (S.Prog {progBinds, progResults})
                          map (fromIntegral . constToInteger) $
                          filter isNumConst ls
                        oth -> error $ "replicate: bad first argument to replicate: "++show oth
-            ArrVal (inArray@(AccArray dimsIn _)) = envLookup env vr
+            ArrVal (inArray@(AccArray _ dimsIn _)) = envLookup env vr
 
             -- The number of final elements is the starting elements times the degree of replication:
             finalElems = foldl (*) 1 dimsIn *
@@ -246,10 +246,10 @@ evalSimpleAcc (S.Prog {progBinds, progResults})
           if dims1 /= dims2
           then error$"zipWith: internal error, input arrays not the same dimension: "++ show dims1 ++" "++ show dims2
           -- TODO: Handle the case where the resulting array is an array of tuples:
-          else ArrVal$ AccArray dims1 final
+          else ArrVal$ AccArray (error "evalSimpleAcc") dims1 final
           where
-            ArrVal ((AccArray dims1 pays1)) = envLookup env vr1
-            ArrVal ((AccArray dims2 pays2)) = envLookup env vr2
+            ArrVal ((AccArray _ty1 dims1 pays1)) = envLookup env vr1
+            ArrVal ((AccArray _ty2 dims2 pays2)) = envLookup env vr2
             final = concatMap payloadsFromList1 $
                     L.transpose $
                     zipWith evaluator
@@ -263,7 +263,7 @@ evalSimpleAcc (S.Prog {progBinds, progResults})
         --------------------------------------------------------------------------------
         S.Backpermute sh p a ->
           ArrVal
-            $ AccArray sh'
+            $ AccArray (error "evalSimpleAcc") sh'
             $ payloadsFromList elty
             $ map (\ix -> let ix' = map (fromIntegral . constToInteger) $ untuple $ evalF1 env p ix
                           in  indexArray a' ix')
@@ -282,9 +282,9 @@ evalSimpleAcc (S.Prog {progBinds, progResults})
           --        show (alllens, L.group alllens) ++" arr "++show payloads++"\n") $
             case payloads of
               [] -> error "Empty payloads!"
-              _  -> ArrVal (AccArray sh' payloads')
+              _  -> ArrVal (AccArray (error "evalSimpleAcc") sh' payloads')
           where initacc = evalE env ex
-                ArrVal (AccArray (innerdim:sh') payloads) = envLookup env avr -- Must be >0 dimensional.
+                ArrVal (AccArray _ (innerdim:sh') payloads) = envLookup env avr -- Must be >0 dimensional.
                 payloads' = map (applyToPayload3 buildFolded) payloads
 
                 alllens = map payloadLength payloads
@@ -349,7 +349,7 @@ evalE env expr =
                              (map (fromIntegral . constToInteger) $
                               untuple$ valToConst$ evalE env ex)
 
-    T.EShape vr          -> let ArrVal (AccArray sh _) = envLookup env vr
+    T.EShape vr          -> let ArrVal (AccArray _ sh _) = envLookup env vr
                             in ConstVal$ Tup $ map I sh
 
     T.EShapeSize sh      -> ConstVal $ I

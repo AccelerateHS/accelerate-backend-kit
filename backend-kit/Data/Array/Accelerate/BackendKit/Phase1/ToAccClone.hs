@@ -204,7 +204,7 @@ convertAcc (OpenAcc cacc) =
     -- mkArrayTuple fixes the case where there was only one array by [one] -> one case.
     --
     Use (arrs :: Sug.ArrRepr a) ->
-      let arrs' = L.map (uncurry T.Use) $ unpackArray (Sug.toArr arrs :: a)
+      let arrs' = L.map (\a -> T.Use (S.arrType a) a) $ unpackArray (Sug.toArr arrs :: a)
           ty    = getAccTypePre eacc
       in
       return $ mkArrayTuple ty arrs'
@@ -883,34 +883,38 @@ convertFun2 fn = do
 --   Note that this does NOT need to do a deep copy, because the data payload
 --   representation stays the same.
 --
-unpackArray :: forall arrs. Sug.Arrays arrs => arrs -> [(S.Type, S.AccArray)]
+unpackArray :: forall arrs. Sug.Arrays arrs => arrs -> [S.AccArray]
 unpackArray arrs = cvt (Sug.arrays (undefined::arrs)) (Sug.fromArr arrs)
   where
-    cvt :: Sug.ArraysR a -> a -> [(S.Type, S.AccArray)]
+    cvt :: Sug.ArraysR a -> a -> [S.AccArray]
     cvt Sug.ArraysRunit           ()       = []
     cvt (Sug.ArraysRpair ar1 ar0) (a1, a0) = cvt ar1 a1 ++ cvt ar0 a0
-    cvt Sug.ArraysRarray          a        = [(convertArrayType a, convertArrayData a)]
+    cvt Sug.ArraysRarray          a        = [cvtA a]
 
-    convertArrayData :: (Sug.Shape sh, Sug.Elt e) => Sug.Array sh e -> S.AccArray
-    convertArrayData (Sug.Array sh adata) = S.AccArray (shapeToList sh) (payload arrayElt adata)
+    cvtA :: forall sh e. (Sug.Shape sh, Sug.Elt e) => Sug.Array sh e -> S.AccArray
+    cvtA (Sug.Array sh adata) = S.AccArray aty dims payload
       where
-        payload :: ArrayEltR a -> ArrayData a -> [S.ArrayPayload]
-        payload ArrayEltRint    (AD_Int   x)  = [S.ArrayPayloadInt x]
-        payload ArrayEltRint8   (AD_Int8  x)  = [S.ArrayPayloadInt8 x]
-        payload ArrayEltRint16  (AD_Int16 x)  = [S.ArrayPayloadInt16 x]
-        payload ArrayEltRint32  (AD_Int32 x)  = [S.ArrayPayloadInt32 x]
-        payload ArrayEltRint64  (AD_Int64 x)  = [S.ArrayPayloadInt64 x]
-        payload ArrayEltRword   (AD_Word   x) = [S.ArrayPayloadWord x]
-        payload ArrayEltRword8  (AD_Word8  x) = [S.ArrayPayloadWord8 x]
-        payload ArrayEltRword16 (AD_Word16 x) = [S.ArrayPayloadWord16 x]
-        payload ArrayEltRword32 (AD_Word32 x) = [S.ArrayPayloadWord32 x]
-        payload ArrayEltRword64 (AD_Word64 x) = [S.ArrayPayloadWord64 x]
-        payload ArrayEltRfloat  (AD_Float  x) = [S.ArrayPayloadFloat x]
-        payload ArrayEltRdouble (AD_Double x) = [S.ArrayPayloadDouble x]
-        payload ArrayEltRbool   (AD_Bool   x) = [S.ArrayPayloadBool x]
-        payload ArrayEltRchar   (AD_Char   x) = [S.ArrayPayloadChar x]
-        payload ArrayEltRunit   _             = []
-        payload (ArrayEltRpair aeR1 aeR0) ad  = payload aeR1 (fstArrayData ad) ++ payload aeR0 (sndArrayData ad)
+        dims    = shapeToList sh
+        aty     = convertArrayType (undefined :: Sug.Array sh e)
+        payload = unpack arrayElt adata
+
+        unpack :: ArrayEltR a -> ArrayData a -> [S.ArrayPayload]
+        unpack ArrayEltRint    (AD_Int   x)  = [S.ArrayPayloadInt x]
+        unpack ArrayEltRint8   (AD_Int8  x)  = [S.ArrayPayloadInt8 x]
+        unpack ArrayEltRint16  (AD_Int16 x)  = [S.ArrayPayloadInt16 x]
+        unpack ArrayEltRint32  (AD_Int32 x)  = [S.ArrayPayloadInt32 x]
+        unpack ArrayEltRint64  (AD_Int64 x)  = [S.ArrayPayloadInt64 x]
+        unpack ArrayEltRword   (AD_Word   x) = [S.ArrayPayloadWord x]
+        unpack ArrayEltRword8  (AD_Word8  x) = [S.ArrayPayloadWord8 x]
+        unpack ArrayEltRword16 (AD_Word16 x) = [S.ArrayPayloadWord16 x]
+        unpack ArrayEltRword32 (AD_Word32 x) = [S.ArrayPayloadWord32 x]
+        unpack ArrayEltRword64 (AD_Word64 x) = [S.ArrayPayloadWord64 x]
+        unpack ArrayEltRfloat  (AD_Float  x) = [S.ArrayPayloadFloat x]
+        unpack ArrayEltRdouble (AD_Double x) = [S.ArrayPayloadDouble x]
+        unpack ArrayEltRbool   (AD_Bool   x) = [S.ArrayPayloadBool x]
+        unpack ArrayEltRchar   (AD_Char   x) = [S.ArrayPayloadChar x]
+        unpack ArrayEltRunit   _             = []
+        unpack (ArrayEltRpair aeR1 aeR0) ad  = unpack aeR1 (fstArrayData ad) ++ unpack aeR0 (sndArrayData ad)
 
 
 -- | Almost an inverse of `unpackArray` -- repack the simplified data
@@ -918,7 +922,7 @@ unpackArray arrs = cvt (Sug.arrays (undefined::arrs)) (Sug.fromArr arrs)
 --   Accelerate array.
 --
 packArray :: forall sh elt . (Sug.Elt elt, Sug.Shape sh) => S.AccArray -> Sug.Array sh elt
-packArray orig@(S.AccArray dims origPayloads) =
+packArray orig@(S.AccArray _ty dims origPayloads) =
   -- TEMP: FIXME:  [2012.11.21]  Temporarily allowing mismathched dimensions as long as the # elements is right:
 --  if length dims == length dims' then -- Is the expected rank correct?
 --  if product dims == product dims'

@@ -216,7 +216,7 @@ internalRawRunIO (CBlob prog2 path) extraBinds = do
    parseMultiple _ [] = []
    parseMultiple str (elt:rst) = 
      let (ls,str2) = readPayload elt str in
-     S.AccArray (error "need shape!") (payloadsFromList elt ls) :
+     S.AccArray (error "need type!") (error "need shape!") (payloadsFromList elt ls) :
      parseMultiple str2 rst
    -- Detuple a tuple of arrays to yield a flat list of element types:
    tyToElts (TArray _ elt) = [elt]
@@ -298,7 +298,7 @@ loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv, G.progType } extra
     resultsRec <- mkCreateRecord crr
 
     -- Handle usual Use bindings
-    forM_ (zip [1..] useBinds) $ \ (ix,(vr,ty,S.AccArray { S.arrDim, S.arrPayloads })) -> do
+    forM_ (zip [1..] useBinds) $ \ (ix,(vr,ty,S.AccArray { S.arrType, S.arrDim, S.arrPayloads })) -> do
 
       dbgPrint 2 $ "[JIT] Attempting to load Use array arg of type "++show ty++" and size "++show arrDim
       
@@ -318,7 +318,7 @@ loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv, G.progType } extra
     forM_ (zip [1..] usePBinds) $ \ (ix,(vr,ty,k)) -> do
 
       -- look up use' var in map
-      let Just (S.AccArray { S.arrDim, S.arrPayloads }) = M.lookup k extraBinds
+      let Just (S.AccArray { S.arrType, S.arrDim, S.arrPayloads }) = M.lookup k extraBinds
       
       dbgPrint 2 $ "[JIT] Attempting to load Use* array arg of type "++show ty++" and size "++show arrDim
       
@@ -355,7 +355,7 @@ loadAndRunSharedObj prog@G.GPUProg{ G.progResults, G.sizeEnv, G.progType } extra
       shape <- forM snames $ \ sname -> do
           oneShape  <- dlsym dl ("GetResult_"++show sname)
           mkGetResultSize oneShape resultsRec
-      return (S.AccArray shape [payl])
+      return (S.AccArray (error "need type!") shape [payl])
       
     dbgPrint 2 $ "[JIT] Destroying args record: "++show argsRec
     (mkDestroyRecord dar) argsRec

@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE ParallelListComp    #-}
 {-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -73,11 +74,8 @@ module Data.Array.Accelerate.BackendKit.IRs.SimpleAcc
 import           Control.DeepSeq (NFData(..))
 import           Control.Monad.State.Strict (State, get, put)
 import           Control.Applicative  ((<$>),(<*>))
-import           Data.Array                             ( bounds )
 import           Data.Array.Storable.Internals          ( StorableArray(..) )
-import qualified Data.Array.IO                          as IA
 import qualified Data.Array.MArray                      as MA
-import qualified Data.Array.Unsafe                      as Un
 import           Data.Int
 import qualified Data.Map                               as M
 import qualified Data.Set                               as S
@@ -557,11 +555,15 @@ findFree Prog{progBinds} = S.difference allFreeVars $ S.intersection allFreeVars
 --   The array dimensions are stored from the "inner" to the "outer" dimension.
 --   That is, if you do a fold, the first element of the list is the dimension
 --   that gets squished away.
-data AccArray = AccArray { arrDim :: [Int], arrPayloads :: [ArrayPayload] }
- deriving (Eq, Ord)
+data AccArray = AccArray
+  { arrType     :: Type
+  , arrDim      :: [Int]
+  , arrPayloads :: [ArrayPayload]
+  }
+  deriving (Eq, Ord)
 
 instance Show AccArray where
-  show (AccArray shape payloads) =
+  show (AccArray _type shape payloads) =
         "AccArray "++show shape++
         (L.concat$ L.map  ((" "++) . doPayld) payloads)
    where
@@ -639,14 +641,14 @@ deriving instance Ord (RawData e)
 -- unzip an AccArray
 -- data AccArray = AccArray { arrDim :: [Int], arrPayloads :: [ArrayPayload] }
 
-unzipAccArray :: AccArray -> [AccArray] 
-unzipAccArray (AccArray dim payloads) = [ AccArray dim [p] | p <- payloads]  
+unzipAccArray :: AccArray -> [AccArray]
+unzipAccArray (AccArray aty dim payloads)
+  = [ AccArray t dim [p] | p <- payloads | t <- flattenTy aty ]
 
 -- This will only report a FLAT tuple structure.  It does not keep additional type
 -- information.
 accArrayToType :: AccArray -> Type
-accArrayToType (AccArray ls payls) =
-  TArray (length ls) (mkTTuple (L.map payloadToType payls))
+accArrayToType = arrType
 
 payloadToType :: ArrayPayload -> Type
 payloadToType p =

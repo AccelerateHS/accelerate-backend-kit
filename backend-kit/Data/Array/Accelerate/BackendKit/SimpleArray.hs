@@ -225,17 +225,22 @@ arrLen arr = unsafePerformIO $ MA.rangeSize `fmap` MA.getBounds arr
 --   Note, this function must coalesce tuples-of-arrays into tuples of
 --   elements before those elements can be passed to the mapped function.
 mapArray :: (Const -> Const) -> AccArray -> AccArray
-mapArray fn (AccArray sh [pl]) =
-  AccArray sh (mapPayload fn pl)
+mapArray fn (AccArray _ sh [pl]) =
+  let pl' = mapPayload fn pl
+  in  AccArray (mkTTuple $ map payloadToType pl') sh pl'
 
 -- This case is more complicated.  Here's where the coalescing happens.
-mapArray fn (AccArray sh pls) =
+mapArray fn (AccArray _ sh pls) =
   -- For the time being we fall back to an extremely inefficient
   -- system.  This function should only ever be really be used for
   -- non-performance-critical reference implemenatations.
-  AccArray sh $ payloadsFromList1 $
-  map fn $
-  map Tup $ L.transpose $ map payloadToList pls
+  AccArray (mkTTuple $ map payloadToType adata) sh adata
+    where
+      adata = payloadsFromList1
+            $ map fn
+            $ map Tup
+            $ L.transpose
+            $ map payloadToList pls
 
 -- | Apply an elementwise function to a single payload.  The function
 --   must consistently map the same type of input to the same type of
@@ -444,7 +449,7 @@ storableArrayPtr (StorableArray _ _ _ fp) = unsafeForeignPtrToPtr fp
 --   type of payload to match the type of constant (which is otherwise
 --   a large case statement).
 replicate :: [Int] -> Const -> AccArray
-replicate dims const = AccArray dims (payload const)
+replicate dims const = AccArray (constToType const) dims (payload const)
   where
     len = foldl (*) 1 dims
     payload const =
@@ -475,7 +480,7 @@ replicate dims const = AccArray dims (payload const)
 -- | An AccArray stores an array of tuples.  This function reports how
 --   many components there are in the stored tuples (one or more).
 numComponents :: AccArray -> Int
-numComponents (AccArray _ payloads) = length payloads
+numComponents (AccArray _ _ payloads) = length payloads
 
 
 -- | Split one component (the first) out of an AccArray which
@@ -486,9 +491,9 @@ numComponents (AccArray _ payloads) = length payloads
 --   If there are less than two components, this function raises a
 --   runtime error.
 splitComponent :: AccArray -> (AccArray, AccArray)
-splitComponent (AccArray sh (h1:h2:rst)) =
-  (AccArray sh [h1], AccArray sh (h2:rst))
-splitComponent x@(AccArray _ ls) =
+splitComponent (AccArray t sh (h1:h2:rst)) =
+  (AccArray t sh [h1], AccArray t sh (h2:rst))
+splitComponent x@(AccArray _ _ ls) =
   error$ "splitComponent: input array has only "++show(length ls)++
          " components, needs at least two:\n   "++ show x
 
@@ -503,12 +508,12 @@ splitComponent x@(AccArray _ ls) =
 -- representation.  Fastest varying index is the LEFTMOST.
 indexArray ::  AccArray -> [Int] -> Const
 -- Index into a Scalar:
-indexArray (AccArray dims payloads) ind | length ind /= length dims =
+indexArray (AccArray _ dims payloads) ind | length ind /= length dims =
   error$"indexArray: array dimensions were "++show dims++" but index was of different length: "++ show ind
-indexArray (AccArray []   payloads) []  = tuple $ map (`indexPayload` 0)        payloads
-indexArray (AccArray dims payloads) ind =
+indexArray (AccArray _ []   payloads) []  = tuple $ map (`indexPayload` 0)        payloads
+indexArray (AccArray t dims payloads) ind =
      maybtrace ("[dbg] Indexing array "++show ind++" multipliers "++show multipliers++" pos "++show position
-                ++" array:\n          "++show (AccArray dims payloads)) $
+                ++" array:\n          "++show (AccArray t dims payloads)) $
      tuple $ map (`indexPayload` position) payloads
   where
     -- How many elements do we per increment of this dimension?  Rightmost is fastest changing.
@@ -523,20 +528,28 @@ tuple ls  = Tup ls
 
 -- | Take a list of arrays of equal shape and concat them into a single AccArray.
 concatAccArrays :: [S.AccArray] -> S.AccArray
-concatAccArrays [] = error "concatAccArrays: Cannot zip an empty list of AccArrays (don't know dimension)"
-concatAccArrays origls =
-  maybtrace (" [dbg] concatAccArrays: dims "++show dims++", lens "++show lens) $
-  if not (allSame lens)
-  then error$"concatAccArrays: mismatch in lengths: "++show lens
-  else if not (allSame dims)
-       then error$"concatAccArrays: mismatch in dims: "++show dims
-       else S.AccArray (head dims) payls
- where
-  lens = L.map payloadLength payls
-  payls = concat paylss
-  (dims,paylss) = unzip [ (dim,payls) | S.AccArray dim payls <- origls ]
-  allSame (hd:tl) = all (==hd) tl
-  allSame []      = True
+concatAccArrays []     = error "concatAccArrays: Cannot zip an empty list of AccArrays (don't know dimension)"
+concatAccArrays origls
+  | maybtrace (" [dbg] concatAccArrays: dims "++show dims++", lens "++show lens) False
+  = undefined
+
+  | not (allSame lens)
+  = error $ "concatAccArrays: mismatch in lengths: "++show lens
+
+  | not (allSame dims)
+  = error $ "concatAccArrays: mismatch in dims: "++show dims
+
+  | not (allSame tys)
+  = error $ "concatAccArrays: mismatch in types:" ++ show tys
+
+  | otherwise
+  = S.AccArray (head tys) (head dims) payls
+  where
+    lens                = L.map payloadLength payls
+    payls               = concat paylss
+    (tys,dims,paylss)   = unzip3 [ (t,dim,payls) | S.AccArray t dim payls <- origls ]
+    allSame (hd:tl)     = all (==hd) tl
+    allSame []          = True
 
 
 -- | Returns an error message if anything is wrong.  In particular, the number and
@@ -544,7 +557,7 @@ concatAccArrays origls =
 --   represents a single logical array with one shape (though it can be an array of
 --   tuples).
 verifyAccArray :: Type -> AccArray -> Maybe ErrorMsg
-verifyAccArray ty (AccArray shp cols) =
+verifyAccArray ty (AccArray _ty' shp cols) =
   case ty of
     TArray d elt ->
       let expectedCols = flattenTy elt in -- FIXME: handling units..
@@ -617,15 +630,15 @@ reglueArrayofTups ty0 ls0 =
       else if length batch /= expected then notEnough else
        case batch of
          [] -> notEnough
-         (AccArray dims0 [payload0] : rst ) ->
+         (AccArray t0 dims0 [payload0] : rst ) ->
           let payloads = reverse $
-                     foldl (\ acc (S.AccArray dims1 [payl]) ->
+                     foldl (\ acc (S.AccArray _ dims1 [payl]) ->
                               if dims0 == dims1
                               then payl:acc
                               else error$"reglueArrayofTups: two arrays to be zipped have different dims: "
                                          ++show dims0++", vs "++show dims1)
                            [payload0] rst
-          in AccArray dims0 payloads
+          in AccArray t0 dims0 payloads
              : loop tys rest
 
    loop (TTuple ls1 : ls2) arrs = loop (ls1++ls2) arrs
@@ -645,12 +658,12 @@ type ErrorMsg = String
 -- If the size of the array does not divide evenly, the last parttion gets the extra
 -- data.
 splitAccArray :: Int -> AccArray -> [AccArray]
-splitAccArray pieces (AccArray dims payls)
+splitAccArray pieces (AccArray t dims payls)
   | pieces < 1 = error $"splitAccArray: Cannot split into less than one piece: "++show pieces
   | qt < 1 = error$ "AccArray of dimensions "++show dims++" cannot be split into "++show pieces++" pieces along outer (last) dim!"
   | otherwise =
     -- trace ("splitAccArray, "++show (size,qt,rem,rest,outer)) $
-    zipWith AccArray allDims $
+    zipWith (AccArray t) allDims $
     L.transpose $
     map (splitPayload size pieces) payls
  where
@@ -707,7 +720,7 @@ t0 = listArray [1..12]
 
 t0b :: AccArray
 -- t0b = AccArray [3,2,2] [ArrayPayloadInt t0, ArrayPayloadInt t0]
-t0b = AccArray [2,2,3] [ArrayPayloadInt t0, ArrayPayloadInt t0]
+t0b = AccArray (TTuple [TInt,TInt]) [2,2,3] [ArrayPayloadInt t0, ArrayPayloadInt t0]
 
 p0 = splitAccArray 2 t0b
 v0 = map (verifyAccArray (TArray 3 (TTuple [TInt,TInt]))) p0

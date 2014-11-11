@@ -216,8 +216,8 @@ go name p =
       -- Then we unpack the results into our plainer format. 
 --      (repr :: Sug.ArrRepr a) = Sug.fromArr arr  -- Array typing nonsense.
 --      (_ty, arr2, _phantom :: Phantom a) = unpackArray repr
-      [(_ty, arr2)] = unpackArray arr
-      payloads      = S.arrPayloads arr2
+      [arr2]    = unpackArray arr
+      payloads  = S.arrPayloads arr2
       -- Compare the *flat* list of payloads only for now; we record the printed payload:
   in TestEntry { name
                , simpleProg = convertToSimpleProg p
