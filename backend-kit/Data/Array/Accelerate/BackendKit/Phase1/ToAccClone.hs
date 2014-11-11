@@ -586,15 +586,17 @@ tupleNumLeaves _             = 1
 convertEltType :: forall a. Sug.Elt a => a -> S.Type
 convertEltType _ = reconstruct structure simpleType
   where
+    structure           = Sug.reifyTupTree (undefined :: a)
     simpleType          = cvt (Sug.eltType (undefined :: a))
-    structure           =
-      case Sug.reifyTupTree (undefined :: a) of
-        (Sug.TupKind, s)                -> s
-        (Sug.ZKind,   Sug.TupTree ss)   -> Sug.TupTree (init ss)        -- all but the Z-leaf on the end
-        _                               -> error "convertEltType: backend kit has a broken representation of shapes"
 
-    reconstruct :: Sug.TupTree -> [S.Type] -> S.Type
-    reconstruct tree tys = snd $ go tree tys
+    -- Backend kit throws out the distinction between shapes and indices.
+    -- Besides being foolish, it is also incorrect, and we don't have enough
+    -- information at this point to reconstruct the true surface type for
+    -- indices involving Any or All.
+    --
+    reconstruct :: (Sug.EltKind, Sug.TupTree) -> [S.Type] -> S.Type
+    reconstruct (Sug.ZKind,   _)    tys = mkTuple tys           -- shapes/indices
+    reconstruct (Sug.TupKind, tree) tys = snd $ go tree tys     -- regular element types
       where
         go :: Sug.TupTree -> [S.Type] -> ([S.Type], S.Type)
         go Sug.TupLeaf     []     = error "convertEltType: inconsistent valuation"
