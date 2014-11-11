@@ -809,7 +809,7 @@ convertOpenExp ep@(EnvPack envE envA mp) ex
       | dbgtrace (printf "ETupProject: ind=%d, len=%d, tup=%s\n" ind len (show exp)) False
       = undefined
 
-      | SealedEltTuple (tup :: EltTuple tup) <- scalarTypeD tupTy
+      | SealedEltTuple (tup :: EltTuple tup) <- scalarTypeD (TTuple tupTy)
       = case tup of
           UnitTuple
             -> error "DynamicAcc.convertOpenExp: Tuple projection from unit"
@@ -820,33 +820,37 @@ convertOpenExp ep@(EnvPack envE envA mp) ex
                in
                sealExp exp'
 
-          Tuple2 (ta :: EltTuple a) (tb :: EltTuple b)
+          Tuple2 (_ :: EltTuple a) (_ :: EltTuple b)
             -> let exp' :: Exp (a,b)
                    exp'  = downcastE $ cvtE exp
                    (a,b) = unlift exp'
                in
-               sliceT [SealedEltTuple ta, SealedEltTuple tb]
-                      [sealExp a, sealExp b]
+               doPrj  [sealExp a, sealExp b]
 
-          Tuple3 (ta :: EltTuple a) (tb :: EltTuple b) (tc :: EltTuple c)
+          Tuple3 (_ :: EltTuple a) (_ :: EltTuple b) (_ :: EltTuple c)
             -> let exp' :: Exp (a,b,c)
                    exp'    = downcastE $ cvtE exp
                    (a,b,c) = unlift exp'
                in
-               sliceT [SealedEltTuple ta, SealedEltTuple tb, SealedEltTuple tc]
-                      [sealExp a, sealExp b, sealExp c]
+               doPrj  [sealExp a, sealExp b, sealExp c]
 
-          Tuple4 (ta :: EltTuple a) (tb :: EltTuple b) (tc :: EltTuple c) (td :: EltTuple d)
+          Tuple4 (_ :: EltTuple a) (_ :: EltTuple b) (_ :: EltTuple c) (_ :: EltTuple d)
             -> let exp' :: Exp (a,b,c,d)
                    exp'      = downcastE $ cvtE exp
                    (a,b,c,d) = unlift exp'
                in
-               sliceT [SealedEltTuple ta, SealedEltTuple tb, SealedEltTuple tc, SealedEltTuple td]
-                      [sealExp a, sealExp b, sealExp c, sealExp d]
+               doPrj  [sealExp a, sealExp b, sealExp c, sealExp d]
 
       where
-        tupTy           = S.recoverExpType typeEnv exp
-        sliceT ts es    = resealTup . P.take len . P.drop ind $ P.zip ts es
+        doPrj :: [SealedExp] -> SealedExp
+        doPrj es        = P.reverse es P.!! toIdx ind (P.reverse tupTy)
+        TTuple tupTy    = S.recoverExpType typeEnv exp
+
+        toIdx :: Int -> [Type] -> Int
+        toIdx 0 (t:_) | len == P.length (S.flattenTy t) = 0
+                      | otherwise                       = error "prjT: invalid projection"
+        toIdx n (t:ts)                                  = 1 + toIdx (n - P.length (S.flattenTy t)) ts
+        toIdx _ _                                       = error "prjT: inconsistent valuation"
 
     -- Scalar iteration
     --
