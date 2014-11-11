@@ -33,7 +33,7 @@ module Data.Array.Accelerate.BackendClass (
   newLockedBackend, newLocks, lockCompileOnly,
 
   -- * Miscellaneous
-  Phantom(Phantom),
+  Dyn.Phantom(Phantom),
 
 ) where
 
@@ -44,7 +44,7 @@ import Data.Array.Accelerate.BackendKit.IRs.SimpleAcc           ( Prog(..), show
 import Data.Array.Accelerate.BackendKit.Phase1.ToAccClone       ( repackAcc, unpackArray )
 import Data.Array.Accelerate.BackendKit.Utils.Helpers           ( (#), dbgPrint )
 import Data.Array.Accelerate.Trafo                              ( Phase(..) )
-import Data.Array.Accelerate.DynamicAcc2                        as Dyn
+import qualified Data.Array.Accelerate.DynamicAcc2              as Dyn
 import qualified Data.Array.Accelerate.AST                      as AST
 import qualified Data.Array.Accelerate.Array.Sugar              as Sug
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as SACC
@@ -52,6 +52,7 @@ import qualified Data.Array.Accelerate.BackendKit.SimpleArray   as SA
 
 -- standard libraries
 import Prelude                                                  hiding ( rem )
+import Control.Applicative                                      ( (<$>) )
 import Control.Concurrent.MVar                                  ( newMVar, withMVar, MVar )
 import Data.Char                                                ( isAlphaNum )
 import Data.Maybe                                               ( fromMaybe )
@@ -520,11 +521,16 @@ instance (SimpleBackend b) => Backend (LiftSimpleBackend b) where
      arrs <- mapM (simpleCopyToHost bk) rs
      return $! repackAcc (undefined::Acc a) arrs
 
-  copyToDevice (LiftSimpleBackend b) (arr :: a) = do
-     let (repr :: Sug.ArrRepr a) = Sug.fromArr arr
-         (_ty,accArr,_::Phantom a) = unpackArray repr
-     remt <- simpleCopyToDevice b accArr
-     return $! LSB_Remote [remt]
+  copyToDevice (LiftSimpleBackend b) (arr :: a) =
+    case unpackArray arr of
+      [(_ty, arr')]     -> LSB_Remote . return <$> simpleCopyToDevice b arr'
+      _                 -> error "SimpleBackend.copyToDevice: can not handle tuples of arrays"
+
+--     let (repr :: Sug.ArrRepr a) = Sug.fromArr arr
+--
+--         (_ty,accArr,_::Dyn.Phantom a) = unpackArray repr
+--     remt <- simpleCopyToDevice b accArr
+--     return $! LSB_Remote [remt]
 
   copyToPeer (LiftSimpleBackend b) (LSB_Remote rs) =
     fmap LSB_Remote $ mapM (simpleCopyToPeer b) rs
@@ -662,7 +668,7 @@ newtype DropBackend b = DropBackend b deriving (Show, Eq, Typeable)
 -- of the full result of an Accelerate computation.
 --
 data SomeRemote b = forall a . (Backend b, Arrays a) =>
-                    SomeRemote b LeafSlice (Phantom a) (Remote b a)
+                    SomeRemote b LeafSlice (Dyn.Phantom a) (Remote b a)
 
 data LeafSlice = LeafSlice
   { offsetFromRight     :: {-# UNPACK #-} !Int
@@ -680,9 +686,9 @@ instance (Typeable b, Backend b) => SimpleBackend (DropBackend b) where
     let prg = fmap (const ()) $ phase2A_no1D prg0 -- TEMP! When DynamicAcc2 is more complete this becomes unnecessary!!
     dbgPrint 2 $ prg `seq` " [DropBackend] Compiling program via DynamicAcc:\n "++showProgSummary prg
     case Dyn.arrayTypeD (SACC.progType prg) of
-      SealedArrayType (_ :: Phantom aty) -> do
+      Dyn.SealedArrayType (_ :: Dyn.Phantom aty) -> do
         let acc :: Acc aty
-            acc = downcastA (Dyn.convertProg prg)
+            acc = Dyn.downcastA (Dyn.convertProg prg)
             ast = phase0 acc
         blb <- compile b "" ast
         return $ SomeBlob b ast blb
@@ -700,8 +706,8 @@ instance (Typeable b, Backend b) => SimpleBackend (DropBackend b) where
         -- Here we need to SUBDIVIDE the resulting arrays...
         -- but only after they are copied back.
         case [ (v, env#v) | v <- results ] of
-         [(_nm,TArray _ _)] ->
-             return [SomeRemote b (LeafSlice 0 1) (Phantom::Phantom aty) remt]
+         [(_nm,SACC.TArray _ _)] ->
+             return [SomeRemote b (LeafSlice 0 1) (Dyn.Phantom::Dyn.Phantom aty) remt]
          _ -> error "Finishme: DropBackend/simpleRunRaw"
 
 
@@ -711,16 +717,21 @@ instance (Typeable b, Backend b) => SimpleBackend (DropBackend b) where
   --        -> Maybe (Blob b a)
   --        -> IO (Remote b a)
 
-  simpleCopyToHost (DropBackend b) (SomeRemote _ _slc (_::Phantom aty) (rem :: Remote b aty)) = do
-    hsarr <- copyToHost b rem
-    let (repr :: Sug.ArrRepr aty) = Sug.fromArr hsarr
-        (_,accArr,_::Phantom aty) = unpackArray repr
-    dbgPrint 2 $ " [DropBackend] CopyToHost fetched accArray with dims"++show (SA.arrDim accArr)
-                  ++", and sizes: "++show (Prelude.map SA.payloadLength (SA.arrPayloads accArr))
-    return $ accArr
+  simpleCopyToHost (DropBackend b) (SomeRemote _ _slc (_::Dyn.Phantom aty) (rem :: Remote b aty)) = do
+    hsArr <- copyToHost b rem
+    case unpackArray hsArr of
+      [(ty,accArr)] -> do dbgPrint 2 $ " [DropBackend] CopyToHost fetched accArray with type " ++ show ty
+                                     ++", and dims"++show (SA.arrDim accArr)
+                                     ++", and sizes: "++show (Prelude.map SA.payloadLength (SA.arrPayloads accArr))
+                          return accArr
+      _             -> error "SimpleBackend.simpleCopyToHost: can not handle tuples of arrays"
+
+--    let (repr :: Sug.ArrRepr aty) = Sug.fromArr hsarr
+--        (_,accArr,_::Dyn.Phantom aty) = unpackArray repr
+--    return $ accArr
 
   -- simpleCopyToDevice (DropBackend b) a   =
-  simpleCopyToPeer (DropBackend b) (SomeRemote _ slc (p::Phantom aty) (rem :: Remote b aty)) = do
+  simpleCopyToPeer (DropBackend b) (SomeRemote _ slc (p::Dyn.Phantom aty) (rem :: Remote b aty)) = do
     -- FIXME: this copies ALL the data, even if we only care about a slice of it.
     -- We should break it down somehow...
     rem2 <- copyToPeer b rem
@@ -728,7 +739,7 @@ instance (Typeable b, Backend b) => SimpleBackend (DropBackend b) where
   simpleWaitRemote (DropBackend b) (SomeRemote _ _ _ (rem :: Remote b aty)) = do
     waitRemote b rem
 
-  simpleUseRemote (DropBackend b) (SomeRemote _ _slc (_::Phantom aty) (rem :: Remote b aty)) = do
+  simpleUseRemote (DropBackend b) (SomeRemote _ _slc (_::Dyn.Phantom aty) (rem :: Remote b aty)) = do
     acc <- useRemote b rem
     _ <- return $ phase1 acc
     error $ "Unfinished:simpleUseRemote/DropBackend: unclear how to finish this, should maybe switch to Prog rather than AExp"

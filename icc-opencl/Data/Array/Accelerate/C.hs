@@ -137,14 +137,9 @@ hostCopy _ (CRemote arrays) =
 
 
 deviceCopy :: forall a . (Sug.Arrays a) => a -> IO (Remote BKEND a)
-deviceCopy acc = do
-  let repr :: Sug.ArrRepr a
-      repr = Sug.fromArr acc
-  -- FIXME: Seems like unpackArray can't really handle an array of tuples.
-  let (_,arr,_::Phantom a) = unpackArray repr
-      res :: Remote BKEND a
-      res = CRemote [arr]
-  return res
+deviceCopy acc =
+  return . CRemote . map snd $ unpackArray acc
+
 
 useRem :: forall a . (Sug.Arrays a) => Remote BKEND a -> IO (AST.Acc a)
 useRem rem@(CRemote arrays) =
@@ -197,3 +192,4 @@ instance SimpleBackend BKEND where
 -- TODO: Need to force beyond WHNF probably.
 evaluateAccClone = evaluate
 evaluateSimpleAcc = evaluate
+

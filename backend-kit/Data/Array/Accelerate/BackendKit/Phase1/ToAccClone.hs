@@ -201,24 +201,13 @@ convertAcc (OpenAcc cacc) =
 
     -- This is real live runtime array data:
     -- Handle tuples of arrays by 'unrolling' a single Use into many.
-    -- mkArrayTuple fixes the case where there was only one array by [one] -> one case. 
-    Use (arrrepr :: Sug.ArrRepr a) -> 
-        return $ mkArrayTuple (getAccTypePre eacc) arrys
-        
-        where arrys = doIt (Sug.arrays (undefined ::  a )) arrrepr 
-              -- Traverse over representation and 'arrays' in lockstep. 
-              doIt :: forall b . Sug.ArraysR b -> b -> [TAExp] 
-              doIt Sug.ArraysRunit ()  = [] 
-              doIt Sug.ArraysRarray a  = [let (ty,arr,_::Phantom b) = unpackArray (Sug.fromArr a)
-                                          in  T.Use ty arr] 
-              doIt (Sug.ArraysRpair r1 r2) (a1,a2) = doIt r1 a1 ++ doIt r2 a2 
-
-    -- Use (arrrepr :: Sug.ArrRepr a) ->
-    --      -- This is rather odd, but we need to have a dummy return
-    --      -- value to avoid errors about ArrRepr type functions not
-    --      -- being injective.
-    --      let (ty,arr,_::Phantom a) = unpackArray arrrepr in
-    --      return$ T.Use ty arr
+    -- mkArrayTuple fixes the case where there was only one array by [one] -> one case.
+    --
+    Use (arrs :: Sug.ArrRepr a) ->
+      let arrs' = L.map (uncurry T.Use) $ unpackArray (Sug.toArr arrs :: a)
+          ty    = getAccTypePre eacc
+      in
+      return $ mkArrayTuple ty arrs'
 
     -- End Array creation prims.
     ------------------------------------------------------------
@@ -889,76 +878,45 @@ convertFun2 fn = do
 -- Convert Accelerate Array Data
 --------------------------------------------------------------------------------
 
--- | This converts Accelerate Array data to the simplified
---   representation.  `unpackArray` has an odd return type to avoid
---   type-family related type errors.
+-- | This converts Accelerate Arrays data to the simplified representation.
 --
---   Note that this does NOT need to do a deep copy, because the data
---   payload representation stays the same.
-unpackArray :: forall a . Sug.Arrays a => Sug.ArrRepr a -> (S.Type, S.AccArray, Phantom a)
-unpackArray arrrepr = (ty, S.AccArray shp payloads, Phantom :: Phantom a)
+--   Note that this does NOT need to do a deep copy, because the data payload
+--   representation stays the same.
+--
+unpackArray :: forall arrs. Sug.Arrays arrs => arrs -> [(S.Type, S.AccArray)]
+unpackArray arrs = cvt (Sug.arrays (undefined::arrs)) (Sug.fromArr arrs)
   where
-   shp = case L.group shps of
-           [] -> []
-           [(hd : _gr1)] -> hd
-           ls -> error$"Use: corrupt Accelerate array -- arrays components did not have identical shape:"
-                 ++ show (concat ls)
-   (shps, payloads)  = cvt2 repOf actualArr
-   ty        = convertArrayType (undefined :: a)
-   repOf     = Sug.arrays actualArr  :: Sug.ArraysR (Sug.ArrRepr a)
-   actualArr = Sug.toArr  arrrepr    :: a
+    cvt :: Sug.ArraysR a -> a -> [(S.Type, S.AccArray)]
+    cvt Sug.ArraysRunit           ()       = []
+    cvt (Sug.ArraysRpair ar1 ar0) (a1, a0) = cvt ar1 a1 ++ cvt ar0 a0
+    cvt Sug.ArraysRarray          a        = [(convertArrayType a, convertArrayData a)]
 
-   -- cvt and cvt2 return a list of shapes together with a list of raw data payloads.
-   --
-   -- I'm afraid I don't understand the two-level pairing that
-   -- is going on here (ArraysRpair + ArraysEltRpair)
-   cvt :: Sug.ArraysR a' -> a' -> ([[Int]],[S.ArrayPayload])
-   cvt Sug.ArraysRunit         ()       = ([],[])
-   cvt (Sug.ArraysRpair r1 r2) (a1, a2) = cvt r1 a1 `combine` cvt r2 a2
-   cvt Sug.ArraysRarray  arr            = cvt3 arr
-
-   -- Takes an Array representation and its reified type:
-   cvt2 :: (Sug.Arrays a') => Sug.ArraysR (Sug.ArrRepr a') -> a' -> ([[Int]],[S.ArrayPayload])
-   cvt2 tyReified arr =
-     case (tyReified, Sug.fromArr arr) of
-       (Sug.ArraysRunit, ()) -> ([],[])
-       (Sug.ArraysRpair r1 r2, (a1, a2)) -> cvt r1 a1 `combine` cvt r2 a2
-       (Sug.ArraysRarray, arr2)          -> cvt3 arr2
-
-   combine (a,b) (x,y) = (a++x, b++y)
-
-   cvt3 :: forall dim e . (Sug.Elt e) => Sug.Array dim e -> ([[Int]],[S.ArrayPayload])
-   cvt3 (Sug.Array shpVal adata) =
-        ([Sug.shapeToList (Sug.toElt shpVal :: dim)],
-         useR arrayElt adata)
-     where
-       -- This [mandatory] type signature forces the array data to be the
-       -- same type as the ArrayElt Representation (elt ~ elt):
-       useR :: ArrayEltR elt -> ArrayData elt -> [S.ArrayPayload]
-       useR (ArrayEltRpair aeR1 aeR2) ad =
-         (useR aeR1 (fstArrayData ad)) ++
-         (useR aeR2 (sndArrayData ad))
-   --             useR ArrayEltRunit             _   = [S.ArrayPayloadUnit]
-       useR ArrayEltRunit             _   = []
-       useR ArrayEltRint    (AD_Int   x)  = [S.ArrayPayloadInt   x]
-       useR ArrayEltRint8   (AD_Int8  x)  = [S.ArrayPayloadInt8  x]
-       useR ArrayEltRint16  (AD_Int16 x)  = [S.ArrayPayloadInt16 x]
-       useR ArrayEltRint32  (AD_Int32 x)  = [S.ArrayPayloadInt32 x]
-       useR ArrayEltRint64  (AD_Int64 x)  = [S.ArrayPayloadInt64 x]
-       useR ArrayEltRword   (AD_Word   x) = [S.ArrayPayloadWord   x]
-       useR ArrayEltRword8  (AD_Word8  x) = [S.ArrayPayloadWord8  x]
-       useR ArrayEltRword16 (AD_Word16 x) = [S.ArrayPayloadWord16 x]
-       useR ArrayEltRword32 (AD_Word32 x) = [S.ArrayPayloadWord32 x]
-       useR ArrayEltRword64 (AD_Word64 x) = [S.ArrayPayloadWord64 x]
-       useR ArrayEltRfloat  (AD_Float  x) = [S.ArrayPayloadFloat  x]
-       useR ArrayEltRdouble (AD_Double x) = [S.ArrayPayloadDouble x]
-       useR ArrayEltRbool   (AD_Bool   x) = [S.ArrayPayloadBool   x]
-       useR ArrayEltRchar   (AD_Char   x) = [S.ArrayPayloadChar   x]
+    convertArrayData :: (Sug.Shape sh, Sug.Elt e) => Sug.Array sh e -> S.AccArray
+    convertArrayData (Sug.Array sh adata) = S.AccArray (shapeToList sh) (payload arrayElt adata)
+      where
+        payload :: ArrayEltR a -> ArrayData a -> [S.ArrayPayload]
+        payload ArrayEltRint    (AD_Int   x)  = [S.ArrayPayloadInt x]
+        payload ArrayEltRint8   (AD_Int8  x)  = [S.ArrayPayloadInt8 x]
+        payload ArrayEltRint16  (AD_Int16 x)  = [S.ArrayPayloadInt16 x]
+        payload ArrayEltRint32  (AD_Int32 x)  = [S.ArrayPayloadInt32 x]
+        payload ArrayEltRint64  (AD_Int64 x)  = [S.ArrayPayloadInt64 x]
+        payload ArrayEltRword   (AD_Word   x) = [S.ArrayPayloadWord x]
+        payload ArrayEltRword8  (AD_Word8  x) = [S.ArrayPayloadWord8 x]
+        payload ArrayEltRword16 (AD_Word16 x) = [S.ArrayPayloadWord16 x]
+        payload ArrayEltRword32 (AD_Word32 x) = [S.ArrayPayloadWord32 x]
+        payload ArrayEltRword64 (AD_Word64 x) = [S.ArrayPayloadWord64 x]
+        payload ArrayEltRfloat  (AD_Float  x) = [S.ArrayPayloadFloat x]
+        payload ArrayEltRdouble (AD_Double x) = [S.ArrayPayloadDouble x]
+        payload ArrayEltRbool   (AD_Bool   x) = [S.ArrayPayloadBool x]
+        payload ArrayEltRchar   (AD_Char   x) = [S.ArrayPayloadChar x]
+        payload ArrayEltRunit   _             = []
+        payload (ArrayEltRpair aeR1 aeR0) ad  = payload aeR1 (fstArrayData ad) ++ payload aeR0 (sndArrayData ad)
 
 
 -- | Almost an inverse of `unpackArray` -- repack the simplified data
 --   representation with the type information necessary to form a proper
 --   Accelerate array.
+--
 packArray :: forall sh elt . (Sug.Elt elt, Sug.Shape sh) => S.AccArray -> Sug.Array sh elt
 packArray orig@(S.AccArray dims origPayloads) =
   -- TEMP: FIXME:  [2012.11.21]  Temporarily allowing mismathched dimensions as long as the # elements is right:
@@ -1134,3 +1092,4 @@ instance Show (Sug.ArraysR a') where
 mkArrayTuple :: a -> [T.AExp a] -> T.AExp a
 mkArrayTuple ty [one] = one
 mkArrayTuple ty ls    = T.ArrayTuple ty ls
+
