@@ -25,6 +25,8 @@ module Data.Array.Accelerate.BackendKit.Phase1.ToAccClone
          accToAccClone, expToExpClone,
          expType, convertSliceIndex,
          unpackArray, packArray, repackAcc, Phantom(Phantom),
+
+         convertEltType, convertArrayType,
        )
        where
 
@@ -584,14 +586,18 @@ tupleNumLeaves _             = 1
 convertEltType :: forall a. Sug.Elt a => a -> S.Type
 convertEltType _ = reconstruct structure simpleType
   where
-    (_, structure)      = Sug.reifyTupTree (undefined :: a)
     simpleType          = cvt (Sug.eltType (undefined :: a))
+    structure           =
+      case Sug.reifyTupTree (undefined :: a) of
+        (Sug.TupKind, s)                -> s
+        (Sug.ZKind,   Sug.TupTree ss)   -> Sug.TupTree (init ss)        -- all but the Z-leaf on the end
+        _                               -> error "convertEltType: backend kit has a broken representation of shapes"
 
     reconstruct :: Sug.TupTree -> [S.Type] -> S.Type
     reconstruct tree tys = snd $ go tree tys
       where
         go :: Sug.TupTree -> [S.Type] -> ([S.Type], S.Type)
-        go Sug.TupLeaf     []     = error "convertType: inconsistent valuation"
+        go Sug.TupLeaf     []     = error "convertEltType: inconsistent valuation"
         go Sug.TupLeaf     (x:xs) = (xs, x)
         go (Sug.TupTree t) xs     = let (xs', t') = L.mapAccumL (flip go) xs t
                                     in  (xs', mkTuple t')
