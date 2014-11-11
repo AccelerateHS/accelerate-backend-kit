@@ -844,12 +844,13 @@ convertOpenExp ep@(EnvPack envE envA mp) ex
       where
         prj :: [SealedExp] -> SealedExp
         prj = go ind (P.reverse tupTy) . P.reverse
-          where go :: Int -> [Type] -> [SealedExp] -> SealedExp
-                go 0 (t:_)  (e:_)
-                  | len == P.length (S.flattenTy t), t == ty    = e
-                  | otherwise                                   = error "prjT: invalid projection"
-                go n (t:ts) (_:es)                              = go (n - P.length (S.flattenTy t)) ts es
-                go _ _ _                                        = error "prjT: inconsistent valuation"
+          where
+            go :: Int -> [Type] -> [SealedExp] -> SealedExp
+            go 0 (t:_)  (e:_)
+              | len == P.length (S.flattenTy t), t == ty    = e
+              | otherwise                                   = error "prjT: invalid projection"
+            go n (t:ts) (_:es)                              = go (n - P.length (S.flattenTy t)) ts es
+            go _ _ _                                        = error "prjT: inconsistent valuation"
 
         TTuple tupTy = S.recoverExpType typeEnv exp
 
