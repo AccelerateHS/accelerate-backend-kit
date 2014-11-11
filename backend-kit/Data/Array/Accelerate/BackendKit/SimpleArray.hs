@@ -658,21 +658,29 @@ type ErrorMsg = String
 -- If the size of the array does not divide evenly, the last parttion gets the extra
 -- data.
 splitAccArray :: Int -> AccArray -> [AccArray]
-splitAccArray pieces (AccArray t dims payls)
-  | pieces < 1 = error $"splitAccArray: Cannot split into less than one piece: "++show pieces
-  | qt < 1 = error$ "AccArray of dimensions "++show dims++" cannot be split into "++show pieces++" pieces along outer (last) dim!"
-  | otherwise =
-    -- trace ("splitAccArray, "++show (size,qt,rem,rest,outer)) $
-    zipWith (AccArray t) allDims $
-    L.transpose $
-    map (splitPayload size pieces) payls
- where
-  allDims     = L.replicate (pieces-1) newDims ++ [newDimsLast]
-  newDims     = rest ++ [qt]
-  newDimsLast = rest ++ [qt+rem]
-  size = qt * product rest
-  (qt,rem) = outer `quotRem` pieces
-  (rest,outer) = splitLast dims
+splitAccArray pieces array@(AccArray t dims payls)
+  | pieces < 1
+  = error $ "splitAccArray: Cannot split into less than one piece: "++show pieces
+
+  -- If this is a singleton array, just duplicate it... because why not!
+  | null dims
+  = L.replicate pieces array
+
+  | qt < 1
+  = error $ "AccArray of dimensions "++show dims++" cannot be split into "++show pieces++" pieces along outer (last) dim!"
+
+  | otherwise
+  = trace ("splitAccArray, "++show (size,qt,rem,rest,outer))
+  $ zipWith (AccArray t) allDims
+  $ L.transpose
+  $ map (splitPayload size pieces) payls
+  where
+    allDims      = L.replicate (pieces-1) newDims ++ [newDimsLast]
+    newDims      = rest ++ [qt]
+    newDimsLast  = rest ++ [qt+rem]
+    size         = qt * product rest
+    (qt,rem)     = outer `quotRem` pieces
+    (rest,outer) = splitLast dims
 
 splitPayload :: Int -> Int -> ArrayPayload -> [ArrayPayload]
 splitPayload n k payl =
