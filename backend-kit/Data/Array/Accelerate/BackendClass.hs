@@ -12,6 +12,7 @@ module Data.Array.Accelerate.BackendClass (
 
   -- * Backends using the fully-typed Accelerate interface
   Backend(..), SomeBackend(SomeBackend),
+  DiskBackend(..), SomeDiskBackend(SomeDiskBackend),
 
   -- * Backends using the SimpleAcc AST
   SimpleBackend(..), SomeSimpleBackend(SomeSimpleBackend),
@@ -144,6 +145,11 @@ data AccTiming = AccTiming
 --
 data SomeBackend = forall b . Backend b => SomeBackend b
 
+-- | An encapsulated DiskBackend about which we know nothing else.  (Like SomeException.)
+--
+data SomeDiskBackend = forall b . DiskBackend b => SomeDiskBackend b
+
+
 -- | A low-level interface that abstracts over Accelerate backend code generators and
 -- expression evaluation. This takes the internal Accelerate AST representation
 -- rather than the surface, HOAS one.  The reason for this is that we may want to
@@ -272,6 +278,26 @@ class Show b => Backend b where
 --  forceToDisk :: Blob b r -> IO (Blob b r)
 
 
+-- class (Serializable (StoredBlob b), Backend b) => DiskBackend b where
+
+-- | Some Backends can serialize their compiled programs (Blobs), for
+-- use in a future invocation in another operating system process.
+class Backend  b => DiskBackend b where
+
+  -- | This method extracts the essense of a compiled program that
+  -- will be written do disk.  It forms a single string and will go
+  -- into a single file on disk, but it may include *references* to
+  -- other files on disk.
+  serializeBlob :: Blob b a -> B.ByteString
+  
+  -- | This method brings a program back into memory in a state that
+  -- is ready to run.  This may require parsing, loading, linking
+  -- multiple files but it should neither mutate the disk nor perform
+  -- any additional *compilation*.
+  reconstitute  :: B.ByteString -> IO (Blob b a)
+
+
+  
 -- | An optional name for the program being run that may help for debugging purpopes.
 --
 type DebugName = Maybe String
