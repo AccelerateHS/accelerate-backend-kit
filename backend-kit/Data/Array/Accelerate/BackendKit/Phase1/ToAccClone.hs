@@ -14,12 +14,12 @@
 --   * Add type info to some language forms...
 --   * Convert boundary
 
--- | PHASE1 :  Accelerate -> SimpleAcc
+-- | PHASE1 :  Accelerate -> AccClone -> SimpleAcc
 --
 -- This module provides a function to convert from Accelerate's
--- internal representation to the `SimpleAcc` external representation.
+-- internal representation to the `AccClone` external representation.
 -- This representation retains nearly the full set of Accelerate
--- language constructs.  Desugaring is postponed to phase 2.
+-- language constructs.  Desugaring is postponed to "Phase 2".
 module Data.Array.Accelerate.BackendKit.Phase1.ToAccClone
        (
          accToAccClone, expToExpClone,

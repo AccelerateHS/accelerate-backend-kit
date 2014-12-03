@@ -253,6 +253,8 @@ class Show b => Backend b where
   --
   useRemote :: Arrays a => b -> Remote b a -> IO (AST.Acc a)
 
+--  freeRemote :: Arrays a => b ->  (Remote b a) -> IO ()
+
   -------------------------- Configuration Flags --------------------------------
 
   -- | Are `copyToDevice` calls complexity O(N) or O(1)?  For example, this

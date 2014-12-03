@@ -28,7 +28,7 @@ module Data.Array.Accelerate.BackendKit.Tests
     p11, p11b, p11c,
     {-p12,-} p12b, p12c, p12d, p12e,
     p13, p13a, p13b, p13c, p13d, p13e, p13f, p13g, p13g2, p13h, p13i, p13j, p13k, 
-    p14, p14b, p14c, p14d, p14e, 
+    p14, p14b, p14c, p14d, p14e, p14f,
     p16a, p16b, p16c, p16d, p16e, p17a, p17b,
     p18a, p18b, p18c, p18d, p18e, p18f,
 
@@ -59,7 +59,8 @@ module Data.Array.Accelerate.BackendKit.Tests
     doc, convertToSimpleProg,
 
     -- Temp:
-    p2b_slc, p2b_test
+    p2b_slc, p2b_test,
+    foo, bar, foo2, bar2
    )
    where 
 
@@ -171,7 +172,7 @@ otherProgs =
   go "p13" p13, go "p13a" p13a, go "p13b" p13b, go "p13c" p13c, go "p13d" p13d, go "p13e" p13e, go "p13f" p13f,
   go "p13g" p13g, go "p13g2" p13g2, go "p13h" p13h, go "p13i" p13i, go "p13j" p13j, go "p13k" p13k,
   go "p14" p14, go "p14b" p14b, 
-  go "p14c" p14c, go "p14d" p14d, go "p14e" p14e,
+  go "p14c" p14c, go "p14d" p14d, go "p14e" p14e, go "p14f" p14f,
 
   go "p16a" p16a, go "p16b" p16b, go "p16c" p16c, go "p16d" p16d, go "p16e" p16e,
   go "p17a" p17a, go "p17b" p17b,
@@ -731,6 +732,7 @@ p13f = unit $
                (Sm.tup2 (constant (3::Int32), constant (4::Int64))),
                (constant (5::Int)))
 
+
 --  Unit (TArray 0 (TTuple [TTuple [TInt64,TInt32],TInt16,TInt8]))
 --  ((((), Int8), Int16), Int32):
 --  ((((), Int8), Int16), (((), Int32), Int64)):
@@ -779,6 +781,36 @@ p14e :: Acc (Scalar (Int8,Int16))
 p14e = A.map prj1_2 p13c
 -- Surface : TTuple [TTuple [TTuple [TTuple [],TInt8],TInt16],TInt32]
 
+p14f :: Acc (Scalar (Int8,Int16,Int32,Int64,Int))
+p14f = unit $ 
+      Sm.tup5 ( constant (1::Int8),
+                constant (2::Int16),
+                constant (3::Int32),
+                constant (4::Int64),
+                constant (5::Int))
+
+foo :: forall a b c d e. (Elt a, Elt b, Elt c, Elt d, Elt e) => Exp (a,b,c,d,e) -> Exp (a,b,c)
+foo t =
+ let (a,b,c,d,e) = unlift t :: (Exp a, Exp b, Exp c, Exp d, Exp e)
+ in lift (a,b,c)
+
+bar :: Exp (Int,Int,Float,Double,Char) -> Exp (Int,Int,Float)
+bar = foo    
+-- ghci> foo :: Exp (Int,Int,Float,Double,Char) -> Exp (Int,Int,Float)
+-- \x0 -> (#4 x0,#3 x0,#2 x0)
+-- it :: Exp (Int, Int, Float, Double, Char) -> Exp (Int, Int, Float)
+
+foo2 :: forall a b c d e. (Elt a, Elt b, Elt c, Elt d, Elt e) =>
+        Exp (a,b,(c,d),e) -> Exp (a,b,c)
+foo2 t =
+ let (a,b,cd,e) = unlift t :: (Exp a, Exp b, Exp (c,d), Exp e)
+     (c,d)      = unlift cd :: (Exp c, Exp d)
+ in lift (a,b,c)
+
+bar2 :: Exp (Int,Int,(Float,Double),Char) -> Exp (Int,Int,Float)
+bar2 = foo2
+
+  
 -- Project the second element from the right:
 prj1_2 :: (Elt a, Elt b) => Sm.Exp (a, b) -> (Sm.Exp a)
 prj1_2 e = Sm.Exp $ Tu.SuccTupIdx Tu.ZeroTupIdx `Sm.Prj` e
