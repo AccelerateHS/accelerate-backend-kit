@@ -590,7 +590,7 @@ convertEltType _ = reconstruct structure -- simpleType
     simpleType          = cvt (Sug.eltType (undefined :: a))
 
 --    reconstruct :: (Sug.EltR a) -> [S.Type] -> S.Type
-    reconstruct :: (Sug.EltR a) -> S.Type    
+    reconstruct :: forall a' . (Sug.EltR a') -> S.Type    
     reconstruct rep =
       case rep of
         Sug.EltR_Z   -> error "convertEltType: finish Z"
@@ -624,7 +624,20 @@ convertEltType _ = reconstruct structure -- simpleType
         Sug.EltR_CUChar  -> S.TCUChar
 
         -- Need type level evidence that a ~ (b,c), to do this:
-        -- Sug.EltR_Tup2 a b -> S.TTuple [reconstruct a, reconstruct b]
+        Sug.EltR_Tup2 a b ->
+          error "finishme "
+          -- S.TTuple [reconstruct a, reconstruct b]
+
+{-
+        x | Just (Sug.EltR_Tup2 a b) <- cast x
+        
+        _ -> case prod (undefined :: a) of
+               ProdRunit -> S.TUnit
+               ProdRsnoc ProdRunit -> undefined -- (,)
+               ProdRsnoc (ProdRsnoc ProdRunit) ->
+                 --- ((((),a),b),c) ~~> (a,b,c)  EltR_Tup3
+                 undefined -- (,,)
+-}
         
         other -> error "FINISHME"
 {-    
