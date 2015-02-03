@@ -584,17 +584,50 @@ tupleNumLeaves _             = 1
 -- | Generate the simple type representation of a _surface_ type
 --
 convertEltType :: forall a. Sug.Elt a => a -> S.Type
-convertEltType _ = reconstruct structure simpleType
+convertEltType _ = reconstruct structure -- simpleType
   where
-    structure           = Sug.reifyTupTree (undefined :: a)
+    structure           = Sug.eltRep (undefined :: a)
     simpleType          = cvt (Sug.eltType (undefined :: a))
 
-    -- Backend kit throws out the distinction between shapes and indices.
-    -- Besides being foolish, it is also incorrect, and we don't have enough
-    -- information at this point to reconstruct the true surface type for
-    -- indices involving Any or All.
-    --
-    reconstruct :: (Sug.EltKind, Sug.TupTree) -> [S.Type] -> S.Type
+--    reconstruct :: (Sug.EltR a) -> [S.Type] -> S.Type
+    reconstruct :: (Sug.EltR a) -> S.Type    
+    reconstruct rep =
+      case rep of
+        Sug.EltR_Z   -> error "convertEltType: finish Z"
+        Sug.EltR_All -> error "convertEltType: finish All"
+        Sug.EltR_Any sh -> error "convertEltType: finish Any"        
+        Sug.EltR_Int8  -> S.TInt8
+        Sug.EltR_Int16 -> S.TInt16
+        Sug.EltR_Int32 -> S.TInt32
+        Sug.EltR_Int64 -> S.TInt64
+        Sug.EltR_Word  -> S.TWord
+        Sug.EltR_Word8 -> S.TWord8
+        Sug.EltR_Word16 -> S.TWord16
+        Sug.EltR_Word32 -> S.TWord32
+        Sug.EltR_Word64 -> S.TWord64
+        Sug.EltR_CShort  -> S.TCShort
+        Sug.EltR_CUShort -> S.TCUShort
+        Sug.EltR_CInt    -> S.TCInt
+        Sug.EltR_CUInt   -> S.TCUInt
+        Sug.EltR_CLong   -> S.TCLong
+        Sug.EltR_CULong  -> S.TCULong
+        Sug.EltR_CLLong  -> S.TCLLong
+        Sug.EltR_CULLong -> S.TCULLong
+        Sug.EltR_Float   -> S.TFloat
+        Sug.EltR_Double  -> S.TDouble
+        Sug.EltR_CFloat  -> S.TCFloat
+        Sug.EltR_CDouble -> S.TCDouble
+        Sug.EltR_Bool    -> S.TBool
+        Sug.EltR_Char    -> S.TChar
+        Sug.EltR_CChar   -> S.TCChar
+        Sug.EltR_CSChar  -> S.TCSChar
+        Sug.EltR_CUChar  -> S.TCUChar
+
+        -- Need type level evidence that a ~ (b,c), to do this:
+        -- Sug.EltR_Tup2 a b -> S.TTuple [reconstruct a, reconstruct b]
+        
+        other -> error "FINISHME"
+{-    
     reconstruct (Sug.ZKind,   _)    tys = mkTuple tys           -- shapes/indices
     reconstruct (Sug.TupKind, tree) tys = snd $ go tree tys     -- regular element types
       where
@@ -603,7 +636,9 @@ convertEltType _ = reconstruct structure simpleType
         go Sug.TupLeaf     (x:xs) = (xs, x)
         go (Sug.TupTree t) xs     = let (xs', t') = L.mapAccumL (flip go) xs t
                                     in  (xs', mkTuple t')
+-}
 
+    -- This produces a flat list of scalar types only:
     cvt :: TupleType t -> [S.Type]
     cvt UnitTuple         = []
     cvt (PairTuple t1 t0) = cvt t1 ++ cvt t0
@@ -649,10 +684,13 @@ convertEltType _ = reconstruct structure simpleType
 convertArrayType :: forall arrs. Sug.Arrays arrs => arrs -> S.Type
 convertArrayType _ = reconstruct structure simpleType
   where
-    structure   = Sug.reifyArrTupTree (undefined :: arrs)
+    structure = error "convertArrayType: need array analogue for eltRep"
+--      Sug.reifyArrTupTree (undefined :: arrs)
     simpleType  = cvt (Sug.arrays (undefined :: arrs))
 
-    reconstruct :: Sug.TupTree -> [S.Type] -> S.Type
+--    reconstruct :: Sug.TupTree -> [S.Type] -> S.Type
+    reconstruct = error "convertArrayType/reconstruct - finishme"
+{-    
     reconstruct tree tys = snd $ go tree tys
       where
         go :: Sug.TupTree -> [S.Type] -> ([S.Type], S.Type)
@@ -660,7 +698,7 @@ convertArrayType _ = reconstruct structure simpleType
         go Sug.TupLeaf     (x:xs) = (xs, x)
         go (Sug.TupTree t) xs     = let (xs', t') = L.mapAccumL (flip go) xs t
                                     in  (xs', mkTuple t')
-
+-}
     cvt :: Sug.ArraysR a -> [S.Type]
     cvt Sug.ArraysRunit         = []
     cvt (Sug.ArraysRpair a1 a0) = cvt a1 ++ cvt a0
