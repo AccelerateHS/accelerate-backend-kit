@@ -23,12 +23,13 @@ module Data.Array.Accelerate.BackendKit.Tests
     p2, p2b, p2bb, p2c, p2cc, p2cd, p2ce, p2d, p2e, p2g, p2h, p2i, 
     p3,
     p6, p6b,
-    p8, p9a, p9b, p9c, 
+    p8, p9a, p9b, p9c, p9d, p9e, 
     p10, p10b, p10c, p10d, p10e, p10f, p10g, p10h, p10i, 
     p11, p11b, p11c,
     {-p12,-} p12b, p12c, p12d, p12e,
     p13, p13a, p13b, p13c, p13d, p13e, p13f, p13g, p13g2, p13h, p13i, p13j, p13k, 
-    p14, p14b, p14c, p14d, p14e, 
+    p14, p14b, p14c, p14d, p14e,
+    p15,
     p16a, p16b, p16c, p16d, p16e, p17a, p17b,
     p18a, p18b, p18c, p18d, p18e, p18f,
 
@@ -63,7 +64,7 @@ module Data.Array.Accelerate.BackendKit.Tests
    )
    where 
 
-import           Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0,phase1, phase2, unpackArray, Phantom)
+import Data.Array.Accelerate.BackendKit.CompilerPipeline (phase0,phase1, unpackArray)
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc as S
 import qualified Data.Array.Accelerate.BackendKit.IRs.SimpleAcc.Interpreter as I
 import qualified Data.Array.Accelerate.Smart       as Sm
@@ -72,19 +73,17 @@ import qualified Data.Array.Accelerate.Array.Sugar as Sug
 
 import Data.Array.Accelerate as A hiding ((++)) 
 import Data.Array.Accelerate.Interpreter (run)
-import Data.Int
 import Data.List (intersperse)
-import qualified Data.List as L
 import Data.List.Split (chunksOf)
 --import Control.DeepSeq (deepseq)
 import qualified Data.Map as M
 import qualified Data.Set as Set
 import qualified Prelude  as P
 import Prelude hiding (zipWith,replicate,map)
-import Test.Framework (testGroup, defaultMain, Test)
+import Test.Framework (testGroup, Test)
 -- import qualified Test.Framework as TF
 import Test.Framework.Providers.HUnit
-import Test.HUnit      ((~=?), (~?))
+import Test.HUnit      ((~=?))
 import Text.PrettyPrint.GenericPretty (doc, Out(doc,docPrec), Generic)
 import Text.PrettyPrint.HughesPJ (text)
 
@@ -162,7 +161,7 @@ otherProgs =
   go "p6" p6,  go "p6b" p6b, 
   go "p7" p7, 
   go "p8" p8, 
-  go "p9a" p9a, go "p9b" p9b, go "p9c" p9c,
+  go "p9a" p9a, go "p9b" p9b, go "p9c" p9c, go "p9d" p9d, go "p9e" p9e,
   go "p10" p10, go "p10b" p10b, go "p10c" p10c, go "p10d" p10d, go "p10e" p10e, go "p10f" p10f, 
   go "p10g" p10g, go "p10h" p10h, go "p10i" p10i, 
   go "p11" p11, go "p11b" p11b, go "p11c" p11c,
@@ -173,6 +172,7 @@ otherProgs =
   go "p14" p14, go "p14b" p14b, 
   go "p14c" p14c, go "p14d" p14d, go "p14e" p14e,
 
+  go "p15" p15,
   go "p16a" p16a, go "p16b" p16b, go "p16c" p16c, go "p16d" p16d, go "p16e" p16e,
   go "p17a" p17a, go "p17b" p17b,
   go "p18a" p18a, go "p18b" p18b, go "p18c" p18c, go "p18d" p18d, go "p18e" p18e, go "p18f" p18f,
@@ -262,7 +262,7 @@ testCompiler eval progs = P.map mk (P.zip [(0::Int)..] progs)
 -- final answer.  This requires an oracle function to determine
 -- whether the output is good.
 testPartialCompiler :: Show a => (S.Prog () -> a -> Bool) -> (String -> S.Prog () -> a) -> [TestEntry] -> [Test]
-testPartialCompiler oracle eval tests = P.map mk (P.zip [0..] tests)
+testPartialCompiler oracle eval tests = P.map mk (P.zip [0::Int .. ] tests)
   where
    mk (i, TestEntry { name, simpleProg } ) =
      testGroup ("run test "++show i++" "++name) $
@@ -280,7 +280,9 @@ testPartialCompiler oracle eval tests = P.map mk (P.zip [0..] tests)
 p0 :: Acc (Array DIM2 Int64)
 -- The innermost (fastest changing) dimension is size 5:
 p0 = use $ fromList (Z :. (2::Int) :. (5::Int)) [1..10::Int64]
-r0 = I.run p0
+
+_r0 :: Array DIM2 Int64
+_r0 = I.run p0
 
 -- | Sharing recovery will create a Let here:
 p1 :: Acc (Scalar Int)
@@ -341,8 +343,12 @@ p1d = let xs = use$ fromList (Z :. (5::Int)) [1..10::Word]
 p2 :: Acc (Vector Int32)
 p2 = let xs = replicate (constant (Z :. (4::Int))) (unit 40)
      in map (+ 10) xs
-t2 = convertToSimpleProg p2
-r2 = I.run p2
+
+_t2 :: S.Prog ()
+_t2 = convertToSimpleProg p2
+
+_r2 :: Vector Int32
+_r2 = I.run p2
 
 -- A 2D version of previous:
 p2aa :: Acc (Array DIM2 Int32)
@@ -367,6 +373,7 @@ p2b = let arr = generate (constant (Z :. (5::Int))) unindex1
           -- 1st generates: Array (Z :. 4 :. 5) [0,1,2,3,4,0,1,2,3,4,0,1,2,3,4,0,1,2,3,4]
           -- 2nd generates: Array (Z :. 5 :. 4) [0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4]
 
+p2b_slc :: Exp ((Z :. All) :. Int)
 p2b_slc = (constant$ Z :. All :. (4::Int))
 
 
@@ -482,12 +489,12 @@ p5 = unit$ lift $ Z :. All :. (2::Int) :. All
 -- This one generates ETupProjectFromRight:
 -- (But it requires an array-of-tuples internally:)
 p6 :: Acc (Vector Float)
-p6 = map go (use xs)
+p6 = map gogo (use xs)
   where
     xs :: Vector (Float, Float)
     xs = fromList sh [(1,10),(2,20)]
     sh = Z :. (2::Int)
-    go x = let (a,b) = unlift x   in a*b
+    gogo x = let (a,b) = unlift x   in a*b
 
 -- Use a simple test that doesn't have any tuples-of-arrays, but DOES have a scalar level tuple internally.
 p6b :: Acc (Scalar Int)
@@ -557,15 +564,14 @@ p9d = unit$
       x = (1,2,3,4,5)
       t :: Exp (Int,Int,Int,Int,Int)
       t = lift x
-      (a,b,c,d,e) :: (Exp Int,Exp Int,Exp Int,Exp Int,Exp Int) = unlift t
+      (_,b,c,d,_) :: (Exp Int,Exp Int,Exp Int,Exp Int,Exp Int) = unlift t
       v :: Exp (Int,Int,Int)
       v = lift (b,c,d)
   in v
 
 -- Now a large nested tuple:
+-- FINISHME
 
-
--- p9e :: Acc (Scalar (Int,Int,Int))
 p9e :: Acc (Scalar (Int,(Int,Int,Int)))
 p9e = unit$
   let x :: (Int,(Int,(Int,Int,Int)),Float)
@@ -576,7 +582,7 @@ p9e = unit$
       u :: (Exp Int,Exp (Int,(Int,Int,Int)),Exp Float)
 --      u :: (Exp Int,(Exp Int,(Exp Int,Exp Int,Exp Int)),Exp Float)
       u = unlift t
-      (a,mid,f) = u      
+      (_,mid,_) = u      
 --      (a,(b,(c,d,e)),f) :: (Exp Int,(Exp Int,(Exp Int,Exp Int,Exp Int)),Exp Float) = unlift t
       -- v :: Exp (Int,Int,Int)
       -- v = lift (b,c,d)
@@ -636,7 +642,7 @@ p11 :: Acc (Scalar Int, Scalar Int16, Scalar Int32)
 p11 = lift (unit 1, unit 2, unit 3)
 
 p11b :: Acc (Scalar Int, Scalar Int32)
-p11b = let (a,b,c) = unlift p11 
+p11b = let (a,_,c) = unlift p11 
                      :: (Acc (Scalar Int), Acc (Scalar Int16), Acc (Scalar Int32)) 
                      -- NOTE!  Should this ^^ type annotation REALLY be necessary?
                      -- Is there no way to further constrain the mechanism here?
@@ -679,7 +685,7 @@ p12e = unit $
   let tup :: Exp (Int,Int)
       tup   = constant True ? (lift (11::Int, 22::Int),
                                lift (100::Int,200::Int))
-      (a,b) = unlift tup :: (Exp Int, Exp Int)
+      (a,_) = unlift tup :: (Exp Int, Exp Int)
   in a + 33
 
 
@@ -695,12 +701,16 @@ p13 = unit $
 
 p13a :: Acc (Scalar (Int8,(Int16,Int32)))
 p13a = unit p13a_
+
+p13a_ :: Exp (Int8, (Int16, Int32))
 p13a_ = Sm.tup2 (constant (1::Int8),
                  (Sm.tup2 (constant (5::Int16), constant (2::Int32))))
 
 
 p13b :: Acc (Scalar (Int8,Int16,Int32))
 p13b = unit p13b_
+
+p13b_ :: Exp (Int8, Int16, Int32)
 p13b_ = 
       Sm.tup3 (constant (1::Int8),  
                constant (2::Int16),
@@ -708,10 +718,11 @@ p13b_ =
 
 p13c :: Acc (Scalar ((Int8,Int16),Int32))
 p13c = unit p13c_
+
+p13c_ :: Exp ((Int8, Int16), Int32)
 p13c_ = 
       Sm.tup2 ((Sm.tup2 (constant (1::Int8),  constant (2::Int16))),
                (constant (5::Int32)))
-
 
 p13d :: Acc (Scalar ((Int8,Int16),(Int32,Int64),(Float,Double)))
 p13d = unit $ 
@@ -786,15 +797,16 @@ prj1_2 e = Sm.Exp $ Tu.SuccTupIdx Tu.ZeroTupIdx `Sm.Prj` e
 prj1_3 :: (Elt a, Elt b, Elt c) => Sm.Exp (a, b, c) -> (Sm.Exp b)
 prj1_3 e = Sm.Exp $ Tu.SuccTupIdx Tu.ZeroTupIdx `Sm.Prj` e
 
-prj2_4 :: (Elt a, Elt b, Elt c, Elt d) => Exp (a, (b, c), d) -> (Exp (b,c))
-prj2_4 e = 
+_prj2_4 :: (Elt a, Elt b, Elt c, Elt d) => Exp (a, (b, c), d) -> (Exp (b,c))
+_prj2_4 _e = 
   -- Sm.Exp $ Tu.SuccTupIdx Tu.ZeroTupIdx `Sm.Prj` e
   undefined
 
-tix0 :: Elt s => Tu.TupleIdx (t, s) s
-tix0 = Tu.ZeroTupIdx
-tix1 :: Elt s => Tu.TupleIdx ((t, s), s1) s
-tix1 = Tu.SuccTupIdx tix0
+_tix0 :: Elt s => Tu.TupleIdx (t, s) s
+_tix0 = Tu.ZeroTupIdx
+
+_tix1 :: Elt s => Tu.TupleIdx ((t, s), s1) s
+_tix1 = Tu.SuccTupIdx _tix0
 
 -- Here we manually construct some of the AST we want:
 untup2 :: (Elt a, Elt b) => Sm.Exp (a, b) -> (Sm.Exp a, Sm.Exp b)
@@ -1089,12 +1101,11 @@ p70 = let a = p60f
       in A.zipWith (\x y -> lift (x,y) :: Exp (((Int,Int),Int),Int)) a xs  
 
 p70a :: Acc (Array DIM1 ((Int, (Int,Int)), Int))
-p70a = let a = p60f 
-           xs = use $ fromList (Z :. (10::Int)) [1..10::Int]
+p70a = let xs = use $ fromList (Z :. (10::Int)) [1..10::Int]
        in A.zipWith (\x y -> 
                      let (a :: Exp (Int,Int) ,b :: Exp Int ) = unlift x 
                          ba = lift (b,a) :: Exp (Int,(Int,Int))
-                     in  lift (ba,y) :: Exp ((Int,(Int,Int)),Int))   a xs  
+                     in  lift (ba,y) :: Exp ((Int,(Int,Int)),Int)) p60f xs  
 
 
 ---------------------------------------------------------------------------
@@ -1177,7 +1188,7 @@ p90a = let xs = fromList (Z :. (10::Int)) [1..10::Int]
            arrs :: Acc ((Array DIM1 Int)
                         ,(Array DIM1 Int)
                         ,(Array DIM1 Int)) = lift (use xs, use ys, use zs) 
-           (x,y,z) :: ( Acc (Array DIM1 Int)
+           (x,_,_) :: ( Acc (Array DIM1 Int)
                       , Acc (Array DIM1 Int)
                       , Acc (Array DIM1 Int)) = unlift arrs
        in x
@@ -1189,7 +1200,7 @@ p90b = let xs = fromList (Z :. (10::Int)) [1..10::Int]
            arrs :: Acc ((Array DIM1 Int)
                         ,(Array DIM1 Int)
                         ,(Array DIM1 Int)) = lift (use xs, use ys, use zs) 
-           (x,y,z) :: ( Acc (Array DIM1 Int)
+           (_,y,_) :: ( Acc (Array DIM1 Int)
                       , Acc (Array DIM1 Int)
                       , Acc (Array DIM1 Int)) = unlift arrs
        in y
@@ -1200,7 +1211,7 @@ p90c = let xs = fromList (Z :. (10::Int)) [1..10::Int]
            arrs :: Acc ((Array DIM1 Int)
                         ,(Array DIM1 Int)
                         ,(Array DIM1 Int)) = lift (use xs, use ys, use zs)
-           (x,y,z) :: ( Acc (Array DIM1 Int)
+           (_,_,z) :: ( Acc (Array DIM1 Int)
                       , Acc (Array DIM1 Int)
                       , Acc (Array DIM1 Int)) = unlift arrs
        in z
@@ -1291,6 +1302,7 @@ p92a = let xs = fromList (Z :. (10::Int)) (Prelude.zip [1..10::Int] [11..20::Int
 --------------------------------------------------------------------------------
 -- Let's print matrices nicely.
 
+padleft :: Int -> String -> String
 padleft n str | P.length str >= n = str
 padleft n str | otherwise         = P.take (n - P.length str) (repeat ' ') ++ str
 
@@ -1306,6 +1318,7 @@ instance Show a => NiceShow (Array DIM1 a) where
          ls   = P.map show $ toList arr
          maxpad = P.maximum$ P.map P.length ls
 
+capends :: String -> String
 capends x = "| "++x++" |"
 
 -- This could be much more efficient:
@@ -1317,7 +1330,7 @@ instance Show a => NiceShow (Array DIM2 a) where
                   intersperse " " . 
                   P.map (padleft maxpad)) 
             rowls
-   where (Z :. rows :. cols) = arrayShape arr
+   where (Z :. _rows :. cols) = arrayShape arr
          ls   = P.map show $ toList arr
          maxpad = P.maximum$ P.map P.length ls
          rowls = chunksOf cols ls
@@ -1326,4 +1339,3 @@ instance Show a => NiceShow (Array DIM2 a) where
 
 convertToSimpleProg :: Sug.Arrays a => Sm.Acc a -> S.Prog ()
 convertToSimpleProg = phase1 . phase0
-
