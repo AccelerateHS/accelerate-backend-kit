@@ -550,7 +550,7 @@ findFree Prog{progBinds} = S.difference allFreeVars $ S.intersection allFreeVars
 --
 --   Invariant: all payload arrays should be the same length, and:
 --
---   > sum (arrDim a) == length (arrPayloads a !! i)
+--   > product (arrDim a) == length (arrPayloads a !! i)
 --
 --   The array dimensions are stored from the "inner" to the "outer" dimension.
 --   That is, if you do a fold, the first element of the list is the dimension
